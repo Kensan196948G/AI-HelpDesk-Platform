@@ -14,8 +14,10 @@
     );
 
   function labelOf(employee) {
-    const parts = [employee.division, employee.section, employee.name].filter(Boolean);
-    return parts.join(' / ');
+    // 表示は「部署 / 氏名」。本部段（管理本部・技術本部など）は省略する（2026-10-23 決定）。
+    const org = [employee.division, employee.section].filter(Boolean);
+    const short = org.length > 1 && /本部$/.test(org[0]) ? org.slice(1) : org;
+    return (short.length ? short : org).concat(employee.name).filter(Boolean).join(' / ');
   }
 
   function optionsHtml(all) {
