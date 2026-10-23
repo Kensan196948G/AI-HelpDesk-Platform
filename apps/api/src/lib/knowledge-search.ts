@@ -26,17 +26,20 @@ export async function findApprovedKnowledge(
     .map((row: any) => {
       const haystack =
         `${row.title}\n${row.symptom}\n${row.cause}\n${(row.keywords ?? []).join(' ')}`.toLowerCase();
-      let score = 0;
-      for (const token of tokens) {
-        if (haystack.includes(token)) score += 2;
-      }
+      // 相談文に含まれる「専門キーワード」の一致を最優先する。
+      // 「手順」のような一般語だけで他のKBが上位に来るのを防ぐ。
+      let specific = 0;
       for (const keyword of (row.keywords ?? []) as string[]) {
-        if (lowerText.includes(keyword.toLowerCase())) score += 3;
+        if (lowerText.includes(keyword.toLowerCase())) specific += 4;
+      }
+      let contextual = 0;
+      for (const token of tokens) {
+        if (haystack.includes(token)) contextual += 1;
       }
       for (const keyword of intentKeywords) {
-        if (row.title.includes(keyword) || row.symptom.includes(keyword)) score += 2;
+        if (row.title.includes(keyword) || row.symptom.includes(keyword)) contextual += 1;
       }
-      return { row, score };
+      return { row, score: specific + contextual };
     })
     .filter((entry: { score: number }) => entry.score > 0)
     .sort((a: { score: number }, b: { score: number }) => b.score - a.score)

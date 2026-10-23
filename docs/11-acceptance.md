@@ -9,7 +9,7 @@
 | 1 | README に MVP 目的・利用者 | ✅ | README「みらいAI窓口 × ヘルプデスク MVP」 |
 | 2 | 主要 1〜3 Flow を E2E 実行可能 | ⏸ | API は integration test で 3 Flow 成功。UI は既存プロトタイプを配信し、状態/AI を Playwright で確認。全 STEP の E2E は未実施 |
 | 3 | OpenDesign / 採用 UI 方針と主要画面が整合 | ✅ | ユーザー指示により実画面は既存プロトタイプ HTML を 100% 配信（[docs/14](14-prototype-ui-integration.md)）。OpenDesign は参考記録 |
-| 4 | Seed / Dummy Data で操作可能 | ✅ | users 6 / knowledge 4 / cases 3 / PC 31 項目 |
+| 4 | Seed / Dummy Data で操作可能 | ✅ | users 6 / knowledge 9 / cases 3 / PC 31 項目 |
 | 5 | Normal State 確認 | ⏸ | UI 配信・ホーム・H.kb を確認。主要 STEP の通し操作は未実施 |
 | 6 | Empty State 確認 | ⏸ | プロトタイプの空表示は実装済み。体系的な確認は未実施 |
 | 7 | Loading State 確認 | ⏸ | プロトタイプの表示はあるが、体系的な確認は未実施 |
@@ -20,7 +20,7 @@
 | 12 | DB 主要 Read / Write 確認 | ✅ | 案件・引継ぎ・解決・ナレッジ・監査 |
 | 13 | Type Check 成功 | ✅ | `npm run typecheck` |
 | 14 | Lint 成功 | ✅ | `npm run lint`（error 0） |
-| 15 | 主要 Test 成功 | ✅ | 72 tests（unit/auth/worker + integration/UI + 許可リスト + 実PC情報/エージェント） |
+| 15 | 主要 Test 成功 | ✅ | 74 tests（unit/auth/worker + integration/UI + 許可リスト + 実PC情報/エージェント） |
 | 16 | Build 成功 | ✅ | API build 成功。UI は既存 HTML を配信 |
 | 17 | Critical / High の既知問題なし | ⏸ | 既知の Critical なし。Access・OTP・実PC情報・エージェント・DeepSeek V4.1 は実測済み。全 STEP E2E が未 |
 | 18 | Cloudflare Preview Deployment 成功 | ✅ | Tunnel + Access で公開。公開 URL は 302 → Access OTP 画面（[08](08-deployment.md) §0） |

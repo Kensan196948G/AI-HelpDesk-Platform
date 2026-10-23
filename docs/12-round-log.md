@@ -59,15 +59,18 @@
 - DeepSeek を `deepseek-flash`（DeepSeek-V4.1-Flash、`thinking: disabled`）へ更新。
 - 端末エージェント用に `/api/device/agent` のパス限定 Access bypass + デバイストークン（SHA-256 / 0600 / IP 30回/分）を実装。
 - 実測: ブラウザ 35 項目 / エージェント 300 ソフト / AI が 16GB・8 コアを回答に反映 / 公開エージェント経路 200。
-- **72 tests 成功**（16 files）。端末は `device_id` 単位で分離し、未リンク agent はブラウザを上書きしない。
+- **74 tests 成功**（17 files）。端末は `device_id` 単位で分離し、未リンク agent はブラウザを上書きしない。
 - Windows 向けに Node 不要の PowerShell CLI + ログオン/60分タスク（常駐なし）を追加。構文・`-DryRun`・API送信（35項目）を Linux pwsh で検証。
-- 残: 全 STEP E2E、Windows実機での CIM/BitLocker/Defender 取得確認、GPO/Intune 配布、CI。
+- AI用の承認済みKBを5件追加（PC性能 / Windows Update / BitLocker / Defender / ソフト導入）。KB検索は専門キーワード一致を優先するよう修正。
+- 実測: Windows 11 Pro / i5-9500 / 31.8GB / 273ソフトの実PC情報を根拠に、KB-2026-0005/0006/0007/0008 の一次切り分け手順をAIが返す。
+- 実測: Windows実機で CIM / Defender / 273ソフトを取得。BitLocker はタスク実行ユーザー権限で未検出のため、`-Elevated` 再登録を残対応とする。
+- 残: 全 STEP E2E、BitLockerの`-Elevated`再登録、GPO/Intune 配布、CI。
 
 ## 現在の Evidence
 
 | 項目 | 結果 |
 |---|---|
-| Tests | 72 passed（16 files） |
+| Tests | 74 passed（17 files） |
 | TypeCheck | 成功 |
 | Lint | 成功（warning 27 / error 0） |
 | Build | 成功 |

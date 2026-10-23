@@ -55,6 +55,11 @@ const K = {
   two: 'a0000002-0000-4000-8000-000000000002',
   three: 'a0000003-0000-4000-8000-000000000003',
   four: 'a0000004-0000-4000-8000-000000000004',
+  five: 'a0000005-0000-4000-8000-000000000005',
+  six: 'a0000006-0000-4000-8000-000000000006',
+  seven: 'a0000007-0000-4000-8000-000000000007',
+  eight: 'a0000008-0000-4000-8000-000000000008',
+  nine: 'a0000009-0000-4000-8000-000000000009',
 };
 
 const demoPasswordHash = hashPassword(seedPassword);
@@ -131,6 +136,119 @@ const knowledgeRows = [
     approverId: U.watanabe,
     version: 1,
   },
+  {
+    id: K.five,
+    kbNo: 'KB-2026-0005',
+    caseId: null,
+    title: 'PCが重い・動作が遅いときの一次切り分け',
+    symptom: 'アプリの起動や操作が遅い、マウスが固まる、ファンが回り続ける。',
+    cause: 'CPU・メモリ・ディスクの負荷、空き容量不足、更新の再起動待ち、常駐ソフトの影響。',
+    steps: `1. Ctrl + Shift + Esc でタスクマネージャーを開き、「プロセス」タブで CPU・メモリ・ディスクの使用率が高いアプリを確認する（終了は作業に影響するため、まずアプリ名と使用率を控える）
+2. 「パフォーマンス」タブでメモリとディスクの空きを確認する。C: の空きが 10〜15% 未満なら、不要なファイルや一時ファイルを整理する
+3. Windows Update の再起動待ち、または前回の再起動から日数が長い場合は、作業を保存して再起動する
+4. 改善しない場合は、PC基本情報（CPU・メモリ・ディスク・導入ソフト）を添えて担当者へ引き継ぐ`,
+    keywords: [
+      '重い',
+      '遅い',
+      '動作',
+      'CPU',
+      'メモリ',
+      'ディスク',
+      '空き容量',
+      'タスクマネージャー',
+      '再起動',
+      'パフォーマンス',
+    ],
+    status: 'approved',
+    authorId: U.sato,
+    approverId: U.watanabe,
+    version: 1,
+  },
+  {
+    id: K.six,
+    kbNo: 'KB-2026-0006',
+    caseId: null,
+    title: 'Windows Update・再起動待ちの確認手順',
+    symptom: '更新の通知が消えない、再起動を求められる、更新後に動作が不安定。',
+    cause: '更新プログラムの適用待ち、または再起動待ち。',
+    steps: `1. 設定 > Windows Update を開き、更新の状態を確認する
+2. 「再起動が必要」と表示されている場合は、作業を保存して再起動する
+3. 再起動後にもう一度更新を確認し、エラーコードが出た場合は控える
+4. 更新が失敗し続ける場合は、エラーコードと PC 基本情報を添えて担当者へ`,
+    keywords: ['Windows Update', '更新', '再起動', '更新プログラム', 'KB', 'エラーコード'],
+    status: 'approved',
+    authorId: U.takahashi,
+    approverId: U.watanabe,
+    version: 1,
+  },
+  {
+    id: K.seven,
+    kbNo: 'KB-2026-0007',
+    caseId: null,
+    title: 'BitLocker・ディスク暗号化の状態確認',
+    symptom: 'ディスク暗号化の状態を確認したい、回復キーが必要、端末の紛失・盗難が心配。',
+    cause: 'BitLocker の保護状態が不明、または回復キーの保管場所が不明。',
+    steps: `1. 設定 > プライバシーとセキュリティ > デバイスの暗号化（または BitLocker の管理）を開き、保護の状態を確認する
+2. 管理者に確認できる場合は、コマンドプロンプトで manage-bde -status を実行し、Protection Status（保護の状態）を確認する
+3. 保護がオフの場合は、自分で有効化せず、資産管理の担当者へ相談する
+4. 回復キーが必要な場合も、自分で再発行せず担当者へ`,
+    keywords: ['BitLocker', '暗号化', 'ディスク暗号化', '回復キー', '保護', '紛失', '盗難'],
+    status: 'approved',
+    authorId: U.sato,
+    approverId: U.watanabe,
+    version: 1,
+  },
+  {
+    id: K.eight,
+    kbNo: 'KB-2026-0008',
+    caseId: null,
+    title: 'Defender・ウイルス対策の状態確認',
+    symptom: 'ウイルス対策が有効か確認したい、不審なファイルや警告が出た。',
+    cause: 'Defender の保護が無効、定義ファイルが古い、または不審なファイルの実行。',
+    steps: `1. Windows セキュリティ > ウイルスと脅威の防止 を開き、リアルタイム保護が有効か確認する
+2. 定義ファイルの更新状態を確認し、更新があれば適用する
+3. クイック スキャンを実行する
+4. 不審なファイル・メール・警告が出た場合は、端末をネットワークから切断し、電源を切らずにセキュリティ担当へ連絡する（AIは判断しない）`,
+    keywords: [
+      'Defender',
+      'ウイルス',
+      'セキュリティ',
+      '不審',
+      '感染',
+      'スキャン',
+      '脅威',
+      'リアルタイム保護',
+    ],
+    status: 'approved',
+    authorId: U.takahashi,
+    approverId: U.watanabe,
+    version: 1,
+  },
+  {
+    id: K.nine,
+    kbNo: 'KB-2026-0009',
+    caseId: null,
+    title: 'ソフトウェア導入・ライセンスの確認手順',
+    symptom: '必要なソフトが入っていない、バージョンを確認したい、導入を依頼したい。',
+    cause: 'ソフト未導入、ライセンス未割当、または管理者権限の不足。',
+    steps: `1. 設定 > アプリ > インストールされているアプリ で、必要なソフトが入っているか確認する
+2. 必要なソフト名・バージョン・用途を担当者へ伝える
+3. 管理者権限での自己インストールやライセンスの自己取得は行わない
+4. 導入後は、設定 > アプリ でバージョンを確認する`,
+    keywords: [
+      'ソフト',
+      'インストール',
+      '導入',
+      'ライセンス',
+      'アプリ',
+      'バージョン',
+      '管理者権限',
+    ],
+    status: 'approved',
+    authorId: U.sato,
+    approverId: U.watanabe,
+    version: 1,
+  },
 ];
 
 const auditPayload = {
@@ -138,7 +256,7 @@ const auditPayload = {
   action: 'seed_demo_data',
   targetType: 'system',
   targetId: 'seed',
-  detail: { cases: 3, knowledge: 4 },
+  detail: { cases: 3, knowledge: knowledgeRows.length },
 };
 const auditHash = computeAuditHash(GENESIS_HASH, auditPayload);
 
@@ -397,7 +515,9 @@ try {
   });
 
   console.log(
-    '[seed] done（users=6, knowledge=4, cases=3, demo password は環境変数 SEED_PASSWORD）',
+    '[seed] done（users=6, knowledge=' +
+      knowledgeRows.length +
+      ', cases=3, demo password は環境変数 SEED_PASSWORD）',
   );
 } catch (error) {
   console.error('[seed] failed:', error);

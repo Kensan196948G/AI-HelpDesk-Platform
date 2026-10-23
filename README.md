@@ -19,12 +19,13 @@
 | WebUI（既存プロトタイプ） | **配信中**（レイアウト変更なし。状態/AI のみブリッジ） |
 | Local PostgreSQL | Migration / Seed / Read・Write / Backup-Restore 検証済み |
 | API | Fastify。認証（local / Cloudflare Access）、案件、引継ぎ、解決、ナレッジ、監査、状態保存、実PC情報、AI |
-| Tests | **72 tests 成功**（Unit / API integration / Worker / UI / Access / 許可リスト / 実PC情報・エージェント） |
+| Tests | **74 tests 成功**（Unit / API integration / Worker / UI / Access / 許可リスト / 実PC情報・エージェント） |
 | 実PC情報 | **ブラウザ取得 + 端末エージェント**（読み取りのみ。導入ソフトはエージェント） |
 | Cloudflare Preview | **公開中**（Tunnel + Access。OTP ログイン画面を確認） |
 | Access 許可メール | **設定済み**（`docs/MailAddress.txt` + Cloudflare allow ポリシー） |
 | Access OTP ログイン | **確認済み**（2026-10-23 15:32 JST / `onetimepin` / `allowed=true`） |
 | DeepSeek API キー | **設定済み・実回答確認済み**（`provider: deepseek` / `model: deepseek-flash` = V4.1-Flash） |
+| AI用KB | **9件**（共有フォルダ / Teams / 印刷 / VPN / PC性能 / Windows Update / BitLocker / Defender / ソフト導入） |
 | CI | **Blocker**（policy gate が `.github/workflows/` を拒否） |
 
 ## 主要 3 Flow
@@ -101,7 +102,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\windows\install-collector-tas
 - ログ: `%LOCALAPPDATA%\AIHelpDesk\collector.log`
 - 手動実行: `Start-ScheduledTask -TaskName AIHelpDesk-Collector`
 - 多数PCへ配布する場合は、GPO / Intune のログオンスクリプトから同じインストーラを実行する（PCごとの手作業なし）。
-- 管理者権限が必要な環境では PowerShell を管理者として実行してください。
+- 管理者権限が必要な環境では PowerShell を管理者として実行してください。BitLockerのオン/オフも表示する場合は、管理者PowerShellで `-Elevated` を付けて登録する。
 
 - 収集: OS / CPU / メモリ / ディスク / GPU / ネットワーク / プリンター / 音声 / USB / 導入ソフト / セキュリティ状態。
 - 非収集: ファイル内容 / 閲覧履歴 / 画面 / キー入力 / メール本文。
@@ -134,13 +135,13 @@ AUTH_MODE=cloudflare-access ACCESS_ALLOWLIST_FILE=docs/MailAddress.txt \
 ```bash
 npm run typecheck   # API + worker
 npm run lint
-npm test            # 72 tests（PostgreSQL テスト DB）
+npm test            # 74 tests（PostgreSQL テスト DB）
 npm run build
 bash scripts/scan-secrets.sh
 npm audit --omit=dev --audit-level=high
 ```
 
-実測: TypeCheck ✅ / Lint ✅（error 0）/ 72 tests ✅ / Build ✅ / Secret scan ✅ / npm audit 0 vulnerabilities。
+実測: TypeCheck ✅ / Lint ✅（error 0）/ 74 tests ✅ / Build ✅ / Secret scan ✅ / npm audit 0 vulnerabilities。
 
 ## ドキュメント
 

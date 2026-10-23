@@ -88,7 +88,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\windows\install-collector-tas
 - 手動: `Start-ScheduledTask -TaskName AIHelpDesk-Collector`。
 - 停止: `Unregister-ScheduledTask -TaskName AIHelpDesk-Collector -Confirm:$false`。
 - 多数PCへは GPO / Intune のログオンスクリプトで配布する（PCごとの手作業なし）。
-- 検証: PowerShell 構文・`-DryRun`・API送信（35項目）を Linux の pwsh で確認済み。Windows の CIM / BitLocker / Defender 取得はWindows実機で `-DryRun -PrintJson` を実行して確認する。
+- 検証: PowerShell 構文・`-DryRun`・API送信（35項目）を Linux の pwsh で確認済み。Windows実機では CIM / Defender の取得を確認済み。BitLocker は実行ユーザーの権限で未検出になるため、管理者PowerShellで `-Elevated` を付けて再登録する。
 - **方式の限界**: ブラウザだけではインストールソフト・Windows 11 Pro のエディションは取得できない。PC側で CLI を動かす必要がある（常駐でなくてよい）。サーバーから WinRM で取りに行く方式は、NAT / Cloudflare 配下のクライアントには届かないため、本環境では採用しない。
 
 ## 1. 目標構成

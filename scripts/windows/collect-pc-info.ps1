@@ -197,6 +197,7 @@ try {
 
   $defender = Get-Safe { Get-MpComputerStatus -ErrorAction Stop }
   $bitlocker = Get-ArraySafe { Get-BitLockerVolume -ErrorAction Stop }
+  $encryptable = Get-ArraySafe { Get-CimInstance -Namespace 'root\cimv2\Security\MicrosoftVolumeEncryption' -ClassName Win32_EncryptableVolume -ErrorAction Stop }
   $hotfix = Get-Safe { Get-HotFix -ErrorAction Stop | Sort-Object InstalledOn -Descending | Select-Object -First 1 }
   $recentErrors = Get-Safe {
     (Get-WinEvent -FilterHashtable @{ LogName = 'System'; Level = 1, 2; StartTime = (Get-Date).AddDays(-1) } -ErrorAction SilentlyContinue | Measure-Object).Count
@@ -213,6 +214,9 @@ try {
 
   $bitlockerEnabled = if ($bitlocker.Count -gt 0) {
     [bool](@($bitlocker | Where-Object { [string]$_.ProtectionStatus -match '^(On|1)$' }).Count -gt 0)
+  } elseif ($encryptable.Count -gt 0) {
+    # 非管理者でも Win32_EncryptableVolume から保護状態を取得できる場合がある。
+    [bool](@($encryptable | Where-Object { [string]$_.ProtectionStatus -match '^(1|On)$' }).Count -gt 0)
   } else { $null }
   $diskEncryption = if ($null -ne $bitlockerEnabled) {
     [ordered]@{ enabled = $bitlockerEnabled; detail = 'BitLocker' }

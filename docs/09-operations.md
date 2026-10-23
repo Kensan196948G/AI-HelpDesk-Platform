@@ -131,7 +131,7 @@ Unregister-ScheduledTask -TaskName AIHelpDesk-Collector -Confirm:$false
 
 - 常駐プロセスは持たない。ログオン時と60分ごとに `collect-pc-info.ps1` が1回実行される。
 - 失敗時は `collector.log` と `-DryRun -PrintJson` で確認する。秘密値（トークン）はログへ出さない。
-- BitLocker の状態は管理者権限が必要な場合がある。タスク実行ユーザーでは「未検出」になることがあるので、必要なら管理者として `collect-pc-info.ps1` を手動実行する。
+- BitLocker の状態は管理者権限が必要な場合がある。タスク実行ユーザーでは「未検出」になることがある。管理者PowerShellで `install-collector-task.ps1 -Elevated` を実行すると、タスクが最高権限で登録されオン/オフを取得できる。
 - 多数PCへは GPO / Intune のログオンスクリプトで同じインストーラを実行する。
 
 ## 7. 既知の運用制約

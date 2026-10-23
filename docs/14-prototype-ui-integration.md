@@ -136,7 +136,8 @@
 | エージェント公開経路 | `https://.../api/device/agent` へ 200（Access bypass + デバイストークン） |
 | UI ウィザード STEP 1〜3 | 種類選択 → 内容入力 → AI一次対応まで実操作。ページエラー 0 |
 | DeepSeek モデル | `provider: deepseek` / `model: deepseek-flash`（V4.1-Flash） / 確信度 高 |
-| 自動テスト | **72 tests 成功**（UI/Access/許可リスト/state/AI/実PC情報/エージェント/ブリッジ） |
+| AI 一次切り分け | Windows 11 Pro / i5-9500 / 31.8GB / 273ソフトを根拠に、KB-2026-0005（性能）/ 0006（更新）/ 0007（BitLocker）/ 0008（Defender）の手順を返す |
+| 自動テスト | **74 tests 成功**（UI/Access/許可リスト/state/AI/実PC情報/エージェント/ブリッジ/KB検索） |
 
 証跡: `docs/evidence/access-login.png` / `docs/evidence/preview-home-local-access-header.png` / `docs/evidence/preview-wizard-step3.png` / `docs/evidence/preview-deepseek-answer.png`
 

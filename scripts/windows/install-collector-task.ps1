@@ -16,6 +16,7 @@
 param(
   [string]$ConfigPath = (Join-Path $env:USERPROFILE '.config\ai-helpdesk\device-agent-windows.json'),
   [int]$IntervalMinutes = 60,
+  [switch]$Elevated,
   [switch]$NoStart
 )
 
@@ -55,18 +56,20 @@ try {
     -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Minutes 10) `
     -MultipleInstances IgnoreNew
 
+  $runLevel = if ($Elevated) { 'Highest' } else { 'Limited' }
   Register-ScheduledTask -TaskName $taskName -Action $action `
     -Trigger @($logonTrigger, $repeatTrigger) -Settings $settings `
     -Description 'AI HelpDesk 端末情報コレクタ（読み取り専用・常駐なし）' `
-    -RunLevel Limited -Force | Out-Null
+    -RunLevel $runLevel -Force | Out-Null
 
   if (-not $NoStart) {
     Start-ScheduledTask -TaskName $taskName
   }
 
-  Write-Output ('[install] task={0} interval={1}min config={2}' -f $taskName, [Math]::Max(5, $IntervalMinutes), $configTarget)
+  Write-Output ('[install] task={0} interval={1}min runLevel={2} config={3}' -f $taskName, [Math]::Max(5, $IntervalMinutes), $runLevel, $configTarget)
   Write-Output ('[install] log={0}' -f (Join-Path $targetDir 'collector.log'))
   Write-Output '[install] 手動実行: Start-ScheduledTask -TaskName AIHelpDesk-Collector'
+  if ($Elevated) { Write-Output '[install] BitLocker 等の管理者権限が必要な情報も取得します。' }
 } catch {
   Write-Error ('[install] ERROR ' + $_.Exception.Message)
   exit 1

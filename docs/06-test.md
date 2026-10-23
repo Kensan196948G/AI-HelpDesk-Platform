@@ -37,7 +37,7 @@ npx tsx scripts/seed.ts
 |---|---|---|
 | TypeCheck（API） | ✅ 成功 | `tsc --noEmit` |
 | Lint / Format | ✅ 成功 | Biome。warning 27（non-null assertion 等）、error 0 |
-| Unit test | ✅ 61 件成功 | PII / signal / audit / PC / AI / password / Worker / Access / 許可リスト / 実PC情報 / 端末エージェント / ブリッジ |
+| Unit test | ✅ 63 件成功 | PII / signal / audit / PC / AI / password / Worker / Access / 許可リスト / 実PC情報 / 端末エージェント / ブリッジ |
 | Integration test | ✅ 11 件成功 | 主要 3 Flow、セキュリティ、権限、UI 配信、state、AI |
 | API Build | ✅ 成功 | `apps/api/dist` を生成 |
 | Dependency audit（runtime） | ✅ 0 vulnerabilities | `npm audit --omit=dev --audit-level=high` |
@@ -48,9 +48,12 @@ npx tsx scripts/seed.ts
 | Access 許可リスト | ✅ | `docs/MailAddress.txt` から 2 件（完全一致 1 / ドメイン 1）。例示 typo は拒否、欠落・空は 403（fail-closed） |
 | 実PC情報（ブラウザ） | ✅ | `POST /api/device/browser` 200 / 35 項目 / OS・CPU 8 コア・16GB・Chrome 141・GPU |
 | 実PC情報（エージェント） | ✅ | Linux 実機で `POST /api/device/agent` 200 / 300 ソフト / 16 コア・30.8GB / 更新 92 件 |
-| 端末エージェント（PowerShell） | ✅ | Linux pwsh で構文・`-DryRun`・API送信（35項目）。Windows実機の CIM / Defender / BitLocker 取得は未検証 |
+| 端末エージェント（PowerShell） | ✅ | Linux pwsh で構文・`-DryRun`・API送信。Windows実機で Windows 11 Pro / i5-9500 / 32GB / 273ソフト / Defender を取得。BitLocker はタスク実行ユーザー権限で未検出（`-Elevated` で対応） |
 | 端末分離 | ✅ | ブラウザ Windows 11 と別端末 Ubuntu agent を分離。未リンク agent はブラウザを上書きしない（自動テスト） |
-| AI の PC コンテキスト | ✅ | `provider: deepseek` / `model: deepseek-flash` / `device.source: browser` / 16GB・8 コアを回答に反映 |
+| AI の PC コンテキスト | ✅ | `provider: deepseek` / `model: deepseek-flash` / `device.source: agent` / Windows 11 Pro・i5-9500・31.8GB・273ソフトを回答に反映 |
+| AI 一次切り分け（PC性能） | ✅ | KB-2026-0005 を根拠に、タスクマネージャー・空き容量・再起動・引継ぎの手順を返す |
+| AI 一次切り分け（BitLocker / Defender / 更新） | ✅ | KB-2026-0007 / 0008 / 0006 を根拠に、読み取り確認とエスカレーション手順を返す |
+| KB検索の専門語優先 | ✅ | 「手順」等の一般語より「BitLocker」等の専門語一致を優先（knowledge-search.test.ts 2件） |
 | エージェント公開経路 | ✅ | `https://.../api/device/agent` へ 200（Access bypass + デバイストークン） |
 | OTP 実ログイン | ✅ | 2026-10-23 15:32 JST / Access ログ `Mirai AI HelpDesk MVP` / `onetimepin` / `allowed=true` |
 | 公開 URL | ✅ | 302 → Cloudflare Access OTP ログイン画面 |
@@ -59,8 +62,8 @@ npx tsx scripts/seed.ts
 | E2E（UI） | ⏸ 一部 | UI 配信・状態・H.kb を Playwright で確認。全 STEP の E2E は未実施 |
 
 ```
-Test Files  16 passed (16)
-Tests       72 passed (72)
+Test Files  17 passed (17)
+Tests       74 passed (74)
 ```
 
 ## 4. Integration test が見ているもの

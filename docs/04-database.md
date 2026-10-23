@@ -72,7 +72,7 @@ users 1 ──< device_tokens (user_email)
 - 再実行可能（`ON CONFLICT DO NOTHING` / `WHERE NOT EXISTS`）。**TRUNCATE / DROP を使わない**。
 - 内容:
   - ユーザー 6 名（相談者 3 / ヘルプデスク 2 / 承認者 1）。パスワードは `SEED_PASSWORD` を scrypt でハッシュ化。
-  - 承認済みナレッジ 4 件（共有フォルダ / Teams 音声 / 印刷 / VPN）。
+  - 承認済みナレッジ 9 件（共有フォルダ / Teams 音声 / 印刷 / VPN / PC性能 / Windows Update / BitLocker / Defender / ソフト導入）。
   - デモ案件 3 件（完了・ナレッジ公開済 1、VPN 対応中 1、セキュリティ赤 1）。
   - TKT/INC、解決記録、PC 基本情報（Seed はデモ 31 項目）、メッセージ、監査ログ 1 件。実運用の PC 情報は `device_inventories` から生成する。
 - シーケンスは既存の最大値より後ろへ進める（再 Seed で衝突しない）。
