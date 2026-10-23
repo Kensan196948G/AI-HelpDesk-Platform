@@ -288,14 +288,14 @@ powershell -ExecutionPolicy Bypass -File .\scripts\windows\install-collector-tas
 - [Database](docs/04-database.md) / [API](docs/05-api.md) / [Test](docs/06-test.md)
 - [Security](docs/07-security.md) / [Deployment](docs/08-deployment.md) / [Operations](docs/09-operations.md)
 - [受入照合](docs/11-acceptance.md) / [Round Log](docs/12-round-log.md) / [Blocker 報告](docs/13-blocked-report.md)
-- [最終報告書](docs/21-final-report-export.md) / [STEP5 引継ぎと遠隔支援](docs/22-remote-assist-handover.md) / [RSP / MeshCentral 連携設計](docs/23-rsp-meshcentral-integration.md)
+- [既存 UI の適用](docs/14-prototype-ui-integration.md) / [AI 検証計画](docs/15-ai-verification-test-plan.md) / [端末コマンド実行](docs/19-device-command-execution.md) / [社員名簿](docs/20-employee-directory.md)
 
 ### 既知の制約
 
 - UI の全 STEP E2E（ウィザード全 STEP・ヘルプデスク・ナレッジ承認）は未実施です。
 - 端末エージェントは 1 ユーザー 1 端末（source 単位）の MVP です。複数端末の同時管理は未対応です。
-- 遠隔支援は同じログイン内のデモです。別ログイン間の案件共有・通知・画面共有（MeshCentral 等）は未実装です（[docs/22](docs/22-remote-assist-handover.md) §12）。
-- 最終報告書は画面の状態から生成します。サーバー側の案件台帳との突合・電子署名は未実装です（[docs/21](docs/21-final-report-export.md) §7-1）。
+- 遠隔支援は同じログイン内のデモです。別ログイン間の案件共有・通知・画面共有（MeshCentral 等）は未実装です。
+- 最終報告書は画面の状態から生成します。サーバー側の案件台帳との突合・電子署名は未実装です。
 - 添付実体・端末修復実行・外部ヘルプデスク基盤連携・SSO は対象外です。
 - アクセス制御の正本は [docs/MailAddress.txt](docs/MailAddress.txt)。空・不存在の場合は **全拒否**（fail-closed）です。
   Cloudflare Access の allow ポリシーと同じ内容に保ち、変更時は両方を更新して API を再起動してください。
