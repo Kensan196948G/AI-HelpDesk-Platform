@@ -107,6 +107,8 @@
 |---|---|---|---|
 | GET | `/` / `/index.html` | Access 認証 | 既存プロトタイプ HTML を配信（boot / bridge 注入） |
 | GET | `/api/state` | Access 認証 | `{email, cowork, helpdesk}` を取得 |
+| GET | `/api/me` | Access 認証 | ログイン本人の社員情報（氏名・所属・社員番号のみ。**メールは返さない**）。60 回/分 |
+| GET | `/api/employees?scope=staff\|all` | Access 認証 | 社員名簿（`all`=445 / `staff`=5）。氏名・所属・社員番号のみ。60 回/分 |
 | PUT | `/api/state/:name` | Access 認証 | `cowork` / `helpdesk` の状態を保存（最大 4MB） |
 | POST | `/api/ai/answer` | Access 認証 | 承認済みナレッジ + PC 情報 + DeepSeek-V4.1-Flash（未設定時フォールバック）。利用者単位 20 回/分（超過 429） |
 

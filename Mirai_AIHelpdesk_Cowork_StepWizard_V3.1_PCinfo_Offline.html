@@ -2570,9 +2570,10 @@ function shortOrgOf(e){
 }
 function realLabelOf(e){return shortOrgOf(e).concat(e.name).filter(Boolean).join(' / ')}
 function empIdOf(empNo){return EMP_PREFIX+empNo}
-function ensureRealUser(empNo,role){
- const d=realDir();if(!d||!empNo)return null;
- const e=d.all.find(x=>x.employeeNo===empNo);if(!e)return null;
+function ensureRealUser(empNo,role,fallback){
+ const d=realDir();
+ const e=(d&&d.all.find(x=>x.employeeNo===empNo))||fallback||null;
+ if(!empNo||!e)return null;
  const id=empIdOf(empNo),prev=USERS[id]||{},r=role||prev.role||'employee';
  USERS[id]=Object.assign({},prev,{id,name:e.name,employeeNo:empNo,real:true,role:r,dept:realDeptOf(e),
   title:shortOrgOf(e).join('／')||ROLES[r],device:prev.device||('MRK-'+empNo),hd:e.name});
@@ -2726,6 +2727,42 @@ function restoreRealUser(){
  if(!r||!r.employeeNo||!realDir())return;
  const id=ensureRealUser(r.employeeNo,r.role);
  if(id)S.ui.user=id;
+}
+
+/* ============ ログインした本人を自動選択（/api/me） ============
+   決定（2026-10-23）: サーバ側で解決 / 保存済みの選択が無い初回のみ /
+   DX推進部は一般社員を既定にし、前回その人が選んだ役割を記憶する。 */
+let _selfTried=false;
+function noteSelfMissing(){
+ try{
+  const email=String((window.__AIHD_BOOT__&&window.__AIHD_BOOT__.email)||'').toLowerCase();
+  if(!/@mirai-const\.co\.jp$/.test(email))return;      // 社外（デモ用）は黙って従来どおり
+  if(sessionStorage.getItem('aihd.me.miss'))return;
+  sessionStorage.setItem('aihd.me.miss','1');
+  toast('社員名簿に一致する情報が見つかりませんでした。操作する人を選んでください','bad');
+ }catch(e){}
+}
+async function autoSelectSelf(){
+ if(_selfTried)return;_selfTried=true;
+ if(typeof S==='undefined'||!S||!S.ui)return;
+ if(S.ui.personaChosen)return;                         // 本人が切り替えた後は上書きしない
+ if(S.ui.real&&S.ui.real.employeeNo)return;            // 保存済みの選択を優先
+ try{
+  const r=await fetch('/api/me',{headers:{Accept:'application/json'}});
+  if(!r.ok)return;
+  const j=await r.json();
+  const e=j&&j.employee;
+  if(!e||!e.employeeNo){noteSelfMissing();return}
+  const role=(S.ui.roles&&S.ui.roles[e.employeeNo])||'employee';
+  const id=ensureRealUser(e.employeeNo,role,e);
+  if(!id)return;
+  S.ui.user=id;
+  S.ui.real={employeeNo:e.employeeNo,role};
+  syncHdActor();
+  if(!canView(S.ui.view))S.ui.view=homeView();
+  auditAdd(S,id,'persona_switch',{auto:true});
+  S.ui.chat=null;ensureChat();save();renderSide();renderTop();renderView();
+ }catch(error){/* 名簿が引けないときは従来どおり手動選択 */}
 }
 const uname=id=>USERS[id]?USERS[id].name:(id==='system'?'システム':id==='agent'?'PCエージェント':id);
 const TIPS={
@@ -4000,7 +4037,7 @@ function applyProfiles(){if(!S||!S.profiles)return;for(const [id,p] of Object.en
 function init(){load();applyProfiles();restoreRealUser();applyTheme();uxFindBind();
  document.addEventListener('click',e=>{const el=e.target.closest('[data-act]');if(!el){const m=$('#attmenu');if(m&&!e.target.closest('.attwrap'))m.classList.add('hide');return}const f=ACT[el.dataset.act];if(f){if(el.dataset.act!=='closeModalBg')e.preventDefault();f(el.dataset,el,e)}});
  document.addEventListener('change',e=>{const t=e.target;
-  if(t.id==='persona'){const next=applyPersonaValue(t.value);if(!next){toast('選択した社員を名簿から取得できませんでした','bad');renderTop();renderView();return}S.ui.user=next;syncHdActor();if(!canView(S.ui.view))S.ui.view=homeView();auditAdd(S,next,'persona_switch',{});S.ui.chat=null;ensureChat();UI.pending=[];UI.stick=true;save();renderSide();renderTop();renderView();toast(me().name+'（'+ROLES[me().role]+'）に切り替えました')}
+  if(t.id==='persona'){const next=applyPersonaValue(t.value);if(!next){toast('選択した社員を名簿から取得できませんでした','bad');renderTop();renderView();return}S.ui.user=next;S.ui.personaChosen=true;const su=USERS[next];if(su&&su.real){S.ui.roles=S.ui.roles||{};S.ui.roles[su.employeeNo]=su.role}syncHdActor();if(!canView(S.ui.view))S.ui.view=homeView();auditAdd(S,next,'persona_switch',{});S.ui.chat=null;ensureChat();UI.pending=[];UI.stick=true;save();renderSide();renderTop();renderView();toast(me().name+'（'+ROLES[me().role]+'）に切り替えました')}
   else if(t.id==='model'){S.ui.model=t.value;save();toast(t.value==='external'?'外部AI（模擬）：機密区分は送信できません':'社内ローカルLLM（模擬）を使用します')}
   else if(t.dataset.chg==='cls'){const a=UI.pending.find(x=>x.id===t.dataset.id);if(a)a.cls=t.value}
   else if(t.dataset.chg==='failNext'){S.failNext=t.checked;save();toast(t.checked?'次の実行は失敗します（異常系テスト）':'異常系テストを解除')}
@@ -4011,7 +4048,7 @@ function init(){load();applyProfiles();restoreRealUser();applyTheme();uxFindBind
  document.addEventListener('keydown',e=>{if(e.target.id==='inp'&&e.key==='Enter'&&!e.shiftKey&&!e.isComposing&&e.keyCode!==229){e.preventDefault();send()}if(e.key==='Escape')closeModal()});
  document.addEventListener('scroll',e=>{if(e.target&&e.target.id==='msgs'){const b=e.target;UI.stick=b.scrollHeight-b.scrollTop-b.clientHeight<80}},true);
  window.addEventListener('resize',()=>renderTop());
- ensureChat();save();renderSide();renderTop();renderView()}
+ ensureChat();save();renderSide();renderTop();renderView();autoSelectSelf()}
 /* 社員名簿（Mirai-Info）の読み込みが終わったら、保存していた選択を復元して作り直す。 */
 window.addEventListener('aihd-employees',()=>{try{restoreRealUser();if(!canView(S.ui.view))S.ui.view=homeView();_personaCache={sig:'',html:''};renderSide();renderTop();renderView()}catch(error){}});
 if(typeof document!=='undefined'&&document.getElementById('app'))init();

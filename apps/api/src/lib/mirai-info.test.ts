@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { filterStaff } from './mirai-info.js';
+import { filterStaff, pickUniqueEmployee } from './mirai-info.js';
 
 describe('filterStaff', () => {
   it('DX推進部の社員だけを返す', () => {
@@ -13,5 +13,21 @@ describe('filterStaff', () => {
 
   it('DX推進部がなければ空', () => {
     expect(filterStaff([{ employeeNo: 'MK0002', name: 'B', section: '総務部' }])).toEqual([]);
+  });
+});
+
+describe('pickUniqueEmployee', () => {
+  const row = { employeeNo: 'MK0001', name: 'A' };
+
+  it('1件だけなら返す', () => {
+    expect(pickUniqueEmployee([row])?.employeeNo).toBe('MK0001');
+  });
+
+  it('0件なら null', () => {
+    expect(pickUniqueEmployee([])).toBeNull();
+  });
+
+  it('2件以上（重複メール）は安全側で null', () => {
+    expect(pickUniqueEmployee([row, { employeeNo: 'MK0002', name: 'B' }])).toBeNull();
   });
 });
