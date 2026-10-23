@@ -287,11 +287,21 @@ function diskLabel(hardware: DeviceHardware): { value: string; level: DeviceLeve
 function securityItems(
   security: DeviceSecurity,
   hasAgent: boolean,
+  platform?: string,
 ): Array<{ key: string; k: string; v: string; lv: DeviceLevel; note: string; tag: string }> {
   const unavailable = hasAgent ? '未検出（エージェント）' : '未取得（エージェント未導入）';
   const unavailableNote = hasAgent
     ? '端末上で検出できませんでした'
     : 'エージェントを導入すると確認できます';
+  const platformText = (platform ?? '').toLowerCase();
+  const updateLabel =
+    platformText.includes('linux') ||
+    platformText.includes('ubuntu') ||
+    platformText.includes('debian')
+      ? 'OS 更新（apt）'
+      : platformText.includes('mac')
+        ? 'macOS 更新'
+        : 'Windows Update';
   const antivirus = security.antivirus;
   const antivirusValue = antivirus
     ? antivirus.enabled === false
@@ -324,7 +334,7 @@ function securityItems(
     },
     {
       key: 'windows_update',
-      k: 'Windows Update',
+      k: updateLabel,
       v: update
         ? typeof update.pending === 'number' && update.pending > 0
           ? `更新 ${update.pending}件が再起動待ち`
@@ -354,7 +364,7 @@ export function buildDeviceSnapshotItems(inventory: DeviceInventoryData): Device
   const disks = diskLabel(hw);
   const vpn = vpnLabel(hw);
   const gpu = hw.gpu?.[0];
-  const security = securityItems(inventory.security, hasAgent);
+  const security = securityItems(inventory.security, hasAgent, inventory.platform ?? inventory.os);
   const printers = hw.printers ?? [];
   const audioDevices = hw.mediaDevices?.audioOutput ?? 0;
   const installedCount = software.length;
@@ -966,7 +976,7 @@ export function buildDeviceAiContext(inventory: DeviceInventoryData, question: s
     `- GPU: ${hw.gpu?.[0] ? join([hw.gpu[0].vendor, hw.gpu[0].name], '取得済み') : '未取得'}`,
     `- ネットワーク: ${networkLabel(hw.network)} / VPN: ${vpnLabel(hw).value}`,
     `- セキュリティ: ウイルス対策=${inventory.security.antivirus ? (inventory.security.antivirus.enabled === false ? '無効' : '有効') : '未取得'} / ディスク暗号化=${inventory.security.diskEncryption ? (inventory.security.diskEncryption.enabled === false ? '無効' : '有効') : '未取得'} / 更新待ち=${inventory.security.windowsUpdate?.pending ?? '未取得'}`,
-    `- 導入ソフト（関連）: ${software.length > 0 ? '' : '未取得'}`,
+    `- 導入ソフト: ${inventory.source === 'agent' ? `${inventory.software.length}件` : '未取得'}（関連 ${software.length}件）`,
     ...softwareLines,
     concerns.length > 0
       ? `- 気になる点: ${concerns.map((item) => `${item.k}=${item.v}`).join(' / ')}`
