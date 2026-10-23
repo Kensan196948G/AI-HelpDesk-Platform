@@ -13,7 +13,18 @@ import {
   mergeCaseSnapshot,
   normalizeState,
 } from '../lib/case-handover.js';
-import { type EmployeeRow, findEmployeeByEmail, listEmployees } from '../lib/mirai-info.js';
+import {
+  enqueueHandoverNotifications,
+  flushHandoverNotifications,
+  resolveConfiguredRecipients,
+} from '../lib/handover-notify.js';
+import { getMailTransport } from '../lib/mailer.js';
+import {
+  type EmployeeRow,
+  findEmployeeByEmail,
+  findEmployeeEmailByNo,
+  listEmployees,
+} from '../lib/mirai-info.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
 
 const CaseIdSchema = z.string().trim().min(1).max(40);
@@ -91,6 +102,17 @@ async function requireHelpdesk(email: string): Promise<void> {
   if (!employee || employee.section !== 'DX推進部') {
     throw forbidden('この操作は DX 推進部（ヘルプデスク）のみ利用できます。');
   }
+}
+
+/**
+ * 通知先の解決。社員番号からメールアドレスを引く（サーバー内のみ）。
+ * 名簿に無い・重複する場合は送らない。
+ */
+async function resolveRecipientForNotify(
+  employeeNo: string,
+): Promise<{ email: string; name: string }[]> {
+  const found = await findEmployeeEmailByNo(employeeNo);
+  return found ? [found] : [];
 }
 
 async function loadStates(email: string): Promise<{
@@ -233,15 +255,54 @@ export async function caseHandoverRoutes(app: FastifyInstance): Promise<void> {
         )
         RETURNING id
       `;
+      const handoverId = rows[0]?.id;
+
+      // 通知は best-effort。メールが失敗しても引継ぎは成功させる。
+      let queued = 0;
+      const transport = getMailTransport();
+      if (handoverId && transport.name !== 'disabled') {
+        try {
+          const recipients = recipient
+            ? await resolveRecipientForNotify(recipient.employeeNo)
+            : resolveConfiguredRecipients();
+          if (recipients.length > 0) {
+            queued = await enqueueHandoverNotifications(
+              {
+                handoverId,
+                caseId: body.caseId,
+                subject: String(snapshot.case.subject ?? snapshot.case.body ?? ''),
+                requester: String(
+                  snapshot.inc?.requester ??
+                    snapshot.ticket?.requester ??
+                    snapshot.case.userId ??
+                    '',
+                ),
+                recipientName: recipient?.name ?? null,
+              },
+              recipients,
+            );
+            if (queued > 0) {
+              // 応答を待たせない（失敗はワーカーが再試行する）。
+              void flushHandoverNotifications({ transport }).catch((error: unknown) => {
+                request.log.warn({ err: error }, '引継ぎ通知の初回送信に失敗しました。');
+              });
+            }
+          }
+        } catch (error) {
+          request.log.warn({ err: error }, '引継ぎ通知の登録に失敗しました。');
+        }
+      }
+
       return {
         ok: true,
         handover: {
-          id: rows[0]?.id,
+          id: handoverId,
           caseId: body.caseId,
           status: 'pending',
           recipientNo: recipient?.employeeNo ?? null,
           recipientName: recipient?.name ?? null,
         },
+        notify: { queued, transport: transport.name },
       };
     },
   );

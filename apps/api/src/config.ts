@@ -78,6 +78,22 @@ const EnvSchema = z.object({
   // RSP / MeshCentral（B さんの GUI / PowerShell 操作の既存基盤）。
   MESHCENTRAL_URL: z.string().url().default('https://mesh.mirai-remotetools.com/'),
   RSP_BASE_URL: z.string().url().default('https://rsp.mirai-remotetools.com/'),
+
+  // --- 引継ぎのメール通知 -------------------------------------------------
+  // auto: SMTP_HOST があれば smtp、無ければ disabled（sendmail は明示指定）。
+  // テスト（NODE_ENV=test）は既定で disabled（実メールを送らない）。
+  MAIL_TRANSPORT: z.enum(['auto', 'smtp', 'sendmail', 'disabled']).default('auto'),
+  MAIL_FROM: optionalText,
+  SMTP_HOST: optionalText,
+  SMTP_PORT: z.coerce.number().int().positive().default(587),
+  SMTP_SECURE: z.enum(['true', 'false']).default('false'),
+  SMTP_USER: optionalText,
+  SMTP_PASS: optionalText,
+  // 宛先を個人指名しなかったときの通知先（カンマ区切り。グループ受信箱など）。
+  HANDOVER_NOTIFY_EMAIL: z.string().default(''),
+  // メールに載せる画面の URL（受信箱がある画面）。
+  NOTIFY_BASE_URL: z.string().url().default('https://ai-helpdesk.mirai-dx-platform.com'),
+  NOTIFY_INTERVAL_MS: z.coerce.number().int().positive().default(30000),
 });
 
 const parsed = EnvSchema.safeParse(process.env);

@@ -315,6 +315,29 @@ API:
 
 再現: `AIHD_E2E_ALLOW=1` とサービス用 `DATABASE_URL` を設定して `node scripts/e2e/two-account-handover.mjs`（実在社員の状態はバックアップ後に復元する）。
 
+### 9-6. 引継ぎのメール通知（2026-10-24 追加）
+
+引継ぎが作られたら、受信箱へメールで知らせる（受信箱を開くまで気づけない問題への対応）。
+
+| 項目 | 内容 |
+|---|---|
+| 宛先 | 個人指名あり → **その社員のメールアドレス**（`mirai_info` の名簿からサーバー内で解決。API には返さない）／指名なし → `HANDOVER_NOTIFY_EMAIL`（グループ受信箱） |
+| 送信 | 引継ぎ作成と同時に **送信キュー**（`case_handover_notifications`）へ積み、バックグラウンドのワーカーが送る（既定 30 秒間隔） |
+| 失敗時 | 引継ぎ自体は成功させる（best-effort）。最大 5 回まで再試行し、それ以上は `failed` として残す |
+| 本文 | 案件 ID・件名・依頼者・受付時刻・URL のみ。**相談の本文や PC 情報は載せない**（個人情報保護） |
+| 件名・宛先 | 改行を除去してヘッダーインジェクションを防ぐ。日本語は RFC 2047 で符号化 |
+| 送信手段 | `smtp`（nodemailer）/ `sendmail`（msmtp 等・明示指定）/ `disabled`。`auto` は SMTP 設定があるときだけ有効で、未設定なら **無効**（キューも積まない） |
+| テスト | `NODE_ENV=test` では既定で無効（実メールを送らない） |
+
+実測（2026-10-24、ローカル SMTP シンク + 一時インスタンス）: 共有 → キュー 1 件 → ワーカーが送信 →
+シンクが 1 通受信（宛先・案件 ID・件名・自動送信の注記を確認、相談本文は不含）。個人指名でも
+指名された担当者のアドレスへ届くことを確認（9/9 OK）。再現: `scripts/dev-smtp-sink.mjs` と
+`AIHD_E2E_ALLOW=1 node scripts/e2e/handover-notify.mjs`。
+
+本番で有効にするには `~/.config/ai-helpdesk/api.conf` に `MAIL_TRANSPORT` / `SMTP_HOST` /
+`SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` / `MAIL_FROM`（必要なら `HANDOVER_NOTIFY_EMAIL`）を設定し、
+`systemctl --user restart ai-helpdesk-api` する。
+
 注意:
 
 - マージは ID（CASE / TKT / INC / DR / KB）で upsert する。B さんの `ui.user` / `helpdesk.actor` は上書きしない。

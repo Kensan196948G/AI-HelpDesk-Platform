@@ -258,6 +258,18 @@
 - 実装: `apps/api/src/lib/case-handover.ts`（スナップショット抽出・マージ）、`apps/api/src/routes/case-handovers.ts`、`db/migrations/007` / `008`、`assist-bridge.js`。
 - テスト: 単体 5 件 + 統合 3 件（共有 → 受信箱 → 引き受け → マージ → AI 追加質問 → 再共有で進行中 1 件 → 名簿外の宛先拒否 → 引き受け前承認 409 → 承認で completed → 承認なしの completed を 409 で拒否）。
 
+## Round 27 — 引継ぎのメール通知（2026-10-24）
+
+- 引継ぎが作られたら、受信箱へメールで知らせるようにした（受信箱を開くまで気づけない問題への対応）。
+- 実装: `apps/api/src/lib/mailer.ts`（smtp / sendmail / disabled の切替、RFC 2047・ヘッダーインジェクション対策）、
+  `apps/api/src/lib/handover-notify.ts`（文面・キュー・再試行ワーカー）、`db/migrations/009_handover_notifications.sql`。
+- 宛先は「個人指名 → 名簿のメールアドレス（サーバー内のみ）／指名なし → `HANDOVER_NOTIFY_EMAIL`」。
+  メールアドレスは API レスポンスに返さない。
+- 本文は案件 ID・件名・依頼者・受付時刻・URL のみ。相談本文・PC 情報は載せない。
+- メール失敗で引継ぎを失敗させない（キューに積み、最大 5 回再試行）。`NODE_ENV=test` は既定で無効。
+- 検証: 単体 6 件 + 統合 6 件。ローカル SMTP シンクと一時インスタンスで **9/9 OK**（グループ宛・個人指名宛の両方）。
+- 本番で有効にするには SMTP 設定（`MAIL_TRANSPORT` ほか）とサービス再起動が必要。設定が無い間は無効（キューも積まない）。
+
 ## 現在の Evidence
 
 | 項目 | 結果 |
