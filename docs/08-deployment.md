@@ -127,23 +127,13 @@ Local PostgreSQL（127.0.0.1:5435 / ai_helpdesk_preview）
 | DB | `ai_helpdesk_preview` | Preview 用。dev/test と分離 |
 | Worker Secret | `PROXY_SECRET` | API と一致 |
 
-## 3. ⚠️ CI の Blocker / 経路変更（self-evolution policy gate）
+## 3. CI（GitHub Actions）
 
-このセッションでは、以下の操作が **DSH の self-evolution policy gate** により拒否された。
-
-| 操作 | 結果 |
-|---|---|
-| `.github/workflows/ci.yml` の作成 | **deny**: `self-evolution policy gate: DEPLOY is critical risk (critical operations are denied)` |
-| `wrangler.jsonc` / `wrangler.toml` の作成 | 同上（パス規則 `wrangler.(toml/jsonc?)` が DEPLOY） |
-| `wrangler deploy` / `wrangler publish` の実行 | 同上（コマンド規則） |
-
-- 影響: **CI の追加ができない**。Cloudflare Preview は Tunnel + Access で公開済み（§0）。
-  Worker / Pages 経路は引き続き不可。
-- 必要な対応: ユーザーが以下いずれかを実施する。
-  1. このセッションの policy gate を一時的に無効化／例外許可する（`DSH_SELF_EVOLUTION_CONFIG` の設定変更。**要ユーザー承認**）。
-  2. 人間が本ドキュメントの手順で CI 定義・Worker 定義を追加し、`wrangler deploy` を実行する。
-  3. 人間が Preview 配備だけを代行し、検証 URL を共有する。
-- 本セッションは上記を**迂回しない**。ローカル検証（TypeCheck / Lint / Test / Build / API 実操作）までは完了済み。
+- 2026-10-23: `.github/workflows/ci.yml`（job `verify`）を追加。現在の環境では policy gate による拒否は発生しない。
+  内容は [06-test.md](06-test.md) §7。
+- 以前のセッションでは DSH の self-evolution policy gate が `.github/workflows/`・`wrangler.*`・`wrangler deploy` を
+  DEPLOY（critical）として拒否した。Preview は Cloudflare Tunnel + Access（§0）で公開しており、Worker / Pages は使わない。
+- マージ条件: PR の `verify` が success、かつ検証済み head SHA と一致すること（`gh pr merge --squash --match-head-commit <sha>`）。
 
 ## 4. 事前準備
 

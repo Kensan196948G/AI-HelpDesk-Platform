@@ -31,7 +31,7 @@
 - Lint/Format: `biome`
 - Edge: **Cloudflare Tunnel + Cloudflare Access**（`ai-helpdesk.mirai-dx-platform.com`）
 - `worker/` は参考実装（policy gate により Workers 配備は不可）
-- CI: GitHub Actions（**現在は self-evolution policy gate により workflow ファイルの追加が拒否される。Blocker として docs/08-deployment.md に記録**）
+- CI: GitHub Actions（`.github/workflows/ci.yml`。PostgreSQL 16 service で secret scan / audit / typecheck / lint / migrate×2 / test / build。2026-10-23 追加）
 
 ## 4. コマンド
 

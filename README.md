@@ -26,7 +26,7 @@
 | Access OTP ログイン | **確認済み**（2026-10-23 15:32 JST / `onetimepin` / `allowed=true`） |
 | DeepSeek API キー | **設定済み・実回答確認済み**（`provider: deepseek` / `model: deepseek-flash` = V4.1-Flash） |
 | AI用KB | **9件**（共有フォルダ / Teams / 印刷 / VPN / PC性能 / Windows Update / BitLocker / Defender / ソフト導入） |
-| CI | **Blocker**（policy gate が `.github/workflows/` を拒否） |
+| CI | **GitHub Actions**（`.github/workflows/ci.yml` / job `verify`。PostgreSQL 16 service） |
 
 ## 主要 3 Flow
 
@@ -160,7 +160,6 @@ npm audit --omit=dev --audit-level=high
 - DeepSeek API キーは `~/.config/ai-helpdesk/api.conf`（0600）に設定済み。自由記述の回答は `deepseek-flash`（DeepSeek-V4.1-Flash）で生成され、承認済みナレッジと実PC情報を根拠にします。
 - 端末エージェントは Node.js 20+ が必要です。設定ファイルは `~/.config/ai-helpdesk/device-agent.json`（0600）。デバイストークンは `scripts/issue-device-token.ts` で発行し、DB には SHA-256 ハッシュのみ保存します。
 - 端末エージェントは1ユーザー1端末（source 単位）の MVP です。複数端末の同時管理は未対応です。
-- **CI 未設定**。`.github/workflows/` は policy gate で拒否されます。人間による追加、または policy 例外が必要です。
 - ローカル DNS（192.168.245.11）が新ホストを NXDOMAIN キャッシュ中です。1.1.1.1 では解決済み。TTL 経過後に再確認してください。
 - アプリ内の「操作する人」切替は**デモ用**です。実際のログインは Cloudflare Access のみです。
 - 既存プロトタイプの「完全オフライン」等の表示は、事実と異なる主要ラベルだけ更新しています（[docs/14](docs/14-prototype-ui-integration.md) §2-1）。
