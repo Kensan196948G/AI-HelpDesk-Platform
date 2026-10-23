@@ -12,7 +12,7 @@ MVP では実装しない。必要になった順に Issue 化する。
 | B-04 | SSO / Entra ID（Cloudflare Access + OTP は完了） | NFR-08。本番の職務分離・SSO 連携 |
 | B-05 | 外部ヘルプデスク基盤連携 | desknet's NEO / AppSuite。INC の正本連携 |
 | B-06 | E2E（Playwright）と Preview 実操作 | 承認後の WebUI 実装とセット |
-| B-07 | CI の有効化 | `.github/workflows/ci.yml` は policy gate で未作成。[docs/08-deployment.md](08-deployment.md) |
+| B-07 | ~~CI の有効化~~ **完了（2026-10-23）** | `.github/workflows/ci.yml`（job `verify`）。残: Branch Protection の Required Checks 化 |
 | B-08 | ~~Cloudflare Preview 配備~~ **完了（Tunnel + Access）** | 追加の WAF / Turnstile は次段階 |
 
 ## P2（運用が始まってから）

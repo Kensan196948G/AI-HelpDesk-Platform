@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: aihd
+          # CI 専用の使い捨て DB（ジョブ終了で破棄）。実環境の資格情報ではない。
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: ai_helpdesk_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U aihd -d ai_helpdesk_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://aihd:ci-only-password@127.0.0.1:5432/ai_helpdesk_test
+      SESSION_SECRET: ci-only-session-secret-0123456789abcdef
+      SEED_PASSWORD: ci-only-seed-password
+      LOG_LEVEL: silent
+      COOKIE_SECURE: 'false'
+      REQUIRE_PROXY_SECRET: 'false'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Secret scan
+        run: bash scripts/scan-secrets.sh
+
+      - name: Dependency audit (runtime, high+)
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Migrate (empty DB) and re-run (idempotent)
+        run: |
+          npm run db:migrate
+          npm run db:migrate
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
