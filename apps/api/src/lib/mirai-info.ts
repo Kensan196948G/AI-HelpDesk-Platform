@@ -180,3 +180,34 @@ export async function findEmployeeByEmail(email: string): Promise<EmployeeRow | 
     return null;
   }
 }
+
+/**
+ * 通知のために社員番号からメールアドレスを引く（**サーバー内専用**）。
+ * メールアドレスは API のレスポンス・ログ・画面に返さないこと。
+ * 見つからない・複数該当の場合は null（推測で送らない）。
+ */
+export async function findEmployeeEmailByNo(
+  employeeNo: string,
+): Promise<{ email: string; name: string } | null> {
+  const target = String(employeeNo || '').trim();
+  if (!target) return null;
+  try {
+    const sql = await getClient();
+    const rows = await sql<{ email: string | null; name: string }[]>`
+      SELECT email, name
+      FROM mirai_info.employee_directory
+      WHERE status = '有効' AND employee_no = ${target}
+      ORDER BY updated_at DESC
+      LIMIT 2
+    `;
+    if (rows.length !== 1) return null;
+    const row = rows[0];
+    const email = String(row?.email ?? '')
+      .trim()
+      .toLowerCase();
+    if (!email || !row?.name) return null;
+    return { email, name: row.name };
+  } catch {
+    return null;
+  }
+}

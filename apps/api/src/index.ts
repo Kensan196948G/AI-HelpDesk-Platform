@@ -1,10 +1,14 @@
 import { config } from './config.js';
 import { sql } from './db.js';
+import { startHandoverNotificationWorker } from './lib/handover-notify.js';
+import { describeMailTransport } from './lib/mailer.js';
 import { buildServer } from './server.js';
 
 const app = await buildServer();
+const stopNotificationWorker = startHandoverNotificationWorker(app.log);
 
 try {
+  app.log.info({ transport: describeMailTransport() }, 'メール通知の送信手段');
   await app.listen({ port: config.PORT, host: config.HOST });
   app.log.info(
     {
@@ -24,6 +28,7 @@ try {
 
 async function shutdown(signal: string): Promise<void> {
   app.log.info({ signal }, 'shutting down');
+  stopNotificationWorker();
   await app.close();
   await sql.end({ timeout: 5 });
   process.exit(0);

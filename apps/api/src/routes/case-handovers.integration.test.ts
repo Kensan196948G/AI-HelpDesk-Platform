@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { config } from '../config.js';
 import { sql } from '../db.js';
+import { flushHandoverNotifications } from '../lib/handover-notify.js';
 import { resetRateLimits } from '../lib/rate-limit.js';
 import { buildServer } from '../server.js';
 
@@ -108,6 +109,8 @@ describe('案件引継ぎ API', () => {
     expect(shared.statusCode, shared.body).toBe(200);
     const handoverId = shared.json().handover.id as string;
     expect(handoverId).toMatch(/^[0-9a-f-]{36}$/);
+    // テスト環境ではメール送信を無効にしている（実メールを送らない）。
+    expect(shared.json().notify).toEqual({ queued: 0, transport: 'disabled' });
 
     const inbox = await app.inject({ method: 'GET', url: '/api/case-handovers/inbox' });
     expect(inbox.statusCode, inbox.body).toBe(200);
@@ -267,5 +270,77 @@ describe('案件引継ぎ API', () => {
       payload: { status: 'resolved' },
     });
     expect(resolved.statusCode, resolved.body).toBe(200);
+  });
+
+  describe('引継ぎ通知の送信キュー', () => {
+    async function latestHandoverId(): Promise<string> {
+      const rows = await sql<{ id: string }[]>`
+      SELECT id FROM case_handovers WHERE case_id = ${CASE_ID}
+      ORDER BY created_at DESC LIMIT 1
+    `;
+      const id = rows[0]?.id;
+      expect(id, '引継ぎが存在すること').toBeTruthy();
+      return id as string;
+    }
+
+    it('送信に成功すると sent になり、宛先へ 1 通だけ渡す', async () => {
+      const handoverId = await latestHandoverId();
+      await sql`
+      INSERT INTO case_handover_notifications (handover_id, recipient_email, subject, body)
+      VALUES (${handoverId}, 'notify-test@example.com', 'テスト件名', 'テスト本文')
+      ON CONFLICT (handover_id, recipient_email) DO NOTHING
+    `;
+      const delivered: string[] = [];
+      const result = await flushHandoverNotifications({
+        transport: {
+          name: 'sendmail',
+          send: async (message) => {
+            delivered.push(message.to);
+          },
+        },
+      });
+      expect(delivered).toContain('notify-test@example.com');
+      expect(result.sent).toBeGreaterThanOrEqual(1);
+      const stored = await sql<{ status: string }[]>`
+      SELECT status FROM case_handover_notifications
+      WHERE handover_id = ${handoverId} AND recipient_email = 'notify-test@example.com'
+    `;
+      expect(stored[0]?.status).toBe('sent');
+      await sql`
+      DELETE FROM case_handover_notifications
+      WHERE handover_id = ${handoverId} AND recipient_email = 'notify-test@example.com'
+    `;
+    });
+
+    it('送信に失敗すると pending のまま再試行され、5 回で failed になる', async () => {
+      const handoverId = await latestHandoverId();
+      await sql`
+      INSERT INTO case_handover_notifications (
+        handover_id, recipient_email, subject, body, attempts
+      )
+      VALUES (${handoverId}, 'notify-fail@example.com', 't', 'b', 4)
+      ON CONFLICT (handover_id, recipient_email) DO NOTHING
+    `;
+      const result = await flushHandoverNotifications({
+        transport: {
+          name: 'sendmail',
+          send: async () => {
+            throw new Error('smtp down');
+          },
+        },
+      });
+      expect(result.failed).toBeGreaterThanOrEqual(1);
+      const stored = await sql<{ status: string; attempts: number; last_error: string | null }[]>`
+      SELECT status, attempts, last_error FROM case_handover_notifications
+      WHERE handover_id = ${handoverId} AND recipient_email = 'notify-fail@example.com'
+    `;
+      expect(stored[0]?.status).toBe('failed');
+      expect(stored[0]?.attempts).toBe(5);
+      expect(stored[0]?.last_error).toContain('smtp down');
+      await sql`
+      DELETE FROM case_handover_notifications
+      WHERE handover_id = ${handoverId} AND recipient_email = 'notify-fail@example.com'
+    `;
+    });
   });
 });
