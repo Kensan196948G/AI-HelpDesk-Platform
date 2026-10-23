@@ -286,7 +286,7 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
   // 端末エージェントの経路は Access のサービスドメイン + デバイストークンで守る。
   const CommandBodySchema = z.object({
     opId: z.enum(['SPOOLER_RESTART']),
-    params: z.record(z.unknown()).optional(),
+    params: z.record(z.string(), z.unknown()).optional(),
   });
   const CommandResultSchema = z.object({
     ok: z.boolean(),
