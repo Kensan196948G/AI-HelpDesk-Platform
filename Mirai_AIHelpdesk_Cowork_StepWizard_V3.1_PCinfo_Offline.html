@@ -2416,7 +2416,7 @@ function intakeFromCowork(o){
  t.history.push({t:T,actor:'みらいAI窓口',a:`受付（みらいAI窓口 ${o.tktId} から連携）`});
  state.tickets.unshift(t);
  detectCIs(text).forEach(x=>addLink(t.id,x,'ci_affects',{auto:1,by:'AI',note:'AI推定'}));
- t.suggest=suggestAssignee(t);
+ t.suggest=o.assignee||suggestAssignee(t);if(o.assignee)t.assignee=o.assignee;
  t.handover={reason:'みらいAI窓口から引継ぎ（本人同意済みの範囲のみ）',at:T};
  t.handover.summary=buildHandover(t);
  t.history.push({t:T,actor:'AI',a:'担当者へ引継ぎ：'+t.handover.reason});
@@ -2564,6 +2564,7 @@ const OPS={
  AUDIO_DEVICE_SET:{name:'既定の音声出力デバイスの切替',level:3,key:'audio',impact:'PCの音の出力先が変わります。会議中は一瞬音が途切れます。',rollback:'元のデバイスに戻せます（ボタン1つ）',rollbackable:true,steps:['接続中のデバイスを再確認','既定の出力デバイスを変更','テスト音の出力先を確認']},
  TEMP_CLEAN_USER:{name:'本人の一時ファイル整理（隔離・7日保持）',level:3,key:'disk',impact:'本人の一時フォルダとブラウザキャッシュを隔離領域へ移動。ドキュメント・デスクトップ・共有フォルダには触れません。',rollback:'7日以内なら隔離領域から復元できます',rollbackable:true,steps:['対象が本人の一時領域だけか再確認','一時ファイルを隔離領域へ移動','空き容量を確認']},
  SPOOLER_RESTART:{name:'印刷スプーラサービスの再起動',level:4,key:'printer',impact:'再起動中（約30秒）は印刷できません。待機中のジョブは保持されます。',rollback:'再起動のみ（失敗時は担当者へ引継ぎ）',rollbackable:false,steps:['サービス状態を再確認','スプーラサービスを再起動','印刷再開を確認']},
+ REBOOT:{name:'端末の再起動',level:3,key:'',impact:'再起動中（約1〜2分）は端末を使えません。保存していない作業は失われる可能性があります。',rollback:'再起動のみ（元に戻せません）',rollbackable:false,steps:['未保存の作業がないか確認','再起動を実行','再起動後の状態を再取得']},
  VPN_ADAPTER_ENABLE:{name:'VPN仮想アダプタの有効化',level:4,key:'vpn',impact:'ネットワーク設定を変更します。数秒間ネットワークが切り替わります。',rollback:'アダプタを無効に戻せます',rollbackable:true,steps:['アダプタ状態を再確認','VPN仮想アダプタを有効化','VPN接続テスト']},
  SEC_DISABLE:{name:'セキュリティ機能の停止・無効化',level:5,impact:'—'},
  SW_INSTALL:{name:'無許可ソフトウェアの導入',level:5,impact:'—'},
@@ -2571,6 +2572,11 @@ const OPS={
  PRIV_GRANT:{name:'管理者権限・アクセス権の付与',level:5,impact:'—（正式な申請手続へ）'}
 };
 const PST={proposed:['本人の判断待ち','warn'],pending_admin:['IT管理者の承認待ち','warn'],ready:['実行可能','ok'],executing:['実行中','info'],done:['完了','ok'],rejected:['本人が拒否（N）','mute'],admin_rejected:['管理者が却下','ng'],invalidated:['承認無効（内容変更）','ng'],failed:['失敗（変更なし）','ng'],aborted:['中断（変更なし）','ng'],rolled_back:['元に戻し済み','mute']};
+/* 1回の相談で実行できるコマンドの上限（15回）。超過時は自動実行せず担当者へ引き継ぐ。 */
+const MAX_OPS_PER_CHAT=15;
+/* 実行後に続けて提案する「次の一手」（必要な場合だけY/Nで確認する）。 */
+const OP_NEXT={TEMP_CLEAN_USER:'REBOOT'};
+function chatOpsUsed(chat){return chat?chat.messages.filter(m=>m.kind==='exec'&&m.state==='done').length:0}
 const EV={chat_query:'相談受付',kb_answer:'資料検索回答',diag_run:'端末診断（読み取りのみ）',file_analyze:'添付ファイル解析',policy_blocked:'データ区分ポリシーでブロック',dlp_masked:'機微情報をマスク',proposal_created:'修復提案を作成',user_approved:'本人承認（Y）',user_rejected:'本人拒否（N）',admin_approval_requested:'管理者承認を依頼',admin_approved:'管理者承認',admin_rejected:'管理者却下',self_approval_denied:'自己承認を拒否',hash_mismatch:'承認後の内容変更を検知',exec_denied:'実行前検証NG',exec_started:'実行開始',executed:'実行完了',exec_failed:'実行失敗（変更なし）',exec_aborted:'実行中断',rolled_back:'元に戻す',blocked_prohibited:'禁止操作をブロック',sensitive_redirect:'専用窓口へ案内（本文非保存）',incident_reported:'事故の初動案内',ticket_created:'チケット起票',ticket_updated:'チケット更新',faq_candidate:'FAQ候補登録',faq_published:'FAQ公開',faq_returned:'FAQ候補差戻し',hd_linked:'ヘルプデスクへ引継ぎ',hd_synced:'ヘルプデスクの対応結果を反映',pcinfo_collected:'PC基本情報を事前取得（読み取りのみ）',case_created:'案件を開始',estop_on:'緊急停止 ON',estop_off:'緊急停止 解除',resolved_by_ai:'AI対応で解決',persona_switch:'利用者切替（デモ）',data_reset:'データ初期化',chain_verified:'監査ログ検証',tests_run:'受け入れ試験実行'};
 const GROUPS={'IT端末':'IT端末管理（DX推進部）','ID・アクセス権':'ID・権限管理（DX推進部）','セキュリティ事故':'リスク統括部（情報セキュリティ）','業務・規程':'担当業務部門（窓口で振り分け）','AI窓口':'DX推進部（AI窓口運用）'};
 const CLASSES=['公開','社内限定','機密','極秘'];
@@ -2706,6 +2712,7 @@ function applyOp(st,p){const v=serverVerify(st,p);
   case 'VPN_ADAPTER_ENABLE':d.vpn.adapter='enabled';d.vpn.connected=true;verify=[['VPN仮想アダプタ','有効'],['接続テスト','社内ポータルへ到達（模擬）']];break;
   case 'FILE_RENAME_BATCH':d.files.renamedCopy=true;verify=[['作成したコピー',p.params.count+'件 → '+p.params.dest],['元の写真','変更なし']];break;
   case 'FILE_CREATE':file={name:p.params.filename,content:p.params.content};verify=[['新規ファイル',p.params.filename],['元の添付ファイル','変更なし']];break;
+  case 'REBOOT':d.rebootedAt=nowISO();d.rebootCount=(d.rebootCount||0)+1;verify=[['再起動','完了（模擬）'],['再起動後の状態再取得','PCエージェント応答あり（模擬）'],['未保存の作業','利用者の確認済み（Y）']];break;
  }
  p.status='done';p.doneAt=nowISO();p.result={verify,file};
  auditAdd(st,'agent','executed',{prop:p.id,opId:p.opId,device:p.deviceId});
@@ -2714,7 +2721,7 @@ function rollbackOp(st,id,actor){const p=st.proposals[id];if(!p)return {ok:false
  if(p.status!=='done'||!op.rollbackable||!op.key)return {ok:false,msg:'元に戻せる状態ではありません'};
  if(actor!==p.userId&&USERS[actor].role!=='itadmin')return {ok:false,msg:'依頼者本人またはIT管理者のみ'};
  st.devices[p.deviceId][op.key]=clone(p.snapshot);p.status='rolled_back';auditAdd(st,actor,'rolled_back',{prop:id});return {ok:true}}
-function createTicket(st,o){const n=++st.counters.ticket;const t={id:'TKT-2026-'+pad(n,4),userId:o.userId,dept:USERS[o.userId].dept,category:o.category||'AI窓口',priority:o.priority||'通常',group:GROUPS[o.category]||GROUPS['AI窓口'],status:'受付',summary:o.summary||'',shared:o.shared||{},propId:o.propId||null,created:nowISO(),history:[{at:nowISO(),by:'system',text:'AI窓口から引継ぎ（本人同意済みの範囲のみ共有）'}],resolution:''};st.tickets.unshift(t);auditAdd(st,o.userId,'ticket_created',{ticket:t.id,category:t.category,priority:t.priority});return t}
+function createTicket(st,o){const n=++st.counters.ticket;const t={id:'TKT-2026-'+pad(n,4),userId:o.userId,dept:USERS[o.userId].dept,category:o.category||'AI窓口',priority:o.priority||'通常',group:GROUPS[o.category]||GROUPS['AI窓口'],status:'受付',summary:o.summary||'',shared:o.shared||{},propId:o.propId||null,assignee:o.assignee||null,created:nowISO(),history:[{at:nowISO(),by:'system',text:'AI窓口から引継ぎ（本人同意済みの範囲のみ共有）'}],resolution:''};st.tickets.unshift(t);auditAdd(st,o.userId,'ticket_created',{ticket:t.id,category:t.category,priority:t.priority});return t}
 
 /* ============ 受け入れ試験（構想資料 09「合格の条件」に対応） ============ */
 function testEngine(){
@@ -2760,10 +2767,14 @@ function ai(chat,html,opt){return addMsg(chat,Object.assign({kind:'ai',html,mode
 function findMsg(id){for(const c of S.chats){const m=c.messages.find(x=>x.id===id);if(m)return [c,m]}return [null,null]}
 function diag(chat,title,steps){const m=addMsg(chat,{kind:'diag',title,steps,shown:0,device:me().device});auditAdd(S,me().id,'diag_run',{title,device:me().device});animateDiag(m);return m}
 function animateDiag(m){const step=()=>{m.shown++;refresh();if(m.shown<m.steps.length)setTimeout(step,420);else save()};setTimeout(step,300)}
-function prop(chat,opId,params,meta,after){const p=createProposal(S,me().id,opId,params,meta);p.chatId=chat.id;addMsg(chat,{kind:'proposal',propId:p.id,after});return p}
+function prop(chat,opId,params,meta,after){if(chat&&chatOpsUsed(chat)>=MAX_OPS_PER_CHAT){ai(chat,`<p>この相談では対応コマンドを <b>${MAX_OPS_PER_CHAT}回</b> 実行しました。これ以上は自動で実行せず、担当者へ引き継ぎます。</p>`,{conf:'—'});consentCard(chat,'IT端末','通常',after||null,null,{reason:`実行上限（${MAX_OPS_PER_CHAT}回）に達したため、これ以上のコマンドは実行していません。`});save();refresh();return null}
+ const p=createProposal(S,me().id,opId,params,meta);p.chatId=chat.id;addMsg(chat,{kind:'proposal',propId:p.id,after});return p}
 function escBtn(cat,pri,label){return `<button class="btn sm" data-act="escalate" data-cat="${esc(cat)}" data-pri="${esc(pri||'通常')}">🙋 ${esc(label||'担当者に相談する')}</button>`}
-function consentCard(chat,category,priority,after,propId){const rev=[...chat.messages].reverse();const dg=rev.find(m=>m.kind==='diag');const um=rev.find(m=>m.kind==='user');const u=USERS[chat.userId];
- return addMsg(chat,{kind:'consent',after,category,priority:priority||'通常',propId:propId||null,state:'pending',sel:{diag:true,device:true,atts:false,pc:true},ctx:{pc:pcLinesForChat(chat.id),summary:um?um.text:chat.title,diag:dg?dg.steps.map(s=>s[0]+'：'+s[1]):[],device:u.device+'／'+S.devices[u.device].os,atts:um&&um.atts?um.atts.map(a=>a.name):[]}})}
+function hdStaff(){return Object.values(USERS).filter(u=>u.role==='staff'||u.role==='itadmin').map(u=>[u.hd||u.name,u.name+'（'+(u.title||ROLES[u.role])+'）'])}
+function suggestHdFor(cat){const m={'IT端末':'田中','ID・アクセス権':'高橋','セキュリティ事故':'伊藤','業務・規程':'佐藤','AI窓口':'佐藤'};return m[cat]||''}
+function consentCard(chat,category,priority,after,propId,opts){const rev=[...chat.messages].reverse();const dg=rev.find(m=>m.kind==='diag');const um=rev.find(m=>m.kind==='user');const u=USERS[chat.userId];
+ const reason=(opts&&opts.reason)||'';const assignee=(opts&&opts.assignee)||suggestHdFor(category)||'';
+ return addMsg(chat,{kind:'consent',after,category,priority:priority||'通常',propId:propId||null,state:'pending',reason,assignee,sel:{diag:true,device:true,atts:false,pc:true},ctx:{pc:pcLinesForChat(chat.id),summary:um?um.text:chat.title,diag:dg?dg.steps.map(s=>s[0]+'：'+s[1]):[],device:u.device+'／'+S.devices[u.device].os,atts:um&&um.atts?um.atts.map(a=>a.name):[]}})}
 
 /* ============ 意図判定と応答（ルールベースの模擬AI） ============ */
 function detectIntent(t,atts){const has=r=>r.test(t);
@@ -2871,7 +2882,11 @@ function runExec(chat,propId){const p=S.proposals[propId];const v=serverVerify(S
  const tick=()=>{if(S.estop){m.state='aborted';p.status='aborted';auditAdd(S,'agent','exec_aborted',{prop:propId,reason:'緊急停止'});save();refresh();return}
   if(i<steps.length-1){m.steps.push(steps[i]);i++;save();refresh();setTimeout(tick,650);return}
   const r=applyOp(S,p);m.checks=r.checks||m.checks;
-  if(r.ok){m.steps.push(steps[steps.length-1]);m.state='done';m.verify=r.verify}else{m.state='failed';m.msg=r.msg;if(p.status==='executing')p.status='failed';consentCard(chat,'IT端末','通常',null,propId)}
+  if(r.ok){m.steps.push(steps[steps.length-1]);m.state='done';m.verify=r.verify;
+   const nextId=OP_NEXT[p.opId],used=chatOpsUsed(chat);
+   if(nextId&&used<MAX_OPS_PER_CHAT){setTimeout(()=>{const cc=S.chats.find(x=>x.id===chat.id);if(!cc||S.estop)return;ai(cc,`<p>続けて <b>${esc(OPS[nextId].name)}</b> を行いますか？ 実行する場合は「Y」、不要な場合は「N」を選んでください。</p>`,{conf:'—'});prop(cc,nextId,{},{target:OPS[nextId].impact},m.id);save();refresh()},900)}
+   else if(nextId&&used>=MAX_OPS_PER_CHAT){ai(chat,`<p>対応コマンドの実行が上限（${MAX_OPS_PER_CHAT}回）に達したため、「${esc(OPS[nextId].name)}」は実行せず担当者へ引き継ぎます。</p>`,{conf:'—'});consentCard(chat,'IT端末','通常',null,p.id,{reason:`実行上限（${MAX_OPS_PER_CHAT}回）に達したため、次の「${OPS[nextId].name}」は未実行です。`})}
+  }else{m.state='failed';m.msg=r.msg;if(p.status==='executing')p.status='failed';consentCard(chat,'IT端末','通常',null,propId,{reason:`実行に失敗しました（端末は変更なし）。操作: ${OPS[p.opId].name}（Lv${OPS[p.opId].level}）／対象: ${(p.meta&&p.meta.target)||'—'}`})}
   save();refresh()};
  setTimeout(tick,450)}
 
@@ -2992,7 +3007,7 @@ function renderConsent(m){const g=GROUPS[m.category]||GROUPS['AI窓口'];
  if(m.ctx.diag.length)it.push(['diag','AIの診断結果（'+m.ctx.diag.length+'項目）',m.sel.diag,false]);
  it.push(['device','端末ID・OS：'+m.ctx.device,m.sel.device,false]);
  if(m.ctx.atts.length)it.push(['atts','添付ファイル名：'+m.ctx.atts.join('、')+'（中身は送りません）',m.sel.atts,false]);if(m.ctx.pc&&m.ctx.pc.length)it.push(['pc','PC基本情報（事前取得）：'+(m.ctx.pc.length-1)+'件の要点（気になる点を含む）',m.sel.pc!==false,false]);
- return `<div class="card warn"><div class="ch">🙋 担当者への引継ぎ（あなたの同意が必要です）${m.priority==='緊急'?badge('ng','緊急'):''}</div><dl class="kv"><dt>引継ぎ先</dt><dd>${esc(g)}</dd><dt>区分</dt><dd>${esc(m.category)}</dd></dl><p class="small">担当者に共有する情報を選んでください。</p>${it.map(x=>`<label style="display:block;margin:3px 0"><input type="checkbox" data-ck="${x[0]}" data-mid="${m.id}" ${x[2]?'checked':''} ${x[3]?'disabled':''}> ${esc(x[1])}${x[3]?' <span class="muted small">（必須）</span>':''}</label>`).join('')}<div class="btns"><button class="btn pri" data-act="consentSend" data-mid="${m.id}">同意して引き継ぐ</button><button class="btn" data-act="consentCancel" data-mid="${m.id}">やめる</button></div></div>`}
+ return `<div class="card warn"><div class="ch">🙋 担当者への引継ぎ（あなたの同意が必要です）${m.priority==='緊急'?badge('ng','緊急'):''}</div><dl class="kv"><dt>引継ぎ先</dt><dd>${esc(g)}</dd><dt>区分</dt><dd>${esc(m.category)}</dd></dl>${m.reason?`<p class="small" style="margin-top:6px"><b>理由：</b>${esc(m.reason)}</p>`:''}<dl class="kv"><dt>担当（指名）</dt><dd><select data-asg="${m.id}" style="max-width:260px">${hdStaff().map(([v,l])=>`<option value="${esc(v)}" ${v===m.assignee?'selected':''}>${esc(l)}</option>`).join('')}</select></dd></dl><p class="small">担当者に共有する情報を選んでください。</p>${it.map(x=>`<label style="display:block;margin:3px 0"><input type="checkbox" data-ck="${x[0]}" data-mid="${m.id}" ${x[2]?'checked':''} ${x[3]?'disabled':''}> ${esc(x[1])}${x[3]?' <span class="muted small">（必須）</span>':''}</label>`).join('')}<div class="btns"><button class="btn pri" data-act="consentSend" data-mid="${m.id}">同意して引き継ぐ</button><button class="btn" data-act="consentCancel" data-mid="${m.id}">やめる</button></div></div>`}
 function renderDev(){const el=$('#devpanel');if(!el)return;const u=me();const d=S.devices[u.device];
  const row=(k,v,s)=>`<div class="devrow"><span>${k}</span><span><span class="dot ${s}"></span>${esc(v)}</span></div>`;
  const ownErr=d.printer.jobs.filter(j=>j.owner===u.id&&j.status==='エラー').length;
@@ -3122,7 +3137,8 @@ const ACT={
  removeAtt(d){UI.pending=UI.pending.filter(a=>a.id!==d.id);renderPend()},
  Y(d){const p=S.proposals[d.id];if(p.userId!==S.ui.user){toast('依頼者本人のみ判断できます');return}const c=S.chats.find(x=>x.id===p.chatId)||activeChat();userDecision(S,p.id,'Y');
   if(p.status==='ready')runExec(c,p.id);else if(p.status==='pending_admin')ai(c,'<p>承認を受け付けました。この操作は<b>IT管理者の承認</b>が必要なため、承認キューに登録しました。承認されるまで端末は変更しません。</p>',{conf:'—'});save();refresh()},
- N(d){const p=S.proposals[d.id];if(p.userId!==S.ui.user)return;userDecision(S,p.id,'N');const c=S.chats.find(x=>x.id===p.chatId)||activeChat();ai(c,`<p>実行しませんでした。端末は何も変更していません。ほかの方法を知りたい場合や、担当者に見てほしい場合はこちらから。</p><div class="btns">${escBtn('IT端末')}</div>`,{conf:'—'});save();refresh()},
+ N(d){const p=S.proposals[d.id];if(p.userId!==S.ui.user)return;userDecision(S,p.id,'N');const c=S.chats.find(x=>x.id===p.chatId)||activeChat();const op=OPS[p.opId];const target=(p.meta&&p.meta.target)||'（対象の記載なし）';const reason=`本人がN（実行しない）を選択。提案: ${op.name}（Lv${op.level}）／対象: ${target}／端末は変更していません。`;
+  ai(c,`<p>実行しませんでした。端末は何も変更していません。</p><p>次の内容を要約して担当者へ引き継ぎます。担当者は指名できます（共有する情報は選べます）。</p>`,{conf:'—'});consentCard(c,'IT端末','通常',null,p.id,{reason});save();refresh()},
  consult(d){const p=S.proposals[d.id];const c=S.chats.find(x=>x.id===p.chatId)||activeChat();consentCard(c,'IT端末','通常',null,p.id);save();refresh()},
  escalate(d){const c=activeChat();if(!c)return;consentCard(c,d.cat,d.pri);save();refresh()},
  execReady(d){const p=S.proposals[d.id];const c=S.chats.find(x=>x.id===p.chatId)||activeChat();runExec(c,p.id)},
@@ -3130,8 +3146,8 @@ const ACT={
  notResolved(d){const [c,m]=findMsg(d.mid);m.answered='no';consentCard(c,'IT端末','通常',null,m.propId);save();refresh()},
  rollback(d){if(!confirm('この操作を元に戻しますか？（変更前の状態を復元します）'))return;const p=S.proposals[d.id];const r=rollbackOp(S,p.id,S.ui.user);const c=S.chats.find(x=>x.id===p.chatId)||activeChat();if(r.ok)ai(c,'<p>↩️ 元に戻しました。変更前の状態を復元し、記録に残しました。</p>',{conf:'—'});else toast(r.msg||'元に戻せませんでした');save();refresh()},
  dl(d){const p=S.proposals[d.id];if(p&&p.result&&p.result.file){download(p.result.file.name,p.result.file.content,'text/csv;charset=utf-8');toast('ファイルを保存しました')}},
- consentSend(d){const [c,m]=findMsg(d.mid);const sh={'相談内容':m.ctx.summary};if(m.ctx.diag.length&&m.sel.diag)sh['AIの診断結果']=m.ctx.diag;if(m.sel.device)sh['端末']=m.ctx.device;if(m.ctx.atts.length&&m.sel.atts)sh['添付ファイル名']=m.ctx.atts.join('、');if(m.ctx.pc&&m.ctx.pc.length&&m.sel.pc!==false)sh['PC基本情報（事前取得）']=m.ctx.pc;
-  const t=createTicket(S,{userId:c.userId,category:m.category,priority:m.priority,summary:(m.ctx.summary||c.title).slice(0,60),shared:sh,propId:m.propId});m.state='sent';m.ticketId=t.id;linkToHelpdesk(c,t);addMsg(c,{kind:'ticket',ticketId:t.id});save();refresh()},
+ consentSend(d){const [c,m]=findMsg(d.mid);const asgEl=document.querySelector('[data-asg="'+m.id+'"]');const assignee=asgEl&&asgEl.value?asgEl.value:(m.assignee||'');const sh={'相談内容':m.ctx.summary};if(m.reason)sh['対応案（未実行・失敗）']=m.reason;if(m.ctx.diag.length&&m.sel.diag)sh['AIの診断結果']=m.ctx.diag;if(m.sel.device)sh['端末']=m.ctx.device;if(m.ctx.atts.length&&m.sel.atts)sh['添付ファイル名']=m.ctx.atts.join('、');if(m.ctx.pc&&m.ctx.pc.length&&m.sel.pc!==false)sh['PC基本情報（事前取得）']=m.ctx.pc;
+  const t=createTicket(S,{userId:c.userId,category:m.category,priority:m.priority,summary:(m.ctx.summary||c.title).slice(0,60),shared:sh,propId:m.propId,assignee});m.state='sent';m.ticketId=t.id;linkToHelpdesk(c,t);addMsg(c,{kind:'ticket',ticketId:t.id});save();refresh()},
  consentCancel(d){const [c,m]=findMsg(d.mid);m.state='cancelled';save();refresh()},
  adminApprove(d){const cm=($('#cm-'+d.id)||{}).value||'';const r=adminDecision(S,d.id,S.ui.user,'approve',cm);if(!r.ok){toast(r.msg);save();refresh();return}const p=S.proposals[d.id];const c=S.chats.find(x=>x.id===p.chatId);if(c)ai(c,`<p>✅ IT管理者（${esc(uname(S.ui.user))}）が ${esc(p.id)} を承認しました。提案カードの「立会いのもと実行する」から実行できます。</p>`,{conf:'—'});toast('承認しました。依頼者の画面から実行されます');save();refresh()},
  adminReject(d){const cm=($('#cm-'+d.id)||{}).value||'';const r=adminDecision(S,d.id,S.ui.user,'reject',cm);if(!r.ok){toast(r.msg);return}const p=S.proposals[d.id];const c=S.chats.find(x=>x.id===p.chatId);if(c)ai(c,`<p>⛔ IT管理者が ${esc(p.id)} を却下しました${cm?'（'+esc(cm)+'）':''}。端末は変更していません。</p>`,{conf:'—'});save();refresh()},
@@ -3171,7 +3187,7 @@ async function readFileObj(f){const ext=(f.name.split('.').pop()||'').toLowerCas
 function linkToHelpdesk(c,t){
  if(!window.HD)return;const u=USERS[c.userId];t.chatId=c.id;
  const body=Object.entries(t.shared).map(([k,v])=>Array.isArray(v)?'【'+k+'】\n'+v.join('\n'):'【'+k+'】'+v).join('\n');
- try{t.incId=HD.intake({tktId:t.id,requester:DEPTS[u.dept].name+' '+u.name,subject:t.summary,body,category:t.category,priority:t.priority,shared:t.shared})}catch(e){t.incId=null;console.error(e)}
+ try{t.incId=HD.intake({tktId:t.id,requester:DEPTS[u.dept].name+' '+u.name,subject:t.summary,body,category:t.category,priority:t.priority,shared:t.shared,assignee:t.assignee})}catch(e){t.incId=null;console.error(e)}
  if(t.incId){t.hdState='escalated';t.history.push({at:nowISO(),by:'system',text:'AIヘルプデスクへ連携（'+t.incId+'）。対応結果はここに自動で反映されます'});auditAdd(S,c.userId,'hd_linked',{ticket:t.id,inc:t.incId})}
 }
 const HD_ST={escalated:'受付',in_progress:'対応中',resolved:'解決',ai:'受付',ai_resolved:'解決'};
