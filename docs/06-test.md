@@ -46,7 +46,8 @@ npx tsx scripts/seed.ts
 | UI 配信 | ✅ 200 | 元 HTML のタイトル・主要画面・約 500KB |
 | Access 認証 | ✅ | ヘッダーなし 401 / 許可 200 / 不一致 403 / 本番 login 404 |
 | 公開 URL | ✅ | 302 → Cloudflare Access OTP ログイン画面 |
-| DeepSeek フォールバック | ✅ | `/api/ai/answer` 200 / 承認済みナレッジの根拠 |
+| DeepSeek 実回答 | ✅ | `provider: deepseek` / `model: deepseek-chat` / 331文字 / KB-2026-0001 |
+| UI ウィザード STEP 1〜3 | ✅ | 種類選択 → 内容 → AI一次対応。ページエラー 0 |
 | E2E（UI） | ⏸ 一部 | UI 配信・状態・H.kb を Playwright で確認。全 STEP の E2E は未実施 |
 
 ```

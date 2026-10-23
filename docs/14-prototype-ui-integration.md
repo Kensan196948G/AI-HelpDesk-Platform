@@ -59,7 +59,8 @@
   - 返答と根拠 KB を UI に返す
 - API キー未設定・DeepSeek 障害時は、承認済みナレッジのローカル回答にフォールバックする。
 - キーは `~/.config/ai-helpdesk/api.conf`（0600）の `DEEPSEEK_API_KEY` に置く。リポジトリには置かない。
-- **現在キー未設定**のため、UI には「DeepSeek API 未設定」の注記付きフォールバックが出る。
+- **キー設定済み（2026-10-23）**。`/api/ai/answer` は `provider: deepseek` / `model: deepseek-chat` を返し、UI でも実回答を確認済み。
+  キー未設定・障害時のみ、承認済みナレッジのフォールバックになる。
 
 ### 2-4. データ
 
@@ -100,17 +101,19 @@
 | 本番モードのログイン | `/api/auth/login` 404 |
 | 公開 URL | 302 → `winter-lake-f4c9.cloudflareaccess.com` の OTP ログイン画面 |
 | Access ログイン画面 | 「Log in to Mirai AI HelpDesk MVP」「Email」「Send login code」を確認 |
-| UI の AI 呼び出し | `H.kb` → `/api/ai/answer` 200 → 承認済みナレッジのフォールバックを表示 |
+| UI の AI 呼び出し | `H.kb` → `/api/ai/answer` 200 → **DeepSeek 実回答**（331文字 / 根拠 KB-2026-0001） |
+| UI ウィザード STEP 1〜3 | 種類選択 → 内容入力 → AI一次対応まで実操作。ページエラー 0 |
+| DeepSeek モデル | `provider: deepseek` / `model: deepseek-chat` / 確信度 高 |
 | 自動テスト | 41 tests 成功（UI/Access/state/AI を含む） |
 
-証跡: `docs/evidence/access-login.png` / `docs/evidence/preview-home-local-access-header.png`
+証跡: `docs/evidence/access-login.png` / `docs/evidence/preview-home-local-access-header.png` / `docs/evidence/preview-wizard-step3.png` / `docs/evidence/preview-deepseek-answer.png`
 
 ## 5. 未完了・要ユーザー対応
 
 | # | 項目 | 必要なもの |
 |---|---|---|
 | 1 | Access の許可メール | `<EMAIL_1>` の実際のローカル部（例: `taro`）。確定後に allow ポリシーを追加する |
-| 2 | DeepSeek API キー | `~/.config/ai-helpdesk/api.conf` の `DEEPSEEK_API_KEY` に設定（チャットへ貼らない）。設定後に再起動・実回答を検証 |
+| 2 | DeepSeek API キー | **設定済み・検証済み**（残対応なし） |
 | 3 | 12h / OTP の実ログイン | 許可メールの受信箱に届く OTP コード。ユーザーによるログイン確認が必要 |
 | 4 | CI | `.github/workflows` は policy gate で拒否。人間による追加、または policy 例外 |
 | 5 | DNS | ローカル DNS（192.168.245.11）が新ホストを NXDOMAIN キャッシュ中。1.1.1.1 では解決済み。TTL 経過後に再確認 |

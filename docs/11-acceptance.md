@@ -22,7 +22,7 @@
 | 14 | Lint 成功 | ✅ | `npm run lint`（error 0） |
 | 15 | 主要 Test 成功 | ✅ | 41 tests（unit/auth/worker + integration/UI） |
 | 16 | Build 成功 | ✅ | API build 成功。UI は既存 HTML を配信 |
-| 17 | Critical / High の既知問題なし | ⏸ | 既知の Critical なし。Access ポリシー / DeepSeek キー / Preview 実操作が未 |
+| 17 | Critical / High の既知問題なし | ⏸ | 既知の Critical なし。Access ポリシー / OTP 実ログイン / 全 STEP E2E が未 |
 | 18 | Cloudflare Preview Deployment 成功 | ✅ | Tunnel + Access で公開。公開 URL は 302 → Access OTP 画面（[08](08-deployment.md) §0） |
 | 19 | Preview 主要画面確認 | ⏸ | 許可メール未設定（deny-all）のため Access ログイン不可。ローカル origin はヘッダー付きで確認済み |
 | 20 | Preview API 確認 | ⏸ | ローカル origin で `/api/state` / `/api/ai/answer` 200。公開 URL は Access ポリシー待ち |

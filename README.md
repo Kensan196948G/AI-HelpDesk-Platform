@@ -21,7 +21,7 @@
 | Tests | **41 tests 成功**（Unit / API integration / Worker / UI / Access） |
 | Cloudflare Preview | **公開中**（Tunnel + Access。OTP ログイン画面を確認） |
 | Access 許可メール | **未設定**（`<EMAIL_1>` の確定待ち。現在は deny-all） |
-| DeepSeek API キー | **未設定**（承認済みナレッジのフォールバックで稼働） |
+| DeepSeek API キー | **設定済み・実回答確認済み**（`provider: deepseek` / `deepseek-chat`） |
 | CI | **Blocker**（policy gate が `.github/workflows/` を拒否） |
 
 ## 主要 3 Flow
@@ -99,7 +99,7 @@ npm audit --omit=dev --audit-level=high
 ## 既知の制約・要ユーザー対応
 
 - **Access 許可メールが未設定**。`<EMAIL_1>@mirai-const.co.jp` の実際のローカル部を確定し、allow ポリシーを追加する必要があります。現在は deny-all。
-- **DeepSeek API キーが未設定**。`~/.config/ai-helpdesk/api.conf` の `DEEPSEEK_API_KEY` に設定してください（チャットへ貼らない）。未設定時は承認済みナレッジのフォールバックになります。
+- DeepSeek API キーは `~/.config/ai-helpdesk/api.conf`（0600）に設定済み。自由記述の回答は `deepseek-chat` で生成され、承認済みナレッジを根拠にします。
 - **CI 未設定**。`.github/workflows/` は policy gate で拒否されます。人間による追加、または policy 例外が必要です。
 - ローカル DNS（192.168.245.11）が新ホストを NXDOMAIN キャッシュ中です。1.1.1.1 では解決済み。TTL 経過後に再確認してください。
 - アプリ内の「操作する人」切替は**デモ用**です。実際のログインは Cloudflare Access のみです。
