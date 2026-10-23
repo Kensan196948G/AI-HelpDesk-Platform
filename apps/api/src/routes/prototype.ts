@@ -3,6 +3,7 @@ import path from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { answerWithDeepSeek } from '../ai/deepseek.js';
+import { personaSwitchMode } from '../auth/persona-switch.js';
 import { authenticateUi } from '../auth/ui.js';
 import { repoRoot } from '../config.js';
 import { sql } from '../db.js';
@@ -95,7 +96,11 @@ function renderPrototype(boot: {
   cowork: Record<string, unknown> | null;
   helpdesk: Record<string, unknown> | null;
 }): string {
-  const bootJson = JSON.stringify(boot).replace(/</g, '\\u003c');
+  const bootJson = JSON.stringify({
+    ...boot,
+    // 本番では「操作する人」を本人以外へ切り替えさせない（デモ用アカウントだけ any）。
+    switchMode: personaSwitchMode(boot.email),
+  }).replace(/</g, '\\u003c');
   const bootScript = `<script>window.__AIHD_BOOT__=${bootJson};(function(){try{var b=window.__AIHD_BOOT__||{};if(b.email){var e=localStorage.getItem('aihd.access.email');if(e!==b.email){localStorage.removeItem('${COWORK_KEY}');localStorage.removeItem('${HELPDESK_KEY}');localStorage.setItem('aihd.access.email',b.email)}}var orig=Storage.prototype.setItem;Storage.prototype.setItem=function(k,v){var r=orig.call(this,k,v);try{if(String(k).indexOf('mirai-wizard-v31-')===0){window.dispatchEvent(new CustomEvent('aihd-state',{detail:String(k)}))}}catch(e){}return r};if(b.cowork)localStorage.setItem('${COWORK_KEY}',JSON.stringify(b.cowork));if(b.helpdesk)localStorage.setItem('${HELPDESK_KEY}',JSON.stringify(b.helpdesk))}catch(e){}})();</script>`;
 
   let html = readSource();

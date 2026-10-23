@@ -55,6 +55,9 @@ const EnvSchema = z.object({
   ACCESS_AUD: optionalText,
   // 非推奨: 単一メール指定。許可リストは ACCESS_ALLOWLIST_FILE に統一した。
   ACCESS_ALLOWED_EMAIL: z.string().email().optional(),
+  // 「操作する人」の切替を許可するメール（カンマ区切り）。本番（cloudflare-access）では
+  // 既定で本人以外に切り替えられない。デモ用アカウントだけここに列挙する。
+  PERSONA_SWITCH_ALLOWLIST: z.string().default(''),
   // Mirai-Info の社員名簿を読むための接続先（未設定なら Unix ソケット + OS ユーザー）。
   MIRAI_INFO_DATABASE_URL: optionalText,
   // DeepSeek API（MVP / Staging のみ）
