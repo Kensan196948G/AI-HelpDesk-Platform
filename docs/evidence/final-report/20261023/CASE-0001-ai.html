@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>最終報告書 CASE-0001 - AIの一次対応で解決</title>
+<style>
+:root { color-scheme: light; }
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: #fff; color: #1f2933; }
+body { font-family: "IPAGothic", "IPAPGothic", "Noto Sans JP", "Yu Gothic", "Hiragino Kaku Gothic ProN", sans-serif; font-size: 10.5pt; line-height: 1.65; }
+.page { max-width: 186mm; margin: 0 auto; padding: 12mm 10mm 16mm; }
+.cover { border-bottom: 3px solid #1f2933; padding-bottom: 8mm; margin-bottom: 7mm; }
+.cover .eyebrow { font-size: 9pt; letter-spacing: .14em; color: #52606d; }
+.cover h1 { font-size: 22pt; margin: 2mm 0 3mm; letter-spacing: .04em; }
+.cover .sub { display: flex; flex-wrap: wrap; gap: 3mm 8mm; align-items: center; }
+.cover .case { font-family: ui-monospace, "IPAGothic", monospace; font-size: 12pt; }
+.badge { display: inline-block; border: 1px solid #52606d; border-radius: 999px; padding: 0 3mm; font-size: 9pt; line-height: 1.8; }
+.muted { color: #616e7c; font-size: 9pt; }
+.note { background: #f5f7fa; border-left: 3px solid #9aa5b1; padding: 2mm 3mm; font-size: 9pt; color: #3e4c59; }
+.ok { color: #1d7a4d; }
+.sec { margin: 7mm 0 0; page-break-inside: avoid; }
+.sec h2 { font-size: 13pt; margin: 0 0 3mm; padding-bottom: 1.5mm; border-bottom: 1px solid #cbd2d9; }
+h3 { font-size: 10.5pt; margin: 4mm 0 2mm; }
+table { width: 100%; border-collapse: collapse; margin: 2mm 0; font-size: 9.5pt; }
+th, td { border: 1px solid #d9e2ec; padding: 1.6mm 2mm; text-align: left; vertical-align: top; word-break: break-word; }
+th { background: #f0f4f8; font-weight: 700; white-space: nowrap; }
+.dot { display: inline-block; width: 2.2mm; height: 2.2mm; border-radius: 50%; margin-right: 1.4mm; vertical-align: middle; }
+.dot.ok { background: #1d7a4d; }
+.dot.warn { background: #d97706; }
+.dot.ng { background: #b42318; }
+.chat { display: grid; gap: 2.5mm; }
+.msg { border: 1px solid #d9e2ec; border-radius: 2mm; padding: 2.5mm 3mm; page-break-inside: avoid; }
+.msg.user { background: #f7f9fb; }
+.msg.ai { background: #fff; }
+.msg.system { background: #fffbea; border-color: #f0d38a; }
+.msg-head { font-size: 9pt; color: #52606d; margin-bottom: 1mm; }
+.msg-text { white-space: pre-wrap; }
+.msg-title { font-weight: 700; margin-bottom: 1mm; }
+.steps { margin: 1mm 0 1mm 5mm; padding: 0; }
+.steps li { margin: .5mm 0; }
+.memo { white-space: pre-wrap; background: #f7f9fb; border: 1px solid #d9e2ec; border-radius: 2mm; padding: 3mm; font-size: 9.5pt; }
+.proposal { border: 1px solid #d9e2ec; border-radius: 2mm; padding: 2.5mm 3mm; margin: 2mm 0; page-break-inside: avoid; }
+details { margin-top: 2mm; }
+summary { cursor: pointer; color: #245b9c; font-size: 9.5pt; }
+.footer { margin-top: 9mm; padding-top: 3mm; border-top: 1px solid #cbd2d9; color: #616e7c; font-size: 8.5pt; }
+.hash { font-family: ui-monospace, "IPAGothic", monospace; word-break: break-all; }
+@page { size: A4; margin: 12mm 10mm; }
+@media print { .page { max-width: none; padding: 0; } a { color: inherit; text-decoration: none; } }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="cover">
+    <div class="eyebrow">みらいAI窓口 × ヘルプデスク ／ 最終報告書</div>
+    <h1>AIの一次対応で解決</h1>
+    <div class="sub">
+      <span class="case">CASE-0001</span>
+      <span class="badge" style="border-color:#1d7a4d;color:#1d7a4d">STEP 3 完了</span>
+      <span class="muted">共有フォルダが開けません</span>
+    </div>
+  </div>
+
+  <section class="sec" id="summary"><h2>概要</h2><table><thead><tr><th>項目</th><th>内容</th></tr></thead><tbody><tr><td>案件番号</td><td><span class="case">CASE-0001</span></td></tr><tr><td>相談者</td><td>東京支店／工事部 / 山田 太郎</td></tr><tr><td>相談日時</td><td>2026-10-23 23:34:38</td></tr><tr><td>相談の種類</td><td>ファイル・共有フォルダ</td></tr><tr><td>急ぎ具合</td><td>通常</td></tr><tr><td>対応結果</td><td><span class="badge" style="border-color:#1d7a4d;color:#1d7a4d">AIの一次対応で解決</span></td></tr><tr><td>AIモデル</td><td>DeepSeek-V4.1-Flash</td></tr><tr><td>出力日時</td><td>2026-10-23T14:56:27.498Z</td></tr><tr><td>出力者</td><td>東京支店／工事部 / 山田 太郎 <span class="muted">（一般社員）</span></td></tr></tbody></table></section>
+  <section class="sec"><h2>相談内容</h2><p class="msg-text">今朝から、共有フォルダを開くと「アクセスが拒否されました」と表示されます。連絡先は [メールアドレス]、電話 [電話番号] です。</p></section>
+  <section class="sec"><h2>対応の経過</h2><table><thead><tr><th>日時</th><th>実施者</th><th>出来事</th><th>補足</th></tr></thead><tbody><tr><td>2026-10-23 23:34</td><td>山田 太郎</td><td>相談を送信</td><td>共有フォルダが開けません</td></tr><tr><td>2026-10-23 23:34</td><td>AI</td><td>AIの一次対応で解決</td><td>担当者への引継ぎなし</td></tr></tbody></table></section>
+  <section class="sec"><h2>PC基本情報（読み取りのみ）</h2><p class="muted">端末 WEB-860F746F ／ 取得 2026-10-23T14:34:37.548Z ／ 35項目 ／ 読み取りのみ</p><p class="note">IPアドレス・シリアル番号・資産番号は、この報告書では伏せています。</p><h3>気になる点（6件）</h3><table><thead><tr><th>判定</th><th>項目</th><th>値</th><th>補足</th></tr></thead><tbody><tr><td><span class="dot warn"></span>注意</td><td><b>★</b> 共有フォルダ</td><td>端末エージェント未導入</td><td>端末エージェントを導入すると確認できます</td></tr><tr><td><span class="dot warn"></span>注意</td><td>ドメイン・Entra ID</td><td>端末エージェント未導入</td><td>端末エージェントを導入すると確認できます</td></tr><tr><td><span class="dot warn"></span>注意</td><td>VPN</td><td>端末エージェント未導入</td><td></td></tr><tr><td><span class="dot warn"></span>注意</td><td>ウイルス対策</td><td>端末エージェント未導入</td><td>エージェントを導入すると確認できます</td></tr><tr><td><span class="dot warn"></span>注意</td><td>ディスク暗号化</td><td>端末エージェント未導入</td><td>エージェントを導入すると確認できます</td></tr><tr><td><span class="dot warn"></span>注意</td><td>OS 更新（apt）</td><td>端末エージェント未導入</td><td>エージェントを導入すると確認できます</td></tr></tbody></table><details open><summary>PC基本情報の全項目（35件）</summary><table><thead><tr><th>分類</th><th>項目</th><th>値</th><th>判定</th></tr></thead><tbody><tr><td>端末</td><td>コンピュータ名</td><td>未検出（ブラウザ）</td><td><span class="dot ok"></span>正常</td></tr><tr><td>端末</td><td>機種</td><td>未検出（ブラウザ）</td><td><span class="dot ok"></span>正常</td></tr><tr><td>端末</td><td>シリアル番号</td><td>[シリアル番号]</td><td><span class="dot ok"></span>正常</td></tr><tr><td>端末</td><td>OS</td><td>Linux Linux x86 64-bit</td><td><span class="dot ok"></span>正常</td></tr><tr><td>端末</td><td>前回の再起動から</td><td>端末エージェント未導入</td><td><span class="dot ok"></span>正常</td></tr><tr><td>端末</td><td>PCエージェント</td><td>ブラウザ取得（読み取りのみ）</td><td><span class="dot ok"></span>正常</td></tr><tr><td>アカウント</td><td>サインイン中の人</td><td>ログイン中のユーザー（Access 認証済み）</td><td><span class="dot ok"></span>正常</td></tr><tr><td>アカウント</td><td>ドメイン・Entra ID</td><td>端末エージェント未導入</td><td><span class="dot warn"></span>注意</td></tr><tr><td>アカウント</td><td>多要素認証</td><td>Cloudflare Access（OTP）で認証済み</td><td><span class="dot ok"></span>正常</td></tr><tr><td>ネットワーク</td><td>接続の種類</td><td>ブラウザ回線: 4G / 約 9.6 Mbps</td><td><span class="dot ok"></span>正常</td></tr><tr><td>ネットワーク</td><td>IPアドレス</td><td>[IPアドレス]</td><td><span class="dot ok"></span>正常</td></tr><tr><td>ネットワーク</td><td>VPN</td><td>端末エージェント未導入</td><td><span class="dot warn"></span>注意</td></tr><tr><td>ネットワーク</td><td>社内ポータルへの到達</td><td>このアプリに到達（HTTPS）</td><td><span class="dot ok"></span>正常</td></tr><tr><td>ネットワーク</td><td>共有フォルダ</td><td>端末エージェント未導入</td><td><span class="dot warn"></span>注意</td></tr><tr><td>リソース</td><td>CPU使用率（5分平均）</td><td>未検出（ブラウザ・16 論理コア）</td><td><span class="dot ok"></span>正常</td></tr><tr><td>リソース</td><td>メモリ使用率</td><td>約 32.0 GB（ブラウザ推定）</td><td><span class="dot ok"></span>正常</td></tr><tr><td>リソース</td><td>ディスクの空き</td><td>ブラウザ領域 空き 10.0 GB / 10.0 GB</td><td><span class="dot ok"></span>正常</td></tr><tr><td>リソース</td><td>本人の一時ファイル</td><td>端末エージェント未導入</td><td><span class="dot ok"></span>正常</td></tr><tr><td>セキュリティ</td><td>ウイルス対策</td><td>端末エージェント未導入</td><td><span class="dot warn"></span>注意</td></tr><tr><td>セキュリティ</td><td>ディスク暗号化</td><td>端末エージェント未導入</td><td><span class="dot warn"></span>注意</td></tr><tr><td>セキュリティ</td><td>OS 更新（apt）</td><td>端末エージェント未導入</td><td><span class="dot warn"></span>注意</td></tr><tr><td>周辺機器</td><td>既定のプリンター</td><td>端末エージェント未導入</td><td><span class="dot ok"></span>正常</td></tr><tr><td>周辺機器</td><td>印刷スプーラ</td><td>端末エージェント未導入</td><td><span class="dot ok"></span>正常</td></tr><tr><td>周辺機器</td><td>印刷キュー</td><td>端末エージェント未導入</td><td><span class="dot ok"></span>正常</td></tr><tr><td>周辺機器</td><td>音声の出力先</td><td>ブラウザ検出 1 台</td><td><span class="dot ok"></span>正常</td></tr><tr><td>周辺機器</td><td>USB機器</td><td>端末エージェント未導入</td><td><span class="dot ok"></span>正常</td></tr><tr><td>ソフトウェア</td><td>Microsoft 365 Apps</td><td>端末エージェント未導入</td><td><span class="dot ok"></span>正常</td></tr><tr><td>ソフトウェア</td><td>Teams</td><td>端末エージェント未導入</td><td><span class="dot ok"></span>正常</td></tr><tr><td>ソフトウェア</td><td>VPNクライアント</td><td>端末エージェント未導入</td><td><span class="dot ok"></span>正常</td></tr><tr><td>ソフトウェア</td><td>DirectCloudドライブ</td><td>端末エージェント未導入</td><td><span class="dot ok"></span>正常</td></tr><tr><td>最近のエラー</td><td>アプリ・システムのエラー（24時間）</td><td>端末エージェント未導入</td><td><span class="dot ok"></span>正常</td></tr><tr><td>ソフトウェア</td><td>ブラウザ</td><td>Chromium 156.0.8078.4</td><td><span class="dot ok"></span>正常</td></tr><tr><td>ソフトウェア</td><td>画面</td><td>1440 × 1200（1x / 24bit）</td><td><span class="dot ok"></span>正常</td></tr><tr><td>ソフトウェア</td><td>GPU</td><td>Google Inc. (Google) ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)</td><td><span class="dot ok"></span>正常</td></tr><tr><td>ソフトウェア</td><td>インストール済みソフト</td><td>端末エージェント未導入</td><td><span class="dot ok"></span>正常</td></tr></tbody></table></details></section>
+  <section class="sec"><h2>AIの一次対応</h2><p class="muted">モデル DeepSeek-V4.1-Flash</p><h3>やり取り</h3><div class="chat"><div class="msg user"><div class="msg-head">山田 太郎 <span class="muted">2026-10-23 23:34</span></div><div class="msg-text">共有フォルダが開けません。今朝から、共有フォルダを開くと「アクセスが拒否されました」と表示されます。連絡先は [メールアドレス]、電話 [電話番号] です。</div></div><div class="msg ai"><div class="msg-head">AI <span class="muted">2026-10-23 23:34</span></div><div class="msg-text">🖥️ 相談の前に取得した PC基本情報（WEB-860F746F・14:34・35項目）を確認しました。
+気になる点が 6件 あります。
+★ 共有フォルダ：端末エージェント未導入　端末エージェントを導入すると確認できます
+ドメイン・Entra ID：端末エージェント未導入　端末エージェントを導入すると確認できます
+VPN：端末エージェント未導入
+ウイルス対策：端末エージェント未導入　エージェントを導入すると確認できます
+ディスク暗号化：端末エージェント未導入　エージェントを導入すると確認できます
+OS 更新（apt）：端末エージェント未導入　エージェントを導入すると確認できます
+★＝相談内容に関係しそうな項目です。このあと、相談内容に合わせて詳しく調べます。
+PC基本情報を詳しく見る</div></div><div class="msg user"><div class="msg-head">山田 太郎 <span class="muted">2026-10-23 23:34</span></div><div class="msg-text">共有フォルダが開けません。今朝から、共有フォルダを開くと「アクセスが拒否されました」と表示されます。連絡先は [メールアドレス]、電話 [電話番号] です。</div></div></div></section>
+  
+  
+  
+  
+
+  <div class="footer">
+    <div>この報告書は AI HelpDesk Platform が自動生成したものです。個人情報は伏せ字化しています。</div>
+    <div>本報告書は画面の状態をもとに生成しています。サーバー側の案件台帳との突合は MVP では行いません。</div>
+    <div>報告書ID：<span class="hash">c95b7d9d-b0e5-4d03-b718-a7ef7bc4abb3</span></div>
+    <div>SHA-256（内容の同一性確認）：<span class="hash">6a2b677e4f510a14efc636f84a9ff44c24cf7144b3c2212195ea927af73dab54</span></div>
+    <div>出力：2026-10-23T14:56:27.498Z ／ 形式：Standalone HTML（外部ファイル参照なし）</div>
+  </div>
+</div></body>
+</html>

@@ -26,6 +26,13 @@ describe('prototype UI integration', () => {
     expect(html).toContain('DeepSeek API');
     expect(html).toContain('__AIHD_SYNC_DEBUG__');
     expect(html).toContain('__AIHD_DEVICE_DEBUG__');
+    // 最終報告書 / 遠隔支援コンソール（assist-bridge.js）
+    expect(html).toContain('__AIHD_ASSIST_BRIDGE__');
+    expect(html).toContain('最終報告書');
+    expect(html).toContain('遠隔支援');
+    // RSP / MeshCentral の導線（B さんの GUI / PowerShell 操作基盤）
+    expect(html).toContain('meshcentralUrl');
+    expect(html).toContain('mesh.mirai-remotetools.com');
     expect(html).toContain('DeepSeek-V4.1-Flash');
     // 元の UI の主要な画面要素が残っている
     expect(html).toContain('新しい相談をはじめる');

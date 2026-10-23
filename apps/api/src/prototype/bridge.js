@@ -144,7 +144,12 @@
           }
           const sources = (data.sources || []).map((source) => source.kbNo);
           try {
-            ai(chat, html, { conf: data.confidence || '—', src: sources });
+            // provider は最終報告書の「生成元」表示に使う（UI のモデル表示は変えない）。
+            ai(chat, html, {
+              conf: data.confidence || '—',
+              src: sources,
+              provider: data.provider,
+            });
             save();
             refresh();
           } catch (error) {
