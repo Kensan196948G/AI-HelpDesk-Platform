@@ -248,13 +248,23 @@
 - 認証は Phase 1（RSP へのディープリンク + Entra ログイン）→ Phase 2（RSP に AI HelpDesk 専用の統合 API）→ Phase 3（AI 承認付きコマンド実行）の順を推奨。
 - Phase 1 の導線として、B さんの遠隔支援コンソールに「MeshCentralを開く」「RSPで開く」を追加（`MESHCENTRAL_URL` / `RSP_BASE_URL`、既定は `https://mesh.mirai-remotetools.com/` / `https://rsp.mirai-remotetools.com/`）。
 
+## Round 26 — 別アカウントへの引継ぎ（宛先・AI 追加質問・承認者）（2026-10-24）
+
+- 要件の決定を受けて、`case_handovers` による **A さん → DX 推進部（別 PC・別ブラウザ）** の引継ぎを実装した。
+  - **宛先は DX 推進部グループ**。個人指名は名簿からの **選択式**（`GET /api/case-handovers/recipients`）。名簿に無い宛先は 400、名簿が取れないときの指名は 409（自由入力で指名させない）。
+  - B さんの受信箱 → 引き受け（`POST /case-handovers/:id/claim`）で B さんの `prototype_states` へ ID ベースでマージ。B さんの `ui.user` / `helpdesk.actor` は上書きしない。
+  - **AI 追加質問**: 共有案件の PC 情報（IP・シリアル・資産番号はマスク）と件名・本文・直近メッセージを根拠に `POST /api/ai/answer-case` が回答。B さん自身の端末情報は使わない。STEP 3 の画面に入力欄を追加。
+  - **ナレッジ承認者は DX 推進部グループの誰か**: `POST /case-handovers/:id/approve`。引き受け前は 409。対応者本人が承認した場合は `self_approved=true` で記録し、画面にも警告を出す（黙って通さない）。
+- 実装: `apps/api/src/lib/case-handover.ts`（スナップショット抽出・マージ）、`apps/api/src/routes/case-handovers.ts`、`db/migrations/007` / `008`、`assist-bridge.js`。
+- テスト: 単体 5 件 + 統合 3 件（共有 → 受信箱 → 引き受け → マージ → AI 追加質問 → 再共有で進行中 1 件 → 名簿外の宛先拒否 → 引き受け前承認 409 → 承認で completed）。
+
 ## 現在の Evidence
 
 | 項目 | 結果 |
 |---|---|
-| Tests | 175 passed（31 files） |
+| Tests | 183 passed（33 files） |
 | TypeCheck | 成功 |
-| Lint | 成功（warning 84 / error 0） |
+| Lint | 成功（warning 108 / error 0） |
 | Build | 成功 |
 | Secret scan | 検出なし |
 | npm audit（runtime） | 0 vulnerabilities |

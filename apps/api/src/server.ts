@@ -8,6 +8,7 @@ import { config } from './config.js';
 import { ApiError, forbidden } from './errors.js';
 import { auditRoutes } from './routes/audit.js';
 import { authRoutes } from './routes/auth.js';
+import { caseHandoverRoutes } from './routes/case-handovers.js';
 import { caseRoutes } from './routes/cases.js';
 import { dashboardRoutes } from './routes/dashboard.js';
 import { deskRoutes } from './routes/desk.js';
@@ -187,6 +188,7 @@ export async function buildServer(options?: { logger?: boolean }): Promise<Fasti
     await app.register(authRoutes, { prefix: '/api' });
   }
   await app.register(caseRoutes, { prefix: '/api' });
+  await app.register(caseHandoverRoutes, { prefix: '/api' });
   await app.register(deskRoutes, { prefix: '/api' });
   await app.register(deviceRoutes, { prefix: '/api' });
   await app.register(employeeRoutes, { prefix: '/api' });

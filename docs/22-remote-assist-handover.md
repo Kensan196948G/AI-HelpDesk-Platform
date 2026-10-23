@@ -2,10 +2,10 @@
 
 | 項目 | 値 |
 |---|---|
-| 版 | v0.1 |
-| 日付 | 2026-10-23 |
+| 版 | v0.2 |
+| 日付 | 2026-10-24 |
 | 対象 | STEP 4（引継ぎ）〜 STEP 5（担当者の対応） |
-| 実装 | `apps/api/src/prototype/assist-bridge.js` / `POST /api/ai/remote-prompt` |
+| 実装 | `apps/api/src/prototype/assist-bridge.js` / `POST /api/ai/remote-prompt` / `routes/case-handovers.ts` |
 | 関連 | [19-device-command-execution.md](19-device-command-execution.md) / [07-security.md](07-security.md) |
 
 ## 1. 先に結論
@@ -279,6 +279,36 @@
 | `remote_prompt_done` / `remote_prompt_failed` | A さんの実施結果 |
 | `report_exported` | 最終報告書の出力 |
 
+### 9-5. 別アカウントへの引継ぎ（2026-10-24 追加）
+
+A さんと B さんが **別 PC・別ブラウザ・別アカウント** でも案件を引き継げるように、引継ぎをサーバーに保存する（`case_handovers` テーブル）。ブラウザの状態（`prototype_states`）はログイン単位なので、これが無いと B さんの画面に案件は出ない。
+
+要件の決定（2026-10-24）:
+
+| 論点 | 決定 | 実装 |
+|---|---|---|
+| 引継ぎ先 | **DX 推進部グループ宛**。個人指名はグループの名簿から **選択式** | `GET /api/case-handovers/recipients` が DX 推進部のメンバー（氏名・組織・社員番号のみ、メールは返さない）を返す。`POST /api/case-handovers` の `recipientNo` は名簿に存在する場合だけ受け付ける（名簿に無い宛先は 400、名簿が取れないときの指名は 409。自由入力で指名させない） |
+| B さんの操作 | 閲覧だけでなく **AI への追加質問** が必要 | 受信箱 → `POST /case-handovers/:id/claim`（B の状態へマージ）→ **STEP 3 の AI 一次対応画面に入力欄**（`assist-bridge.js` の `ahCaseAiPanel`）→ `POST /api/ai/answer-case` |
+| ナレッジ承認者 | **DX 推進部グループの誰か**（B さん本人に固定しない） | `POST /api/case-handovers/:id/approve`。本番は名簿で DX 推進部かを判定（fail-closed）。引き受け前は 409、対応者本人が承認した場合は `self_approved=true` で記録し、画面にも警告を出す |
+
+API:
+
+| メソッド | パス | 認可 | 内容 |
+|---|---|---|---|
+| GET | `/api/case-handovers/recipients` | UI ログイン | 宛先の選択肢（DX 推進部） |
+| POST | `/api/case-handovers` | UI ログイン | A の案件をスナップショットしてグループへ共有 |
+| GET | `/api/case-handovers/inbox` | DX 推進部 | B さんの受信箱（pending / claimed） |
+| POST | `/api/case-handovers/:id/claim` | DX 推進部 | B の状態へマージ（409: 別担当者が引き受け済み / 状態未保存） |
+| POST | `/api/case-handovers/:id/approve` | DX 推進部 | ナレッジ承認を記録し `completed` へ |
+| PATCH | `/api/case-handovers/:id` | 所有者・担当者・DX | `resolved` / `completed` / `cancelled` |
+| POST | `/api/ai/answer-case` | DX 推進部 | 共有案件の PC 情報（IP・シリアル・資産番号はマスク）と件名・本文・直近の会話を根拠に AI が回答。**B さん自身の端末情報は使わない** |
+
+注意:
+
+- マージは ID（CASE / TKT / INC / DR / KB）で upsert する。B さんの `ui.user` / `helpdesk.actor` は上書きしない。
+- 同じ案件の進行中（`pending` / `claimed`）の共有は置き換える（部分一意インデックスで二重共有を防ぐ）。
+- 状態が未保存（`STATE_NOT_READY`）のときの引き受けは、上限付きリトライにする（無限リトライにしない）。
+
 ### 9-4. 最終報告書への反映
 
 - 「遠隔支援（同意した範囲）」章に、依頼・承認・終了・案内・実施結果を載せる。
@@ -334,7 +364,7 @@
 | リスク | 内容 | 対策 / 次段階 |
 |---|---|---|
 | クライアント状態の改ざん | `c.remote` はブラウザの状態。承認を偽装できる。サーバーは同意を検証していない | 本番はサーバー側のセッション表 + 署名付き承認へ。現状は認可根拠にしない |
-| 同一ログイン内のデモ | A/B は「操作する人」切替で再現。別ユーザー間の配信は未実装 | サーバー側の案件共有・通知・WebSocket/メール |
+| 引継ぎの認可 | `case_handovers` はサーバー保存だが、ローカル開発では `DEV_AUTH_EMAIL` 固定のため A/B が同一になる。本番は Cloudflare Access の身元で判定 | 受信箱・引き受け・承認は DX 推進部の名簿で判定（fail-closed）。通知は未実装 |
 | 画面共有の未実装 | 本 MVP は案内文まで | MeshCentral / Quick Assist 連携を次段階で |
 | AI の誤案内 | 下書きが不適切な場合がある | B さんが必ず確認・編集。危険表現はフィルタ |
 | 同意疲れ | 依頼が多すぎると A さんが内容を確認しなくなる | 期限・回数制限・通知の集約 |
@@ -345,7 +375,7 @@
 ### 12-1. 本番化ロードマップ
 
 1. **サーバー側の遠隔支援セッション表**（`remote_assist_sessions` / `remote_assist_prompts`）と承認 API。クライアント状態を正本にしない。
-2. **案件のサーバー側共有**（A の案件を B が参照できるようにする）。現在は同一ログイン内のデモ。
+2. **案件のサーバー側共有**（実装済み: `case_handovers`）。残りは **通知**（受信箱を開かないと気づけない）と、A さん側への「B さんが対応した」ことの反映。
 3. **通知**（ホーム / メール / Teams）と、A さんの承認待ちの可視化。
 4. **画面共有の連携**（MeshCentral のセッション ID・録画 ID を監査へ）。
 5. **実行のサーバー側承認**（Y/N の状態を DB に移す。既存の [19](19-device-command-execution.md) §7 の課題と同じ）。

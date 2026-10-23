@@ -79,6 +79,7 @@ async function callDeepSeek(
   text: string,
   knowledge: KnowledgeLike[],
   deviceContext: string,
+  extraContext?: string,
 ): Promise<string> {
   const apiKey = config.DEEPSEEK_API_KEY;
   if (!apiKey) throw new Error('DEEPSEEK_API_KEY is not configured');
@@ -86,6 +87,7 @@ async function callDeepSeek(
   const deviceBlock = deviceContext
     ? `\n\n利用者のPC基本情報（読み取りのみ）:\n${deviceContext}`
     : '';
+  const extraBlock = extraContext ? `\n\n案件の文脈:\n${extraContext}` : '';
   const response = await fetch(`${config.DEEPSEEK_BASE_URL.replace(/\/$/, '')}/chat/completions`, {
     method: 'POST',
     headers: {
@@ -101,7 +103,7 @@ async function callDeepSeek(
         { role: 'system', content: SYSTEM_PROMPT },
         {
           role: 'user',
-          content: `利用者の相談:\n${text}${deviceBlock}\n\n承認済みナレッジ:\n${buildKnowledgeContext(knowledge)}`,
+          content: `利用者の相談:\n${text}${deviceBlock}${extraBlock}\n\n承認済みナレッジ:\n${buildKnowledgeContext(knowledge)}`,
         },
       ],
     }),
@@ -125,10 +127,18 @@ async function callDeepSeek(
  * APIキー未設定・API障害時はローカルの承認済みナレッジにフォールバックする。
  * 診断・修復・セキュリティ初動などの安全装置は、プロトタイプ側の決定ルールが担当する。
  */
+export interface AnswerOptions {
+  /** 共有案件の PC 情報（B さんが A さんの案件を聞く場合）。指定すると本人の在庫は使わない。 */
+  deviceContext?: string;
+  /** 案件の件名・本文・直近の会話など、AI に渡す補助コンテキスト。 */
+  extraContext?: string;
+}
+
 export async function answerWithDeepSeek(
   input: string,
   email?: string,
   browserDeviceId?: string,
+  options?: AnswerOptions,
 ): Promise<AiAnswer> {
   const redacted = redactPII(input);
   const intent = detectIntent('', redacted.text);
@@ -144,10 +154,16 @@ export async function answerWithDeepSeek(
   const inventory = email
     ? await loadClientInventory(email, browserDeviceId).catch(() => null)
     : null;
-  const deviceContext = inventory ? buildDeviceAiContext(inventory, redacted.text) : '';
-  const device = inventory
-    ? { source: inventory.source, collectedAt: inventory.collectedAt }
-    : null;
+  const deviceContext = options?.deviceContext
+    ? options.deviceContext
+    : inventory
+      ? buildDeviceAiContext(inventory, redacted.text)
+      : '';
+  const device = options?.deviceContext
+    ? null
+    : inventory
+      ? { source: inventory.source, collectedAt: inventory.collectedAt }
+      : null;
 
   if (!config.DEEPSEEK_API_KEY) {
     const answer = fallbackAnswer(knowledge);
@@ -163,7 +179,12 @@ export async function answerWithDeepSeek(
   }
 
   try {
-    const answer = await callDeepSeek(redacted.text, knowledge, deviceContext);
+    const answer = await callDeepSeek(
+      redacted.text,
+      knowledge,
+      deviceContext,
+      options?.extraContext,
+    );
     const safeAnswer = redactPII(answer).text;
     const cited = citedSourcesFromAnswer(safeAnswer, sources);
     return {

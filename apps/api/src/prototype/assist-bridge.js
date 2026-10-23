@@ -21,6 +21,15 @@
     draft: null,
     intent: '',
     injecting: false,
+    handoverInbox: [],
+    handoverLoaded: false,
+    handoverLoading: false,
+    recipients: [],
+    recipientsLoaded: false,
+    recipientsLoading: false,
+    shareOpen: false,
+    approving: false,
+    caseAiBusy: false,
   };
   window.__AIHD_ASSIST__ = AH;
 
@@ -933,17 +942,329 @@
     } catch (error) {
       console.error('[assist] remote section failed', error);
     }
+    try {
+      html += ahCaseAiPanel(c);
+    } catch (error) {
+      console.error('[assist] case ai section failed', error);
+    }
     return html;
+  }
+
+  async function ahJsonFetch(url, options) {
+    const response = await fetch(url, options);
+    const data = await response.json().catch(() => null);
+    if (!response.ok) {
+      const message =
+        data && data.error && data.error.message ? data.error.message : 'HTTP ' + response.status;
+      const error = new Error(message);
+      error.status = response.status;
+      error.code = data && data.error ? data.error.code : '';
+      throw error;
+    }
+    return data;
+  }
+
+  function ahFetchHandoverInbox() {
+    if (AH.handoverLoaded || AH.handoverLoading) return;
+    AH.handoverLoading = true;
+    ahJsonFetch('/api/case-handovers/inbox')
+      .then((data) => {
+        AH.handoverInbox = Array.isArray(data.items) ? data.items : [];
+      })
+      .catch((error) => {
+        // DX 以外は 403。エラー表示はせず、受信箱なしとして扱う。
+        if (error.status !== 403) console.warn('[assist] handover inbox failed', error);
+        AH.handoverInbox = [];
+      })
+      .finally(() => {
+        AH.handoverLoading = false;
+        AH.handoverLoaded = true;
+        setTimeout(ahInject, 0);
+      });
+  }
+
+  /** DX 推進部グループのメンバー（宛先の選択肢）。取れなければ空配列。 */
+  function ahFetchRecipients() {
+    if (AH.recipientsLoaded) return Promise.resolve(AH.recipients);
+    if (AH.recipientsLoading) return Promise.resolve(AH.recipients);
+    AH.recipientsLoading = true;
+    return ahJsonFetch('/api/case-handovers/recipients')
+      .then((data) => {
+        AH.recipients = Array.isArray(data.members) ? data.members : [];
+        return AH.recipients;
+      })
+      .catch((error) => {
+        console.warn('[assist] recipients failed', error);
+        AH.recipients = [];
+        return AH.recipients;
+      })
+      .finally(() => {
+        AH.recipientsLoading = false;
+        AH.recipientsLoaded = true;
+      });
+  }
+
+  function ahCloseShareDialog() {
+    const overlay = document.getElementById('ahdShareOverlay');
+    if (overlay) overlay.remove();
+    AH.shareOpen = false;
+  }
+
+  /**
+   * 引継ぎの宛先は「DX 推進部グループ」で固定。個人を指名するときは
+   * 名簿から選択式で選ぶ（自由入力にしない）。
+   */
+  function ahOpenShareDialog() {
+    if (AH.shareOpen) return Promise.resolve();
+    const c = ahCurrentCase();
+    if (!c || c.closed === 'ai' || c._handoverId) return Promise.resolve();
+    AH.shareOpen = true;
+    return ahFetchRecipients().then((members) => {
+      const overlay = document.createElement('div');
+      overlay.id = 'ahdShareOverlay';
+      overlay.className = 'ahd-overlay';
+      overlay.innerHTML =
+        '<div class="ahd-modal" role="dialog" aria-modal="true" aria-labelledby="ahdShareTitle">' +
+        '<h4 id="ahdShareTitle">DX 推進部へ引き継ぐ</h4>' +
+        '<div class="ahd-msg">宛先は <b>DX 推進部グループ</b> です。特定の担当者に渡す場合だけ、名簿から選んでください。</div>' +
+        '<label class="ahd-f">宛先<select id="ahdShareTo" class="u-in">' +
+        '<option value="">グループ全員（指名なし）</option>' +
+        members
+          .map(
+            (member) =>
+              '<option value="' +
+              ahEsc(member.employeeNo) +
+              '">' +
+              ahEsc(member.label || member.name) +
+              '</option>',
+          )
+          .join('') +
+        '</select></label>' +
+        (members.length
+          ? ''
+          : '<div class="ahd-note">名簿を取得できないため、グループ全員宛だけ選べます。</div>') +
+        '<div class="ahd-row" style="justify-content:flex-end;margin-top:10px">' +
+        '<button class="u-btn" data-ahd="share-cancel">やめる</button>' +
+        '<button class="u-btn pri" data-ahd="share-ok">この宛先で引き継ぐ</button>' +
+        '</div></div>';
+      document.body.appendChild(overlay);
+      const select = document.getElementById('ahdShareTo');
+      overlay.addEventListener('click', (event) => {
+        const act =
+          event.target && event.target.getAttribute ? event.target.getAttribute('data-ahd') : null;
+        if (act === 'share-cancel') {
+          ahCloseShareDialog();
+          return;
+        }
+        if (act === 'share-ok') {
+          const recipientNo = select && select.value ? select.value : '';
+          ahCloseShareDialog();
+          void ahShareCase(recipientNo);
+        }
+      });
+      if (select) select.focus();
+    });
+  }
+
+  async function ahShareCase(recipientNo) {
+    let attempts = 0;
+    const attempt = async () => {
+      const c = ahCurrentCase();
+      if (!c || c.closed === 'ai') return;
+      const L = link(c);
+      if (!L || !L.tkt) {
+        if (attempts++ < 8) {
+          setTimeout(() => void attempt(), 400);
+          return;
+        }
+        return;
+      }
+      if (c._handoverId) return;
+      try {
+        const payload = { caseId: c.id };
+        if (recipientNo) payload.recipientNo = recipientNo;
+        const data = await ahJsonFetch('/api/case-handovers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        c._handoverId = data.handover ? data.handover.id : null;
+        save();
+        if (typeof toast === 'function') {
+          const to =
+            data.handover && data.handover.recipientName
+              ? data.handover.recipientName + ' さん'
+              : 'DX 推進部グループ';
+          toast(to + 'へ引き継ぎました（受信箱に届きます）');
+        }
+      } catch (error) {
+        console.warn('[assist] handover share failed', error);
+        if (typeof toast === 'function') {
+          toast(
+            '引継ぎの共有に失敗しました：' + String(error.message || error).slice(0, 100),
+            'bad',
+          );
+        }
+      }
+    };
+    await attempt();
+  }
+
+  async function ahClaimHandover(id, retry = 0) {
+    try {
+      await ahJsonFetch('/api/case-handovers/' + encodeURIComponent(id) + '/claim', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+      if (typeof toast === 'function') toast('引継ぎ案件を引き受けました。画面を開きます');
+      setTimeout(() => location.reload(), 400);
+    } catch (error) {
+      if (error.code === 'STATE_NOT_READY' && retry < 5) {
+        if (typeof toast === 'function') toast('画面の保存を待って、もう一度お試しください');
+        setTimeout(() => void ahClaimHandover(id, retry + 1), 1500);
+        return;
+      }
+      if (typeof toast === 'function') {
+        toast('引き受けに失敗しました：' + String(error.message || error).slice(0, 120), 'bad');
+      }
+    }
+  }
+
+  /**
+   * 承認しようとしているナレッジ下書きに対応する、共有済みの案件。
+   * 下書きが別案件のものなら null（別の引継ぎを誤って承認しない）。
+   */
+  function ahSharedCaseForDraft(draftId) {
+    const cases = (S.cases || []).filter((item) => item.handoverId);
+    if (!cases.length) return null;
+    const draft = draftId && typeof drById === 'function' ? drById(draftId) || null : null;
+    if (draft) {
+      const linked = cases.find((item) => {
+        try {
+          const L = link(item);
+          return L && L.dr && L.dr.id === draft.id;
+        } catch (error) {
+          return false;
+        }
+      });
+      if (linked) return linked;
+      const byTicket = cases.find((item) => {
+        try {
+          const L = link(item);
+          return L && L.tkt && L.tkt.id === draft.ticketId;
+        } catch (error) {
+          return false;
+        }
+      });
+      if (byTicket) return byTicket;
+      // どの共有案件の下書きでもない → サーバー承認の対象にしない。
+      return null;
+    }
+    const current = ahCurrentCase();
+    return current && current.handoverId ? current : null;
+  }
+
+  async function ahSyncHandoverStatus(status, draftId) {
+    const current = ahCurrentCase();
+    const candidates = (S.cases || []).filter((item) => item.handoverId);
+    let target = current && current.handoverId ? current : null;
+    if (!target && draftId) {
+      target =
+        candidates.find((item) => {
+          try {
+            return link(item).dr && link(item).dr.id === draftId;
+          } catch (error) {
+            return false;
+          }
+        }) || null;
+    }
+    if (!target) target = candidates[0] || null;
+    if (!target || !target.handoverId) return;
+    try {
+      await ahJsonFetch('/api/case-handovers/' + encodeURIComponent(target.handoverId), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+    } catch (error) {
+      console.warn('[assist] handover status sync failed', error);
+    }
+  }
+
+  function ahCaseAiPanel(c) {
+    if (!c || !c.shared || c.closed === 'ai') return '';
+    let helper = false;
+    try {
+      helper = isHdRole(me());
+    } catch (error) {
+      helper = false;
+    }
+    if (!helper) return '';
+    return (
+      '<div class="ahd-box" id="ahdCaseAiBox">' +
+      '<h4>🤖 AI に追加で聞く（DX 推進部）</h4>' +
+      '<div class="ahd-msg">A さんが共有した PC 情報と、ここまでの AI 一次対応の履歴を根拠に回答します。</div>' +
+      '<textarea id="ahdCaseAiInput" class="u-in" rows="2" placeholder="例：この状態で次に確認すべきことは？"></textarea>' +
+      '<div class="ahd-row"><button class="u-btn pri" data-act="wAskCase"' +
+      (AH.caseAiBusy ? ' disabled' : '') +
+      '>' +
+      (AH.caseAiBusy ? '回答中…' : 'AI に聞く') +
+      '</button></div>' +
+      '</div>'
+    );
+  }
+
+  async function ahAskCase() {
+    const c = ahCurrentCase();
+    if (!c || AH.caseAiBusy) return;
+    const input = document.getElementById('ahdCaseAiInput');
+    const text = String((input && input.value) || '').trim();
+    if (!text) {
+      if (typeof toast === 'function') toast('聞きたいことを入力してください');
+      return;
+    }
+    AH.caseAiBusy = true;
+    uxRender();
+    try {
+      const data = await ahJsonFetch('/api/ai/answer-case', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ caseId: c.id, text }),
+      });
+      const chat = S.chats.find((item) => item.id === c.chatId);
+      if (chat) {
+        addMsg(chat, { kind: 'user', text, at: nowISO() });
+        const html = '<p>' + ahEsc(data.answer || '').replace(/\n/g, '<br>') + '</p>';
+        ai(chat, html, {
+          model: data.model || 'DeepSeek-V4.1-Flash',
+          conf: data.confidence || '—',
+          src: (data.sources || []).map((source) => source.kbNo),
+        });
+      }
+      save();
+      if (typeof toast === 'function') toast('AI が回答しました');
+    } catch (error) {
+      console.error('[assist] answer-case failed', error);
+      if (typeof toast === 'function') {
+        toast('AI の回答に失敗しました：' + String(error.message || error).slice(0, 120), 'bad');
+      }
+    } finally {
+      AH.caseAiBusy = false;
+      uxRender();
+    }
   }
 
   function ahInjectHome() {
     const u = ahUser();
     if (!u) return;
+    ahFetchHandoverInbox();
     const pending = (S.cases || []).filter(
       (item) => item.userId === u.id && item.remote && item.remote.status === 'requested',
     );
+    const handovers = AH.handoverInbox || [];
     let box = document.getElementById('ahdHomeNotice');
-    if (!pending.length) {
+    if (!pending.length && !handovers.length) {
       if (box) box.remove();
       return;
     }
@@ -956,20 +1277,45 @@
       box.className = 'ahd-box ahd-consent';
       root.insertBefore(box, root.firstChild);
     }
-    box.innerHTML =
-      '<h4>🛟 遠隔支援の依頼が届いています</h4>' +
-      pending
-        .map(
-          (item) =>
-            '<div class="ahd-msg"><b>' +
-            ahEsc(item.remote.requestedBy || '担当者') +
-            '</b> さんから、案件 <span class="u-mono">' +
-            ahEsc(item.id) +
-            '</span> の遠隔支援を依頼されています。 <button class="u-btn sm" data-act="wOpen" data-id="' +
-            ahEsc(item.id) +
-            '">確認する</button></div>',
-        )
-        .join('');
+    let html = '';
+    if (pending.length) {
+      html +=
+        '<h4>🛟 遠隔支援の依頼が届いています</h4>' +
+        pending
+          .map(
+            (item) =>
+              '<div class="ahd-msg"><b>' +
+              ahEsc(item.remote.requestedBy || '担当者') +
+              '</b> さんから、案件 <span class="u-mono">' +
+              ahEsc(item.id) +
+              '</span> の遠隔支援を依頼されています。 <button class="u-btn sm" data-act="wOpen" data-id="' +
+              ahEsc(item.id) +
+              '">確認する</button></div>',
+          )
+          .join('');
+    }
+    if (handovers.length) {
+      html +=
+        '<h4>📥 DX 推進部への引継ぎ案件</h4>' +
+        handovers
+          .map(
+            (item) =>
+              '<div class="ahd-msg"><b>' +
+              ahEsc(item.subject || '(件名なし)') +
+              '</b>　' +
+              ahEsc(item.requester || '') +
+              (item.assigneeHint
+                ? '　宛先: ' + ahEsc(item.assigneeHint)
+                : '　宛先: DX 推進部グループ') +
+              '<br><span class="u-mono">' +
+              ahEsc(item.caseId) +
+              '</span> <button class="u-btn sm" data-act="wClaimHandover" data-id="' +
+              ahEsc(item.id) +
+              '">引き受ける</button></div>',
+          )
+          .join('');
+    }
+    box.innerHTML = html;
   }
 
   function ahInject() {
@@ -1237,7 +1583,23 @@
       const c = ahCurrentCase();
       if (c) ahPromptResult(c, d.id, false);
     },
+    wClaimHandover(d) {
+      void ahClaimHandover(d.id);
+    },
+    wAskCase() {
+      void ahAskCase();
+    },
   });
+
+  // 引継ぎ（A さん）: 同意して引き継いだ直後に、DX 推進部グループへ共有する。
+  const ahOriginalConsent = ACT.wConsent;
+  if (typeof ahOriginalConsent === 'function') {
+    ACT.wConsent = function (d, el, event) {
+      const result = ahOriginalConsent.call(this, d, el, event);
+      setTimeout(() => void ahOpenShareDialog(), 700);
+      return result;
+    };
+  }
 
   // --- style -------------------------------------------------------------
   function ahInstallStyle() {
@@ -1258,6 +1620,10 @@
       '.ahd-prompt.failed{border-color:#f3c1bd;background:#fff7f6}',
       '.ahd-pill{display:inline-block;border:1px solid var(--u-line,#9aa5b1);border-radius:999px;padding:0 8px;margin:2px 0;font-size:11px;color:var(--u-ink,#1f2933)}',
       '.ahd-consent{border-color:#f0d38a;background:#fffdf5}',
+      '.ahd-overlay{position:fixed;inset:0;background:rgba(15,23,32,.45);display:flex;align-items:center;justify-content:center;z-index:9999}',
+      '.ahd-modal{background:var(--u-panel,#fff);border-radius:12px;padding:16px;max-width:520px;width:calc(100% - 40px);box-shadow:0 12px 40px rgba(0,0,0,.25);font-size:13px}',
+      '.ahd-modal h4{margin:0 0 8px;font-size:15px}',
+      '.ahd-f{display:flex;flex-direction:column;gap:4px;font-size:12px;margin-top:10px}',
     ].join('\n');
     document.head.appendChild(style);
   }
@@ -1295,6 +1661,77 @@
         setTimeout(ahInject, 0);
         return result;
       };
+    }
+
+    const originalAutoAdvance = window.autoAdvance;
+    if (typeof originalAutoAdvance === 'function') {
+      window.autoAdvance = function (c, L) {
+        // 引継ぎ直後は STEP 3（AI 一次対応）を開いたままにする。
+        // ここで 3→4 に自動で進めると、B さんが AI 履歴を見られない。
+        if (c && c.shared && c.step === 3) return;
+        return originalAutoAdvance.apply(this, arguments);
+      };
+    }
+
+    const app = window.App;
+    if (app) {
+      const originalResolve = app.resolve;
+      if (typeof originalResolve === 'function') {
+        app.resolve = function () {
+          const result = originalResolve.apply(this, arguments);
+          setTimeout(() => void ahSyncHandoverStatus('resolved'), 900);
+          return result;
+        };
+      }
+      // ナレッジ承認は DX 推進部グループの誰か。共有案件の承認はサーバーで
+      // 権限（DX 推進部）と状態（引き受け済み）を確認してから実行する。
+      const originalApprove = app.approve;
+      if (typeof originalApprove === 'function') {
+        app.approve = function (id) {
+          const target = ahSharedCaseForDraft(id);
+          if (!target || !target.handoverId) return originalApprove.apply(this, arguments);
+          if (AH.approving) {
+            if (typeof toast === 'function') toast('承認を確認しています…');
+            return undefined;
+          }
+          AH.approving = true;
+          const args = arguments;
+          ahJsonFetch('/api/case-handovers/' + encodeURIComponent(target.handoverId) + '/approve', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: '{}',
+          })
+            .then((data) => {
+              const result = originalApprove.apply(this, args);
+              const approved = data && data.handover ? data.handover : {};
+              if (typeof toast === 'function') {
+                if (approved.selfApproved) {
+                  toast(
+                    '自分の対応した案件を自己承認しました（DX 推進部の別の担当者が承認することが望ましい）',
+                    'bad',
+                  );
+                } else {
+                  toast(
+                    'ナレッジを承認しました（承認者: ' +
+                      String(approved.approvedByName || '') +
+                      '）',
+                  );
+                }
+              }
+              return result;
+            })
+            .catch((error) => {
+              console.error('[assist] approve failed', error);
+              if (typeof toast === 'function') {
+                toast('承認できません：' + String(error.message || error).slice(0, 140), 'bad');
+              }
+            })
+            .finally(() => {
+              AH.approving = false;
+            });
+          return undefined;
+        };
+      }
     }
 
     const page = document.getElementById('uxPage');
