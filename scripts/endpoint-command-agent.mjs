@@ -126,7 +126,7 @@ async function tick() {
 
 async function main() {
   log('command-agent start', { commandUrl, intervalSeconds });
-  do {
+  for (;;) {
     try {
       await tick();
     } catch (error) {
@@ -134,7 +134,7 @@ async function main() {
     }
     if (once) break;
     await new Promise((resolve) => setTimeout(resolve, intervalSeconds * 1000));
-  } while (true);
+  }
 }
 
 main().catch((error) => {
