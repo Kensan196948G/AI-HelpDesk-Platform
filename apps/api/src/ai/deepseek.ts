@@ -174,10 +174,12 @@ export async function answerWithDeepSeek(
       device,
     };
   } catch {
+    const answer = fallbackAnswer(knowledge);
+    const cited = citedSourcesFromAnswer(answer, sources);
     return {
-      answer: fallbackAnswer(knowledge),
-      sources,
-      confidence: knowledge.length > 0 ? '中' : '低',
+      answer,
+      sources: cited,
+      confidence: cited.length > 0 ? '中' : '低',
       provider: 'fallback',
       model: 'fallback',
       device,
