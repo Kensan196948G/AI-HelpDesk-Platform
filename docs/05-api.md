@@ -108,7 +108,7 @@
 | GET | `/` / `/index.html` | Access 認証 | 既存プロトタイプ HTML を配信（boot / bridge 注入） |
 | GET | `/api/state` | Access 認証 | `{email, cowork, helpdesk}` を取得 |
 | PUT | `/api/state/:name` | Access 認証 | `cowork` / `helpdesk` の状態を保存（最大 4MB） |
-| POST | `/api/ai/answer` | Access 認証 | 承認済みナレッジ + PC 情報 + DeepSeek-V4.1-Flash（未設定時フォールバック） |
+| POST | `/api/ai/answer` | Access 認証 | 承認済みナレッジ + PC 情報 + DeepSeek-V4.1-Flash（未設定時フォールバック）。利用者単位 20 回/分（超過 429） |
 
 - `AUTH_MODE=cloudflare-access` では `/api/auth/login` は登録されない（404）。
 - Access のヘッダー `Cf-Access-Authenticated-User-Email` を、`docs/MailAddress.txt`（`ACCESS_ALLOWLIST_FILE`）の許可リストと照合する。完全一致メールと `@domain` を許可し、ヘッダーなし 401、許可外 403、許可リストなし・空は全拒否（fail-closed）。

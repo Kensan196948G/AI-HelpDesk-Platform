@@ -42,3 +42,27 @@ describe('maskSensitivePcValue', () => {
     expect(maskSensitivePcValue('os', 'Windows 11')).toBe('Windows 11');
   });
 });
+
+describe('redactPII（表記ゆれ）', () => {
+  it.each([
+    ['PW: Abc12345', 'Abc12345'],
+    ['pass=hunter22', 'hunter22'],
+    ['パスワード abc123 です', 'abc123'],
+    ['電話は +81 90 1234 5678 です', '1234 5678'],
+    ['電話は 090 1234 5678 です', '1234 5678'],
+    ['電話は ０９０－１２３４－５６７８ です', '５６７８'],
+    ['連絡は taro＠example.com まで', 'taro'],
+    ['IPv6 は 2001:db8::1 です', '2001:db8::1'],
+    ['IPv6 は fe80:0:0:0:200:f8ff:fe21:67cf です', 'fe21:67cf'],
+  ])('%s を伏せ字にする', (input, secret) => {
+    expect(redactPII(input).text).not.toContain(secret);
+  });
+
+  it.each([
+    'パスワード 変更方法を教えてください',
+    '会議は 10:30:00 に開始します',
+    'TKT-2026-0101 は 2026-10-23 10:12 に受付しました。',
+  ])('%s は変更しない', (text) => {
+    expect(redactPII(text).text).toBe(text);
+  });
+});

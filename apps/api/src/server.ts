@@ -41,7 +41,9 @@ export async function buildServer(options?: { logger?: boolean }): Promise<Fasti
               'res.headers["set-cookie"]',
             ],
           },
-    trustProxy: true,
+    // Cloudflare Tunnel（cloudflared）はループバックから接続する。
+    // それ以外の経路から来た X-Forwarded-For は信用しない（request.ip の偽装を防ぐ）。
+    trustProxy: ['127.0.0.1', '::1'],
     bodyLimit: 1024 * 1024,
   });
 

@@ -101,13 +101,24 @@
   - デバイストークンは 32 bytes ランダム。DB には SHA-256 ハッシュのみ。`scripts/issue-device-token.ts` で発行し、0600 の設定ファイルに保存する。
   - エージェント API は IP 単位 30 回/分に制限。不正トークンは 401。
   - エージェントは画面の `WEB-XXXXXXXX` を `browserDeviceId` に指定して端末へリンクする。未リンクのエージェントは保存されるが、ブラウザのPC情報には混ぜない。
-- 残存リスク: Access ヘッダーの信頼（JWT 検証は未実装）、ローカル origin への直接アクセス、DNS キャッシュ、エージェント用 bypass パス。
+- **Access JWT 検証（2026-10-23 追加）**: `ACCESS_JWT_MODE=off|report|enforce`、`ACCESS_TEAM_DOMAIN`、`ACCESS_AUD`。
+  `Cf-Access-Jwt-Assertion` の RS256 署名（`https://<team>/cdn-cgi/access/certs`、1h キャッシュ・kid 不明時は再取得）、
+  `aud`・`iss`・`exp`/`nbf`（±60 秒）と、JWT の email とヘッダー email の一致を確認する。
+  同一ホスト上のプロセスや SSRF から 127.0.0.1 へ偽の email ヘッダーを送るなりすましを防ぐ。
+  段階導入: `report`（失敗をログに出すだけ）で実ログインの成功ログ「Cloudflare Access JWT を検証しました。」を確認してから `enforce` にする。
+- **本番で認証なしの起動を拒否**: `NODE_ENV=production` で `AUTH_MODE=local`（既定値を含む）なら起動しない。
+- **接続元の扱い**: `trustProxy` はループバック（cloudflared）のみ。レート制限のキーは Tunnel 経由なら `CF-Connecting-IP`。
+  利用者が送る `X-Forwarded-For` の左端は使わない。レート制限のバケットは上限 1 万件で期限切れを掃除する。
+- **AI 回答のレート制限**: `/api/ai/answer` は利用者（Access メール）単位で 1 分 20 回（超過は 429）。外部 AI の費用を抑える。
+- 残存リスク: `ACCESS_JWT_MODE=off` の間は Access ヘッダーの信頼、DNS キャッシュ、エージェント用 bypass パス。
 - 12h の自動ログオフは Access のセッション期限に依存する。
 
 ## 7-2. DeepSeek API（DeepSeek-V4.1-Flash）
 
 - モデル: `deepseek-flash`（DeepSeek-V4.1-Flash）。`DEEPSEEK_MODEL=deepseek-flash`、`DEEPSEEK_THINKING=disabled`（速度・安定性優先）。
 - 自由記述の回答のみ。PII を伏せ字化し、承認済みナレッジと実 PC 情報を根拠として送信する。
+- 伏せ字（`domain/pii.ts`）は全角数字・`＠`・`+81`・空白区切りの電話番号・IPv6・`PW:` / `pass=` / 「パスワード abc123」にも対応（2026-10-23）。
+  「パスワード 変更方法を教えて」のような通常の相談文は伏せない。
 - 診断・修復・セキュリティ初動・禁止操作は DeepSeek に判断させず、元の決定ルールを維持。
 - API キーは `~/.config/ai-helpdesk/api.conf`（0600）。リポジトリ・ログへ書かない。
 - キー未設定・障害時は承認済みナレッジのフォールバック。UI に「DeepSeek API 未設定」を表示。

@@ -15,7 +15,7 @@ import {
   resolveBrowserDeviceId,
   storeDeviceInventory,
 } from '../lib/device-inventory.js';
-import { checkRateLimit } from '../lib/rate-limit.js';
+import { checkRateLimit, clientAddress } from '../lib/rate-limit.js';
 
 const Int = (min: number, max: number) => z.number().int().min(min).max(max);
 const Num = (min: number, max: number) => z.number().min(min).max(max);
@@ -270,7 +270,7 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
   // 端末エージェントからの取り込み。Access のパス限定アプリ（/api/device/agent）は
   // ブラウザセッションを持たないため、アプリ側のデバイストークンでユーザーに紐づける。
   app.post('/device/agent', { bodyLimit: 2 * 1024 * 1024 }, async (request) => {
-    if (!checkRateLimit(`device-agent:${request.ip}`, 30, 60_000)) {
+    if (!checkRateLimit(`device-agent:${clientAddress(request)}`, 30, 60_000)) {
       throw new ApiError(429, 'RATE_LIMITED', '端末エージェントのリクエストが多すぎます。');
     }
     const email = await authenticateDeviceToken(request);

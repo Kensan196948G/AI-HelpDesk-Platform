@@ -216,4 +216,29 @@ describe('追加の API integration', () => {
     });
     expect(invalid.statusCode).toBe(400);
   });
+
+  it('PC情報の共有に同意しない引継ぎでは、メモに端末名を載せない', async () => {
+    const requester = await login('yamada@example.com');
+    const helpdesk = await login('sato@example.com');
+    const createdRes = await call(requester, 'POST', '/api/cases', {
+      category: 'file_share',
+      subject: `共有フォルダが開けません（no-pc ${suffix}）`,
+      body: 'アクセスが拒否されます。',
+      urgency: 'normal',
+      pcEnabled: true,
+    });
+    expect(createdRes.statusCode, createdRes.body).toBe(200);
+    const caseId = createdRes.json().case.id as string;
+    const handoffRes = await call(requester, 'POST', `/api/cases/${caseId}/handoff`, {
+      sharedFields: ['consultation', 'ai'],
+    });
+    expect(handoffRes.statusCode, handoffRes.body).toBe(200);
+
+    const detail = await call(helpdesk, 'GET', `/api/cases/${caseId}`);
+    expect(detail.statusCode, detail.body).toBe(200);
+    const memo = String(detail.json().case.ticket.handoffMemo);
+    expect(memo).toContain('対象の機器: 共有なし');
+    expect(memo).not.toContain('PC-0241');
+    expect(detail.json().case.pc.visible).toBe(false);
+  });
 });

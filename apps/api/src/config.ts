@@ -17,6 +17,12 @@ if (!isProduction && existsSync(path.join(repoRoot, localEnvFile))) {
   loadEnv({ path: path.join(repoRoot, '.env') });
 }
 
+// 空文字（`KEY=`）は未設定として扱う。
+const optionalText = z.preprocess(
+  (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+  z.string().trim().min(1).optional(),
+);
+
 const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(18950),
@@ -40,6 +46,13 @@ const EnvSchema = z.object({
   DEV_AUTH_EMAIL: z.string().email().default('dev@example.com'),
   // アクセス許可リストの正本（完全一致メール / @domain）。repo ルート相対。
   ACCESS_ALLOWLIST_FILE: z.string().trim().min(1).default('docs/MailAddress.txt'),
+  // Cloudflare Access の JWT（Cf-Access-Jwt-Assertion）検証。
+  // off: 検証しない / report: 検証結果をログに出すだけ（段階導入用） / enforce: 不正なら 401。
+  ACCESS_JWT_MODE: z.enum(['off', 'report', 'enforce']).default('off'),
+  // 例: <team>.cloudflareaccess.com
+  ACCESS_TEAM_DOMAIN: optionalText,
+  // Access アプリケーションの AUD タグ（秘密ではない）
+  ACCESS_AUD: optionalText,
   // 非推奨: 単一メール指定。許可リストは ACCESS_ALLOWLIST_FILE に統一した。
   ACCESS_ALLOWED_EMAIL: z.string().email().optional(),
   // DeepSeek API（MVP / Staging のみ）
@@ -55,6 +68,32 @@ const parsed = EnvSchema.safeParse(process.env);
 if (!parsed.success) {
   console.error('[config] 環境変数が不足しています:', parsed.error.flatten().fieldErrors);
   process.exit(1);
+}
+
+// 本番で認証なしのローカルモードが有効にならないよう、起動を拒否する（fail-closed）。
+if (isProduction && parsed.data.AUTH_MODE === 'local') {
+  console.error(
+    '[config] NODE_ENV=production では AUTH_MODE=local を使えません。AUTH_MODE=cloudflare-access を設定してください。',
+  );
+  process.exit(1);
+}
+if (
+  parsed.data.ACCESS_JWT_MODE !== 'off' &&
+  (!parsed.data.ACCESS_TEAM_DOMAIN || !parsed.data.ACCESS_AUD)
+) {
+  console.error(
+    '[config] ACCESS_JWT_MODE を有効にする場合は ACCESS_TEAM_DOMAIN と ACCESS_AUD が必要です。',
+  );
+  process.exit(1);
+}
+if (
+  isProduction &&
+  parsed.data.AUTH_MODE === 'cloudflare-access' &&
+  parsed.data.ACCESS_JWT_MODE === 'off'
+) {
+  console.warn(
+    '[config] ACCESS_JWT_MODE=off です。Cloudflare Access の JWT を検証していません（report → enforce の順に有効化してください）。',
+  );
 }
 
 if (parsed.data.ACCESS_ALLOWED_EMAIL) {

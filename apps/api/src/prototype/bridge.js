@@ -11,6 +11,7 @@
     helpdesk: 'mirai-wizard-v31-helpdesk',
   };
   const last = Object.create(null);
+  const KEEPALIVE_LIMIT = 60 * 1024;
 
   function current(name) {
     try {
@@ -29,11 +30,13 @@
       return;
     }
     try {
+      const body = JSON.stringify({ data });
       const response = await fetch('/api/state/' + encodeURIComponent(name), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ data }),
-        keepalive: true,
+        body,
+        // keepalive の本文は仕様上 64KiB まで。超えると送信自体が失敗するため、小さいときだけ使う。
+        keepalive: body.length < KEEPALIVE_LIMIT,
       });
       if (!response.ok) throw new Error('state save HTTP ' + response.status);
     } catch (error) {

@@ -1,7 +1,48 @@
 import type { FastifyRequest } from 'fastify';
 import { config } from '../config.js';
 import { forbidden, unauthorized } from '../errors.js';
+import { AccessJwtError, verifyAccessJwt } from './access-jwt.js';
 import { getAllowlist, isEmailAllowed } from './allowlist.js';
+
+let reportedJwtSuccess = false;
+
+/**
+ * Cloudflare Access の JWT を検証する（ACCESS_JWT_MODE）。
+ * - enforce: 署名・aud・iss・期限・email の一致を満たさなければ 401。
+ * - report: 結果をログに出すだけで通す（本番適用前の確認用）。
+ */
+async function checkAccessJwt(request: FastifyRequest, email: string): Promise<void> {
+  if (config.ACCESS_JWT_MODE === 'off' || !config.ACCESS_TEAM_DOMAIN || !config.ACCESS_AUD) {
+    return;
+  }
+  const raw = request.headers['cf-access-jwt-assertion'];
+  const token = Array.isArray(raw) ? raw[0] : raw;
+  let reason: string | null = null;
+  try {
+    if (!token) throw new AccessJwtError('JWT がありません');
+    const claims = await verifyAccessJwt(token, {
+      teamDomain: config.ACCESS_TEAM_DOMAIN,
+      audience: config.ACCESS_AUD,
+    });
+    if (claims.email?.trim().toLowerCase() !== email) {
+      throw new AccessJwtError('JWT の email がヘッダーと一致しません');
+    }
+  } catch (error) {
+    reason = error instanceof AccessJwtError ? error.message : 'JWT を検証できませんでした';
+  }
+
+  if (!reason) {
+    if (!reportedJwtSuccess) {
+      reportedJwtSuccess = true;
+      request.log.info({ mode: config.ACCESS_JWT_MODE }, 'Cloudflare Access JWT を検証しました。');
+    }
+    return;
+  }
+  request.log.warn({ mode: config.ACCESS_JWT_MODE, reason }, 'Cloudflare Access JWT の検証に失敗');
+  if (config.ACCESS_JWT_MODE === 'enforce') {
+    throw unauthorized('Cloudflare Access の認証を確認できませんでした。');
+  }
+}
 
 /**
  * Cloudflare Access が付与する email ヘッダーを検証する。
@@ -20,13 +61,14 @@ export async function requireCloudflareAccess(request: FastifyRequest): Promise<
   if (!isEmailAllowed(getAllowlist(), email)) {
     throw forbidden('このメールアドレスは許可されていません。');
   }
+  await checkAccessJwt(request, email);
   request.uiEmail = email;
 }
 
 /**
  * プロトタイプ UI / 状態保存 / AI 用の認証。
- * - cloudflare-access: Access の email ヘッダー + 許可リスト。
- * - local: 開発・テスト用に DEV_AUTH_EMAIL を使う。
+ * - cloudflare-access: Access の email ヘッダー + 許可リスト（+ JWT 検証）。
+ * - local: 開発・テスト用に DEV_AUTH_EMAIL を使う（本番では config が起動を拒否する）。
  * アプリ内のパスワードログインは行わない。
  */
 export async function authenticateUi(request: FastifyRequest): Promise<void> {
