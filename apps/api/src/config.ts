@@ -35,12 +35,36 @@ const EnvSchema = z.object({
     .transform((value) => value === 'true'),
   LOG_LEVEL: z.string().default('info'),
   COMMIT_SHA: z.string().optional(),
+  // 認証: local（開発/テスト）または cloudflare-access（本番/Preview）
+  AUTH_MODE: z.enum(['local', 'cloudflare-access']).default('local'),
+  DEV_AUTH_EMAIL: z.string().email().default('dev@example.com'),
+  ACCESS_ALLOWED_EMAIL: z.string().email().optional(),
+  // DeepSeek API（MVP / Staging のみ）
+  DEEPSEEK_API_KEY: z.string().min(1).optional(),
+  DEEPSEEK_MODEL: z.string().default('deepseek-chat'),
+  DEEPSEEK_BASE_URL: z.string().url().default('https://api.deepseek.com'),
+  DEEPSEEK_TIMEOUT_MS: z.coerce.number().int().positive().default(30000),
 });
 
 const parsed = EnvSchema.safeParse(process.env);
 if (!parsed.success) {
   console.error('[config] 環境変数が不足しています:', parsed.error.flatten().fieldErrors);
   process.exit(1);
+}
+
+if (
+  parsed.data.AUTH_MODE === 'cloudflare-access' &&
+  !parsed.data.ACCESS_ALLOWED_EMAIL &&
+  parsed.data.NODE_ENV === 'production'
+) {
+  console.warn(
+    '[config] ACCESS_ALLOWED_EMAIL が未設定です。Cloudflare Access のポリシーで許可メールを制限してください。',
+  );
+}
+if (!parsed.data.DEEPSEEK_API_KEY) {
+  console.warn(
+    '[config] DEEPSEEK_API_KEY が未設定です。AI 回答は承認済みナレッジのフォールバックになります。',
+  );
 }
 
 export const config = {

@@ -1,5 +1,9 @@
 # MVP スコープ・受入条件（v1.0 / 承認待ち）
 
+> **2026-10-23 ユーザー指示による変更**: WebUI は既存プロトタイプ HTML を 100% 適用し、
+> Cloudflare Access（OTP / 12h / 指定メールのみ）を唯一のログインとし、自由記述の AI 回答に
+> DeepSeek API を使う。実装は [14-prototype-ui-integration.md](14-prototype-ui-integration.md) を正本とする。
+
 ## 1. Goal → User → Problem → Value
 
 | 項目 | 内容 |

@@ -28,6 +28,15 @@
 - CI / Cloudflare Preview は **policy gate により未実施**。
 - 同一 Blocker が 3 ラウンド継続したため、Goal を blocked として報告。
 
+## Round 4 — ユーザー指示による UI/認証/配備の変更
+
+- WebUI を既存プロトタイプ HTML の 100% 配信に変更。
+- Cloudflare Access（OTP / 12h / 指定メール）を唯一のログインに変更。
+- Cloudflare Tunnel + Access で `ai-helpdesk.mirai-dx-platform.com` を公開。
+- DeepSeek API の自由記述回答、`prototype_states` への状態保存を追加。
+- 41 tests 成功。Access ログイン画面・公開 URL 302 を確認。
+- 残: Access 許可メール、DeepSeek API キー、全 STEP E2E、CI。
+
 ## 現在の Evidence
 
 | 項目 | 結果 |

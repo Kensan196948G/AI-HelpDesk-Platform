@@ -10,8 +10,13 @@ import { buildDemoPcSnapshot } from '../apps/api/src/domain/pc.js';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..');
 
-const envFile = process.env.NODE_ENV === 'test' ? '.env.test.local' : '.env.local';
-if (existsSync(path.join(root, envFile))) {
+const envFile =
+  process.env.NODE_ENV === 'test'
+    ? '.env.test.local'
+    : process.env.NODE_ENV === 'production'
+      ? null
+      : '.env.local';
+if (envFile && existsSync(path.join(root, envFile))) {
   config({ path: path.join(root, envFile), override: true });
 } else {
   config({ path: path.join(root, '.env') });

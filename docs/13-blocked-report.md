@@ -1,3 +1,6 @@
+> **2026-10-23 追記（解消済み/一部）**: ユーザー指示により Cloudflare Tunnel + Access で Preview を公開した。
+> 残 Blocker は「Access 許可メール」「DeepSeek API キー」「CI」。詳細は [14-prototype-ui-integration.md](14-prototype-ui-integration.md)。
+
 # Blocker 報告（Goal: Mirai AI HelpDesk MVP）
 
 日付: 2026-10-23

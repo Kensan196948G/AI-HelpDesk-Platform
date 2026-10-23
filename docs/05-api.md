@@ -101,6 +101,19 @@
 | 429 | `RATE_LIMITED` | ログイン試行過多 |
 | 503 | — | `/health` の DB 異常 |
 
+## 6-1. プロトタイプ UI / Access / DeepSeek
+
+| Method | Path | 権限 | 説明 |
+|---|---|---|---|
+| GET | `/` / `/index.html` | Access 認証 | 既存プロトタイプ HTML を配信（boot / bridge 注入） |
+| GET | `/api/state` | Access 認証 | `{email, cowork, helpdesk}` を取得 |
+| PUT | `/api/state/:name` | Access 認証 | `cowork` / `helpdesk` の状態を保存（最大 4MB） |
+| POST | `/api/ai/answer` | Access 認証 | 承認済みナレッジ + DeepSeek（未設定時フォールバック） |
+
+- `AUTH_MODE=cloudflare-access` では `/api/auth/login` は登録されない（404）。
+- Access のヘッダー `Cf-Access-Authenticated-User-Email` を検証。`ACCESS_ALLOWED_EMAIL` と完全一致。
+- ローカル開発/テストのみ `AUTH_MODE=local`（`DEV_AUTH_EMAIL`）。
+
 ## 7. セキュリティ上の前提
 
 - Preview では Worker が `X-Proxy-Secret` を付与し、API は共有秘密のない直接アクセスを拒否する（`REQUIRE_PROXY_SECRET=true`）。

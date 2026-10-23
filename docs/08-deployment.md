@@ -1,5 +1,33 @@
 # Deployment（Preview / 検証環境）
 
+## 0. 実配備（2026-10-23 / Tunnel + Access）
+
+> ユーザー指示（2026-10-23）により、WebUI は既存プロトタイプ HTML をそのまま配信し、
+> Cloudflare Tunnel + Access で公開する経路に変更した。Worker / Pages は使用しない。
+
+| リソース | 値 |
+|---|---|
+| 公開 URL | https://ai-helpdesk.mirai-dx-platform.com （Access ログインへ 302） |
+| Access アプリ | `Mirai AI HelpDesk MVP` / `44de6fdd-d2c3-4c2b-8e8b-3be092dc1eae` / 12h / OTP |
+| Access ポリシー | **未作成（deny-all）**。許可メール確定後に「そのメールだけ allow」を追加 |
+| Tunnel | `ai-helpdesk` / `96d0214e-8236-4bce-8dd0-75233d1e716f` |
+| Tunnel config | `~/.cloudflared/ai-helpdesk-config.yml` |
+| API service | `ai-helpdesk-api.service`（Node 22 / 127.0.0.1:18950） |
+| Tunnel service | `ai-helpdesk-cloudflared.service` |
+| DB | Local PostgreSQL `ai_helpdesk_preview` |
+| DNS | CNAME `ai-helpdesk` → `96d0214e-...cfargotunnel.com`（proxied） |
+
+- `AUTH_MODE=cloudflare-access`。アプリ内ログインは無効（`/api/auth/login` は 404）。
+- API は `Cf-Access-Authenticated-User-Email` を検証。ヘッダーなし 401、許可外 403。
+- 12h の自動ログオフは Access のセッション期限で実現。
+- DeepSeek API キーは `~/.config/ai-helpdesk/api.conf`（0600）に置く。未設定時はフォールバック。
+- 実測: 公開 URL は 302 → `winter-lake-f4c9.cloudflareaccess.com` の OTP 画面。
+  ローカル origin は ヘッダーなし 401 / 許可ヘッダー 200 / 不一致 403。
+- 注意: `cloudflared tunnel route dns <name>` はデフォルト config の tunnel を選ぶことがあった。
+  DNS は UUID 指定 + `--overwrite-dns` で修正した。既存の `ai-design` 等には変更なし。
+- 注意: ローカル DNS 192.168.245.11 は新ホストを NXDOMAIN キャッシュ中。1.1.1.1 では解決済み。
+
+
 ## 1. 目標構成
 
 ```
@@ -36,7 +64,7 @@ Local PostgreSQL（127.0.0.1:5435 / ai_helpdesk_preview）
 | DB | `ai_helpdesk_preview` | Preview 用。dev/test と分離 |
 | Worker Secret | `PROXY_SECRET` | API と一致 |
 
-## 3. ⚠️ 現在の Blocker（self-evolution policy gate）
+## 3. ⚠️ CI の Blocker / 経路変更（self-evolution policy gate）
 
 このセッションでは、以下の操作が **DSH の self-evolution policy gate** により拒否された。
 
@@ -46,7 +74,8 @@ Local PostgreSQL（127.0.0.1:5435 / ai_helpdesk_preview）
 | `wrangler.jsonc` / `wrangler.toml` の作成 | 同上（パス規則 `wrangler.(toml/jsonc?)` が DEPLOY） |
 | `wrangler deploy` / `wrangler publish` の実行 | 同上（コマンド規則） |
 
-- 影響: **CI の追加、Cloudflare Preview への配備、Preview 上の実動作検証ができない**。
+- 影響: **CI の追加ができない**。Cloudflare Preview は Tunnel + Access で公開済み（§0）。
+  Worker / Pages 経路は引き続き不可。
 - 必要な対応: ユーザーが以下いずれかを実施する。
   1. このセッションの policy gate を一時的に無効化／例外許可する（`DSH_SELF_EVOLUTION_CONFIG` の設定変更。**要ユーザー承認**）。
   2. 人間が本ドキュメントの手順で CI 定義・Worker 定義を追加し、`wrangler deploy` を実行する。

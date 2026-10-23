@@ -11,6 +11,7 @@ import { dashboardRoutes } from './routes/dashboard.js';
 import { deskRoutes } from './routes/desk.js';
 import { healthRoutes } from './routes/health.js';
 import { knowledgeRoutes } from './routes/knowledge.js';
+import { prototypeRoutes } from './routes/prototype.js';
 
 function secretsMatch(actual: string, expected: string): boolean {
   const a = Buffer.from(actual);
@@ -62,8 +63,22 @@ export async function buildServer(options?: { logger?: boolean }): Promise<Fasti
 
     if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method)) {
       const origin = request.headers.origin;
-      if (origin && config.allowedOrigins.length > 0 && !config.allowedOrigins.includes(origin)) {
-        throw forbidden('許可されていない Origin からの操作です。');
+      if (origin) {
+        let sameOrigin = false;
+        try {
+          const originHost = new URL(origin).host;
+          const requestHost = request.headers['x-forwarded-host'] ?? request.headers.host;
+          sameOrigin = Boolean(requestHost) && originHost === requestHost;
+        } catch {
+          sameOrigin = false;
+        }
+        if (
+          !sameOrigin &&
+          config.allowedOrigins.length > 0 &&
+          !config.allowedOrigins.includes(origin)
+        ) {
+          throw forbidden('許可されていない Origin からの操作です。');
+        }
       }
     }
   });
@@ -121,7 +136,10 @@ export async function buildServer(options?: { logger?: boolean }): Promise<Fasti
     });
   });
 
-  await app.register(authRoutes, { prefix: '/api' });
+  await app.register(prototypeRoutes);
+  if (config.AUTH_MODE === 'local') {
+    await app.register(authRoutes, { prefix: '/api' });
+  }
   await app.register(caseRoutes, { prefix: '/api' });
   await app.register(deskRoutes, { prefix: '/api' });
   await app.register(knowledgeRoutes, { prefix: '/api' });

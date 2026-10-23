@@ -17,5 +17,6 @@ declare module 'fastify' {
   interface FastifyRequest {
     authUser?: AuthUser;
     sessionTokenHash?: string;
+    uiEmail?: string;
   }
 }

@@ -37,17 +37,21 @@ npx tsx scripts/seed.ts
 |---|---|---|
 | TypeCheck（API） | ✅ 成功 | `tsc --noEmit` |
 | Lint / Format | ✅ 成功 | Biome。warning 9（non-null assertion 等）、error 0 |
-| Unit test | ✅ 28 件成功 | PII / signal / audit / PC / AI / password |
-| Integration test | ✅ 8 件成功 | 主要 3 Flow、セキュリティ、権限 |
+| Unit test | ✅ 30 件成功 | PII / signal / audit / PC / AI / password / Worker / Access |
+| Integration test | ✅ 11 件成功 | 主要 3 Flow、セキュリティ、権限、UI 配信、state、AI |
 | API Build | ✅ 成功 | `apps/api/dist` を生成 |
 | Dependency audit（runtime） | ✅ 0 vulnerabilities | `npm audit --omit=dev --audit-level=high` |
 | Secret pattern scan | ✅ 検出なし | `scripts/scan-secrets.sh`（CI 用） |
-| Backup / Restore | ✅ 成功 | PG16 `pg_dump` → 新規 DB へ plain 復元。users 6 / cases 7 / knowledge 5 |
-| E2E（UI） | ⏸ 未実施 | WebUI の Y/N 承認待ち |
+| Backup / Restore | ✅ 成功 | PG16 `pg_dump` → 新規 DB へ plain 復元 |
+| UI 配信 | ✅ 200 | 元 HTML のタイトル・主要画面・約 500KB |
+| Access 認証 | ✅ | ヘッダーなし 401 / 許可 200 / 不一致 403 / 本番 login 404 |
+| 公開 URL | ✅ | 302 → Cloudflare Access OTP ログイン画面 |
+| DeepSeek フォールバック | ✅ | `/api/ai/answer` 200 / 承認済みナレッジの根拠 |
+| E2E（UI） | ⏸ 一部 | UI 配信・状態・H.kb を Playwright で確認。全 STEP の E2E は未実施 |
 
 ```
-Test Files  9 passed (9)
-Tests       36 passed (36)
+Test Files  11 passed (11)
+Tests       41 passed (41)
 ```
 
 ## 4. Integration test が見ているもの

@@ -78,6 +78,24 @@
 | 監査ログの保全 | ローカル DB。SIEM 連携なし | 本番は追記専用ストレージ / SIEM |
 | Preview 未配備 | policy gate により deploy 不可 | [docs/08-deployment.md](08-deployment.md) の Blocker 参照 |
 
+## 7-1. Cloudflare Access 運用（2026-10-23 追加）
+
+- 本番/Preview の認証は **Cloudflare Access のみ**。アプリ内ログインは `AUTH_MODE=cloudflare-access` で無効（`/api/auth/login` 404）。
+- Access アプリ: `Mirai AI HelpDesk MVP` / `ai-helpdesk.mirai-dx-platform.com` / session 12h / One-time PIN。
+- 許可メールは Access の allow ポリシーで制限する（**現在は deny-all、`<EMAIL_1>` 確定待ち**）。
+- Node API は Access が付与する `Cf-Access-Authenticated-User-Email` を検証する。ヘッダーなし 401、`ACCESS_ALLOWED_EMAIL` 不一致 403。
+- Origin は 127.0.0.1 のみ。Tunnel 経由でのみ公開し、DB は公開しない。
+- 残存リスク: Access ヘッダーの信頼（JWT 検証は未実装）、ローカル origin への直接アクセス、Access ポリシー未設定、DNS キャッシュ。
+- 12h の自動ログオフは Access のセッション期限に依存する。
+
+## 7-2. DeepSeek API
+
+- 自由記述の回答のみ。PII を伏せ字化し、承認済みナレッジを根拠として送信する。
+- 診断・修復・セキュリティ初動・禁止操作は DeepSeek に判断させず、元の決定ルールを維持。
+- API キーは `~/.config/ai-helpdesk/api.conf`（0600）。リポジトリ・ログへ書かない。
+- キー未設定・障害時は承認済みナレッジのフォールバック。UI に「DeepSeek API 未設定」を表示。
+- 残存リスク: DeepSeek への送信内容（伏せ字済み・承認済みナレッジ）、外部 API の可用性・費用。
+
 ## 8. 禁止・対象外
 
 - パスワード確認・再設定、権限付与、セキュリティ判断、端末の隔離・削除は AI が行わない。

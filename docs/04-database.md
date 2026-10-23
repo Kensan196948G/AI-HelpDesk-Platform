@@ -39,6 +39,7 @@ users 1 ──< audit_log (actor)
 | `knowledge` | kb_no, case_id, resolution_id, title, symptom, cause, steps, keywords(text[]), status, author_id, approver_id, version | kb_no / resolution_id 一意。status / keywords GIN 索引 |
 | `knowledge_reviews` | knowledge_id, reviewer_id, decision, comment, checklist(jsonb) | knowledge_id + created_at 索引 |
 | `audit_log` | actor_id, action, target_type, target_id, detail(jsonb), prev_hash, hash | created_at / target 索引。追記のみ |
+| `prototype_states` | user_email, name(cowork/helpdesk), data(jsonb), updated_at | 主キー(user_email,name)。既存プロトタイプ UI の状態保存（migration 002） |
 
 ### 2-1. 状態値
 
