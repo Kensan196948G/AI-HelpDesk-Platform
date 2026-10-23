@@ -27,7 +27,7 @@
 - DB: Local PostgreSQL 16（`127.0.0.1:5435`、DB 名 `ai_helpdesk_mvp`）
 - DB driver: `postgres`（postgres.js）
 - Validation: `zod`
-- Test: `vitest`（Unit / Integration / UI / Access）、`playwright-core`（ローカル UI 確認）
+- Test: `vitest`（Unit / Integration / UI / Access / 実PC情報・端末エージェント）
 - Lint/Format: `biome`
 - Edge: **Cloudflare Tunnel + Cloudflare Access**（`ai-helpdesk.mirai-dx-platform.com`）
 - `worker/` は参考実装（policy gate により Workers 配備は不可）
@@ -44,6 +44,8 @@ npm run build            # api
 npm run db:migrate       # 空 DB から再実行可能（冪等）
 npm run db:seed          # 再実行可能（TRUNCATE はしない。upsert のみ）
 npm run dev:api          # API + 既存 UI を http://127.0.0.1:18950 で配信
+node scripts/endpoint-agent.mjs --config ~/.config/ai-helpdesk/device-agent.json --once
+                          # 端末エージェント（読み取り専用）で実PC情報を送信
 ```
 
 ## 5. 実装規約
@@ -60,7 +62,9 @@ npm run dev:api          # API + 既存 UI を http://127.0.0.1:18950 で配信
 - Secret / Credential / 実個人情報をリポジトリ・ログ・Seed・PR に書かない。
 - `.env` はコミットしない。`.env.example` のみ。
 - 相談本文は保存前にパスワード・メール・電話・IP・カード番号等を伏せ字にする。
-- PC 基本情報は**読み取り専用のデモデータ**。実端末情報は取得しない。
+- PC 基本情報は**読み取り専用**。ブラウザ取得 + 端末エージェントで実端末のハードウェア・ソフトウェア情報を取得する。
+  ファイル内容・閲覧履歴・画面・キー入力・メール本文は取得しない。IP・シリアル・資産番号・メールは AI へ渡す前に伏せる。
+- 端末エージェント専用の `/api/device/agent` は Cloudflare Access のパス限定 bypass とし、アプリ側のデバイストークン（SHA-256 ハッシュ保存）で保護する。人間の UI / API は従来どおり Access 必須。
 - ローカル PostgreSQL をインターネットへ直接公開しない。公開は Cloudflare Access + Tunnel 経由の Node のみ。
 - 本番/Preview のログインは Cloudflare Access のみ。アプリ内ログインを追加しない。
 - 本番環境・Production deploy・破壊的 DB 操作は行わない（承認がある場合を除く）。

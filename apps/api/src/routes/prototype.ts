@@ -9,7 +9,10 @@ import { sql } from '../db.js';
 import { badRequest } from '../errors.js';
 
 const PROTOTYPE_FILE = 'Mirai_AIHelpdesk_Cowork_StepWizard_V3.1_PCinfo_Offline.html';
-const BRIDGE_FILE = path.join('apps', 'api', 'src', 'prototype', 'bridge.js');
+const BRIDGE_FILES = [
+  path.join('apps', 'api', 'src', 'prototype', 'bridge.js'),
+  path.join('apps', 'api', 'src', 'prototype', 'device-bridge.js'),
+];
 const COWORK_KEY = 'mirai-wizard-v31-cowork';
 const HELPDESK_KEY = 'mirai-wizard-v31-helpdesk';
 
@@ -43,7 +46,9 @@ function readSource(): string {
 
 function readBridge(): string {
   if (!cachedBridge) {
-    cachedBridge = readFileSync(path.join(repoRoot, BRIDGE_FILE), 'utf8');
+    cachedBridge = BRIDGE_FILES.map((file) => readFileSync(path.join(repoRoot, file), 'utf8')).join(
+      '\n\n',
+    );
   }
   return cachedBridge;
 }
@@ -167,7 +172,7 @@ export async function prototypeRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/ai/answer', { preHandler: authenticateUi }, async (request, reply) => {
     const { text } = AiBodySchema.parse(request.body);
     try {
-      return await answerWithDeepSeek(text);
+      return await answerWithDeepSeek(text, request.uiEmail);
     } catch (error) {
       request.log.warn({ err: error }, 'AI answer failed');
       reply.code(502);

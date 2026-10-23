@@ -8,12 +8,12 @@ MVP では実装しない。必要になった順に Issue 化する。
 |---|---|---|
 | B-01 | 添付ファイル（メタデータ→実体） | FR-05。区分・AI 可否・マルウェア検査・保存先の設計が必要 |
 | B-02 | 端末修復 L2〜L5 | FR-19〜21, 23。承認ハッシュ・実行前検証・許可リスト・緊急停止 |
-| B-03 | 外部 AI Provider 接続 | FR-32〜36。運び役・門番・根拠・点検・費用上限・モデル試験 |
-| B-04 | SSO / Entra ID / Cloudflare Access | NFR-08。本番の認証・職務分離 |
+| B-03 | ~~外部 AI Provider 接続~~ **完了（DeepSeek-V4.1-Flash）** | 承認済みナレッジ + PC 情報を根拠に接続 |
+| B-04 | SSO / Entra ID（Cloudflare Access + OTP は完了） | NFR-08。本番の職務分離・SSO 連携 |
 | B-05 | 外部ヘルプデスク基盤連携 | desknet's NEO / AppSuite。INC の正本連携 |
 | B-06 | E2E（Playwright）と Preview 実操作 | 承認後の WebUI 実装とセット |
 | B-07 | CI の有効化 | `.github/workflows/ci.yml` は policy gate で未作成。[docs/08-deployment.md](08-deployment.md) |
-| B-08 | Cloudflare Preview 配備 | Worker config / Tunnel / systemd。policy gate の解消後 |
+| B-08 | ~~Cloudflare Preview 配備~~ **完了（Tunnel + Access）** | 追加の WAF / Turnstile は次段階 |
 
 ## P2（運用が始まってから）
 
@@ -28,10 +28,15 @@ MVP では実装しない。必要になった順に Issue 化する。
 | B-15 | スマートフォン最適化 | 現在は PC 中心・820px 以下は簡易対応 |
 | B-16 | 多言語化 | MVP は日本語のみ |
 | B-17 | メール / Chat 通知 | 現在は画面内のみ |
-| B-18 | PC エージェント実装 | 実端末の読み取り・署名配布・権限分離 |
+| B-18 | ~~PC エージェント実装~~ **一部完了**（読み取り専用 Agent） | Windows インストーラ・署名・自動更新・複数端末管理が残 |
 | B-19 | 高度なナレッジ版管理・差分・利用統計 | 現在は単純な version のみ |
 | B-20 | 専用 DB ロール・最小権限 | 現在は Local PG の既存スーパーユーザー |
 | B-21 | CSRF トークン・WAF・Turnstile | SameSite + Origin 検証で代替中 |
+| B-22 | 端末エージェントの Windows インストーラ / コード署名 / 自動更新 | 現在は Node.js スクリプトの手動配布 |
+| B-23 | エージェント用 Access bypass をサービスドメインへ移行 | 現在の資格情報に `access-service-token.write` が無いため bypass + デバイストークン |
+| B-24 | 複数端末の同時管理（user_email + device_id） | 現在は user_email + source の 1 端末 MVP |
+| B-25 | 導入ソフトの AI 送信 allowlist / 除外設定 | 現在は関連ソフト最大 20 件に絞る |
+| B-26 | エージェントの死活監視・最終取得アラート | `updated_at` の監視は未実装 |
 
 ## 対象外（MVP の価値に不要）
 

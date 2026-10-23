@@ -50,26 +50,40 @@
 - OTP 実ログインを 2026-10-23 15:32 JST に確認（Cloudflare Access ログ: `onetimepin` / `allowed=true`）。
 - 残: 全 STEP E2E、CI。
 
+## Round 6 — 実PC情報・端末エージェント・DeepSeek V4.1（2026-10-23）
+
+- ブラウザから実PC情報（OS / 画面 / CPU コア / 推定メモリ / GPU / 回線 / 音声）を取得し、`device_inventories` に保存。
+- 読み取り専用エージェント（Windows / macOS / Linux）を追加。ハードウェア・導入ソフト・セキュリティ状態を `POST /api/device/agent` で送信。
+- 既存プロトタイプの `pcSnapshot()` を差し替え、35 項目の実スナップショットを表示（DOM / CSS は変更なし）。
+- AI コンテキストに PC 情報を追加。IP・シリアル・資産番号・メールは除外。
+- DeepSeek を `deepseek-flash`（DeepSeek-V4.1-Flash、`thinking: disabled`）へ更新。
+- 端末エージェント用に `/api/device/agent` のパス限定 Access bypass + デバイストークン（SHA-256 / 0600 / IP 30回/分）を実装。
+- 実測: ブラウザ 35 項目 / エージェント 300 ソフト / AI が 16GB・8 コアを回答に反映 / 公開エージェント経路 200。
+- **70 tests 成功**（16 files）。残: 全 STEP E2E、対象PCへのエージェント配布、CI。
+
 ## 現在の Evidence
 
 | 項目 | 結果 |
 |---|---|
-| Tests | 59 passed（13 files） |
+| Tests | 70 passed（16 files） |
 | TypeCheck | 成功 |
-| Lint | 成功（warning 19 / error 0） |
+| Lint | 成功（warning 27 / error 0） |
 | Build | 成功 |
 | Secret scan | 検出なし |
 | npm audit（runtime） | 0 vulnerabilities |
 | DB | migrate / seed / 再実行 / Read-Write / Backup-Restore |
 | API | 主要 3 Flow、セキュリティ、権限、監査 |
-| Access | allow ポリシー適用済み + アプリ許可リスト照合（fail-closed）+ OTP 実ログイン確認済み |
+| Access | allow ポリシー + アプリ許可リスト（fail-closed）+ OTP 実ログイン + エージェント用 bypass |
+| PC情報 | ブラウザ 35 項目 / エージェント 300 ソフト / マージ・AI コンテキスト |
+| AI | `deepseek-flash`（V4.1-Flash）/ PC 情報を回答に反映 |
 | PR | #1 OPEN（mergeable、Required Checks なし） |
 | OpenDesign | artifact v3 / linter P0 0 |
 
 ## 未達（理由）
 
-1. WebUI の実装承認（Y）が得られていない。指示により Y まで実装しない。
-2. `.github/workflows/`・Cloudflare Worker 設定・配備コマンドが
+1. UI の全 STEP E2E、Preview API/DB の公開経路での直接確認が未実施。
+2. 端末エージェントの対象PCへの配布・定期実行の設定が未実施（Node.js 20+ が必要）。
+3. `.github/workflows/`・Cloudflare Worker 設定・配備コマンドが
    `self-evolution policy gate: DEPLOY is critical risk` で拒否される。
 
 詳細: [13-blocked-report.md](13-blocked-report.md)

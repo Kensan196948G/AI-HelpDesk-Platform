@@ -29,14 +29,15 @@ journalctl --user -u ai-helpdesk-cloudflared.service -n 100 --no-pager
 ```
 
 - ログにはリクエスト ID・メソッド・パス・ステータス・応答時間のみ。
-- Cookie / Authorization / X-Proxy-Secret は redact。本文・PII は出力しない。
+- Cookie / Authorization / X-Proxy-Secret / X-Device-Token は redact。本文・PII は出力しない。
 - 5xx が続く場合は `/api/health` と DB 接続を確認する。
 
 ## 3. ヘルスチェック
 
 ```bash
 curl -fsS http://127.0.0.1:18950/api/health
-curl -fsS https://ai-helpdesk-api.mirai-dx-platform.com/api/health
+# 公開URLの /api/health は Cloudflare Access の保護対象（未ログインは 302）。
+# 外形監視する場合は Access のサービスドメインまたはローカル監視を使う。
 ```
 
 `{ok:true, db:"ok"}` を確認。`db:"error"` の場合は PostgreSQL の起動・接続情報を確認する。
@@ -68,6 +69,9 @@ psql "postgresql://.../aihd_restore" -v ON_ERROR_STOP=1 -f "$HOME/aihd-backup-YY
 | データが増えない | DB 接続、Migration、API ログ | `db:migrate` / seed 状態と 5xx を確認 |
 | 監査検証が失敗 | 直近の操作、DB の手動変更 | 変更を止め、バックアップと差分を確認 |
 | PII が表示された | 保存前の伏せ字、ログ | 直ちに該当レコードを確認し、再発防止 |
+| PC情報が更新されない | `device_inventories.updated_at`、エージェントの HTTP ステータス | トークン・URL・Access bypass を確認。`--once` で再送 |
+| エージェントが 401 | トークンの失効・削除 | 再発行し、設定ファイルを 0600 で更新 |
+| 導入ソフトが多すぎる | `software` は 300 件上限 | 必要なら allowlist / 除外を設計（B-25） |
 
 ## 6. 定期メンテナンス
 
@@ -76,9 +80,35 @@ psql "postgresql://.../aihd_restore" -v ON_ERROR_STOP=1 -f "$HOME/aihd-backup-YY
 - 監査ログ: 追記のみ。削除しない。
 - ナレッジ: 誤りがあれば差戻し → 修正 → 再承認。公開済みを直接 UPDATE しない。
 
+## 6-1. 端末エージェント運用
+
+```bash
+# サービス環境を読み込む（秘密値は表示しない）
+set -a; . ~/.config/ai-helpdesk/api.conf; set +a
+
+# 発行（既存設定に deviceToken を追記。値は画面へ出さない）
+NODE_ENV=production npx tsx scripts/issue-device-token.ts \
+  --email user@mirai-const.co.jp --out ~/.config/ai-helpdesk/device-agent.json
+
+# 対象PCで1回送信
+node scripts/endpoint-agent.mjs --config ~/.config/ai-helpdesk/device-agent.json --once
+
+# 状態確認（DB）
+# device_inventories.updated_at / source / software 件数
+# device_tokens.last_used_at / revoked_at
+```
+
+- 失効: `UPDATE device_tokens SET revoked_at = now() WHERE user_email = '...'`。
+- 再発行: 新しいトークンを発行し、設定ファイルを差し替える（古いトークンは失効）。
+- 設定ファイルの権限は **0600**。リポジトリ・ログ・チャットへ貼らない。
+- 定期実行は OS のスケジューラから `--once` を呼ぶ（60 分間隔を推奨）。
+- エージェントは読み取り専用。修復・設定変更・遠隔操作は行わない。
+
 ## 7. 既知の運用制約
 
-- Preview は policy gate のため未配備（[docs/08-deployment.md](08-deployment.md) §3）。
-- CI 未設定。ローカル検証のみ。
-- SSO・Access・WAF なし。Preview はアプリ認証＋共有秘密で保護する前提。
+- Preview は Cloudflare Tunnel + Access で公開済み（[docs/08-deployment.md](08-deployment.md) §0）。
+- CI 未設定。GitHub Actions は policy gate で追加できない。
+- 人間の UI / API は Cloudflare Access、端末エージェントはパス限定 bypass + デバイストークン。
 - デモパスワードは Preview 専用。本番では SSO に置き換える。
+- 端末エージェントは 1 ユーザー 1 端末。複数端末は B-24。
+- 導入ソフトは 300 件上限。AI へは関連ソフト最大 20 件のみ送信。

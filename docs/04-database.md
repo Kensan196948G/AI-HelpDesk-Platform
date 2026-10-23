@@ -25,6 +25,8 @@ resolutions 1 ── 0..1 knowledge
 cases 1 ── 0..1 knowledge
 knowledge 1 ──< knowledge_reviews
 users 1 ──< audit_log (actor)
+users 1 ──< device_inventories (user_email / browser・agent)
+users 1 ──< device_tokens (user_email)
 ```
 
 | テーブル | 主な列 | 制約・索引 |
@@ -33,7 +35,9 @@ users 1 ──< audit_log (actor)
 | `sessions` | user_id, token_hash, expires_at | token_hash 一意。user_id / expires_at 索引 |
 | `cases` | case_no, requester_id, category, subject, body, urgency, signal, current_step, status, ai_resolved, ai_summary, shared_pc_info | case_no 一意。status/signal/requester/created 索引。step 1..7 |
 | `case_messages` | case_id, author_id, role, kind, content, metadata | case_id + created_at 索引 |
-| `pc_snapshots` | case_id, collected_at, items(jsonb), concerns(jsonb), shared, source | case_id 一意 |
+| `pc_snapshots` | case_id, collected_at, items(jsonb), concerns(jsonb), shared, source | case_id 一意。source は demo / browser / agent |
+| `device_inventories` | user_email, source(browser/agent), device_id, hostname, os, data(jsonb), collected_at, updated_at | 主キー(user_email, source)。実端末のハード/ソフト情報 |
+| `device_tokens` | token_hash, user_email, label, created_at, last_used_at, revoked_at | token_hash 一意。端末エージェント用（SHA-256 ハッシュのみ） |
 | `tickets` | case_id, tkt_no, inc_no, assignee_id, status, handoff_memo, shared_fields(jsonb) | case_id / tkt_no / inc_no 一意 |
 | `resolutions` | ticket_id, case_id, author_id, cause, steps, duration_min | ticket_id 一意 |
 | `knowledge` | kb_no, case_id, resolution_id, title, symptom, cause, steps, keywords(text[]), status, author_id, approver_id, version | kb_no / resolution_id 一意。status / keywords GIN 索引 |
@@ -54,12 +58,12 @@ users 1 ──< audit_log (actor)
 
 ## 3. Migration
 
-- ファイル: `db/migrations/001_init.sql`
+- ファイル: `db/migrations/001_init.sql` / `002_prototype_states.sql` / `003_device_inventory.sql`
 - 実行: `npm run db:migrate`
 - `schema_migrations` で適用済みを管理。**空 DB から再実行可能**。
 - SQL は `CREATE TABLE IF NOT EXISTS` / `CREATE INDEX IF NOT EXISTS` のみ。DROP / TRUNCATE を含まない。
 - 番号採番は sequence（`case_no_seq` / `inc_no_seq` / `kb_no_seq`）。`TKT-YYYY-NNNN` 形式。4桁を超える場合は桁数を維持する（`lpad` の切り詰め対策済み）。
-- 適用実績: `001_init.sql` を dev / test の両 DB に適用済み（2026-10-23）。
+- 適用実績: `001`〜`003` を dev / test / preview の各 DB に適用済み（2026-10-23）。
 
 ## 4. Seed
 
@@ -69,7 +73,7 @@ users 1 ──< audit_log (actor)
   - ユーザー 6 名（相談者 3 / ヘルプデスク 2 / 承認者 1）。パスワードは `SEED_PASSWORD` を scrypt でハッシュ化。
   - 承認済みナレッジ 4 件（共有フォルダ / Teams 音声 / 印刷 / VPN）。
   - デモ案件 3 件（完了・ナレッジ公開済 1、VPN 対応中 1、セキュリティ赤 1）。
-  - TKT/INC、解決記録、PC 基本情報（デモ 31 項目）、メッセージ、監査ログ 1 件。
+  - TKT/INC、解決記録、PC 基本情報（Seed はデモ 31 項目）、メッセージ、監査ログ 1 件。実運用の PC 情報は `device_inventories` から生成する。
 - シーケンスは既存の最大値より後ろへ進める（再 Seed で衝突しない）。
 - `SEED_PASSWORD` は `.env.local` のみ。リポジトリ・PR・ログへ書かない。
 

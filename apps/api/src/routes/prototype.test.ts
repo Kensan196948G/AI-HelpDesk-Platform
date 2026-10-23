@@ -24,6 +24,8 @@ describe('prototype UI integration', () => {
     expect(html).toContain('window.__AIHD_BOOT__');
     expect(html).toContain('DeepSeek API');
     expect(html).toContain('__AIHD_SYNC_DEBUG__');
+    expect(html).toContain('__AIHD_DEVICE_DEBUG__');
+    expect(html).toContain('DeepSeek-V4.1-Flash');
     // 元の UI の主要な画面要素が残っている
     expect(html).toContain('新しい相談をはじめる');
     expect(html).toContain('信号の色の割合');

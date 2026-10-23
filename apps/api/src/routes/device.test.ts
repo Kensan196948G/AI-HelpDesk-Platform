@@ -1,0 +1,138 @@
+import { createHash } from 'node:crypto';
+import type { FastifyInstance } from 'fastify';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { sql } from '../db.js';
+import { buildServer } from '../server.js';
+
+const EMAIL = 'dev@example.com';
+const agentToken = `aihd_test_${Math.random().toString(36).slice(2)}_${Date.now()}`;
+
+let app: FastifyInstance;
+
+beforeAll(async () => {
+  app = await buildServer({ logger: false });
+  await app.ready();
+  await sql`DELETE FROM device_inventories WHERE user_email = ${EMAIL}`;
+  await sql`DELETE FROM device_tokens WHERE user_email = ${EMAIL}`;
+  const hash = createHash('sha256').update(agentToken).digest('hex');
+  await sql`
+    INSERT INTO device_tokens (token_hash, user_email, label)
+    VALUES (${hash}, ${EMAIL}, 'test')
+  `;
+});
+
+afterAll(async () => {
+  await app.close();
+});
+
+const browserPayload = {
+  deviceId: 'route-browser-1',
+  platform: 'Windows',
+  os: 'Windows 11 (15.0.0)',
+  arch: 'x86 64-bit',
+  browser: {
+    name: 'Google Chrome',
+    version: '141.0.0',
+    userAgent: 'Mozilla/5.0 test',
+    languages: ['ja-JP'],
+    timezone: 'Asia/Tokyo',
+  },
+  hardware: {
+    cpuCores: 8,
+    deviceMemoryGB: 16,
+    screen: { width: 1920, height: 1080, pixelRatio: 1, colorDepth: 24 },
+    gpu: { vendor: 'Intel', name: 'Iris Xe' },
+    network: { online: true, effectiveType: '4g' },
+    mediaDevices: { audioOutput: 2 },
+  },
+  software: { pdfViewer: true, cookiesEnabled: true },
+  collectedAt: new Date().toISOString(),
+};
+
+const agentPayload = {
+  deviceId: 'route-agent-1',
+  hostname: 'PC-ROUTE-01',
+  os: 'Windows 11 Pro 23H2',
+  platform: 'Windows',
+  arch: 'x86 64-bit',
+  hardware: {
+    serial: 'SN-ROUTE',
+    assetNo: 'PC-ROUTE-9999',
+    model: 'Test Model',
+    cpu: { model: 'Intel Core i7', logicalCores: 12, usagePercent: 20 },
+    memory: { totalBytes: 32 * 1024 ** 3, usagePercent: 50 },
+    disks: [{ mount: 'C:', totalBytes: 512 * 1024 ** 3, freeBytes: 200 * 1024 ** 3 }],
+    network: { adapters: [{ name: 'VPN', status: 'up', vpn: true }], online: true },
+    uptimeSeconds: 3600,
+  },
+  software: [
+    { name: 'Microsoft Teams', version: '25.1.0', publisher: 'Microsoft' },
+    { name: 'Microsoft 365 Apps', version: '16.0.18324', publisher: 'Microsoft' },
+  ],
+  security: {
+    antivirus: { enabled: true, name: 'Microsoft Defender' },
+    diskEncryption: { enabled: true, detail: 'BitLocker' },
+    windowsUpdate: { pending: 0 },
+  },
+  collectedAt: new Date().toISOString(),
+};
+
+describe('device routes', () => {
+  it('ブラウザ取得を保存し、実スナップショットを返す', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/device/browser',
+      payload: browserPayload,
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    const body = response.json();
+    expect(body.inventory.source).toBe('browser');
+    expect(body.snapshot.items.length).toBeGreaterThanOrEqual(31);
+    const os = body.snapshot.items.find((item: { k: string }) => item.k === 'OS');
+    expect(os.v).toContain('Windows 11');
+
+    const get = await app.inject({ method: 'GET', url: '/api/device/inventory' });
+    expect(get.statusCode, get.body).toBe(200);
+    expect(get.json().snapshot.items.length).toBeGreaterThanOrEqual(31);
+  });
+
+  it('デバイストークン付きのエージェント情報を取り込み、ブラウザ情報とマージする', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/device/agent',
+      headers: { 'x-device-token': agentToken },
+      payload: agentPayload,
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    const body = response.json();
+    expect(body.inventory.source).toBe('agent');
+    expect(body.snapshot.device).toBe('PC-ROUTE-01');
+    const teams = body.snapshot.items.find((item: { k: string }) => item.k === 'Teams');
+    expect(teams.v).toContain('Microsoft Teams');
+
+    const get = await app.inject({ method: 'GET', url: '/api/device/inventory' });
+    const merged = get.json();
+    expect(merged.inventory.source).toBe('agent');
+    expect(merged.inventory.softwareCount).toBe(2);
+    expect(merged.snapshot.items.length).toBeGreaterThanOrEqual(31);
+  });
+
+  it('不正なデバイストークンは 401', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/device/agent',
+      headers: { 'x-device-token': 'invalid-token-invalid-token' },
+      payload: agentPayload,
+    });
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('必須項目のないブラウザ情報は 400', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/device/browser',
+      payload: { platform: 'Windows' },
+    });
+    expect(response.statusCode).toBe(400);
+  });
+});

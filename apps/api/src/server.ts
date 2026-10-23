@@ -11,6 +11,7 @@ import { authRoutes } from './routes/auth.js';
 import { caseRoutes } from './routes/cases.js';
 import { dashboardRoutes } from './routes/dashboard.js';
 import { deskRoutes } from './routes/desk.js';
+import { deviceRoutes } from './routes/device.js';
 import { healthRoutes } from './routes/health.js';
 import { knowledgeRoutes } from './routes/knowledge.js';
 import { prototypeRoutes } from './routes/prototype.js';
@@ -36,6 +37,7 @@ export async function buildServer(options?: { logger?: boolean }): Promise<Fasti
               'req.headers.cookie',
               'req.headers.authorization',
               'req.headers["x-proxy-secret"]',
+              'req.headers["x-device-token"]',
               'res.headers["set-cookie"]',
             ],
           },
@@ -71,7 +73,11 @@ export async function buildServer(options?: { logger?: boolean }): Promise<Fasti
     reply.header('Cache-Control', 'no-store');
     reply.header('X-Request-Id', request.id);
 
-    if (config.REQUIRE_PROXY_SECRET && !request.url.startsWith('/api/health')) {
+    const isHealth = request.url.startsWith('/api/health');
+    // 端末エージェントは Cloudflare Access のサービスドメイン + アプリ側デバイストークンで守る。
+    const isDeviceAgent = request.url.startsWith('/api/device/agent');
+
+    if (config.REQUIRE_PROXY_SECRET && !isHealth && !isDeviceAgent) {
       const provided = request.headers['x-proxy-secret'];
       if (
         typeof provided !== 'string' ||
@@ -83,8 +89,8 @@ export async function buildServer(options?: { logger?: boolean }): Promise<Fasti
     }
 
     // Cloudflare Access の allow ポリシーに加え、アプリ側でも許可リストを照合する。
-    // 外形監視用の /api/health だけは認証なしで通す。
-    if (config.AUTH_MODE === 'cloudflare-access' && !request.url.startsWith('/api/health')) {
+    // 外形監視用の /api/health と、端末エージェント専用の /api/device/agent だけは除外する。
+    if (config.AUTH_MODE === 'cloudflare-access' && !isHealth && !isDeviceAgent) {
       await requireCloudflareAccess(request);
     }
 
@@ -169,6 +175,7 @@ export async function buildServer(options?: { logger?: boolean }): Promise<Fasti
   }
   await app.register(caseRoutes, { prefix: '/api' });
   await app.register(deskRoutes, { prefix: '/api' });
+  await app.register(deviceRoutes, { prefix: '/api' });
   await app.register(knowledgeRoutes, { prefix: '/api' });
   await app.register(auditRoutes, { prefix: '/api' });
   await app.register(dashboardRoutes, { prefix: '/api' });

@@ -127,7 +127,7 @@ design/opendesign/**        OpenDesign 成果物
 | Cloudflare から Local PG に届かない | 配備失敗 | Tunnel 経由の Node API。Worker からは HTTPS のみ |
 | Preview の公開範囲 | 情報露出 | アプリ認証 + 共有秘密 + デモデータのみ |
 | ルールベース AI の品質 | 価値が伝わらない | 承認済みナレッジを Seed し、根拠・手順を具体的に表示 |
-| PC 情報の誤解 | 実端末監視と誤認 | 全画面に「デモデータ / 読み取りのみ / 取得しない情報」を明記 |
+| PC 情報の誤解 | 実端末監視と誤認 | 全画面に「読み取りのみ / 取得元 / 取得しない情報」を明記 |
 | 実装範囲の膨張 | 未完 | 3 Flow / 8 画面 / 9 テーブルに固定。他は Backlog |
 | Cloudflare 認証情報の権限不足 | 配備不可 | wrangler OAuth の権限を事前確認済み。失敗時は Blocker 報告 |
 | 既存リソースへの影響 | 他プロジェクト停止 | 新規名のみ。既存 Tunnel/Pages/DNS は触らない |

@@ -25,7 +25,7 @@ export interface PcSnapshot {
   collectedAt: string;
   items: PcItem[];
   concerns: PcConcern[];
-  source: 'demo';
+  source: 'demo' | 'browser' | 'agent';
 }
 
 export interface PcInput {

@@ -5,12 +5,14 @@ import type { AuthUser } from '../auth/types.js';
 import { sql } from '../db.js';
 import { composeAssessment, detectIntent } from '../domain/ai.js';
 import { CATEGORY_KEYS, CATEGORY_META } from '../domain/constants.js';
+import { buildCasePcSnapshot } from '../domain/device.js';
 import { buildDemoPcSnapshot } from '../domain/pc.js';
 import { redactPII } from '../domain/pii.js';
 import { initialSignal, signalAfterAssessment, signalAfterHandoff } from '../domain/signal.js';
 import { badRequest, conflict, notFound } from '../errors.js';
 import { appendAudit } from '../lib/audit-log.js';
 import { loadCaseDetail } from '../lib/case-loader.js';
+import { loadMergedInventory } from '../lib/device-inventory.js';
 import { asJsonArray } from '../lib/json.js';
 import { findApprovedKnowledge } from '../lib/knowledge-search.js';
 import { nextCaseNo, nextIncNo } from '../lib/numbers.js';
@@ -64,8 +66,12 @@ export async function caseRoutes(app: FastifyInstance): Promise<void> {
       subject: subject.text,
       body: body.text,
     });
+    // 実端末の情報があればそれを使い、無い場合だけデモ情報へフォールバックする。
+    const inventory = await loadMergedInventory(user.email).catch(() => null);
     const pc = pcEnabled
-      ? buildDemoPcSnapshot({ category, subject: subject.text, body: body.text })
+      ? inventory
+        ? buildCasePcSnapshot(inventory, { subject: subject.text, body: body.text })
+        : buildDemoPcSnapshot({ category, subject: subject.text, body: body.text })
       : null;
 
     const result = await sql.begin(async (tx) => {
@@ -100,7 +106,7 @@ export async function caseRoutes(app: FastifyInstance): Promise<void> {
           INSERT INTO pc_snapshots (case_id, collected_at, items, concerns, shared, source)
           VALUES (
             ${caseId}, ${pc.collectedAt}, ${JSON.stringify(pc.items)}::jsonb,
-            ${JSON.stringify(pc.concerns)}::jsonb, false, 'demo'
+            ${JSON.stringify(pc.concerns)}::jsonb, false, ${pc.source}
           )
         `;
       }

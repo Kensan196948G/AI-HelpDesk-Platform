@@ -108,11 +108,24 @@
 | GET | `/` / `/index.html` | Access 認証 | 既存プロトタイプ HTML を配信（boot / bridge 注入） |
 | GET | `/api/state` | Access 認証 | `{email, cowork, helpdesk}` を取得 |
 | PUT | `/api/state/:name` | Access 認証 | `cowork` / `helpdesk` の状態を保存（最大 4MB） |
-| POST | `/api/ai/answer` | Access 認証 | 承認済みナレッジ + DeepSeek（未設定時フォールバック） |
+| POST | `/api/ai/answer` | Access 認証 | 承認済みナレッジ + PC 情報 + DeepSeek-V4.1-Flash（未設定時フォールバック） |
 
 - `AUTH_MODE=cloudflare-access` では `/api/auth/login` は登録されない（404）。
 - Access のヘッダー `Cf-Access-Authenticated-User-Email` を、`docs/MailAddress.txt`（`ACCESS_ALLOWLIST_FILE`）の許可リストと照合する。完全一致メールと `@domain` を許可し、ヘッダーなし 401、許可外 403、許可リストなし・空は全拒否（fail-closed）。
 - ローカル開発/テストのみ `AUTH_MODE=local`（`DEV_AUTH_EMAIL`）。
+
+## 6-2. 実PC情報 / 端末エージェント
+
+| Method | Path | 権限 | 説明 |
+|---|---|---|---|
+| POST | `/api/device/browser` | Access 認証 | ブラウザで取得した実端末情報（OS / 画面 / CPU コア / メモリ推定 / GPU / 回線 / 音声）を保存 |
+| GET | `/api/device/inventory` | Access 認証 | ログイン中ユーザーの最新 PC 情報（ブラウザ + エージェントをマージ）とスナップショット |
+| POST | `/api/device/agent` | デバイストークン | 端末エージェントのハードウェア・導入ソフト・セキュリティ情報を取り込み |
+
+- `POST /api/device/browser` の応答: `{ok, inventory, snapshot}`。`snapshot` は既存プロトタイプの `pcSnapshot()` と同じ形（`at`, `device`, `items[35]`, `ver`）。
+- `POST /api/device/agent` は `X-Device-Token` 必須。トークンは `device_tokens` に SHA-256 ハッシュで保存し、ユーザーに紐づける。IP 単位 30 回/分。
+- `/api/device/agent` だけは Cloudflare Access のパス限定 bypass（アプリ ID `250fa30a-d49c-4a83-b773-8fbdec3c0b6a`）。人間の UI / API は Access 必須。
+- `/api/ai/answer` の応答に `device: {source, collectedAt}` を含む。PC コンテキストから IP・シリアル・資産番号・メールは除外する。
 
 ## 7. セキュリティ上の前提
 

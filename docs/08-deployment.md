@@ -10,11 +10,13 @@
 | 公開 URL | https://ai-helpdesk.mirai-dx-platform.com （Access ログインへ 302） |
 | Access アプリ | `Mirai AI HelpDesk MVP` / `44de6fdd-d2c3-4c2b-8e8b-3be092dc1eae` / 12h / OTP |
 | Access ポリシー | **allow 1 件（2026-10-23）**: `kensan1969@gmail.com`（完全一致）/ `@mirai-const.co.jp`（メールドメイン） / ID `1a05a10a-64ed-40c4-ae28-ac5f4707c9dc` |
+| Access アプリ（エージェント） | `AI HelpDesk Endpoint Agent (device token)` / ID `250fa30a-d49c-4a83-b773-8fbdec3c0b6a` / `/api/device/agent` のみ bypass |
+| Access ポリシー（エージェント） | `Device token only (no browser session)` / bypass / ID `490f1c8f-4700-46e6-b928-b990c6a98cf6` |
 | Tunnel | `ai-helpdesk` / `96d0214e-8236-4bce-8dd0-75233d1e716f` |
 | Tunnel config | `~/.cloudflared/ai-helpdesk-config.yml` |
 | API service | `ai-helpdesk-api.service`（Node 22 / 127.0.0.1:18950） |
 | Tunnel service | `ai-helpdesk-cloudflared.service` |
-| DB | Local PostgreSQL `ai_helpdesk_preview` |
+| DB | Local PostgreSQL `ai_helpdesk_preview`（migration 003 適用済み） |
 | DNS | CNAME `ai-helpdesk` → `96d0214e-...cfargotunnel.com`（proxied） |
 
 - `AUTH_MODE=cloudflare-access`。アプリ内ログインは無効（`/api/auth/login` は 404）。
@@ -22,6 +24,7 @@
   許可リストの正本は `docs/MailAddress.txt`（`ACCESS_ALLOWLIST_FILE`）。ファイルなし・空は全拒否（fail-closed）。
 - 12h の自動ログオフは Access のセッション期限で実現。
 - DeepSeek API キーは `~/.config/ai-helpdesk/api.conf`（0600）に置く。未設定時はフォールバック。
+- `DEEPSEEK_MODEL=deepseek-flash` / `DEEPSEEK_THINKING=disabled`（DeepSeek-V4.1-Flash）。
 - 実測（2026-10-23 15:25 JST）: 公開 URL は 302 → `winter-lake-f4c9.cloudflareaccess.com` の OTP 画面。
   ローカル origin は ヘッダーなし 401 / 許可（`kensan1969@gmail.com`・`@mirai-const.co.jp`）200 /
   許可外・例示 typo・サブドメイン 403 / 許可リスト欠落・空 403（自動テスト）/ `/api/health` 200。
@@ -30,7 +33,36 @@
 - 注意: `cloudflared tunnel route dns <name>` はデフォルト config の tunnel を選ぶことがあった。
   DNS は UUID 指定 + `--overwrite-dns` で修正した。既存の `ai-design` 等には変更なし。
 - 注意: ローカル DNS 192.168.245.11 は新ホストを NXDOMAIN キャッシュ中。1.1.1.1 では解決済み。
+- 実測（2026-10-23 16:10 JST）: `deepseek-flash` で `/api/ai/answer` が `provider: deepseek` / `model: deepseek-flash` を返し、PC 情報（16GB / 8 コア / Windows 11 / GPU）を回答に反映。
+- 実測（2026-10-23 16:12 JST）: 端末エージェントを公開 URL へ送信し 200。`device_inventories` に 300 ソフトを保存。
+- エージェント用の Cloudflare サービスドメイン（service token）は、現在の API 資格情報に `access-service-token.write` が無いため作成できず、**パス限定 bypass + デバイストークン**で実装した。将来はサービスドメインへ移行する（[10-backlog.md](10-backlog.md) B-23）。
 
+### 0-1. 端末エージェント（実PC情報・読み取り専用）
+
+- 配布物: `scripts/endpoint-agent.mjs`（Node.js 20+、追加依存なし）。
+- 設定: `~/.config/ai-helpdesk/device-agent.json`（0600）。
+  ```json
+  {
+    "url": "https://ai-helpdesk.mirai-dx-platform.com/api/device/agent",
+    "deviceToken": "aihd_...",
+    "intervalMinutes": 60
+  }
+  ```
+- トークン発行（管理者・1回。事前にサービス環境を読み込む）:
+  ```bash
+  set -a; . ~/.config/ai-helpdesk/api.conf; set +a
+  NODE_ENV=production npx tsx scripts/issue-device-token.ts \
+    --email user@mirai-const.co.jp --out ~/.config/ai-helpdesk/device-agent.json
+  ```
+- 実行（対象PC上）:
+  ```bash
+  node scripts/endpoint-agent.mjs --config ~/.config/ai-helpdesk/device-agent.json --once
+  # 定期実行はタスクスケジューラ / systemd timer / cron から --once を呼ぶ
+  ```
+- 収集: OS / CPU / メモリ / ディスク / GPU / ネットワーク / バッテリー / プリンター / 音声 / USB / 導入ソフト / セキュリティ状態。
+- 非収集: ファイル内容 / 閲覧履歴 / 画面 / キー入力 / メール本文。
+- 失敗時: `401` はトークン不正、`302` は Access 設定、`ETIMEDOUT` はネットワーク。トークンは設定ファイル以外へ保存しない。
+- 本環境では `kensan1969@gmail.com` 用の設定を `~/.config/ai-helpdesk/device-agent.json`（0600）に作成済み。対象PCへ安全にコピーして実行する。
 
 ## 1. 目標構成
 

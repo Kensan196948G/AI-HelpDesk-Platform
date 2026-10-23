@@ -44,7 +44,9 @@ const EnvSchema = z.object({
   ACCESS_ALLOWED_EMAIL: z.string().email().optional(),
   // DeepSeek API（MVP / Staging のみ）
   DEEPSEEK_API_KEY: z.string().min(1).optional(),
-  DEEPSEEK_MODEL: z.string().default('deepseek-chat'),
+  DEEPSEEK_MODEL: z.string().default('deepseek-flash'),
+  // ヘルプデスクの一次回答は速度と安定性を優先し、既定では thinking を無効にする。
+  DEEPSEEK_THINKING: z.enum(['disabled', 'enabled']).default('disabled'),
   DEEPSEEK_BASE_URL: z.string().url().default('https://api.deepseek.com'),
   DEEPSEEK_TIMEOUT_MS: z.coerce.number().int().positive().default(30000),
 });

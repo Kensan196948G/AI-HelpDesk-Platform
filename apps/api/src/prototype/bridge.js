@@ -5,8 +5,6 @@
  * - 自由記述の AI 回答だけを /api/ai/answer（DeepSeek）へ委譲する。
  */
 (() => {
-  'use strict';
-
   const boot = window.__AIHD_BOOT__ || {};
   const KEYS = {
     cowork: 'mirai-wizard-v31-cowork',
@@ -73,7 +71,7 @@
   // DeepSeek: 自由記述の回答のみ。診断・修復・セキュリティ初動は元の決定ルールを維持する。
   if (typeof H === 'object' && H && typeof H.kb === 'function') {
     const originalKb = H.kb.bind(H);
-    H.kb = function (chat, text, atts, user) {
+    H.kb = (chat, text, atts, user) => {
       try {
         UI.typing = true;
         refresh();
@@ -107,6 +105,11 @@
             }[char];
           });
           let html = '<p>' + escaped.replace(/\n/g, '<br>') + '</p>';
+          if (data.device) {
+            const deviceLabel = data.device.source === 'agent' ? '端末エージェント' : 'ブラウザ';
+            html +=
+              '<p class="small muted">PC基本情報（' + deviceLabel + '取得）を参照しました。</p>';
+          }
           if (data.provider === 'fallback') {
             html +=
               '<p class="small muted">承認済みナレッジから回答しています（DeepSeek API 未設定）。</p>';
@@ -135,8 +138,8 @@
   // 表示上の AI モデル名だけを DeepSeek に合わせる（レイアウトは変更しない）。
   try {
     if (typeof MODELS === 'object' && MODELS) {
-      MODELS.local = 'DeepSeek API（MVP）';
-      MODELS.external = 'DeepSeek API（承認済み外部）';
+      MODELS.local = 'DeepSeek-V4.1-Flash';
+      MODELS.external = 'DeepSeek-V4.1-Flash（承認済み外部）';
       const select = document.querySelector('#model');
       if (select) {
         for (const option of select.options) {

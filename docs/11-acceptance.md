@@ -20,9 +20,9 @@
 | 12 | DB 主要 Read / Write 確認 | ✅ | 案件・引継ぎ・解決・ナレッジ・監査 |
 | 13 | Type Check 成功 | ✅ | `npm run typecheck` |
 | 14 | Lint 成功 | ✅ | `npm run lint`（error 0） |
-| 15 | 主要 Test 成功 | ✅ | 59 tests（unit/auth/worker + integration/UI + 許可リスト） |
+| 15 | 主要 Test 成功 | ✅ | 70 tests（unit/auth/worker + integration/UI + 許可リスト + 実PC情報/エージェント） |
 | 16 | Build 成功 | ✅ | API build 成功。UI は既存 HTML を配信 |
-| 17 | Critical / High の既知問題なし | ⏸ | 既知の Critical なし。Access ポリシー・OTP 実ログインは確認済み。全 STEP E2E が未 |
+| 17 | Critical / High の既知問題なし | ⏸ | 既知の Critical なし。Access・OTP・実PC情報・エージェント・DeepSeek V4.1 は実測済み。全 STEP E2E が未 |
 | 18 | Cloudflare Preview Deployment 成功 | ✅ | Tunnel + Access で公開。公開 URL は 302 → Access OTP 画面（[08](08-deployment.md) §0） |
 | 19 | Preview 主要画面確認 | ✅ | OTP 実ログイン成功（2026-10-23 15:32 JST、Access ログ `onetimepin` / `allowed=true`）。ユーザーがログインを確認済み |
 | 20 | Preview API 確認 | ⏸ | ローカル origin で `/api/state` / `/api/ai/answer` 200。公開経路のログインは確認済みだが、API の直接確認は未実施 |
@@ -47,7 +47,7 @@
 2. **Cloudflare Preview / CI の Blocker**。DSH の self-evolution policy gate が
    `.github/workflows/`・`wrangler.*`・`wrangler deploy` を DEPLOY（critical）として拒否。
    ユーザーによる policy 例外／人間による配備が必要。
-3. 現状: UI と Preview は配信済みで、Cloudflare Access の allow ポリシー・アプリ許可リスト（`docs/MailAddress.txt`）・OTP 実ログインも確認済み。残るのは **UI の全 STEP E2E**、**Preview API/DB の公開経路確認**、**CI**。
+3. 現状: UI と Preview は配信済みで、Access・許可リスト・OTP 実ログイン・実PC情報（ブラウザ/エージェント）・DeepSeek V4.1 も実測済み。残るのは **UI の全 STEP E2E**、**Preview API/DB の公開経路確認**、**CI**、**端末エージェントの対象PC配布**。
 
 ## 完了判定
 
