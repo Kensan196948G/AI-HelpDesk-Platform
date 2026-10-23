@@ -38,12 +38,12 @@ function Write-CollectorLog {
 
 function Get-Safe {
   param([scriptblock]$Block)
-  try { & $Block } catch { $null }
+  try { & $Block } catch { Write-Verbose ('command failed: ' + $_.Exception.Message); $null }
 }
 
 function Get-ArraySafe {
   param([scriptblock]$Block)
-  try { @(& $Block | Where-Object { $null -ne $_ }) } catch { @() }
+  try { @(& $Block | Where-Object { $null -ne $_ }) } catch { Write-Verbose ('command failed: ' + $_.Exception.Message); @() }
 }
 
 function Remove-NullValues {

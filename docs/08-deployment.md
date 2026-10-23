@@ -64,7 +64,7 @@
 - 収集: OS / CPU / メモリ / ディスク / GPU / ネットワーク / バッテリー / プリンター / 音声 / USB / 導入ソフト / セキュリティ状態。
 - 非収集: ファイル内容 / 閲覧履歴 / 画面 / キー入力 / メール本文。
 - 失敗時: `401` はトークン不正、`302` は Access 設定、`ETIMEDOUT` はネットワーク。トークンは設定ファイル以外へ保存しない。
-- Windows で PowerShell の取得に失敗する場合は `--debug --dry-run` を付けると、失敗したコマンドを表示する（秘密値は出ない）。
+- Windows で PowerShell の取得に失敗する場合は `-Verbose -DryRun -PrintJson` を付けると、失敗したコマンドと取得内容を表示する（秘密値は出ない）。
 - Windows の設定例: `%USERPROFILE%\.config\ai-helpdesk\device-agent-windows.json`（0600 相当の保護フォルダ）。`browserDeviceId` はPCチェック画面の `WEB-XXXXXXXX`。
 - 本環境では `kensan1969@gmail.com` 用の設定を `~/.config/ai-helpdesk/device-agent.json`（0600）に作成済み。
   Windows クライアント用は `~/.config/ai-helpdesk/device-agent-windows.json`（0600、`browserDeviceId: WEB-206AD268`）に作成済み。対象PCへ安全にコピーして実行する。
