@@ -1,0 +1,34 @@
+{
+  "name": "ai-helpdesk-platform",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "みらいAI窓口 × ヘルプデスク MVP",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w @aihd/api",
+    "dev:api": "npm run dev -w @aihd/api",
+    "build": "npm run build -w @aihd/api",
+    "start:api": "npm run start -w @aihd/api",
+    "typecheck": "npm run typecheck -w @aihd/api && tsc --noEmit -p worker/tsconfig.json",
+    "lint": "biome check apps scripts worker db tests",
+    "format": "biome format --write apps scripts worker db tests",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "db:seed": "tsx scripts/seed.ts"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.2",
+    "@types/node": "22.18.0",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3",
+    "vitest": "3.2.4"
+  }
+}
