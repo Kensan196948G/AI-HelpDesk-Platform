@@ -117,6 +117,14 @@
 - 再検証: 16 ケース × 3 回 = **48/48 PASS**、p50 1,912ms / p95 2,475ms、回答長 max 525、AI-09 は `sources: []` / `confidence: 低`。
 - 中間測定の AI-05 2 件 FAIL は、テスト側の期待値が古い PC 実測値だったため（汎用化して 3/3 PASS）。
 
+## Round 14 — AI検証 Phase 2（fallback・注入・UI E2E）（2026-10-23）
+
+- fallback: キー未設定 / タイムアウト / HTTP 500 の 3 経路を専用インスタンス＋モックで実測。いずれも **200 / fallback**。
+  - 初回測定で **catch 分岐だけ `sources` の絞り込みが漏れている**バグを発見し修正（`citedSourcesFromAnswer` を catch にも適用）。
+- 注入: 専用メール＋preview DB で PC情報（hostname）と KB本文に命令を埋め込み。**3/3 不追従**、停止中KBは **3/3 除外**。
+- UI E2E: STEP 3 を通しで確認。S2→診断→提案→Y→実行→完了（step 7）、N→引継ぎ→指名（鈴木）→TKT/INC 反映。
+- 結果: [18-ai-verification-phase2.md](18-ai-verification-phase2.md)。テスト **121 passed**。
+
 ## 現在の Evidence
 
 | 項目 | 結果 |

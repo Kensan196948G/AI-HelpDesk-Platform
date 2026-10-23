@@ -1,0 +1,1 @@
+{"answer":"承認済みナレッジ「共有フォルダが開けません（APIテスト）の確認手順」の手順です。\n1. ACL確認\n2. グループ追加\n3. 再接続確認\n\n根拠: KB-2026-0101","sources":[{"id":"47a5ad23-b900-4f0f-9d8c-331b4384c083","kbNo":"KB-2026-0101","title":"共有フォルダが開けません（APIテスト）の確認手順"}],"confidence":"中","provider":"fallback","model":"fallback","device":null}
