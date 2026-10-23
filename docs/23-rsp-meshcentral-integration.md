@@ -143,6 +143,8 @@ AI HelpDesk サーバー側で、AI に渡すツールを限定します。
 
 ### 4-1. Phase 1（小さく始める）
 
+- **AI HelpDesk の B さん画面に「MeshCentralを開く」「RSPで開く」を追加済み（2026-10-24）。**
+  設定は `MESHCENTRAL_URL` / `RSP_BASE_URL`（既定は `https://mesh.mirai-remotetools.com/` / `https://rsp.mirai-remotetools.com/`）。
 - AI HelpDesk に `RSP_BASE_URL`（例: `https://rsp.mirai-remotetools.com`）を設定。
 - B さんの STEP 5 に「RSPで開く」を追加。RSP WebUI で端末を検索し、既存の
   「MeshAgent接続」「MeshAgentターミナル接続」を使う。

@@ -246,6 +246,7 @@
 - AI HelpDesk の B さん画面は、RSP のセッション/コマンドを「AI が提案 → B さんが確認 → RSP が実行・監査」で束ねる。GUI は MeshCentral、PowerShell は RSP のターミナル/コマンドキュー、AI は手順・コマンド案、最終報告書は AI HelpDesk が担当。
 - 端末マッピングは端末エージェントの `hostname` を第一キーにし、RSP の `devices.hostname` / Mirai-Info の `asset_tag` と完全一致で照合する。0件・複数件は B さんが選択し、推測で結ばない。
 - 認証は Phase 1（RSP へのディープリンク + Entra ログイン）→ Phase 2（RSP に AI HelpDesk 専用の統合 API）→ Phase 3（AI 承認付きコマンド実行）の順を推奨。
+- Phase 1 の導線として、B さんの遠隔支援コンソールに「MeshCentralを開く」「RSPで開く」を追加（`MESHCENTRAL_URL` / `RSP_BASE_URL`、既定は `https://mesh.mirai-remotetools.com/` / `https://rsp.mirai-remotetools.com/`）。
 
 ## 現在の Evidence
 

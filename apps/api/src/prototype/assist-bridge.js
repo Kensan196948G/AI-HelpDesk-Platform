@@ -24,6 +24,10 @@
   };
   window.__AIHD_ASSIST__ = AH;
 
+  const ahBoot = window.__AIHD_BOOT__ || {};
+  const ahMeshUrl = String(ahBoot.meshcentralUrl || 'https://mesh.mirai-remotetools.com/');
+  const ahRspUrl = String(ahBoot.rspBaseUrl || 'https://rsp.mirai-remotetools.com/');
+
   const ahEsc = (value) =>
     String(value == null ? '' : value).replace(/[&<>"']/g, (char) => {
       return (
@@ -771,6 +775,21 @@
       .join('');
   }
 
+  function ahRspLinks() {
+    return (
+      '<div class="ahd-row" style="margin-top:8px">' +
+      '<a class="u-btn" href="' +
+      ahEsc(ahMeshUrl) +
+      '" target="_blank" rel="noopener noreferrer">MeshCentralを開く</a>' +
+      '<a class="u-btn" href="' +
+      ahEsc(ahRspUrl) +
+      '" target="_blank" rel="noopener noreferrer">RSPで開く</a>' +
+      '</div>' +
+      '<div class="ahd-msg">RSP / MeshCentral のログインは Entra ID です。端末はコンピュータ名で選んでください。' +
+      'デバイス指定のセッション URL は Phase 2（RSP 統合 API）で自動化します。</div>'
+    );
+  }
+
   function ahRemoteSection(c, L) {
     if (!L || !L.inc) return '';
     const u = ahUser();
@@ -795,6 +814,7 @@
         ahEsc(L.inc.id) +
         '</div>' +
         '<div class="ahd-row"><button class="u-btn pri" data-act="wRemoteRequest">本人に遠隔支援を依頼</button></div>' +
+        ahRspLinks() +
         '<div class="ahd-msg">実行が必要な操作は、既存の許可リスト（SPOOLER_RESTART）と本人の Y/N・管理者承認を通します。</div>' +
         '</div>'
       );
@@ -895,6 +915,7 @@
       ahEsc(statusLabel) +
       '</b></div>' +
       body +
+      (isHelper ? ahRspLinks() : '') +
       '<div class="ahd-msg">遠隔支援の依頼・承認・案内の送信は監査ログに記録します。</div>' +
       '</div>'
     );

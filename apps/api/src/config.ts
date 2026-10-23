@@ -74,6 +74,10 @@ const EnvSchema = z.object({
   // 最終報告書の PDF 生成（ヘッドレス Chrome）。未設定なら自動検出する。
   REPORT_PDF_BIN: optionalText,
   REPORT_PDF_TIMEOUT_MS: z.coerce.number().int().positive().default(30000),
+
+  // RSP / MeshCentral（B さんの GUI / PowerShell 操作の既存基盤）。
+  MESHCENTRAL_URL: z.string().url().default('https://mesh.mirai-remotetools.com/'),
+  RSP_BASE_URL: z.string().url().default('https://rsp.mirai-remotetools.com/'),
 });
 
 const parsed = EnvSchema.safeParse(process.env);
