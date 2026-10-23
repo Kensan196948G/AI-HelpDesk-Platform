@@ -70,6 +70,10 @@ const EnvSchema = z.object({
   DEEPSEEK_THINKING: z.enum(['disabled', 'enabled']).default('disabled'),
   DEEPSEEK_BASE_URL: z.string().url().default('https://api.deepseek.com'),
   DEEPSEEK_TIMEOUT_MS: z.coerce.number().int().positive().default(30000),
+
+  // 最終報告書の PDF 生成（ヘッドレス Chrome）。未設定なら自動検出する。
+  REPORT_PDF_BIN: optionalText,
+  REPORT_PDF_TIMEOUT_MS: z.coerce.number().int().positive().default(30000),
 });
 
 const parsed = EnvSchema.safeParse(process.env);

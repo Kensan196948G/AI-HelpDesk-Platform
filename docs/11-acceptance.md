@@ -20,7 +20,7 @@
 | 12 | DB 主要 Read / Write 確認 | ✅ | 案件・引継ぎ・解決・ナレッジ・監査 |
 | 13 | Type Check 成功 | ✅ | `npm run typecheck` |
 | 14 | Lint 成功 | ✅ | `npm run lint`（error 0） |
-| 15 | 主要 Test 成功 | ✅ | 74 tests（unit/auth/worker + integration/UI + 許可リスト + 実PC情報/エージェント） |
+| 15 | 主要 Test 成功 | ✅ | 175 tests（unit/auth/worker + integration/UI + 許可リスト + 実PC情報/エージェント + 最終報告書/遠隔支援） |
 | 16 | Build 成功 | ✅ | API build 成功。UI は既存 HTML を配信 |
 | 17 | Critical / High の既知問題なし | ⏸ | 既知の Critical なし。Access・OTP・実PC情報・エージェント・DeepSeek V4.1 は実測済み。全 STEP E2E が未 |
 | 18 | Cloudflare Preview Deployment 成功 | ✅ | Tunnel + Access で公開。公開 URL は 302 → Access OTP 画面（[08](08-deployment.md) §0） |

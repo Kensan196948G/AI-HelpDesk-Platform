@@ -17,6 +17,8 @@ import { healthRoutes } from './routes/health.js';
 import { knowledgeRoutes } from './routes/knowledge.js';
 import { meRoutes } from './routes/me.js';
 import { prototypeRoutes } from './routes/prototype.js';
+import { remoteAssistRoutes } from './routes/remote-assist.js';
+import { reportRoutes } from './routes/reports.js';
 
 function secretsMatch(actual: string, expected: string): boolean {
   const a = Buffer.from(actual);
@@ -189,6 +191,8 @@ export async function buildServer(options?: { logger?: boolean }): Promise<Fasti
   await app.register(deviceRoutes, { prefix: '/api' });
   await app.register(employeeRoutes, { prefix: '/api' });
   await app.register(meRoutes, { prefix: '/api' });
+  await app.register(reportRoutes, { prefix: '/api' });
+  await app.register(remoteAssistRoutes, { prefix: '/api' });
   await app.register(knowledgeRoutes, { prefix: '/api' });
   await app.register(auditRoutes, { prefix: '/api' });
   await app.register(dashboardRoutes, { prefix: '/api' });

@@ -206,13 +206,43 @@
 - 実測: 2 つのメールで同じ `boot.email`（正規化後）、`switchMode=any`、`loginEmail` はそれぞれ。**148 tests passed**。
 - 仕様: [07-security.md](07-security.md)。
 
+## Round 24 — 最終報告書（HTML/PDF）と STEP5 遠隔支援コンソール（2026-10-23）
+
+- STEP 3（AIで解決）と STEP 5（担当者対応で解決）の双方で、**Standalone HTML / PDF** の最終報告書を出力できるようにした。
+  - `final_reports`（migration 006）と `POST /api/reports/final` / `GET /api/reports/final/:id/html|pdf` を追加。
+  - PDF はヘッドレス Chrome の印刷機能。日本語フォント（IPAゴシック）で A4 に出力。Chrome が無い場合は 503 で HTML にフォールバック。
+  - 自由記述は保存前に伏せ字化。PC の IP・シリアル・資産番号は項目名で強制マスク。作成者のみ取得可（他人は 404）。
+  - 画面は `apps/api/src/prototype/assist-bridge.js` を追加し、既存プロトタイプ HTML は変更しない。
+- STEP 5 の引継ぎ後に、B さん（DX推進部／ヘルプデスク）の **遠隔支援コンソール** を追加。
+  - A さんの同意（依頼 → 承認 → 30 分 → 終了）を必須にし、画面の遠隔操作・ファイル閲覧は行わない。
+  - B さんは共有 PC 情報と AI 下書きの案内文だけを送れる。`POST /api/ai/remote-prompt` は文章を返すだけで、実行はしない。
+  - 端末の変更は既存の `device_commands`（`SPOOLER_RESTART` のみ、Y/N + 管理者承認）を通す。
+  - A さんのホームに依頼の通知を表示。監査イベント `remote_*` と最終報告書に反映。
+- レビュー指摘の反映（2026-10-23）:
+  - 報告書の**すべての文字列**（role / dept / device / approvedBy など）を保存前に伏せ字化。手編集の案内文も `dlpMask` で伏せ字化。
+  - AI 出力の危険コマンドフィルタを強化（PowerShell cmdlet・Defender/リアルタイム保護の無効化・資格情報要求など）。純関数化して回帰テストを追加。
+  - 報告書の作成上限（24時間50件/利用者）、PDF の同時実行1本・サイズ10MiB上限・PDF不可時の HTML 自動フォールバック、CSP メタタグを追加。
+  - 日時・STEP と完了経路・遠隔支援の状態整合を `superRefine` で検証。
+  - 本番（cloudflare-access）は `/api/ai/remote-prompt` を DX推進部（またはデモ許可アカウント）に限定（名簿不能時は fail-closed）。
+  - 遠隔支援の同意・状態がクライアント側である限界を docs/07・docs/22・A-14 に明記（本番はサーバー正本へ）。
+- ユーザー指示の確認:
+  - `<EMAIL_1>` は `EMAIL_ALIASES` に追加しない（現状維持）。
+  - 既定の役割を最小権限の「一般社員」に変えるための記憶リセットは行わない（現状維持）。
+- 検証:
+  - `npm test`: **175 passed**（31 files）。`final-report` 11 / `reports` 4 / `remote-prompt` 10 / `remote-assist` 2 / `prototype` 6 を含む。
+  - 実 UI（ヘッドレス Chromium・専用 API/テストDB）で、STEP3 完了 → HTML/PDF、STEP5 解決 → HTML/PDF、遠隔支援の依頼 → 承認 → AI 下書き → 送信 → 実施 → 終了、ホーム通知 → 同意画面を確認。コンソールエラー 0。
+  - PDF を `pdftotext` で確認（日本語・案件番号・解決原因・遠隔支援の案内）。
+  - 証跡: [docs/evidence/final-report/20261023](evidence/final-report/20261023/)。
+- 仕様: [21-final-report-export.md](21-final-report-export.md) / [22-remote-assist-handover.md](22-remote-assist-handover.md)。
+- 残課題: 報告書は画面状態から生成（サーバー正本との突合なし）。遠隔支援の承認はブラウザ状態。A/B が別ログインの場合の案件共有・通知・画面共有（MeshCentral 等）は未実装。
+
 ## 現在の Evidence
 
 | 項目 | 結果 |
 |---|---|
-| Tests | 75 passed（17 files） |
+| Tests | 175 passed（31 files） |
 | TypeCheck | 成功 |
-| Lint | 成功（warning 27 / error 0） |
+| Lint | 成功（warning 84 / error 0） |
 | Build | 成功 |
 | Secret scan | 検出なし |
 | npm audit（runtime） | 0 vulnerabilities |
