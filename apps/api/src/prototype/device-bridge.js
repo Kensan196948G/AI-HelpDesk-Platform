@@ -78,7 +78,7 @@
     const ua = navigator.userAgent;
     if (/Windows NT 10\.0/.test(ua)) return 'Windows 10/11';
     if (/Mac OS X/.test(ua)) return 'macOS';
-    return '未取得';
+    return '未検出（ブラウザ）';
   }
 
   function browserInfo(uaData, high) {
@@ -209,8 +209,16 @@
     const items = [
       {
         grp: '端末',
+        k: 'コンピュータ名',
+        v: '未検出（ブラウザ）',
+        lv: 'ok',
+        note: '端末エージェントを導入するとコンピュータ名を取得できます',
+        tag: '',
+      },
+      {
+        grp: '端末',
         k: 'OS',
-        v: payload.os || '未取得',
+        v: payload.os || '未検出（ブラウザ）',
         lv: 'ok',
         note: 'ブラウザから取得',
         tag: '',
@@ -226,15 +234,15 @@
       {
         grp: '端末',
         k: 'シリアル番号',
-        v: '未取得',
+        v: '端末エージェント未導入',
         lv: 'ok',
-        note: '端末エージェントで取得できます',
+        note: '端末エージェントを導入すると取得できます',
         tag: '',
       },
       {
         grp: 'リソース',
         k: 'CPU使用率（5分平均）',
-        v: cores ? `使用率は取得不可（${cores} 論理コア）` : '未取得',
+        v: cores ? `未検出（ブラウザ・${cores} 論理コア）` : '未検出（ブラウザ）',
         lv: 'ok',
         note: '',
         tag: '遅い|重い|固ま',
@@ -242,7 +250,7 @@
       {
         grp: 'リソース',
         k: 'メモリ使用率',
-        v: memory ? `約 ${memory} GB（ブラウザ推定）` : '未取得',
+        v: memory ? `約 ${memory} GB（ブラウザ推定）` : '未検出（ブラウザ）',
         lv: 'ok',
         note: '',
         tag: '遅い|重い|固ま',
@@ -250,9 +258,9 @@
       {
         grp: 'リソース',
         k: 'ディスクの空き',
-        v: '未取得',
+        v: '端末エージェント未導入',
         lv: 'ok',
-        note: '端末エージェントで取得できます',
+        note: '端末エージェントを導入すると取得できます',
         tag: '容量|空き',
       },
       {
@@ -269,7 +277,7 @@
       {
         grp: 'ネットワーク',
         k: 'IPアドレス',
-        v: '未取得',
+        v: '未検出（ブラウザ）',
         lv: 'ok',
         note: 'ブラウザからは取得しません',
         tag: '',
@@ -277,7 +285,9 @@
       {
         grp: 'ソフトウェア',
         k: 'ブラウザ',
-        v: [payload.browser?.name, payload.browser?.version].filter(Boolean).join(' ') || '未取得',
+        v:
+          [payload.browser?.name, payload.browser?.version].filter(Boolean).join(' ') ||
+          '未検出（ブラウザ）',
         lv: 'ok',
         note: '',
         tag: '',
@@ -287,7 +297,7 @@
         k: '画面',
         v: screenInfo
           ? `${screenInfo.width} × ${screenInfo.height}（${screenInfo.pixelRatio}x / ${screenInfo.colorDepth}bit）`
-          : '未取得',
+          : '未検出（ブラウザ）',
         lv: 'ok',
         note: '',
         tag: '',
@@ -295,7 +305,7 @@
       {
         grp: 'ソフトウェア',
         k: 'GPU',
-        v: gpu ? [gpu.vendor, gpu.name].filter(Boolean).join(' ') : '未取得',
+        v: gpu ? [gpu.vendor, gpu.name].filter(Boolean).join(' ') : '未検出（ブラウザ）',
         lv: 'ok',
         note: '',
         tag: '',
@@ -305,7 +315,7 @@
         k: '音声の出力先',
         v: payload.hardware?.mediaDevices?.audioOutput
           ? `ブラウザ検出 ${payload.hardware.mediaDevices.audioOutput} 台`
-          : '未取得',
+          : '未検出（ブラウザ）',
         lv: 'ok',
         note: '',
         tag: '音|会議',
@@ -313,25 +323,25 @@
       {
         grp: 'セキュリティ',
         k: 'ウイルス対策',
-        v: '未取得（エージェント未導入）',
+        v: '端末エージェント未導入',
         lv: 'warn',
-        note: 'エージェントを導入すると確認できます',
+        note: '端末エージェントを導入すると確認できます',
         tag: 'ウイルス|セキュリティ',
       },
       {
         grp: 'セキュリティ',
         k: 'ディスク暗号化',
-        v: '未取得（エージェント未導入）',
+        v: '端末エージェント未導入',
         lv: 'warn',
-        note: 'エージェントを導入すると確認できます',
+        note: '端末エージェントを導入すると確認できます',
         tag: '紛失|盗難',
       },
       {
         grp: 'セキュリティ',
         k: 'Windows Update',
-        v: '未取得（エージェント未導入）',
+        v: '端末エージェント未導入',
         lv: 'warn',
-        note: 'エージェントを導入すると確認できます',
+        note: '端末エージェントを導入すると確認できます',
         tag: '更新|再起動',
       },
     ];
@@ -411,6 +421,49 @@
     };
   }
 
+  /*
+   * 旧スナップショットの移行。
+   * 以前に保存された相談は「資産番号」行と「未取得」を含むため、
+   * いまの端末情報で置き換えて、空欄・「未取得」を画面に残さない。
+   * 取得時点との差分は pcPrev に残す（「前回から変わった点」で確認できる）。
+   */
+  function refreshLegacySnapshots() {
+    try {
+      if (!state.snapshot) return;
+      if (typeof S === 'undefined' || !S || !Array.isArray(S.cases)) return;
+      const user = typeof me === 'function' ? me() : null;
+      if (!user) return;
+      let changed = false;
+      for (const c of S.cases) {
+        if (!c || c.userId !== user.id) continue;
+        const snap = c.pc && c.pc.snap;
+        if (!snap || !Array.isArray(snap.items)) continue;
+        const legacy =
+          snap.items.some((row) => row.k === '資産番号') ||
+          snap.items.some((row) => String(row.v || '').includes('未取得'));
+        if (!legacy) continue;
+        const storedDevice = String(snap.device || '');
+        const fresh = window.pcSnapshot(S, user.id);
+        if (!fresh) continue;
+        // 別の端末で取得した記録は上書きしない（ブラウザ取得の記録だけ移行する）。
+        if (!(storedDevice.startsWith('WEB-') || storedDevice === String(fresh.device || '')))
+          continue;
+        c.pcPrev = snap;
+        c.pc = Object.assign({}, c.pc, {
+          snap: fresh,
+          state: 'done',
+          shown: typeof PCG !== 'undefined' ? PCG.length : 8,
+        });
+        changed = true;
+      }
+      if (!changed) return;
+      if (typeof save === 'function') save();
+      if (typeof uxRender === 'function') uxRender();
+    } catch {
+      // 移行に失敗しても、画面はそのまま使えるようにする。
+    }
+  }
+
   // AI モデルの表示名を事実に合わせる（レイアウトは変更しない）。
   try {
     if (typeof MODELS === 'object' && MODELS) {
@@ -429,7 +482,12 @@
   }
 
   window.__AIHD_DEVICE_ID__ = deviceId();
-  window.__AIHD_DEVICE_DEBUG__ = { state, ensureSnapshot, collectBrowser };
-  ensureSnapshot(false);
+  window.__AIHD_DEVICE_DEBUG__ = {
+    state,
+    ensureSnapshot,
+    collectBrowser,
+    refreshLegacySnapshots,
+  };
+  ensureSnapshot(false).then(refreshLegacySnapshots);
   setInterval(() => ensureSnapshot(true), 10 * 60 * 1000);
 })();

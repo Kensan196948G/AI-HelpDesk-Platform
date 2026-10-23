@@ -66,11 +66,21 @@
 - 実測: Windows実機で CIM / Defender / 273ソフトを取得。BitLocker はタスク実行ユーザー権限で未検出のため、`-Elevated` 再登録を残対応とする。
 - 残: 全 STEP E2E、BitLockerの`-Elevated`再登録、GPO/Intune 配布、CI。
 
+## Round 7 — PC基本情報の表示（2026-10-23）
+
+- 指摘: 「PC基本情報（事前取得）」に未記載（空欄・「未取得」）を残さない。資産番号は「コンピュータ名」に置き換える。
+- 端末グループの先頭を `資産番号` から `コンピュータ名` に変更（値は端末エージェントの `hostname`。未導入時は `未検出（ブラウザ）`）。
+- 取得できない値は「未取得」で止めず、`なし` / `端末エージェント未導入` / `未検出` / `未検出（ブラウザ）` で表示し、note も状態に合わせて分岐する。
+- ブラウザのみのローカル取得（device-bridge）も同じ表記に統一。
+- 保存済みの旧スナップショット（「資産番号」行・「未取得」を含む）は、次回ロード時に現在の端末情報へ移行する（差分は「前回から変わった点」に残す）。
+- 引継ぎメモの「対象の機器」もコンピュータ名を使う（旧 `asset_no` は読み取り互換を維持）。
+- **75 tests 成功**（+1: 表示に空欄・「未取得」を残さない）。
+
 ## 現在の Evidence
 
 | 項目 | 結果 |
 |---|---|
-| Tests | 74 passed（17 files） |
+| Tests | 75 passed（17 files） |
 | TypeCheck | 成功 |
 | Lint | 成功（warning 27 / error 0） |
 | Build | 成功 |
@@ -79,7 +89,7 @@
 | DB | migrate / seed / 再実行 / Read-Write / Backup-Restore |
 | API | 主要 3 Flow、セキュリティ、権限、監査 |
 | Access | allow ポリシー + アプリ許可リスト（fail-closed）+ OTP 実ログイン + エージェント用 bypass |
-| PC情報 | ブラウザ 35 項目 / エージェント 300 ソフト / 端末単位マージ / AI コンテキスト |
+| PC情報 | ブラウザ 35 項目 / エージェント 300 ソフト / 端末単位マージ / コンピュータ名表示・未記載なし |
 | AI | `deepseek-flash`（V4.1-Flash）/ PC 情報を回答に反映 |
 | PR | #1 OPEN（mergeable、Required Checks なし） |
 | OpenDesign | artifact v3 / linter P0 0 |

@@ -89,7 +89,7 @@ describe('device domain', () => {
     expect(byLabel.get('メモリ使用率')).toContain('16.0 GB');
     expect(byLabel.get('ブラウザ')).toContain('Google Chrome');
     expect(byLabel.get('GPU')).toContain('Intel');
-    expect(byLabel.get('Teams')).toBe('未取得');
+    expect(byLabel.get('Teams')).toBe('端末エージェント未導入');
     expect(byLabel.get('PCエージェント')).toContain('ブラウザ取得');
   });
 
@@ -108,6 +108,17 @@ describe('device domain', () => {
     expect(byLabel.get('ディスクの空き')).toContain('120.0 GB');
     expect(byLabel.get('ウイルス対策')).toContain('有効');
     expect(byLabel.get('インストール済みソフト')).toBe('3件');
+    expect(byLabel.get('コンピュータ名')).toBe('PC-TEST-01');
+  });
+
+  it('表示に空欄・「未取得」を残さず、コンピュータ名を表示する', () => {
+    const snapshot = buildPrototypeDeviceSnapshot(BROWSER);
+    const empty = snapshot.items.filter((item) => !item.v.trim() || item.v.includes('未取得'));
+    expect(empty).toEqual([]);
+    expect(snapshot.items.find((item) => item.k === 'コンピュータ名')?.v).toBe(
+      '未検出（ブラウザ）',
+    );
+    expect(snapshot.items.some((item) => item.k === '資産番号')).toBe(false);
   });
 
   it('案件用の PcSnapshot に変換し、気になる点を判定する', () => {
@@ -117,9 +128,11 @@ describe('device domain', () => {
     });
     expect(pc.source).toBe('agent');
     expect(pc.items.length).toBeGreaterThanOrEqual(31);
-    const asset = pc.items.find((item) => item.key === 'asset_no');
-    expect(asset?.value).toBe('PC-9999');
-    expect(asset?.sensitive).toBe(true);
+    const device = pc.items.find((item) => item.key === 'hostname');
+    expect(device?.label).toBe('コンピュータ名');
+    expect(device?.value).toBe('PC-TEST-01');
+    expect(device?.sensitive).toBeUndefined();
+    expect(pc.items.some((item) => item.key === 'asset_no')).toBe(false);
     expect(Array.isArray(pc.concerns)).toBe(true);
   });
 

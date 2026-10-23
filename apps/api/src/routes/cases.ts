@@ -279,7 +279,9 @@ export async function caseRoutes(app: FastifyInstance): Promise<void> {
     const pcRow = pcRows[0];
     const meta = CATEGORY_META[asCategory(found.category)];
     const pcItems = asJsonArray<{ key: string; value: string }>(pcRow?.items);
-    const assetNo = pcItems.find((item) => item.key === 'asset_no')?.value;
+    const deviceName =
+      pcItems.find((item) => item.key === 'hostname')?.value ??
+      pcItems.find((item) => item.key === 'asset_no')?.value;
     const concerns = asJsonArray<{ label: string; star: boolean }>(pcRow?.concerns);
     const concernText =
       concerns.length > 0
@@ -290,7 +292,7 @@ export async function caseRoutes(app: FastifyInstance): Promise<void> {
         : 'なし';
     const handoffMemo = [
       `推定分野: ${meta.handoffGroup}`,
-      `対象の機器: ${assetNo ?? '未取得'}`,
+      `対象の機器: ${deviceName?.trim() || '未検出'}`,
       `AIの経過: ${found.ai_summary ?? 'なし'}`,
       `気になる点: ${concernText}`,
       `推奨アクション: ${meta.handoffGroup}の担当者が、同意された情報をもとに対応してください。`,

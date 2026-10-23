@@ -161,7 +161,7 @@ describe('device routes', () => {
     const os = body.snapshot.items.find((item: { k: string }) => item.k === 'OS');
     expect(os.v).toContain('Windows 11');
     const teams = body.snapshot.items.find((item: { k: string }) => item.k === 'Teams');
-    expect(teams.v).toBe('未取得');
+    expect(teams.v).toBe('端末エージェント未導入');
   });
 
   it('不正なデバイストークンは 401', async () => {

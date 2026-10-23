@@ -95,7 +95,7 @@ export function buildDemoPcSnapshot(input: PcInput): PcSnapshot {
   const loginIssue = category === 'account';
 
   const items: PcItem[] = [
-    item('端末', 'asset_no', '資産番号', 'PC-0241', 'normal', true),
+    item('端末', 'hostname', 'コンピュータ名', 'PC-0241', 'normal'),
     item('端末', 'model', '機種', "Let's note FV4", 'normal'),
     item('端末', 'serial', 'シリアル番号', 'SN-9F2C-41A7', 'normal', true),
     item('端末', 'os', 'OS（ビルド）', 'Windows 11 23H2 (22631.4169)', 'normal'),

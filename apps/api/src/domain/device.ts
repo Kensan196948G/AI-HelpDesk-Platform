@@ -180,8 +180,23 @@ export interface PrototypeDeviceSnapshot {
 
 const GB = 1024 ** 3;
 
+/**
+ * 「未取得」で終わらせず、状態を具体的に示す表示。
+ * 空欄や「未取得」は“未記載”に見えるため、なし / 未導入 / 未検出 のいずれかで埋める。
+ */
+const NA_TEXT = {
+  /** 端末エージェントが必要な項目で、まだ導入されていない */
+  agentMissing: '端末エージェント未導入',
+  /** 端末エージェントは導入済みだが、端末上で検出できなかった */
+  notDetected: '未検出',
+  /** ブラウザだけでは取得できない */
+  browserOnly: '未検出（ブラウザ）',
+  /** 対象が存在しない（アプリ未導入・プリンターなし等） */
+  none: 'なし',
+} as const;
+
 function formatGB(bytes?: number): string {
-  if (typeof bytes !== 'number' || !Number.isFinite(bytes) || bytes < 0) return '未取得';
+  if (typeof bytes !== 'number' || !Number.isFinite(bytes) || bytes < 0) return NA_TEXT.notDetected;
   if (bytes >= GB) return `${(bytes / GB).toFixed(1)} GB`;
   if (bytes >= 1024 ** 2) return `${(bytes / 1024 ** 2).toFixed(0)} MB`;
   return `${Math.max(0, Math.round(bytes))} B`;
@@ -193,7 +208,8 @@ function formatPercent(value?: number): string {
 }
 
 function formatUptime(seconds?: number): string {
-  if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds < 0) return '未取得';
+  if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds < 0)
+    return NA_TEXT.notDetected;
   const days = Math.floor(seconds / 86400);
   const hours = Math.floor((seconds % 86400) / 3600);
   return days > 0 ? `${days}日${hours}時間` : `${hours}時間`;
@@ -214,8 +230,8 @@ function findApp(software: DeviceSoftwareApp[], patterns: string[]): DeviceSoftw
   });
 }
 
-function appLabel(app: DeviceSoftwareApp | undefined): string {
-  if (!app) return '未取得';
+function appLabel(app: DeviceSoftwareApp | undefined, hasAgent: boolean): string {
+  if (!app) return hasAgent ? NA_TEXT.none : NA_TEXT.agentMissing;
   return join([app.name, app.version], '取得済み');
 }
 
@@ -226,7 +242,7 @@ function sourceLabel(hasBrowser: boolean, hasAgent: boolean): string {
 }
 
 function networkLabel(network?: DeviceNetwork): string {
-  if (!network) return '未取得';
+  if (!network) return NA_TEXT.notDetected;
   if (network.online === false) return 'オフライン';
   const type = network.effectiveType ? `${network.effectiveType.toUpperCase()}` : 'オンライン';
   const speed =
@@ -234,13 +250,20 @@ function networkLabel(network?: DeviceNetwork): string {
   return `ブラウザ回線: ${type}${speed}`;
 }
 
-function vpnLabel(hardware: DeviceHardware): { value: string; level: DeviceLevel } {
+function vpnLabel(
+  hardware: DeviceHardware,
+  hasAgent: boolean,
+): { value: string; level: DeviceLevel } {
   const adapters = hardware.network?.adapters ?? [];
   const vpn = adapters.filter((adapter) => adapter.vpn);
   if (vpn.length === 0) {
     const anyAdapter = adapters.length > 0;
     return {
-      value: anyAdapter ? 'VPN用アダプタは検出されませんでした' : '未取得（エージェント未導入）',
+      value: anyAdapter
+        ? 'VPN用アダプタは検出されませんでした'
+        : hasAgent
+          ? NA_TEXT.notDetected
+          : NA_TEXT.agentMissing,
       level: anyAdapter ? 'ok' : 'warn',
     };
   }
@@ -251,7 +274,10 @@ function vpnLabel(hardware: DeviceHardware): { value: string; level: DeviceLevel
   };
 }
 
-function diskLabel(hardware: DeviceHardware): { value: string; level: DeviceLevel; note: string } {
+function diskLabel(
+  hardware: DeviceHardware,
+  hasAgent: boolean,
+): { value: string; level: DeviceLevel; note: string } {
   const disks = hardware.disks ?? [];
   const primary = disks.find((disk) => disk.mount === '/' || disk.mount === 'C:') ?? disks[0];
   if (primary?.totalBytes) {
@@ -278,9 +304,11 @@ function diskLabel(hardware: DeviceHardware): { value: string; level: DeviceLeve
     };
   }
   return {
-    value: '未取得',
+    value: hasAgent ? NA_TEXT.notDetected : NA_TEXT.agentMissing,
     level: 'warn',
-    note: 'エージェントを導入すると端末全体の空き容量を取得できます',
+    note: hasAgent
+      ? '端末上でディスク情報を検出できませんでした'
+      : '端末エージェントを導入すると端末全体の空き容量を取得できます',
   };
 }
 
@@ -289,7 +317,7 @@ function securityItems(
   hasAgent: boolean,
   platform?: string,
 ): Array<{ key: string; k: string; v: string; lv: DeviceLevel; note: string; tag: string }> {
-  const unavailable = hasAgent ? '未検出（エージェント）' : '未取得（エージェント未導入）';
+  const unavailable = hasAgent ? NA_TEXT.notDetected : NA_TEXT.agentMissing;
   const unavailableNote = hasAgent
     ? '端末上で検出できませんでした'
     : 'エージェントを導入すると確認できます';
@@ -339,7 +367,7 @@ function securityItems(
         ? typeof update.pending === 'number' && update.pending > 0
           ? `更新 ${update.pending}件が再起動待ち`
           : join([update.detail, '最新'], '最新')
-        : '未取得（エージェント未導入）',
+        : unavailable,
       lv: update
         ? typeof update.pending === 'number' && update.pending > 0
           ? 'warn'
@@ -361,8 +389,8 @@ export function buildDeviceSnapshotItems(inventory: DeviceInventoryData): Device
   const memoryTotal = hw.memory?.totalBytes;
   const memoryUsage = formatPercent(hw.memory?.usagePercent);
   const cpuUsage = formatPercent(hw.cpu?.usagePercent);
-  const disks = diskLabel(hw);
-  const vpn = vpnLabel(hw);
+  const disks = diskLabel(hw, hasAgent);
+  const vpn = vpnLabel(hw, hasAgent);
   const gpu = hw.gpu?.[0];
   const security = securityItems(inventory.security, hasAgent, inventory.platform ?? inventory.os);
   const printers = hw.printers ?? [];
@@ -372,30 +400,41 @@ export function buildDeviceSnapshotItems(inventory: DeviceInventoryData): Device
   const items: DeviceSnapshotItem[] = [
     {
       grp: '端末',
-      key: 'asset_no',
-      k: '資産番号',
-      v: hw.assetNo?.trim() || '未登録',
+      key: 'hostname',
+      k: 'コンピュータ名',
+      v: inventory.hostname?.trim() || (hasAgent ? NA_TEXT.notDetected : NA_TEXT.browserOnly),
       lv: 'ok',
-      note: hw.assetNo ? '' : '端末エージェントで資産番号を取得できます',
+      note: inventory.hostname?.trim()
+        ? ''
+        : hasAgent
+          ? '端末上でコンピュータ名を検出できませんでした'
+          : '端末エージェントを導入するとコンピュータ名を取得できます',
       tag: '',
-      sensitive: true,
     },
     {
       grp: '端末',
       key: 'model',
       k: '機種',
-      v: join([hw.manufacturer, hw.model], '未取得'),
+      v: join([hw.manufacturer, hw.model], hasAgent ? NA_TEXT.notDetected : NA_TEXT.browserOnly),
       lv: 'ok',
-      note: hw.model ? '' : 'ブラウザからは機種名を取得できません',
+      note: hw.model
+        ? ''
+        : hasAgent
+          ? '端末上で機種名を検出できませんでした'
+          : 'ブラウザからは機種名を取得できません',
       tag: '',
     },
     {
       grp: '端末',
       key: 'serial',
       k: 'シリアル番号',
-      v: hw.serial?.trim() || '未取得',
+      v: hw.serial?.trim() || (hasAgent ? NA_TEXT.notDetected : NA_TEXT.agentMissing),
       lv: 'ok',
-      note: hw.serial ? '外部AIへは伏せて渡します' : '',
+      note: hw.serial
+        ? '外部AIへは伏せて渡します'
+        : hasAgent
+          ? '端末上でシリアル番号を検出できませんでした'
+          : '端末エージェントを導入するとシリアル番号を取得できます',
       tag: '',
       sensitive: true,
     },
@@ -403,7 +442,7 @@ export function buildDeviceSnapshotItems(inventory: DeviceInventoryData): Device
       grp: '端末',
       key: 'os',
       k: 'OS',
-      v: join([inventory.os, inventory.platform, inventory.arch], '未取得'),
+      v: join([inventory.os, inventory.platform, inventory.arch], NA_TEXT.notDetected),
       lv: inventory.os ? 'ok' : 'warn',
       note: inventory.os ? '' : 'ブラウザの User-Agent から推定しています',
       tag: '',
@@ -412,13 +451,20 @@ export function buildDeviceSnapshotItems(inventory: DeviceInventoryData): Device
       grp: '端末',
       key: 'uptime_days',
       k: '前回の再起動から',
-      v: formatUptime(hw.uptimeSeconds),
+      v:
+        hw.uptimeSeconds !== undefined
+          ? formatUptime(hw.uptimeSeconds)
+          : hasAgent
+            ? NA_TEXT.notDetected
+            : NA_TEXT.agentMissing,
       lv: typeof hw.uptimeSeconds === 'number' && hw.uptimeSeconds >= 14 * 86400 ? 'warn' : 'ok',
       note:
         typeof hw.uptimeSeconds === 'number' && hw.uptimeSeconds >= 14 * 86400
           ? '長い間再起動していません（再起動で直ることがあります）'
           : hw.uptimeSeconds === undefined
-            ? 'エージェントを導入すると取得できます'
+            ? hasAgent
+              ? '端末上で起動時間を検出できませんでした'
+              : '端末エージェントを導入すると取得できます'
             : '',
       tag: '遅い|重い|動作|固ま|更新|再起動',
     },
@@ -444,9 +490,13 @@ export function buildDeviceSnapshotItems(inventory: DeviceInventoryData): Device
       grp: 'アカウント',
       key: 'domain_join',
       k: 'ドメイン・Entra ID',
-      v: hw.domainJoined?.trim() || '未取得（エージェント未導入）',
+      v: hw.domainJoined?.trim() || (hasAgent ? NA_TEXT.notDetected : NA_TEXT.agentMissing),
       lv: hw.domainJoined ? 'ok' : 'warn',
-      note: hw.domainJoined ? '' : 'エージェントを導入すると確認できます',
+      note: hw.domainJoined
+        ? ''
+        : hasAgent
+          ? '端末上でドメイン参加の状態を検出できませんでした'
+          : '端末エージェントを導入すると確認できます',
       tag: 'ログイン|サインイン|ロック|MFA|認証',
     },
     {
@@ -471,9 +521,13 @@ export function buildDeviceSnapshotItems(inventory: DeviceInventoryData): Device
       grp: 'ネットワーク',
       key: 'ip_address',
       k: 'IPアドレス',
-      v: hw.network?.ipv4?.[0]?.trim() || '未取得（ブラウザ）',
+      v: hw.network?.ipv4?.[0]?.trim() || (hasAgent ? NA_TEXT.notDetected : NA_TEXT.browserOnly),
       lv: 'ok',
-      note: hw.network?.ipv4?.length ? '外部AIへは伏せて渡します' : '',
+      note: hw.network?.ipv4?.length
+        ? '外部AIへは伏せて渡します'
+        : hasAgent
+          ? '端末上でIPアドレスを検出できませんでした'
+          : 'ブラウザからはIPアドレスを取得しません',
       tag: '',
       sensitive: true,
     },
@@ -501,9 +555,15 @@ export function buildDeviceSnapshotItems(inventory: DeviceInventoryData): Device
       k: '共有フォルダ',
       v: hw.sharedFolder
         ? `${hw.sharedFolder.path ?? '共有フォルダ'}（${hw.sharedFolder.accessible ? 'アクセスできる' : 'アクセスできない'}）`
-        : '未取得（エージェント未導入）',
+        : hasAgent
+          ? NA_TEXT.notDetected
+          : NA_TEXT.agentMissing,
       lv: hw.sharedFolder ? (hw.sharedFolder.accessible ? 'ok' : 'ng') : 'warn',
-      note: hw.sharedFolder ? '' : 'エージェントを導入すると確認できます',
+      note: hw.sharedFolder
+        ? ''
+        : hasAgent
+          ? '端末エージェントは共有フォルダの状態を収集しません'
+          : '端末エージェントを導入すると確認できます',
       tag: '共有|フォルダ|ファイルサーバ|アクセス',
     },
     {
@@ -513,10 +573,10 @@ export function buildDeviceSnapshotItems(inventory: DeviceInventoryData): Device
       v: cpuUsage
         ? `${cpuUsage}${cpuCores ? `（${cpuCores} 論理コア）` : ''}`
         : cpuCores
-          ? `使用率は取得不可（${cpuCores} 論理コア）`
-          : '未取得（ブラウザ）',
+          ? `未検出（ブラウザ・${cpuCores} 論理コア）`
+          : NA_TEXT.browserOnly,
       lv: 'ok',
-      note: cpuUsage ? '' : '使用率はエージェント導入後に取得できます',
+      note: cpuUsage ? '' : '端末エージェントを導入すると使用率を取得できます',
       tag: '遅い|重い|固ま',
     },
     {
@@ -527,7 +587,7 @@ export function buildDeviceSnapshotItems(inventory: DeviceInventoryData): Device
         ? `${memoryUsage}${memoryTotal ? `（${formatGB(memoryTotal)}）` : ''}`
         : memoryTotal
           ? `約 ${formatGB(memoryTotal)}（ブラウザ推定）`
-          : '未取得（ブラウザ）',
+          : NA_TEXT.browserOnly,
       lv: 'ok',
       note: memoryUsage ? '' : 'ブラウザが推定した搭載メモリです',
       tag: '遅い|重い|固ま',
@@ -545,9 +605,19 @@ export function buildDeviceSnapshotItems(inventory: DeviceInventoryData): Device
       grp: 'リソース',
       key: 'temp_files',
       k: '本人の一時ファイル',
-      v: hw.tempBytes !== undefined ? formatGB(hw.tempBytes) : '未取得',
+      v:
+        hw.tempBytes !== undefined
+          ? formatGB(hw.tempBytes)
+          : hasAgent
+            ? NA_TEXT.notDetected
+            : NA_TEXT.agentMissing,
       lv: 'ok',
-      note: hw.tempBytes === undefined ? 'エージェントを導入すると取得できます' : '',
+      note:
+        hw.tempBytes === undefined
+          ? hasAgent
+            ? '端末上で一時ファイルの容量を検出できませんでした'
+            : '端末エージェントを導入すると取得できます'
+          : '',
       tag: '遅い|重い|容量|空き',
     },
     ...security.map((item) => ({
@@ -563,18 +633,26 @@ export function buildDeviceSnapshotItems(inventory: DeviceInventoryData): Device
       grp: '周辺機器',
       key: 'default_printer',
       k: '既定のプリンター',
-      v: printers[0]?.name ?? '未取得（エージェント未導入）',
+      v: printers[0]?.name ?? (hasAgent ? NA_TEXT.none : NA_TEXT.agentMissing),
       lv: 'ok',
-      note: printers[0] ? '' : 'エージェントを導入すると取得できます',
+      note: printers[0]
+        ? ''
+        : hasAgent
+          ? '端末にプリンターが見つかりません'
+          : '端末エージェントを導入すると取得できます',
       tag: '印刷|プリンタ|複合機',
     },
     {
       grp: '周辺機器',
       key: 'print_spooler',
       k: '印刷スプーラ',
-      v: hw.printSpooler ?? '未取得（エージェント未導入）',
+      v: hw.printSpooler ?? (hasAgent ? NA_TEXT.notDetected : NA_TEXT.agentMissing),
       lv: hw.printSpooler && /停止|stop/i.test(hw.printSpooler) ? 'ng' : 'ok',
-      note: hw.printSpooler ? '' : 'エージェントを導入すると取得できます',
+      note: hw.printSpooler
+        ? ''
+        : hasAgent
+          ? '端末上で印刷スプーラを検出できませんでした'
+          : '端末エージェントを導入すると取得できます',
       tag: '印刷|プリンタ|複合機',
     },
     {
@@ -583,9 +661,15 @@ export function buildDeviceSnapshotItems(inventory: DeviceInventoryData): Device
       k: '印刷キュー',
       v: printers.length
         ? `${printers.reduce((total, printer) => total + (printer.jobs ?? 0), 0)}件`
-        : '未取得（エージェント未導入）',
+        : hasAgent
+          ? NA_TEXT.none
+          : NA_TEXT.agentMissing,
       lv: 'ok',
-      note: printers.length ? '' : 'エージェントを導入すると取得できます',
+      note: printers.length
+        ? ''
+        : hasAgent
+          ? '端末にプリンターが見つかりません'
+          : '端末エージェントを導入すると取得できます',
       tag: '印刷|プリンタ|複合機',
     },
     {
@@ -593,36 +677,70 @@ export function buildDeviceSnapshotItems(inventory: DeviceInventoryData): Device
       key: 'audio_output',
       k: '音声の出力先',
       v:
-        hw.audioOutput?.trim() || (audioDevices > 0 ? `ブラウザ検出 ${audioDevices} 台` : '未取得'),
+        hw.audioOutput?.trim() ||
+        (audioDevices > 0
+          ? `ブラウザ検出 ${audioDevices} 台`
+          : hasAgent
+            ? NA_TEXT.notDetected
+            : NA_TEXT.browserOnly),
       lv: 'ok',
-      note: audioDevices > 0 ? 'ブラウザから検出した音声出力デバイス数です' : '',
+      note: hw.audioOutput
+        ? ''
+        : audioDevices > 0
+          ? 'ブラウザから検出した音声出力デバイス数です'
+          : hasAgent
+            ? '端末上で音声の出力先を検出できませんでした'
+            : 'ブラウザからは音声の出力先を取得できません',
       tag: '音|Teams|聞こえ|スピーカー|ヘッドセット|マイク|会議',
     },
     {
       grp: '周辺機器',
       key: 'usb_devices',
       k: 'USB機器',
-      v: hw.usbDevices !== undefined ? `${hw.usbDevices}台` : '未取得',
+      v:
+        hw.usbDevices !== undefined
+          ? `${hw.usbDevices}台`
+          : hasAgent
+            ? NA_TEXT.notDetected
+            : NA_TEXT.agentMissing,
       lv: 'ok',
-      note: hw.usbDevices === undefined ? 'エージェントを導入すると取得できます' : '',
+      note:
+        hw.usbDevices === undefined
+          ? hasAgent
+            ? '端末上でUSB機器を検出できませんでした'
+            : '端末エージェントを導入すると取得できます'
+          : '',
       tag: '',
     },
     {
       grp: 'ソフトウェア',
       key: 'm365_apps',
       k: 'Microsoft 365 Apps',
-      v: appLabel(findApp(software, ['microsoft 365', 'microsoft office', 'office16', 'office'])),
+      v: appLabel(
+        findApp(software, ['microsoft 365', 'microsoft office', 'office16', 'office']),
+        hasAgent,
+      ),
       lv: 'ok',
-      note: installedCount === 0 ? 'エージェントを導入すると導入ソフトを取得できます' : '',
+      note:
+        installedCount === 0
+          ? hasAgent
+            ? '端末上で導入ソフトを検出できませんでした'
+            : '端末エージェントを導入すると導入ソフトを取得できます'
+          : '',
       tag: 'Outlook|Excel|Word|メール',
     },
     {
       grp: 'ソフトウェア',
       key: 'teams',
       k: 'Teams',
-      v: appLabel(findApp(software, ['teams'])),
+      v: appLabel(findApp(software, ['teams']), hasAgent),
       lv: 'ok',
-      note: installedCount === 0 ? 'エージェントを導入すると導入ソフトを取得できます' : '',
+      note:
+        installedCount === 0
+          ? hasAgent
+            ? '端末上で導入ソフトを検出できませんでした'
+            : '端末エージェントを導入すると導入ソフトを取得できます'
+          : '',
       tag: 'Teams|会議|音',
     },
     {
@@ -631,18 +749,29 @@ export function buildDeviceSnapshotItems(inventory: DeviceInventoryData): Device
       k: 'VPNクライアント',
       v: appLabel(
         findApp(software, ['vpn', 'forticlient', 'anyconnect', 'globalprotect', 'openvpn']),
+        hasAgent,
       ),
       lv: 'ok',
-      note: installedCount === 0 ? 'エージェントを導入すると導入ソフトを取得できます' : '',
+      note:
+        installedCount === 0
+          ? hasAgent
+            ? '端末上で導入ソフトを検出できませんでした'
+            : '端末エージェントを導入すると導入ソフトを取得できます'
+          : '',
       tag: 'VPN',
     },
     {
       grp: 'ソフトウェア',
       key: 'directcloud',
       k: 'DirectCloudドライブ',
-      v: appLabel(findApp(software, ['directcloud'])),
+      v: appLabel(findApp(software, ['directcloud']), hasAgent),
       lv: 'ok',
-      note: installedCount === 0 ? 'エージェントを導入すると導入ソフトを取得できます' : '',
+      note:
+        installedCount === 0
+          ? hasAgent
+            ? '端末上で導入ソフトを検出できませんでした'
+            : '端末エージェントを導入すると導入ソフトを取得できます'
+          : '',
       tag: 'DirectCloud|同期',
     },
     {
@@ -652,14 +781,18 @@ export function buildDeviceSnapshotItems(inventory: DeviceInventoryData): Device
       v:
         inventory.security.recentErrors !== undefined
           ? `${inventory.security.recentErrors}件`
-          : '未取得（エージェント未導入）',
+          : hasAgent
+            ? NA_TEXT.notDetected
+            : NA_TEXT.agentMissing,
       lv:
         typeof inventory.security.recentErrors === 'number' && inventory.security.recentErrors >= 8
           ? 'warn'
           : 'ok',
       note:
         inventory.security.recentErrors === undefined
-          ? 'エージェントを導入すると取得できます'
+          ? hasAgent
+            ? '端末上でエラーの記録を検出できませんでした'
+            : '端末エージェントを導入すると取得できます'
           : inventory.security.recentErrors >= 8
             ? 'エラーの記録がいつもより多めです'
             : '',
@@ -669,7 +802,7 @@ export function buildDeviceSnapshotItems(inventory: DeviceInventoryData): Device
       grp: 'ソフトウェア',
       key: 'browser',
       k: 'ブラウザ',
-      v: join([browser?.name, browser?.version], '未取得'),
+      v: join([browser?.name, browser?.version], NA_TEXT.notDetected),
       lv: 'ok',
       note: browser?.userAgent ? `User-Agent: ${browser.userAgent.slice(0, 120)}` : '',
       tag: '',
@@ -681,7 +814,7 @@ export function buildDeviceSnapshotItems(inventory: DeviceInventoryData): Device
       v:
         hw.screen?.width && hw.screen.height
           ? `${hw.screen.width} × ${hw.screen.height}（${hw.screen.pixelRatio ?? 1}x / ${hw.screen.colorDepth ?? 24}bit）`
-          : '未取得',
+          : NA_TEXT.notDetected,
       lv: 'ok',
       note: '',
       tag: '',
@@ -690,7 +823,11 @@ export function buildDeviceSnapshotItems(inventory: DeviceInventoryData): Device
       grp: 'ソフトウェア',
       key: 'gpu',
       k: 'GPU',
-      v: gpu ? join([gpu.vendor, gpu.name], '取得済み') : '未取得（ブラウザ）',
+      v: gpu
+        ? join([gpu.vendor, gpu.name], '取得済み')
+        : hasAgent
+          ? NA_TEXT.notDetected
+          : NA_TEXT.browserOnly,
       lv: 'ok',
       note: gpu?.driver ? `ドライバ: ${gpu.driver}` : '',
       tag: '遅い|重い|画面',
@@ -699,7 +836,8 @@ export function buildDeviceSnapshotItems(inventory: DeviceInventoryData): Device
       grp: 'ソフトウェア',
       key: 'installed_software',
       k: 'インストール済みソフト',
-      v: installedCount > 0 ? `${installedCount}件` : '未取得（エージェント未導入）',
+      v:
+        installedCount > 0 ? `${installedCount}件` : hasAgent ? NA_TEXT.none : NA_TEXT.agentMissing,
       lv: 'ok',
       note:
         installedCount > 0
@@ -707,7 +845,9 @@ export function buildDeviceSnapshotItems(inventory: DeviceInventoryData): Device
               .slice(0, 6)
               .map((app) => `${app.name}${app.version ? ` ${app.version}` : ''}`)
               .join(' / ')
-          : 'エージェントを導入すると導入ソフトの一覧を取得できます',
+          : hasAgent
+            ? '端末上で導入ソフトを検出できませんでした'
+            : '端末エージェントを導入すると導入ソフトの一覧を取得できます',
       tag: '',
     },
   ];
@@ -929,6 +1069,7 @@ export function agentInputToInventory(input: AgentInventoryInput): DeviceInvento
  */
 export function buildDeviceAiContext(inventory: DeviceInventoryData, question: string): string {
   const hw = inventory.hardware;
+  const hasAgent = inventory.source === 'agent';
   const items = buildDeviceSnapshotItems(inventory);
   const concerns = items.filter((item) => item.lv !== 'ok');
   const normalizedQuestion = question.toLowerCase();
@@ -967,16 +1108,16 @@ export function buildDeviceAiContext(inventory: DeviceInventoryData, question: s
     'PC基本情報（読み取りのみ。ファイル内容・閲覧履歴・画面・キー入力は含まない）',
     `- 取得元: ${inventory.source === 'agent' ? '端末エージェント + ブラウザ' : 'ブラウザ'}`,
     `- 取得日時: ${inventory.collectedAt}`,
-    `- 端末: ${inventory.hostname ?? '未取得'}`,
-    `- OS: ${inventory.os ?? inventory.platform ?? '未取得'} ${inventory.arch ?? ''}`.trim(),
-    `- ブラウザ: ${inventory.browser?.name ?? '未取得'}${inventory.browser?.version ? ` ${inventory.browser.version}` : ''}`,
-    `- CPU: ${hw.cpu?.model ?? '未取得'}${hw.cpu?.logicalCores ? ` / ${hw.cpu.logicalCores} 論理コア` : ''}${hw.cpu?.usagePercent !== undefined ? ` / 使用率 ${formatPercent(hw.cpu.usagePercent)}` : ''}`,
-    `- メモリ: ${hw.memory?.totalBytes ? formatGB(hw.memory.totalBytes) : '未取得'}${hw.memory?.usagePercent !== undefined ? ` / 使用率 ${formatPercent(hw.memory.usagePercent)}` : ''}`,
-    `- ディスク: ${diskLabel(hw).value}`,
-    `- GPU: ${hw.gpu?.[0] ? join([hw.gpu[0].vendor, hw.gpu[0].name], '取得済み') : '未取得'}`,
-    `- ネットワーク: ${networkLabel(hw.network)} / VPN: ${vpnLabel(hw).value}`,
-    `- セキュリティ: ウイルス対策=${inventory.security.antivirus ? (inventory.security.antivirus.enabled === false ? '無効' : '有効') : '未取得'} / ディスク暗号化=${inventory.security.diskEncryption ? (inventory.security.diskEncryption.enabled === false ? '無効' : '有効') : '未取得'} / 更新待ち=${inventory.security.windowsUpdate?.pending ?? '未取得'}`,
-    `- 導入ソフト: ${inventory.source === 'agent' ? `${inventory.software.length}件` : '未取得'}（関連 ${software.length}件）`,
+    `- 端末: ${inventory.hostname?.trim() || NA_TEXT.notDetected}`,
+    `- OS: ${inventory.os ?? inventory.platform ?? NA_TEXT.notDetected} ${inventory.arch ?? ''}`.trim(),
+    `- ブラウザ: ${inventory.browser?.name ?? NA_TEXT.notDetected}${inventory.browser?.version ? ` ${inventory.browser.version}` : ''}`,
+    `- CPU: ${hw.cpu?.model ?? NA_TEXT.notDetected}${hw.cpu?.logicalCores ? ` / ${hw.cpu.logicalCores} 論理コア` : ''}${hw.cpu?.usagePercent !== undefined ? ` / 使用率 ${formatPercent(hw.cpu.usagePercent)}` : ''}`,
+    `- メモリ: ${hw.memory?.totalBytes ? formatGB(hw.memory.totalBytes) : NA_TEXT.notDetected}${hw.memory?.usagePercent !== undefined ? ` / 使用率 ${formatPercent(hw.memory.usagePercent)}` : ''}`,
+    `- ディスク: ${diskLabel(hw, hasAgent).value}`,
+    `- GPU: ${hw.gpu?.[0] ? join([hw.gpu[0].vendor, hw.gpu[0].name], '取得済み') : NA_TEXT.notDetected}`,
+    `- ネットワーク: ${networkLabel(hw.network)} / VPN: ${vpnLabel(hw, hasAgent).value}`,
+    `- セキュリティ: ウイルス対策=${inventory.security.antivirus ? (inventory.security.antivirus.enabled === false ? '無効' : '有効') : NA_TEXT.notDetected} / ディスク暗号化=${inventory.security.diskEncryption ? (inventory.security.diskEncryption.enabled === false ? '無効' : '有効') : NA_TEXT.notDetected} / 更新待ち=${inventory.security.windowsUpdate?.pending ?? NA_TEXT.notDetected}`,
+    `- 導入ソフト: ${hasAgent ? `${inventory.software.length}件` : NA_TEXT.agentMissing}（関連 ${software.length}件）`,
     ...softwareLines,
     concerns.length > 0
       ? `- 気になる点: ${concerns.map((item) => `${item.k}=${item.v}`).join(' / ')}`
