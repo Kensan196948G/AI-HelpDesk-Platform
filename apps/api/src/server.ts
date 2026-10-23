@@ -38,7 +38,6 @@ export async function buildServer(options?: { logger?: boolean }): Promise<Fasti
           },
     trustProxy: true,
     bodyLimit: 1024 * 1024,
-    disableRequestLogging: false,
   });
 
   await app.register(cookie);

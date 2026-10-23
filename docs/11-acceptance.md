@@ -20,7 +20,7 @@
 | 12 | DB 主要 Read / Write 確認 | ✅ | 案件・引継ぎ・解決・ナレッジ・監査 |
 | 13 | Type Check 成功 | ✅ | `npm run typecheck` |
 | 14 | Lint 成功 | ✅ | `npm run lint`（error 0） |
-| 15 | 主要 Test 成功 | ✅ | 27 tests（unit 24 + integration 3） |
+| 15 | 主要 Test 成功 | ✅ | 36 tests（unit 28 + integration 8） |
 | 16 | Build 成功 | ⏸ | API は成功。Web は未実装 |
 | 17 | Critical / High の既知問題なし | ⏸ | 既知の Critical なし。最終 Review と Preview 検証が未 |
 | 18 | Cloudflare Preview Deployment 成功 | ⛔ | policy gate が DEPLOY を拒否（[08-deployment](08-deployment.md) §3） |

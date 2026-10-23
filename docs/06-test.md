@@ -37,8 +37,8 @@ npx tsx scripts/seed.ts
 |---|---|---|
 | TypeCheck（API） | ✅ 成功 | `tsc --noEmit` |
 | Lint / Format | ✅ 成功 | Biome。warning 9（non-null assertion 等）、error 0 |
-| Unit test | ✅ 24 件成功 | PII / signal / audit / PC / AI / password |
-| Integration test | ✅ 3 件成功 | 主要 3 Flow、セキュリティ、権限 |
+| Unit test | ✅ 28 件成功 | PII / signal / audit / PC / AI / password |
+| Integration test | ✅ 8 件成功 | 主要 3 Flow、セキュリティ、権限 |
 | API Build | ✅ 成功 | `apps/api/dist` を生成 |
 | Dependency audit（runtime） | ✅ 0 vulnerabilities | `npm audit --omit=dev --audit-level=high` |
 | Secret pattern scan | ✅ 検出なし | `scripts/scan-secrets.sh`（CI 用） |
@@ -46,8 +46,8 @@ npx tsx scripts/seed.ts
 | E2E（UI） | ⏸ 未実施 | WebUI の Y/N 承認待ち |
 
 ```
-Test Files  7 passed (7)
-Tests       27 passed (27)
+Test Files  9 passed (9)
+Tests       36 passed (36)
 ```
 
 ## 4. Integration test が見ているもの

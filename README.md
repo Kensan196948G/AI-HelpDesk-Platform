@@ -18,7 +18,7 @@
 | MVP スコープ | 定義済み（[docs/01-mvp-scope.md](docs/01-mvp-scope.md)） |
 | OpenDesign 画面設計 | **作成済み**（artifact v3 / [design/opendesign/](design/opendesign/) / 承認待ち） |
 | Local PostgreSQL | **実装・検証済み**（migrate / seed / 再実行 / Read・Write） |
-| API | **実装・検証済み**（27 tests / 主要 3 Flow） |
+| API | **実装・検証済み**（36 tests / 主要 3 Flow） |
 | WebUI 実装 | 未着手（**Y/N 承認待ち**） |
 | CI | **Blocker**（policy gate が `.github/workflows/` を拒否） |
 | Cloudflare Preview | **Blocker**（policy gate が `wrangler.*` / `wrangler deploy` を拒否） |
@@ -80,7 +80,7 @@ bash scripts/scan-secrets.sh
 npm audit --omit=dev --audit-level=high
 ```
 
-実測（2026-10-23）: TypeCheck ✅ / Lint ✅ / 27 tests ✅ / Build ✅ / Secret scan ✅ / Audit 0 vulnerabilities。
+実測（2026-10-23）: TypeCheck ✅ / Lint ✅ / 36 tests ✅ / Build ✅ / Secret scan ✅ / Audit 0 vulnerabilities。
 
 ## ドキュメント
 
