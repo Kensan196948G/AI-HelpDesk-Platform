@@ -2571,6 +2571,8 @@ const OPS={
  BULK_DELETE:{name:'ファイルの一括削除',level:5,impact:'—'},
  PRIV_GRANT:{name:'管理者権限・アクセス権の付与',level:5,impact:'—（正式な申請手続へ）'}
 };
+/* 実端末で実行できる操作（サーバの /api/device/command と一致）。 */
+const REAL_EXEC_OPS={SPOOLER_RESTART:1};
 const PST={proposed:['本人の判断待ち','warn'],pending_admin:['IT管理者の承認待ち','warn'],ready:['実行可能','ok'],executing:['実行中','info'],done:['完了','ok'],rejected:['本人が拒否（N）','mute'],admin_rejected:['管理者が却下','ng'],invalidated:['承認無効（内容変更）','ng'],failed:['失敗（変更なし）','ng'],aborted:['中断（変更なし）','ng'],rolled_back:['元に戻し済み','mute']};
 /* 1回の相談で実行できるコマンドの上限（15回）。超過時は自動実行せず担当者へ引き継ぐ。 */
 const MAX_OPS_PER_CHAT=15;
@@ -2990,6 +2992,7 @@ function renderProposal(p,c){if(!p)return '';const op=OPS[p.opId];const isOwner=
  else if(p.status==='ready'&&op.level>=4)foot=`<div class="note">✅ IT管理者（${esc(uname(p.adminDecision.by))}）が承認しました${p.adminDecision.comment?'：「'+esc(p.adminDecision.comment)+'」':''}</div>${isOwner?`<div class="btns"><button class="btn pri" data-act="execReady" data-id="${p.id}">▶ 立会いのもと実行する</button></div>`:''}`;
  else if(p.status==='admin_rejected')foot=`<div class="note">⛔ IT管理者が却下しました${p.adminDecision.comment?'：「'+esc(p.adminDecision.comment)+'」':''}。端末は変更していません。</div><div class="btns">${escBtn('IT端末')}</div>`;
  else if(p.status==='rejected')foot=`<div class="note">N を選択：何も実行していません。</div>`;
+ else if(p.status==='done')foot=`<div class="note">✅ 実行しました（模擬）。</div>${isOwner&&REAL_EXEC_OPS[p.opId]?`<div class="btns"><button class="btn sm" data-act="realExec" data-id="${p.id}">実端末で実行（エージェント）</button></div>`:'<p class="small muted">実端末で実行するには端末エージェントの導入が必要です。</p>'}`;
  return `<div class="card"><div class="ch">🛠️ 修復・作業の提案 ${lvTag(op.level)} ${badge(st[1],st[0])}<span class="r">${esc(p.id)}</span></div>
  <dl class="kv"><dt>操作</dt><dd>${esc(op.name)} <code>${esc(p.opId)}</code></dd><dt>対象</dt><dd>${esc(p.meta.target||'—')}</dd><dt>影響</dt><dd>${esc(op.impact||'—')}</dd><dt>戻し方</dt><dd>${esc(op.rollback||'—')}</dd><dt>必要な承認</dt><dd>${esc(LVA[op.level])}</dd><dt>承認ハッシュ</dt><dd class="hash">${esc(p.hash.slice(0,16))}…（内容が変わると承認は無効）</dd></dl>${foot}</div>`}
 function renderExec(m,c){const p=S.proposals[m.propId];const op=OPS[p.opId];const isOwner=S.ui.user===p.userId;
@@ -3144,6 +3147,18 @@ const ACT={
  removeAtt(d){UI.pending=UI.pending.filter(a=>a.id!==d.id);renderPend()},
  Y(d){const p=S.proposals[d.id];if(p.userId!==S.ui.user){toast('依頼者本人のみ判断できます');return}const c=S.chats.find(x=>x.id===p.chatId)||activeChat();userDecision(S,p.id,'Y');
   if(p.status==='ready')runExec(c,p.id);else if(p.status==='pending_admin')ai(c,'<p>承認を受け付けました。この操作は<b>IT管理者の承認</b>が必要なため、承認キューに登録しました。承認されるまで端末は変更しません。</p>',{conf:'—'});save();refresh()},
+ realExec(d){const p=S.proposals[d.id];if(!p||!REAL_EXEC_OPS[p.opId])return;const c=S.chats.find(x=>x.id===p.chatId)||activeChat();
+  const say=(html)=>{ai(c,html,{conf:'—'});save();refresh()};
+  fetch('/api/device/command',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({opId:p.opId})})
+   .then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json()})
+   .then(({command})=>{say(`<p>実端末へコマンドを送信しました（<code>${esc(command.id.slice(0,8))}</code>）。端末エージェントの実行を待っています。</p>`);
+    let n=0;const tick=()=>{n+=1;fetch('/api/device/command/'+command.id).then(r=>r.json()).then(({command:cur})=>{
+      if(cur.status==='queued'||cur.status==='delivered'){if(n>=20){say('<p>端末エージェントからの応答がありません。エージェントが起動しているか確認してください。</p>');return}setTimeout(tick,3000);return}
+      if(cur.status==='done')say(`<p>✅ 実端末で実行しました。</p><pre class="small" style="white-space:pre-wrap">${esc(JSON.stringify(cur.result,null,2))}</pre>`);
+      else say(`<p>⚠️ 実端末での実行に失敗しました。</p><p class="small">${esc(cur.error||'（詳細なし）')}</p>`);
+    }).catch(()=>{if(n>=20){say('<p>状態の確認に失敗しました。</p>');return}setTimeout(tick,3000)})};setTimeout(tick,3000)})
+   .catch(()=>toast('実端末への送信に失敗しました（端末エージェント未接続の可能性）'));
+ },
  cY(d){const [c,m]=findMsg(d.mid);if(!m||m.kind!=='confirm'||m.state!=='pending')return;m.state='yes';const u=USERS[c.userId];ai(c,'<p>ありがとうございます。端末の状態を<b>読み取りのみ</b>で確認します。</p>',{conf:'—'});H[m.intent](c,m.text,[],u,S.devices[u.device]);save();refresh()},
  cN(d){const [c,m]=findMsg(d.mid);if(!m||m.kind!=='confirm'||m.state!=='pending')return;m.state='no';ai(c,'<p>承知しました。どこが違いますか？ 症状・いつから・対象（機器や画面）を追加で教えてください。</p>',{conf:'—'});save();refresh()},
  N(d){const p=S.proposals[d.id];if(p.userId!==S.ui.user)return;userDecision(S,p.id,'N');const c=S.chats.find(x=>x.id===p.chatId)||activeChat();const op=OPS[p.opId];const target=(p.meta&&p.meta.target)||'（対象の記載なし）';const reason=`本人がN（実行しない）を選択。提案: ${op.name}（Lv${op.level}）／対象: ${target}／端末は変更していません。`;

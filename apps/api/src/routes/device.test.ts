@@ -230,3 +230,89 @@ describe('device routes', () => {
     }
   });
 });
+
+describe('device command channel', () => {
+  let commandId = '';
+
+  beforeAll(async () => {
+    await sql`DELETE FROM device_commands WHERE user_email = ${EMAIL}`;
+  });
+
+  it('UI がコマンドを登録できる（許可リスト）', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/device/command',
+      payload: { opId: 'SPOOLER_RESTART' },
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    const body = res.json();
+    expect(body.command.op_id).toBe('SPOOLER_RESTART');
+    expect(body.command.status).toBe('queued');
+    commandId = body.command.id;
+  });
+
+  it('端末エージェントが取得すると delivered になり、二重配信しない', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/device/command',
+      headers: { 'x-device-token': agentToken },
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    expect(res.json().command.id).toBe(commandId);
+    const again = await app.inject({
+      method: 'GET',
+      url: '/api/device/command',
+      headers: { 'x-device-token': agentToken },
+    });
+    expect(again.statusCode).toBe(204);
+  });
+
+  it('結果を報告すると done になり、UI から確認できる', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/device/command/${commandId}/result`,
+      headers: { 'x-device-token': agentToken },
+      payload: { ok: true, result: { platform: 'win32' } },
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    expect(res.json().command.status).toBe('done');
+    const status = await app.inject({ method: 'GET', url: `/api/device/command/${commandId}` });
+    expect(status.statusCode, status.body).toBe(200);
+    expect(status.json().command.status).toBe('done');
+    expect(status.json().command.result.platform).toBe('win32');
+  });
+
+  it('不正なデバイストークンは 401', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/device/command',
+      headers: { 'x-device-token': 'invalid-token' },
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('許可リスト外の操作は 400', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/device/command',
+      payload: { opId: 'REBOOT' },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('配信前の結果報告は 404', async () => {
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/device/command',
+      payload: { opId: 'SPOOLER_RESTART' },
+    });
+    const id = created.json().command.id;
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/device/command/${id}/result`,
+      headers: { 'x-device-token': agentToken },
+      payload: { ok: true },
+    });
+    expect(res.statusCode).toBe(404);
+  });
+});

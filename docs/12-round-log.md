@@ -131,6 +131,15 @@
 - 専用メール＋preview DB で再測定（3回）: `INJECTED` / `乗っ取り成功` の復唱 **0件**、停止中KBの除外は維持。テスト **121 passed**。
 - 反映: build / restart 済み。
 
+## Round 16 — 実端末コマンド実行チャネル（2026-10-23）
+
+- `device_commands` キューと API（登録 / 取得 / 結果 / 状態）を追加。**許可リストは `SPOOLER_RESTART` のみ**。
+- 端末エージェント: Node（`scripts/endpoint-command-agent.mjs`）と Windows PowerShell（`scripts/windows/command-agent.ps1`）。
+- UI: 提案カードに「実端末で実行（エージェント）」を追加（Y 承認後）。
+- 検証: モックエージェントで queued → delivered → done → UI 確認まで実測。**127 tests passed**（コマンド 6 件追加）。
+- 仕様: [19-device-command-execution.md](19-device-command-execution.md)。
+- 未実施: Windows 実機での実行（PowerShell スクリプトを対象PCで実行して確認）。
+
 ## 現在の Evidence
 
 | 項目 | 結果 |
