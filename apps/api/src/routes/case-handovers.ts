@@ -413,6 +413,14 @@ export async function caseHandoverRoutes(app: FastifyInstance): Promise<void> {
     if (row.owner_email !== request.uiEmail && row.claimed_by !== request.uiEmail) {
       await requireHelpdesk(request.uiEmail);
     }
+    // 「完了」はナレッジ承認を通したときだけ。承認なしの完了で承認を迂回させない。
+    if (body.status === 'completed' && !row.approved_by) {
+      throw new ApiError(
+        409,
+        'APPROVAL_REQUIRED',
+        '完了にする前に、DX 推進部の担当者がナレッジを承認してください。',
+      );
+    }
     await sql`
       UPDATE case_handovers
       SET status = ${body.status},

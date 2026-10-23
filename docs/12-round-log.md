@@ -256,13 +256,13 @@
   - **AI 追加質問**: 共有案件の PC 情報（IP・シリアル・資産番号はマスク）と件名・本文・直近メッセージを根拠に `POST /api/ai/answer-case` が回答。B さん自身の端末情報は使わない。STEP 3 の画面に入力欄を追加。
   - **ナレッジ承認者は DX 推進部グループの誰か**: `POST /case-handovers/:id/approve`。引き受け前は 409。対応者本人が承認した場合は `self_approved=true` で記録し、画面にも警告を出す（黙って通さない）。
 - 実装: `apps/api/src/lib/case-handover.ts`（スナップショット抽出・マージ）、`apps/api/src/routes/case-handovers.ts`、`db/migrations/007` / `008`、`assist-bridge.js`。
-- テスト: 単体 5 件 + 統合 3 件（共有 → 受信箱 → 引き受け → マージ → AI 追加質問 → 再共有で進行中 1 件 → 名簿外の宛先拒否 → 引き受け前承認 409 → 承認で completed）。
+- テスト: 単体 5 件 + 統合 3 件（共有 → 受信箱 → 引き受け → マージ → AI 追加質問 → 再共有で進行中 1 件 → 名簿外の宛先拒否 → 引き受け前承認 409 → 承認で completed → 承認なしの completed を 409 で拒否）。
 
 ## 現在の Evidence
 
 | 項目 | 結果 |
 |---|---|
-| Tests | 183 passed（33 files） |
+| Tests | 184 passed（33 files） |
 | TypeCheck | 成功 |
 | Lint | 成功（warning 108 / error 0） |
 | Build | 成功 |

@@ -227,4 +227,45 @@ describe('案件引継ぎ API', () => {
     expect(stored[0]?.status).toBe('completed');
     expect(stored[0]?.self_approved).toBe(true);
   });
+
+  it('承認を経ずに PATCH で completed にはできない', async () => {
+    resetRateLimits();
+    const rows = await sql<{ id: string }[]>`
+      SELECT id FROM case_handovers
+      WHERE case_id = ${CASE_ID} AND status = 'pending'
+      ORDER BY created_at DESC
+      LIMIT 1
+    `;
+    let handoverId = rows[0]?.id;
+    if (!handoverId) {
+      const shared = await app.inject({
+        method: 'POST',
+        url: '/api/case-handovers',
+        payload: { caseId: CASE_ID },
+      });
+      expect(shared.statusCode, shared.body).toBe(200);
+      handoverId = shared.json().handover.id as string;
+    }
+    const claimed = await app.inject({
+      method: 'POST',
+      url: `/api/case-handovers/${handoverId}/claim`,
+      payload: {},
+    });
+    expect(claimed.statusCode, claimed.body).toBe(200);
+
+    const blocked = await app.inject({
+      method: 'PATCH',
+      url: `/api/case-handovers/${handoverId}`,
+      payload: { status: 'completed' },
+    });
+    expect(blocked.statusCode, blocked.body).toBe(409);
+    expect(blocked.json().error.code).toBe('APPROVAL_REQUIRED');
+
+    const resolved = await app.inject({
+      method: 'PATCH',
+      url: `/api/case-handovers/${handoverId}`,
+      payload: { status: 'resolved' },
+    });
+    expect(resolved.statusCode, resolved.body).toBe(200);
+  });
 });
