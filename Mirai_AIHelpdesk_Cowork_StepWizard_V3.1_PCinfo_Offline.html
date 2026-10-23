@@ -2451,6 +2451,7 @@ function exampleFor(t){
  return ['（原因を記入）','（手順1）\n（手順2）'];
 }
 window.HD={intake:intakeFromCowork,getInc:incForCowork,kb:kbForCowork,open:openFromCowork,stats:hdStats,
+ addStaff(s){if(!s||!s.name)return;let e=STAFF.find(x=>x.name===s.name);if(!e){e={name:s.name,role:s.role||'ヘルプデスク担当'};STAFF.push(e)}if(s.approver)e.approver=true;if(s.audit)e.audit=true;const a=document.getElementById('actor');if(a&&![...a.options].some(o=>o.value===s.name)){const o=document.createElement('option');o.value=s.name;o.textContent=s.name+'（'+e.role+'）';a.appendChild(o)}},
  show(v){ui.view=v;render()},
  setActorQuiet(n){if(STAFF.some(s=>s.name===n)&&state.actor!==n){state.actor=n;save()}const a=$('#actor');if(a)a.value=state.actor;const h=document.getElementById('hd');if(h&&!h.classList.contains('hide'))render();else renderNav()},
  incInfo(id){const t=tk(id);if(!t)return null;return {id:t.id,status:t.status,assignee:t.assignee||'',suggest:t.suggest||'',priority:t.priority,sec:!!t.sec,subject:t.subject,draftId:t.draftId||'',kbId:t.kbId||'',handover:t.handover?t.handover.summary:'',resolution:t.resolution?{cause:t.resolution.cause,steps:t.resolution.steps.slice()}:null}},
@@ -2496,13 +2497,21 @@ h[0]=(h[0]+a)|0;h[1]=(h[1]+bb)|0;h[2]=(h[2]+cc)|0;h[3]=(h[3]+d)|0;h[4]=(h[4]+e)|
 return h.map(x=>(x>>>0).toString(16).padStart(8,'0')).join('')}})();
 
 /* ============ マスタデータ（すべて架空のサンプル） ============ */
-const ROLES={employee:'一般社員',staff:'ヘルプデスク担当',itadmin:'IT端末管理者',approver:'ナレッジ承認者',auditor:'監査担当'};
+const ROLES={employee:'一般社員',staff:'ヘルプデスク担当',itadmin:'IT端末管理者',approver:'ナレッジ承認者',auditor:'監査担当者'};
 const DEPTS={
  'tokyo-koji':{name:'東京支店／工事部',scopes:['all','sekou']},
  'kyushu-eigyo':{name:'九州支店／営業部',scopes:['all','eigyo']},
  'keiri':{name:'管理本部／経理部',scopes:['all','kanri','keiri']},
  'dx':{name:'管理本部／DX推進部',scopes:['all','kanri','it']},
- 'risk':{name:'管理本部／リスク統括部',scopes:['all','kanri','audit']}
+ 'risk':{name:'管理本部／リスク統括部',scopes:['all','kanri','audit']},
+ /* 実名簿（Mirai-Info）から選んだ人の所属。閲覧できる資料の範囲だけを決める。 */
+ 'real-dx':{name:'管理本部／DX推進部',scopes:['all','kanri','it']},
+ 'real-keiri':{name:'管理本部／経理部',scopes:['all','kanri','keiri']},
+ 'real-kanri':{name:'管理本部',scopes:['all','kanri']},
+ 'real-eigyo':{name:'営業部門',scopes:['all','eigyo']},
+ 'real-sekou':{name:'施工・技術部門',scopes:['all','sekou']},
+ 'real-risk':{name:'リスク統括部',scopes:['all','kanri','audit']},
+ 'real-all':{name:'全社',scopes:['all']}
 };
 /* 1つの名簿で、AI窓口の利用者とヘルプデスクの操作者（hd）を結びつける */
 const USERS={
@@ -2519,6 +2528,107 @@ const USERS={
  u5:{id:'u5',name:'中島 恵',dept:'risk',role:'auditor',device:'MRK-NB-0002',hd:'中島',title:'監査担当'}
 };
 const PGROUPS=[['一般社員',['u1','u2','u3']],['ヘルプデスク担当',['s1','s2','s3','u4','s5']],['ナレッジ承認者',['a1','a2']],['監査',['u5']]];
+/* ============ 操作する人（Mirai-Info の実名簿をロールで分ける） ============
+   ロール → 対象の対応（2026-10-23 決定）:
+     一般社員          ＝ 全社員
+     ヘルプデスク担当   ＝ DX推進部 メンバー全員
+     ナレッジ承認者     ＝ DX推進部 メンバー全員
+     監査担当者         ＝ DX推進部 メンバー全員
+   IT端末管理者は L4（設定変更）の承認と緊急停止の解除に必要なので、
+   同じ DX推進部 のメンバーを充てる（4ロールだけでは L4 が通らないため）。
+   名簿が取得できないときは、従来のデモ名簿（PGROUPS）で動かす。 */
+const REAL_GROUPS=[['一般社員','employee','all'],['ヘルプデスク担当','staff','staff'],['ナレッジ承認者','approver','staff'],['監査担当者','auditor','staff'],['IT端末管理者','itadmin','staff']];
+const EMP_PREFIX='emp:';
+const realDir=()=>{const d=window.__AIHD_EMPLOYEES__;return d&&Array.isArray(d.all)&&d.all.length?d:null};
+const realStaff=()=>{const d=realDir();return d&&Array.isArray(d.staff)?d.staff:[]};
+function realDeptOf(e){
+ const s=(e.section||'')+' '+(e.division||'')+' '+(e.organization||'');
+ if(/DX|情報システム/.test(s))return 'real-dx';
+ if(/経理|財務/.test(s))return 'real-keiri';
+ if(/営業/.test(s))return 'real-eigyo';
+ if(/リスク|監査|コンプライアンス/.test(s))return 'real-risk';
+ if(/工事|施工|土木|建築|技術|エンジニア/.test(s))return 'real-sekou';
+ if(/総務|人事|管理|経営|企画/.test(s))return 'real-kanri';
+ return 'real-all';
+}
+function realLabelOf(e){return [e.division,e.section,e.name].filter(Boolean).join(' / ')}
+function empIdOf(empNo){return EMP_PREFIX+empNo}
+function ensureRealUser(empNo,role){
+ const d=realDir();if(!d||!empNo)return null;
+ const e=d.all.find(x=>x.employeeNo===empNo);if(!e)return null;
+ const id=empIdOf(empNo),prev=USERS[id]||{},r=role||prev.role||'employee';
+ USERS[id]=Object.assign({},prev,{id,name:e.name,employeeNo:empNo,real:true,role:r,dept:realDeptOf(e),
+  title:[e.division,e.section].filter(Boolean).join('／')||ROLES[r],device:prev.device||('MRK-'+empNo),hd:e.name});
+ ensureRealDevice(id);
+ if(window.HD&&typeof window.HD.addStaff==='function'&&r!=='employee'){
+  const lab=r==='approver'?'ナレッジ承認者':r==='auditor'?'監査担当者':r==='itadmin'?'IT端末管理者':'ヘルプデスク担当';
+  window.HD.addStaff({name:e.name,role:lab,approver:r==='approver',audit:r==='auditor'});
+ }
+ return id;
+}
+function ensureRealDevice(userId){
+ if(typeof S==='undefined'||!S||!S.devices)return;
+ const u=USERS[userId];if(!u||!u.device||S.devices[u.device])return;
+ const d=baseDevice(u.device,userId,'ノートPC');
+ d.printer={name:'本社 4F 複合機',spooler:'running',jobs:[]};
+ d.share.path='\\\\fs01\\本社\\'+((DEPTS[u.dept]&&DEPTS[u.dept].name)||'DX推進部');
+ S.devices[d.id]=d;
+}
+function personaValueOf(u){return u&&u.real&&u.employeeNo?EMP_PREFIX+u.role+':'+u.employeeNo:(u?u.id:'')}
+let _personaCache={sig:'',html:''};
+function personaOptionsHtml(){
+ const u=(typeof S!=='undefined'&&S&&USERS[S.ui.user])||null;
+ const dir=realDir();
+ const sig=[S&&S.ui?S.ui.user:'',u&&u.role,dir?dir.all.length:0,dir?dir.staff.length:0,window.__AIHD_DIR_VERSION__||0].join('|');
+ if(_personaCache.sig===sig)return _personaCache.html;
+ const cur=personaValueOf(u);
+ let groups;
+ if(dir){
+  groups=REAL_GROUPS.map(([label,role,pick])=>{
+   const list=pick==='staff'?realStaff():dir.all;
+   return {label,items:list.map(e=>({value:EMP_PREFIX+role+':'+e.employeeNo,text:realLabelOf(e)}))};
+  }).filter(g=>g.items.length);
+ }else{
+  groups=PGROUPS.map(g=>({label:g[0],items:g[1].map(id=>({value:id,text:USERS[id].name+'（'+(USERS[id].title||DEPTS[USERS[id].dept].name)+'）'}))}));
+ }
+  const html=groups.map(g=>`<optgroup label="${esc(g.label)}">`+g.items.map(o=>`<option value="${esc(o.value)}"${o.value===cur?' selected':''}>${esc(o.text)}</option>`).join('')+'</optgroup>').join('')
+   +((u&&!groups.some(g=>g.items.some(o=>o.value===cur)))?`<optgroup label="（現在の選択）"><option value="${esc(cur)}" selected>${esc(u.name)}（${esc(u.title||(DEPTS[u.dept]&&DEPTS[u.dept].name)||ROLES[u.role])}）</option></optgroup>`:'');
+ _personaCache={sig,html};
+ return html;
+}
+function applyPersonaValue(v){
+ const m=/^emp:([a-z]+):([A-Za-z0-9_-]+)$/.exec(String(v||''));
+ if(!m){S.ui.real=null;return USERS[v]?v:null}
+ const id=ensureRealUser(m[2],m[1]);if(!id)return null;
+ S.ui.real={employeeNo:m[2],role:m[1]};
+ return id;
+}
+/* 保存しておいた選択（社員番号とロールだけ。氏名は名簿から引き直す）を復元する。
+   名簿の読み込みが終わるまでは氏名が空でも選択を保持し、読み込み後に埋める。 */
+function restoreRealUser(){
+ if(typeof S==='undefined'||!S||!S.ui)return;
+ const r=S.ui.real;
+ const current=S.ui.user;
+ if(String(current).startsWith(EMP_PREFIX)){
+  const empNo=(r&&r.employeeNo)||String(current).slice(EMP_PREFIX.length);
+  const role=(r&&r.role)||'employee';
+  if(!USERS[current]){
+   USERS[current]={id:current,name:'（社員名簿を読み込み中）',employeeNo:empNo,real:true,role,dept:'real-all',title:ROLES[role],device:'MRK-'+empNo};
+  }
+  _personaCache={sig:'',html:''};
+  ensureRealDevice(current);
+  if(realDir()){
+   const id=ensureRealUser(empNo,role);
+   if(id)S.ui.user=id;
+   S.ui.real={employeeNo:empNo,role};
+  }
+  return;
+ }
+ if(!USERS[S.ui.user])S.ui.user='u1';
+ if(!r||!r.employeeNo||!realDir())return;
+ const id=ensureRealUser(r.employeeNo,r.role);
+ if(id)S.ui.user=id;
+}
 const uname=id=>USERS[id]?USERS[id].name:(id==='system'?'システム':id==='agent'?'PCエージェント':id);
 const TIPS={
  u1:['「印刷ができません」→ 本人のエラージョブ取消（L3）','「Teamsの音が出ない」→ 出力先の切替（L3・元に戻せる）','「工事写真のファイル名を揃えたい」→ コピー方式で整理（L2）','「人事異動の手続」→ 権限外の資料は表示されない'],
@@ -2635,8 +2745,9 @@ const SAMPLE_CSV='日付,現場,工種,作業員数,作業時間\n'+[['2026-10-0
 const SAMPLE_LOG=`2026-10-18 08:01:12 INFO  VPN client 7.2 start\n2026-10-18 08:01:13 WARN  Virtual adapter "MiraiVPN" state=Disabled\n2026-10-18 08:01:13 ERROR Connect failed: adapter not available (code 0x80070490)\n2026-10-18 08:01:20 INFO  Retry 1/3\n2026-10-18 08:01:21 ERROR Connect failed: adapter not available (code 0x80070490)\n2026-10-18 08:01:30 INFO  Retry 2/3\n2026-10-18 08:01:31 ERROR Connect failed: adapter not available (code 0x80070490)\n2026-10-18 08:01:40 WARN  Giving up after 3 retries`;
 
 /* ============ 状態 ============ */
+function baseDevice(id,owner,model){return {id,owner,model,os:'Windows 11 Enterprise 24H2',agent:'v0.3（模擬）',printer:{name:'',spooler:'running',jobs:[]},vpn:{client:'社内VPN 7.2',adapter:'enabled',connected:true},audio:{default:'ヘッドセット（USB）',devices:['HDMI（モニター）','ヘッドセット（USB）','内蔵スピーカー']},disk:{totalGB:256,freeGB:96,tempGB:0.8,quarantineGB:0},share:{path:'',access:'ok'},files:{photoFolder:'D:\\作業\\工事写真\\2026-10',photos:24,renamedCopy:false}}}
 function seedDevices(){
- const base=(id,owner,model)=>({id,owner,model,os:'Windows 11 Enterprise 24H2',agent:'v0.3（模擬）',printer:{name:'',spooler:'running',jobs:[]},vpn:{client:'社内VPN 7.2',adapter:'enabled',connected:true},audio:{default:'ヘッドセット（USB）',devices:['HDMI（モニター）','ヘッドセット（USB）','内蔵スピーカー']},disk:{totalGB:256,freeGB:96,tempGB:0.8,quarantineGB:0},share:{path:'',access:'ok'},files:{photoFolder:'D:\\作業\\工事写真\\2026-10',photos:24,renamedCopy:false}});
+ const base=baseDevice;
  const d1=base('MRK-NB-1024','u1','ノートPC');d1.printer={name:'東京支店 3F 複合機',spooler:'running',jobs:[{doc:'見積書_第3版.pdf',owner:'u1',status:'エラー'},{doc:'工程表_10月.xlsx',owner:'other',status:'待機'}]};d1.audio.default='HDMI（モニター）';d1.disk.freeGB=58;d1.disk.tempGB=1.1;d1.share.path='\\\\fs01\\東京支店\\工事部';
  const d2=base('MRK-NB-2048','u2','ノートPC');d2.printer={name:'九州支店 2F 複合機',spooler:'stopped',jobs:[{doc:'提案書_有明.pdf',owner:'u2',status:'待機'}]};d2.vpn.adapter='disabled';d2.vpn.connected=false;d2.share={path:'\\\\fs01\\九州支店\\工事部',access:'denied'};
  const d3=base('MRK-DT-0311','u3','デスクトップPC');d3.printer={name:'本社 5F 複合機',spooler:'running',jobs:[]};d3.disk.freeGB=6.5;d3.disk.tempGB=14.2;d3.share.path='\\\\fs01\\本社\\経理部';
@@ -2757,7 +2868,7 @@ function testEngine(){
 const KEY='mirai-wizard-v31-cowork';
 let S;const UI={pending:[],typing:false,stick:true,lastTests:null,auditFilter:'',ticketFilter:''};
 function load(){try{const raw=localStorage.getItem(KEY);if(raw){const o=JSON.parse(raw);if(o&&o.v===31){S=o}}}catch(e){}
- if(!S)S=freshState();
+ if(!S||!Array.isArray(S.chats))S=freshState();
  S.chats.forEach(c=>c.messages.forEach(m=>{if(m.kind==='diag')m.shown=m.steps.length;if(m.kind==='exec'&&m.state==='running'){m.state='aborted';const p=S.proposals[m.propId];if(p&&p.status==='executing'){p.status='aborted';auditAdd(S,'system','exec_aborted',{prop:p.id,reason:'画面の再読み込み'})}}}))}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
 
@@ -2934,7 +3045,7 @@ function renderSide(){
  const mine=S.chats.filter(c=>c.userId===S.ui.user);
  $('#hist').innerHTML=mine.length?mine.map(c=>`<div class="hi ${c.id===S.ui.chat&&S.ui.view==='chat'?'on':''}"><button class="t" data-act="openChat" data-id="${c.id}" title="${esc(c.title)}">${esc(c.title)}</button><button class="x" data-act="delChat" data-id="${c.id}" aria-label="削除">✕</button></div>`).join(''):'<div class="small" style="padding:6px 12px;color:#7d8ea8">まだ相談はありません</div>'}
 function renderTop(){const u=me();const it=uxItem(S.ui.view);$('#vtitle').textContent=it?it[2]:'';
- const ps=$('#persona');ps.innerHTML=PGROUPS.map(g=>`<optgroup label="${esc(g[0])}">`+g[1].map(id=>{const x=USERS[id];return `<option value="${id}" ${id===u.id?'selected':''}>${esc(x.name)}｜${esc(x.title||DEPTS[x.dept].name)}</option>`}).join('')+'</optgroup>').join('');
+ const ps=$('#persona');ps.innerHTML=personaOptionsHtml();
  $('#rolebadge').textContent=ROLES[u.role];
  const sg=$('#uxStg');if(window.HD&&u.role!=='employee'){const s=HD.stage();sg.style.display='';sg.textContent='AI：'+s.text;sg.className='badge '+(s.fail?'ng':'info')}else sg.style.display='none';
  const es=$('#estop');es.classList.toggle('on',S.estop);es.textContent=S.estop?(u.role==='itadmin'?'🔓 緊急停止を解除':'🛑 緊急停止中'):'🛑 緊急停止';
@@ -3390,7 +3501,7 @@ function uxShell(){
  const u=me(),sc=S.ui.screen||'home',act=sc==='tool'?(S.ui.view==='settings'?'data':'tools'):sc==='wizard'?'new':sc;
  const turn=myTurn();
  $('#uxRail').innerHTML=`<div class="logo" title="みらいAI窓口">${ICO('i-helmet')}</div>`+RAIL.map(r=>`<button class="${act===r[0]?'on':''}" data-act="wRail" data-r="${r[0]}">${ICO(r[1])}${r[2]}${r[0]==='board'&&turn?`<span class="rb">${turn}</span>`:''}</button>`).join('')+`<span class="sp"></span><button class="${act==='data'?'on':''}" data-act="wRail" data-r="data">${ICO('i-db')}データ</button>`;
- const w=$('#uxWho');w.innerHTML=PGROUPS.map(g=>`<optgroup label="${esc(g[0])}">`+g[1].map(id=>{const x=USERS[id];return `<option value="${id}" ${id===u.id?'selected':''}>${esc(x.name)}（${esc(x.title||DEPTS[x.dept].name)}）</option>`}).join('')+'</optgroup>').join('');
+ const w=$('#uxWho');w.innerHTML=personaOptionsHtml();
  $('#uxRole').textContent=ROLES[u.role];
  const sg=$('#uxStgP');if(window.HD&&u.role!=='employee'){const s=HD.stage();sg.classList.remove('ux-off');sg.textContent='外部AI：'+s.text;sg.classList.toggle('ng',!!s.fail)}else sg.classList.add('ux-off');
  const es=$('#uxEstop');es.classList.toggle('on',S.estop);es.innerHTML=ICO('i-stop')+(S.estop?(u.role==='itadmin'?'緊急停止を解除':'緊急停止中'):'緊急停止');
@@ -3599,7 +3710,7 @@ function toolsHtml(){
  return `<div class="u-page"><div class="u-bar"><h2>${ICO('i-grid')}業務ツール</h2><span class="u-muted u-small">ステップ画面の裏側にある、詳しい画面と台帳です。役割で見られるものが変わります。</span></div>
  ${UXNAV.map(g=>{const its=g[1].filter(it=>canView(it[0],u));if(!its.length)return '';return `<div class="t-grp">${esc(g[0])}</div><div class="t-tiles">${its.map(it=>{const c=navCount(it[0]);return `<button class="t-tile" data-act="wTool" data-v="${it[0]}"><span class="ic">${it[1]}</span><span>${esc(it[0]==='chat'?'チャットで相談（自由入力）':it[0]==='tickets'&&u.role==='employee'?'私の問い合わせ':it[2])}</span>${c?`<span class="cnt">${c[0]}</span>`:''}</button>`}).join('')}</div>`}).join('')}</div>`}
 /* ---------- 操作 ---------- */
-function uxSwitch(id){const p=$('#persona');if(!p||!USERS[id])return;if(![...p.options].some(o=>o.value===id))renderTop();p.value=id;p.dispatchEvent(new Event('change',{bubbles:true}))}
+function uxSwitch(id){const p=$('#persona');if(!p)return;if(!String(id).startsWith(EMP_PREFIX)&&!USERS[id])return;if(![...p.options].some(o=>o.value===id))renderTop();p.value=id;p.dispatchEvent(new Event('change',{bubbles:true}))}
 function caseCat(c){const K=kindOf(c.kind);return K?K.cat:'AI窓口'}
 Object.assign(ACT,{
  wRail(d){const r=d.r;if(r==='new'){const c=curCase();if(!c||c.closed||link(c).kb||(reach(c,link(c))===7))newCase();S.ui.screen='wizard'}else if(r==='data'){S.ui.screen='tool';S.ui.view='settings'}else S.ui.screen=r;save();renderView()},
@@ -3788,10 +3899,10 @@ function viewPcinfo(){
 /* プロフィール（氏名・所属）を USERS に反映する。
    状態はログイン（Access メール）ごとに保存されるため、同じ人が別の端末で開いても同じ表示になる。 */
 function applyProfiles(){if(!S||!S.profiles)return;for(const [id,p] of Object.entries(S.profiles)){const u=USERS[id];if(!u||!p)continue;if(p.name)u.name=p.name;if(p.dept&&DEPTS[p.dept])u.dept=p.dept}}
-function init(){load();applyProfiles();applyTheme();
+function init(){load();applyProfiles();restoreRealUser();applyTheme();
  document.addEventListener('click',e=>{const el=e.target.closest('[data-act]');if(!el){const m=$('#attmenu');if(m&&!e.target.closest('.attwrap'))m.classList.add('hide');return}const f=ACT[el.dataset.act];if(f){if(el.dataset.act!=='closeModalBg')e.preventDefault();f(el.dataset,el,e)}});
  document.addEventListener('change',e=>{const t=e.target;
-  if(t.id==='persona'){S.ui.user=t.value;syncHdActor();if(!canView(S.ui.view))S.ui.view=homeView();auditAdd(S,t.value,'persona_switch',{});S.ui.chat=null;ensureChat();UI.pending=[];UI.stick=true;save();renderSide();renderTop();renderView();toast(me().name+'（'+ROLES[me().role]+'）に切り替えました')}
+  if(t.id==='persona'){const next=applyPersonaValue(t.value);if(!next){toast('選択した社員を名簿から取得できませんでした','bad');renderTop();renderView();return}S.ui.user=next;syncHdActor();if(!canView(S.ui.view))S.ui.view=homeView();auditAdd(S,next,'persona_switch',{});S.ui.chat=null;ensureChat();UI.pending=[];UI.stick=true;save();renderSide();renderTop();renderView();toast(me().name+'（'+ROLES[me().role]+'）に切り替えました')}
   else if(t.id==='model'){S.ui.model=t.value;save();toast(t.value==='external'?'外部AI（模擬）：機密区分は送信できません':'社内ローカルLLM（模擬）を使用します')}
   else if(t.dataset.chg==='cls'){const a=UI.pending.find(x=>x.id===t.dataset.id);if(a)a.cls=t.value}
   else if(t.dataset.chg==='failNext'){S.failNext=t.checked;save();toast(t.checked?'次の実行は失敗します（異常系テスト）':'異常系テストを解除')}
@@ -3803,6 +3914,8 @@ function init(){load();applyProfiles();applyTheme();
  document.addEventListener('scroll',e=>{if(e.target&&e.target.id==='msgs'){const b=e.target;UI.stick=b.scrollHeight-b.scrollTop-b.clientHeight<80}},true);
  window.addEventListener('resize',()=>renderTop());
  ensureChat();save();renderSide();renderTop();renderView()}
+/* 社員名簿（Mirai-Info）の読み込みが終わったら、保存していた選択を復元して作り直す。 */
+window.addEventListener('aihd-employees',()=>{try{restoreRealUser();if(!canView(S.ui.view))S.ui.view=homeView();_personaCache={sig:'',html:''};renderSide();renderTop();renderView()}catch(error){}});
 if(typeof document!=='undefined'&&document.getElementById('app'))init();
 window.CW={onShow(){syncHd();refresh()},stats:cwStats,openTicket(id){const t=S.tickets.find(x=>x.id===id);if(!t){toast('該当の受付番号がありません（初期化された可能性）');return}
  if(me().role==='employee'&&S.ui.user!==t.userId){S.ui.user=t.userId;syncHdActor();auditAdd(S,t.userId,'persona_switch',{});toast(uname(t.userId)+'（依頼者）に切り替えました')}
