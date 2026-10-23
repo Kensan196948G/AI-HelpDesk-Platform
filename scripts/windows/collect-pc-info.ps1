@@ -218,6 +218,8 @@ try {
     [ordered]@{ enabled = $bitlockerEnabled; detail = 'BitLocker' }
   } else { $null }
 
+  $assetTag = if ($enclosure -and $enclosure.SMBIOSAssetTag) { ([string]$enclosure.SMBIOSAssetTag).Trim() } else { '' }
+
   $payload = [ordered]@{
     deviceId = $deviceId
     hostname = $hostname
@@ -225,7 +227,7 @@ try {
     platform = $platform
     arch = $arch
     hardware = [ordered]@{
-      assetNo = if ($enclosure -and $enclosure.SMBIOSAssetTag) { [string]$enclosure.SMBIOSAssetTag } elseif ($env:AIHD_ASSET_NO) { $env:AIHD_ASSET_NO } else { $null }
+      assetNo = if ($assetTag) { $assetTag } elseif ($env:AIHD_ASSET_NO) { $env:AIHD_ASSET_NO } else { $null }
       serial = if ($bios -and $bios.SerialNumber) { [string]$bios.SerialNumber } else { $null }
       model = if ($cs) { $cs.Model } else { $null }
       manufacturer = if ($cs) { $cs.Manufacturer } else { $null }
