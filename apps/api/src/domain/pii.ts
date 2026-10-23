@@ -8,25 +8,53 @@ export interface RedactionResult {
   findings: PiiFinding[];
 }
 
+// 全角の数字・記号でも検出できるよう、文字クラスに全角を含める（本文は変換しない）。
+const D = '[0-9０-９]';
+const SEP = '[-‐－ 　]?';
+
 const RULES: Array<{ type: PiiFinding['type']; pattern: RegExp; replacement: string }> = [
   {
     type: 'password',
-    pattern: /(?:password|passwd|パスワード|暗証番号)\s*(?:は|:|：|=)\s*[^\s、。]{3,}/gi,
+    pattern: new RegExp(
+      [
+        // 「パスワード: xxx」「pass=xxx」「PW：xxx」など区切り記号つき
+        '(?:password|passwd|pass|pwd|pw|パスワード|暗証番号)\\s*(?:は|:|：|=|＝)\\s*[^\\s、。]{3,}',
+        // 「パスワード abc123」のように空白だけで続く場合は、数字を含む英数字記号の語に限定する
+        // （「パスワード 変更方法を教えて」のような通常の相談文は伏せない）。
+        '(?:password|パスワード|暗証番号)[ 　]+(?=[!-~]*[0-9])[!-~]{4,}',
+      ].join('|'),
+      'gi',
+    ),
     replacement: '[パスワード]',
   },
   {
     type: 'email',
-    pattern: /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi,
+    pattern: /[A-Z0-9._%+-]+[@＠][A-Z0-9.-]+\.[A-Z]{2,}/gi,
     replacement: '[メールアドレス]',
   },
   {
     type: 'phone',
-    pattern: /(?<!\d)0\d{1,4}-?\d{1,4}-?\d{3,4}(?!\d)/g,
+    pattern: new RegExp(
+      [
+        // 国際表記 +81
+        `[+＋]81${SEP}${D}{1,4}${SEP}${D}{1,4}${SEP}${D}{3,4}(?!${D})`,
+        // 国内表記（ハイフン・空白・全角）
+        `(?<!${D})[0０]${D}{1,4}${SEP}${D}{1,4}${SEP}${D}{3,4}(?!${D})`,
+      ].join('|'),
+      'g',
+    ),
     replacement: '[電話番号]',
   },
   {
     type: 'ip',
     pattern: /(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.])/g,
+    replacement: '[IPアドレス]',
+  },
+  {
+    type: 'ip',
+    // IPv6（完全表記、または :: 省略表記）。時刻（10:30:00）は :: を含まないため対象外。
+    pattern:
+      /(?<![0-9a-f:])(?:(?:[0-9a-f]{1,4}:){7}[0-9a-f]{1,4}|(?:[0-9a-f]{1,4}:){1,6}:(?:[0-9a-f]{1,4}(?::[0-9a-f]{1,4}){0,5})?)(?![0-9a-f:])/gi,
     replacement: '[IPアドレス]',
   },
   {
@@ -55,7 +83,11 @@ export function redactPII(input: string): RedactionResult {
       count += 1;
       return rule.replacement;
     });
-    if (count > 0) findings.push({ type: rule.type, count });
+    if (count > 0) {
+      const existing = findings.find((finding) => finding.type === rule.type);
+      if (existing) existing.count += count;
+      else findings.push({ type: rule.type, count });
+    }
   }
 
   return { text, findings };

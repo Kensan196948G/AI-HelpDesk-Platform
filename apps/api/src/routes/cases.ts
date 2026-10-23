@@ -292,7 +292,12 @@ export async function caseRoutes(app: FastifyInstance): Promise<void> {
         : 'なし';
     const handoffMemo = [
       `推定分野: ${meta.handoffGroup}`,
-      `対象の機器: ${deviceName?.trim() || '未検出'}`,
+      // PC 情報の共有に同意していない場合は、端末名も引継ぎメモに載せない。
+      `対象の機器: ${
+        sharedFields.includes('pc') || sharedFields.includes('device')
+          ? deviceName?.trim() || '未検出'
+          : '共有なし（本人の同意なし）'
+      }`,
       `AIの経過: ${found.ai_summary ?? 'なし'}`,
       `気になる点: ${concernText}`,
       `推奨アクション: ${meta.handoffGroup}の担当者が、同意された情報をもとに対応してください。`,

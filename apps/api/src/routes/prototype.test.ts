@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { resetRateLimits } from '../lib/rate-limit.js';
 import { buildServer } from '../server.js';
 
 let app: FastifyInstance;
@@ -93,5 +94,40 @@ describe('prototype UI integration', () => {
     const body = response.json();
     expect(body.sources.map((source: { kbNo: string }) => source.kbNo)).toContain(kbNo);
     expect(body.answer).toContain(kbNo);
+  });
+
+  it('状態に $ を含んでも HTML が壊れず、$$ が縮まない（String.replace の特殊パターン対策）', async () => {
+    const probe = "before $' $& $$ $` after";
+    const put = await app.inject({
+      method: 'PUT',
+      url: '/api/state/cowork',
+      payload: { data: { v: 31, probe } },
+    });
+    expect(put.statusCode, put.body).toBe(200);
+
+    const response = await app.inject({ method: 'GET', url: '/' });
+    expect(response.statusCode).toBe(200);
+    const match = response.body.match(/window\.__AIHD_BOOT__=(\{.*?\});\(function/);
+    expect(match).not.toBeNull();
+    const boot = JSON.parse(match?.[1] ?? '{}');
+    expect(boot.cowork.probe).toBe(probe);
+    // 置換パターンが展開されると HTML 全体が JS 文字列に入り、サイズが大きく増える
+    expect(response.body.split('window.__AIHD_BOOT__=').length).toBe(2);
+  });
+
+  it('AI 回答は利用者単位でレート制限する（1 分 20 回）', async () => {
+    resetRateLimits();
+    const statuses: number[] = [];
+    for (let index = 0; index < 21; index += 1) {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/ai/answer',
+        payload: { text: '共有フォルダが開けません' },
+      });
+      statuses.push(response.statusCode);
+    }
+    expect(statuses.slice(0, 20).every((status) => status === 200)).toBe(true);
+    expect(statuses[20]).toBe(429);
+    resetRateLimits();
   });
 });

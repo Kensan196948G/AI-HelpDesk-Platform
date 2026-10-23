@@ -6,7 +6,8 @@ import { answerWithDeepSeek } from '../ai/deepseek.js';
 import { authenticateUi } from '../auth/ui.js';
 import { repoRoot } from '../config.js';
 import { sql } from '../db.js';
-import { badRequest } from '../errors.js';
+import { ApiError, badRequest } from '../errors.js';
+import { checkRateLimit } from '../lib/rate-limit.js';
 
 const PROTOTYPE_FILE = 'Mirai_AIHelpdesk_Cowork_StepWizard_V3.1_PCinfo_Offline.html';
 const BRIDGE_FILES = [
@@ -119,9 +120,10 @@ function renderPrototype(boot: {
     'AI回答は DeepSeek API、データは PostgreSQL に保存されます。',
   );
   // 最初のアプリ <script> の直前に、サーバー保持の状態を localStorage へ入れる。
-  html = html.replace('<script>', bootScript + '<script>');
+  // 置換文字列は `$'` `$&` `$$` を特殊パターンとして解釈するため、利用者データを含む文字列は関数で渡す。
+  html = html.replace('<script>', () => `${bootScript}<script>`);
   // 元の UI の最後に、状態同期と DeepSeek 連携のブリッジを追加する。
-  html = html.replace('</body>', `<script>${readBridge()}</script></body>`);
+  html = html.replace('</body>', () => `<script>${readBridge()}</script></body>`);
   return html;
 }
 
@@ -174,6 +176,14 @@ export async function prototypeRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/api/ai/answer', { preHandler: authenticateUi }, async (request, reply) => {
     const { text, deviceId } = AiBodySchema.parse(request.body);
+    // 外部 AI の呼び出し回数（費用）を抑える。利用者（Access メール）単位で 1 分 20 回まで。
+    if (!checkRateLimit(`ai-answer:${request.uiEmail ?? request.ip}`, 20, 60_000)) {
+      throw new ApiError(
+        429,
+        'RATE_LIMITED',
+        'AI への問い合わせが多すぎます。少し待ってから再試行してください。',
+      );
+    }
     try {
       return await answerWithDeepSeek(text, request.uiEmail, deviceId);
     } catch (error) {
