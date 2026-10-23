@@ -109,6 +109,14 @@
 - 結果: [17-ai-verification-results.md](17-ai-verification-results.md) / 証跡: [evidence/ai-verify/20261023](evidence/ai-verify/20261023/)。
 - 未実施: タイムアウト fallback、PC情報/KB本文への注入、停止中KBの除外（実データを書き換えないため）。
 
+## Round 13 — F1（sources の無関係KB）修正と再検証（2026-10-23）
+
+- 回答の「根拠: ...」行を解析し、**実際に引用された KB だけ**を `sources` に返す（該当なしは空・`confidence` 低）。
+- 根拠に使わない候補 KB を回答に列挙しないようプロンプトを調整。
+- 単体テスト 6 件追加。**121 passed**（22 files）。
+- 再検証: 16 ケース × 3 回 = **48/48 PASS**、p50 1,912ms / p95 2,475ms、回答長 max 525、AI-09 は `sources: []` / `confidence: 低`。
+- 中間測定の AI-05 2 件 FAIL は、テスト側の期待値が古い PC 実測値だったため（汎用化して 3/3 PASS）。
+
 ## 現在の Evidence
 
 | 項目 | 結果 |
