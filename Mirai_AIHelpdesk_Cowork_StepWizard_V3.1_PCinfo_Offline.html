@@ -2840,8 +2840,14 @@ const H={
   if(r.hits.length){const s=r.hits[0].s;addMsg(chat,{kind:'kb',hits:r.hits.map(h=>h.k.id),conf:s>=6?'高':s>=3?'中':'低',model:MODELS[S.ui.model]})}
   else ai(chat,`<p>閲覧できる社内資料の中に、確信を持って回答できる情報が見つかりませんでした。<b>推測では回答しません。</b></p><div class="btns">${escBtn('業務・規程','通常','担当部門に聞く')}</div>`,{conf:'低'})}
 };
+/* S2: ヒアリング内容の復唱確認。Y で読み取り確認（S3）へ進む。 */
+const CONFIRM_INTENTS={print:1,vpn:1,audio:1,slow:1,share:1};
+function confirmHearing(chat,text,intent){const u=USERS[chat.userId];const d=S.devices[u.device];
+ const rel={print:['印刷スプーラ',d.printer.spooler==='running'?'実行中':'停止'],vpn:['VPNアダプタ',d.vpn.adapter==='enabled'?'有効':'無効'],audio:['音声の出力先',d.audio.default],slow:['ディスク',d.disk.freeGB+' GB 空き / 一時ファイル '+d.disk.tempGB+' GB'],share:['共有フォルダ権限',d.share.access==='ok'?'あり':'なし']}[intent];
+ return addMsg(chat,{kind:'confirm',state:'pending',intent,text:String(text).slice(0,300),ctx:{device:d.id+'／'+d.os,pc:rel?[rel[0]+'：'+rel[1]]:[]}})}
 function respond(chat,text,atts){const u=me();const intent=detectIntent(text,atts);S.stats.intents[intent]=(S.stats.intents[intent]||0)+1;
  if(intent!=='whistle')auditAdd(S,u.id,'chat_query',{intent,chars:text.length,atts:atts.length});
+ if(CONFIRM_INTENTS[intent]&&!atts.length){confirmHearing(chat,text,intent);save();refresh();return}
  H[intent](chat,text,atts,u,S.devices[u.device])}
 function parseCSV(t,dl){const rows=[];let row=[],f='',q=false;for(let i=0;i<t.length;i++){const c=t[i];if(q){if(c==='"'){if(t[i+1]==='"'){f+='"';i++}else q=false}else f+=c}else{if(c==='"')q=true;else if(c===dl){row.push(f);f=''}else if(c==='\n'){row.push(f);rows.push(row);row=[];f=''}else if(c!=='\r')f+=c}}if(f!==''||row.length){row.push(f);rows.push(row)}return rows.filter(r=>r.some(x=>x.trim()!==''))}
 function csvStats(text,dl){const rows=parseCSV(text,dl);if(rows.length<2)return null;const head=rows[0].map(h=>h.trim());const body=rows.slice(1);
@@ -2973,6 +2979,7 @@ function renderMsg(m,c){const u=USERS[c.userId];
  case 'kb':{const hits=m.hits.map(id=>kbById(S,id)).filter(Boolean);return wrapAI(`<div class="card"><div class="ch">📚 社内資料からの回答<span class="r">閲覧権限の範囲で検索（権限外の資料は題名も表示しません）</span></div>${hits.map(k=>`<div class="kbhit"><b>${esc(k.title)}</b> ${badge('mute',SCOPE_LABEL[k.scope])}${k.src==='hd'?' '+badge('ok','ヘルプデスク承認済み v'+k.ver):''}<div class="small muted">${esc(k.id)}｜所管：${esc(k.owner)}｜更新：${esc(k.updated)}</div><div>${esc(k.body.length>110?k.body.slice(0,110)+'…':k.body)}</div><button class="btn sm" style="margin-top:4px" data-act="kbOpen" data-id="${k.id}">全文を見る</button></div>`).join('')}${m.conf==='低'?'<p class="small" style="margin-top:8px">⚠️ 関連が薄い可能性があります。</p>':''}<div class="btns">${escBtn('業務・規程','通常','これで解決しない（担当部門へ）')}</div></div>`,{at:m.at,model:m.model,conf:m.conf,src:m.hits})}
  case 'proposal':return wrapAI(renderProposal(S.proposals[m.propId],c),{at:m.at});
  case 'exec':return wrapAI(renderExec(m,c),{at:m.at});
+ case 'confirm':{const st=m.state;const b=st==='pending'?`<div class="btns"><button class="btn pri" data-act="cY" data-mid="${m.id}">はい（この内容で合っています）</button><button class="btn" data-act="cN" data-mid="${m.id}">いいえ（修正します）</button></div>`:st==='yes'?'<p class="small muted">✅ 内容を確認しました。読み取り確認へ進みます。</p>':'<p class="small muted">修正の入力を受け付けました。</p>';return wrapAI(`<div class="card"><div class="ch">🗣️ ヒアリング内容の確認（入力確認）</div><dl class="kv"><dt>相談内容</dt><dd>${esc(m.text)}</dd><dt>対象端末</dt><dd>${esc(m.ctx.device)}</dd>${(m.ctx.pc||[]).map(x=>`<dt>端末の現状</dt><dd>${esc(x)}</dd>`).join('')}</dl><p>この内容で合っていますか？ 違う場合は「いいえ」で修正できます。</p>${b}</div>`,{at:m.at})}
  case 'consent':return wrapAI(renderConsent(m),{at:m.at});
  case 'ticket':{const t=S.tickets.find(x=>x.id===m.ticketId);if(!t)return '';return wrapAI(`<div class="card ok"><div class="ch">🎫 受付番号 ${esc(t.id)}<span class="r">${badge(t.status==='解決'?'ok':'info',t.status)}</span></div><dl class="kv"><dt>引継ぎ先</dt><dd>${esc(t.group)}</dd>${hdRow(t)}<dt>優先度</dt><dd>${esc(t.priority)}</dd><dt>共有した情報</dt><dd>${Object.keys(t.shared).map(esc).join('、')}</dd>${t.resolution?`<dt>回答</dt><dd>${esc(t.resolution)}</dd>`:''}</dl><div class="btns"><button class="btn sm" data-act="ticketOpen" data-id="${t.id}">チケットを見る</button></div></div>`,{at:m.at})}
  }return ''}
@@ -3137,6 +3144,8 @@ const ACT={
  removeAtt(d){UI.pending=UI.pending.filter(a=>a.id!==d.id);renderPend()},
  Y(d){const p=S.proposals[d.id];if(p.userId!==S.ui.user){toast('依頼者本人のみ判断できます');return}const c=S.chats.find(x=>x.id===p.chatId)||activeChat();userDecision(S,p.id,'Y');
   if(p.status==='ready')runExec(c,p.id);else if(p.status==='pending_admin')ai(c,'<p>承認を受け付けました。この操作は<b>IT管理者の承認</b>が必要なため、承認キューに登録しました。承認されるまで端末は変更しません。</p>',{conf:'—'});save();refresh()},
+ cY(d){const [c,m]=findMsg(d.mid);if(!m||m.kind!=='confirm'||m.state!=='pending')return;m.state='yes';const u=USERS[c.userId];ai(c,'<p>ありがとうございます。端末の状態を<b>読み取りのみ</b>で確認します。</p>',{conf:'—'});H[m.intent](c,m.text,[],u,S.devices[u.device]);save();refresh()},
+ cN(d){const [c,m]=findMsg(d.mid);if(!m||m.kind!=='confirm'||m.state!=='pending')return;m.state='no';ai(c,'<p>承知しました。どこが違いますか？ 症状・いつから・対象（機器や画面）を追加で教えてください。</p>',{conf:'—'});save();refresh()},
  N(d){const p=S.proposals[d.id];if(p.userId!==S.ui.user)return;userDecision(S,p.id,'N');const c=S.chats.find(x=>x.id===p.chatId)||activeChat();const op=OPS[p.opId];const target=(p.meta&&p.meta.target)||'（対象の記載なし）';const reason=`本人がN（実行しない）を選択。提案: ${op.name}（Lv${op.level}）／対象: ${target}／端末は変更していません。`;
   ai(c,`<p>実行しませんでした。端末は何も変更していません。</p><p>次の内容を要約して担当者へ引き継ぎます。担当者は指名できます（共有する情報は選べます）。</p>`,{conf:'—'});consentCard(c,'IT端末','通常',null,p.id,{reason});save();refresh()},
  consult(d){const p=S.proposals[d.id];const c=S.chats.find(x=>x.id===p.chatId)||activeChat();consentCard(c,'IT端末','通常',null,p.id);save();refresh()},
