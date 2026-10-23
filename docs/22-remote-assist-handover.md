@@ -370,3 +370,4 @@
 - **WinRM / PsExec はこの経路に使わない。** MeshCentral は画面共有の層として条件付きで採用可。ターミナルは制限する。
 - **同意・監査・報告書をアプリの正本にする。** RMM は transport に留める。
 - ただし、現状の同意・監査は **同一ログイン内デモのクライアント状態** であり、本番の認可根拠にはしない。
+- RSP / MeshCentral との具体的な連携（端末マッピング・API・AI 運用アシスタント）は [23-rsp-meshcentral-integration.md](23-rsp-meshcentral-integration.md) を参照。

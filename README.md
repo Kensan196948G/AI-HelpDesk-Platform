@@ -157,7 +157,7 @@ npm audit --omit=dev --audit-level=high
 - [Backlog](docs/10-backlog.md) / [受入照合](docs/11-acceptance.md)
 - [Round Log](docs/12-round-log.md) / [Blocker 報告](docs/13-blocked-report.md)
 - **[既存プロトタイプ UI 100% 適用（現行）](docs/14-prototype-ui-integration.md)**
-- [最終報告書のエクスポート](docs/21-final-report-export.md) / [STEP5 引継ぎと遠隔支援のベストプラクティス](docs/22-remote-assist-handover.md)
+- [最終報告書のエクスポート](docs/21-final-report-export.md) / [STEP5 引継ぎと遠隔支援のベストプラクティス](docs/22-remote-assist-handover.md) / [RSP / MeshCentral 連携設計](docs/23-rsp-meshcentral-integration.md)
 - [OpenDesign 設計（参考）](design/opendesign/DESIGN.md)
 
 ## 既知の制約・要ユーザー対応

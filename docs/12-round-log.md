@@ -236,6 +236,17 @@
 - 仕様: [21-final-report-export.md](21-final-report-export.md) / [22-remote-assist-handover.md](22-remote-assist-handover.md)。
 - 残課題: 報告書は画面状態から生成（サーバー正本との突合なし）。遠隔支援の承認はブラウザ状態。A/B が別ログインの場合の案件共有・通知・画面共有（MeshCentral 等）は未実装。
 
+## Round 25 — RSP / MeshCentral 連携設計（2026-10-24）
+
+- ユーザー提示の `Remote-Service-Platform-for-Linux` と Mirai-Info を実コードで確認し、[23-rsp-meshcentral-integration.md](23-rsp-meshcentral-integration.md) に設計を整理。
+- 確認した事実:
+  - RSP には MeshCentral デスクトップ/ターミナル（`viewmode=11/12`）、SSO 付き `remote_url`、`POST /api/v1/remote-sessions`、`POST /api/v1/devices/{id}/commands`（リスク分類・承認・`command_logs`）が実装済み。
+  - RSP は未導入端末の導通確認（ping/WinRM）から MeshAgent 展開までを担う。Mirai-Info は母集団・住所・WinRM 導通・ギャップの正本で、展開の実行者ではない（`meshagent-deploy-role-boundaries.md`）。
+  - したがって「Mirai-Info 側で WinRM を使って MeshCentral Agent を操作」は二重実行になり非推奨。Mirai-Info → RSP の展開キュー/API に寄せる。
+- AI HelpDesk の B さん画面は、RSP のセッション/コマンドを「AI が提案 → B さんが確認 → RSP が実行・監査」で束ねる。GUI は MeshCentral、PowerShell は RSP のターミナル/コマンドキュー、AI は手順・コマンド案、最終報告書は AI HelpDesk が担当。
+- 端末マッピングは端末エージェントの `hostname` を第一キーにし、RSP の `devices.hostname` / Mirai-Info の `asset_tag` と完全一致で照合する。0件・複数件は B さんが選択し、推測で結ばない。
+- 認証は Phase 1（RSP へのディープリンク + Entra ログイン）→ Phase 2（RSP に AI HelpDesk 専用の統合 API）→ Phase 3（AI 承認付きコマンド実行）の順を推奨。
+
 ## 現在の Evidence
 
 | 項目 | 結果 |
