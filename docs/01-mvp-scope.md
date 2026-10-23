@@ -144,6 +144,8 @@
 | A-10 | Cloudflare Preview に配備され、Health / 主要 3 Flow / API / DB / Runtime を実確認 | 実操作 + ログ |
 | A-11 | README / Setup / Requirements / Design / DB / API / Test / Deploy / Limitations が揃う | レビュー |
 | A-12 | Critical / High の既知問題がない | Review + Security 確認 |
+| A-13 | STEP 3（AIで解決）と STEP 5（担当者対応で解決）の双方で、最終報告書を Standalone HTML / PDF で出力できる | UI + API + PDF テキスト確認（[docs/21](21-final-report-export.md)） |
+| A-14 | STEP 5 の担当者が、本人の同意を得て案内文を送れる（**同一ログイン内デモの範囲**）。任意のシェル実行はできず、変更は許可リスト + Y/N + 管理者承認を通る。サーバー側の同意セッションは未実装 | UI + API テスト（[docs/22](22-remote-assist-handover.md)） |
 
 ## 11. 仮定（要件不足時の補完）
 

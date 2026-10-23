@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>最終報告書 CASE-0002 - 担当者の対応で解決</title>
+<style>
+:root { color-scheme: light; }
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: #fff; color: #1f2933; }
+body { font-family: "IPAGothic", "IPAPGothic", "Noto Sans JP", "Yu Gothic", "Hiragino Kaku Gothic ProN", sans-serif; font-size: 10.5pt; line-height: 1.65; }
+.page { max-width: 186mm; margin: 0 auto; padding: 12mm 10mm 16mm; }
+.cover { border-bottom: 3px solid #1f2933; padding-bottom: 8mm; margin-bottom: 7mm; }
+.cover .eyebrow { font-size: 9pt; letter-spacing: .14em; color: #52606d; }
+.cover h1 { font-size: 22pt; margin: 2mm 0 3mm; letter-spacing: .04em; }
+.cover .sub { display: flex; flex-wrap: wrap; gap: 3mm 8mm; align-items: center; }
+.cover .case { font-family: ui-monospace, "IPAGothic", monospace; font-size: 12pt; }
+.badge { display: inline-block; border: 1px solid #52606d; border-radius: 999px; padding: 0 3mm; font-size: 9pt; line-height: 1.8; }
+.muted { color: #616e7c; font-size: 9pt; }
+.note { background: #f5f7fa; border-left: 3px solid #9aa5b1; padding: 2mm 3mm; font-size: 9pt; color: #3e4c59; }
+.ok { color: #1d7a4d; }
+.sec { margin: 7mm 0 0; page-break-inside: avoid; }
+.sec h2 { font-size: 13pt; margin: 0 0 3mm; padding-bottom: 1.5mm; border-bottom: 1px solid #cbd2d9; }
+h3 { font-size: 10.5pt; margin: 4mm 0 2mm; }
+table { width: 100%; border-collapse: collapse; margin: 2mm 0; font-size: 9.5pt; }
+th, td { border: 1px solid #d9e2ec; padding: 1.6mm 2mm; text-align: left; vertical-align: top; word-break: break-word; }
+th { background: #f0f4f8; font-weight: 700; white-space: nowrap; }
+.dot { display: inline-block; width: 2.2mm; height: 2.2mm; border-radius: 50%; margin-right: 1.4mm; vertical-align: middle; }
+.dot.ok { background: #1d7a4d; }
+.dot.warn { background: #d97706; }
+.dot.ng { background: #b42318; }
+.chat { display: grid; gap: 2.5mm; }
+.msg { border: 1px solid #d9e2ec; border-radius: 2mm; padding: 2.5mm 3mm; page-break-inside: avoid; }
+.msg.user { background: #f7f9fb; }
+.msg.ai { background: #fff; }
+.msg.system { background: #fffbea; border-color: #f0d38a; }
+.msg-head { font-size: 9pt; color: #52606d; margin-bottom: 1mm; }
+.msg-text { white-space: pre-wrap; }
+.msg-title { font-weight: 700; margin-bottom: 1mm; }
+.steps { margin: 1mm 0 1mm 5mm; padding: 0; }
+.steps li { margin: .5mm 0; }
+.memo { white-space: pre-wrap; background: #f7f9fb; border: 1px solid #d9e2ec; border-radius: 2mm; padding: 3mm; font-size: 9.5pt; }
+.proposal { border: 1px solid #d9e2ec; border-radius: 2mm; padding: 2.5mm 3mm; margin: 2mm 0; page-break-inside: avoid; }
+details { margin-top: 2mm; }
+summary { cursor: pointer; color: #245b9c; font-size: 9.5pt; }
+.footer { margin-top: 9mm; padding-top: 3mm; border-top: 1px solid #cbd2d9; color: #616e7c; font-size: 8.5pt; }
+.hash { font-family: ui-monospace, "IPAGothic", monospace; word-break: break-all; }
+@page { size: A4; margin: 12mm 10mm; }
+@media print { .page { max-width: none; padding: 0; } a { color: inherit; text-decoration: none; } }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="cover">
+    <div class="eyebrow">みらいAI窓口 × ヘルプデスク ／ 最終報告書</div>
+    <h1>担当者の対応で解決</h1>
+    <div class="sub">
+      <span class="case">CASE-0002</span>
+      <span class="badge" style="border-color:#245b9c;color:#245b9c">STEP 5 完了</span>
+      <span class="muted">共有フォルダのアクセス権を確認してほしい</span>
+    </div>
+  </div>
+
+  <section class="sec" id="summary"><h2>概要</h2><table><thead><tr><th>項目</th><th>内容</th></tr></thead><tbody><tr><td>案件番号</td><td><span class="case">CASE-0002</span></td></tr><tr><td>相談者</td><td>東京支店／工事部 / 山田 太郎</td></tr><tr><td>相談日時</td><td>2026-10-23 23:34:43</td></tr><tr><td>相談の種類</td><td>ファイル・共有フォルダ</td></tr><tr><td>急ぎ具合</td><td>通常</td></tr><tr><td>対応結果</td><td><span class="badge" style="border-color:#245b9c;color:#245b9c">担当者の対応で解決</span></td></tr><tr><td>AIモデル</td><td>DeepSeek-V4.1-Flash</td></tr><tr><td>出力日時</td><td>2026-10-23T14:56:30.193Z</td></tr><tr><td>出力者</td><td>管理本部／DX推進部 / 佐藤 健 <span class="muted">（ヘルプデスク担当）</span></td></tr><tr><td>受付番号 / ヘルプデスク</td><td>TKT-2026-0002 / INC-1008</td></tr><tr><td>担当者</td><td>佐藤</td></tr></tbody></table></section>
+  <section class="sec"><h2>相談内容</h2><p class="msg-text">異動後に共有フォルダが開けなくなりました。所属は工事部です。添付の資料はありません。</p></section>
+  <section class="sec"><h2>対応の経過</h2><table><thead><tr><th>日時</th><th>実施者</th><th>出来事</th><th>補足</th></tr></thead><tbody><tr><td>2026-10-23 14:34</td><td>佐藤 健</td><td>遠隔支援を依頼</td><td></td></tr><tr><td>2026-10-23 14:34</td><td>山田 太郎</td><td>遠隔支援を承認</td><td>読み取り情報と案内文のみ</td></tr><tr><td>2026-10-23 14:34</td><td>佐藤 健</td><td>本人へ案内を送信</td><td>お疲れさまです。共有フォルダの件で、画面を見ながら確認させてください。
+1. 開こうとしているフォルダのパスを確認してください。
+2. 一度サインアウトして、再びサインインしてください。
+3. それでも開けない場合は、表示されるエラー文をそのまま教えてください。
+アクセス権の変更は、所属長の承認を確認したうえで対応します。実施した結果を教えてください。</td></tr><tr><td>2026-10-23 14:34</td><td>山田 太郎</td><td>案内を実施</td><td></td></tr><tr><td>2026-10-23 23:34</td><td>山田 太郎</td><td>相談を送信</td><td>共有フォルダのアクセス権を確認してほしい</td></tr><tr><td>2026-10-23 23:34</td><td>山田 太郎</td><td>共有に同意</td><td>本人が共有範囲を確認</td></tr><tr><td>2026-10-23 23:34</td><td>システム</td><td>担当者へ引き継ぎ</td><td>TKT-2026-0002</td></tr><tr><td>2026-10-23 23:34</td><td>システム</td><td>担当者へ引き継ぎ</td><td>TKT-2026-0002 → INC-1008</td></tr><tr><td>2026-10-23 23:34</td><td>システム</td><td>AI窓口から引継ぎ（本人同意済みの範囲のみ共有）</td><td></td></tr><tr><td>2026-10-23 23:34</td><td>システム</td><td>AIヘルプデスクへ連携（INC-1008）。対応結果はここに自動で反映されます</td><td></td></tr><tr><td>2026-10-23 23:34</td><td>システム</td><td>ヘルプデスクの担当：MK1073</td><td></td></tr><tr><td>2026-10-23 23:34</td><td>システム</td><td>ヘルプデスクの担当：佐藤</td><td></td></tr><tr><td>2026-10-23 23:34</td><td>システム</td><td>ヘルプデスク（INC-1008）の状態を反映：受付 → 対応中</td><td></td></tr><tr><td>2026-10-23 23:34</td><td>システム</td><td>ヘルプデスク（INC-1008）の状態を反映：対応中 → 解決</td><td></td></tr><tr><td>2026-10-23 23:34</td><td>佐藤</td><td>担当者が対応開始</td><td></td></tr><tr><td>2026-10-23 23:34</td><td>佐藤</td><td>担当者が解決</td><td>異動後の所属グループが共有フォルダの閲覧グループに未追加だったため。</td></tr><tr><td>2026-10-23 23:34</td><td>システム</td><td>ヘルプデスクの対応結果を反映</td><td></td></tr><tr><td>2026-10-23 23:34</td><td>システム</td><td>ヘルプデスクの対応結果を反映</td><td></td></tr></tbody></table></section>
+  <section class="sec"><h2>PC基本情報（読み取りのみ）</h2><p class="muted">端末 WEB-860F746F ／ 取得 2026-10-23T14:34:37.548Z ／ 35項目 ／ 読み取りのみ</p><p class="note">IPアドレス・シリアル番号・資産番号は、この報告書では伏せています。</p><h3>気になる点（6件）</h3><table><thead><tr><th>判定</th><th>項目</th><th>値</th><th>補足</th></tr></thead><tbody><tr><td><span class="dot warn"></span>注意</td><td><b>★</b> 共有フォルダ</td><td>端末エージェント未導入</td><td>端末エージェントを導入すると確認できます</td></tr><tr><td><span class="dot warn"></span>注意</td><td>ドメイン・Entra ID</td><td>端末エージェント未導入</td><td>端末エージェントを導入すると確認できます</td></tr><tr><td><span class="dot warn"></span>注意</td><td>VPN</td><td>端末エージェント未導入</td><td></td></tr><tr><td><span class="dot warn"></span>注意</td><td>ウイルス対策</td><td>端末エージェント未導入</td><td>エージェントを導入すると確認できます</td></tr><tr><td><span class="dot warn"></span>注意</td><td>ディスク暗号化</td><td>端末エージェント未導入</td><td>エージェントを導入すると確認できます</td></tr><tr><td><span class="dot warn"></span>注意</td><td>OS 更新（apt）</td><td>端末エージェント未導入</td><td>エージェントを導入すると確認できます</td></tr></tbody></table><details open><summary>PC基本情報の全項目（35件）</summary><table><thead><tr><th>分類</th><th>項目</th><th>値</th><th>判定</th></tr></thead><tbody><tr><td>端末</td><td>コンピュータ名</td><td>未検出（ブラウザ）</td><td><span class="dot ok"></span>正常</td></tr><tr><td>端末</td><td>機種</td><td>未検出（ブラウザ）</td><td><span class="dot ok"></span>正常</td></tr><tr><td>端末</td><td>シリアル番号</td><td>[シリアル番号]</td><td><span class="dot ok"></span>正常</td></tr><tr><td>端末</td><td>OS</td><td>Linux Linux x86 64-bit</td><td><span class="dot ok"></span>正常</td></tr><tr><td>端末</td><td>前回の再起動から</td><td>端末エージェント未導入</td><td><span class="dot ok"></span>正常</td></tr><tr><td>端末</td><td>PCエージェント</td><td>ブラウザ取得（読み取りのみ）</td><td><span class="dot ok"></span>正常</td></tr><tr><td>アカウント</td><td>サインイン中の人</td><td>ログイン中のユーザー（Access 認証済み）</td><td><span class="dot ok"></span>正常</td></tr><tr><td>アカウント</td><td>ドメイン・Entra ID</td><td>端末エージェント未導入</td><td><span class="dot warn"></span>注意</td></tr><tr><td>アカウント</td><td>多要素認証</td><td>Cloudflare Access（OTP）で認証済み</td><td><span class="dot ok"></span>正常</td></tr><tr><td>ネットワーク</td><td>接続の種類</td><td>ブラウザ回線: 4G / 約 9.6 Mbps</td><td><span class="dot ok"></span>正常</td></tr><tr><td>ネットワーク</td><td>IPアドレス</td><td>[IPアドレス]</td><td><span class="dot ok"></span>正常</td></tr><tr><td>ネットワーク</td><td>VPN</td><td>端末エージェント未導入</td><td><span class="dot warn"></span>注意</td></tr><tr><td>ネットワーク</td><td>社内ポータルへの到達</td><td>このアプリに到達（HTTPS）</td><td><span class="dot ok"></span>正常</td></tr><tr><td>ネットワーク</td><td>共有フォルダ</td><td>端末エージェント未導入</td><td><span class="dot warn"></span>注意</td></tr><tr><td>リソース</td><td>CPU使用率（5分平均）</td><td>未検出（ブラウザ・16 論理コア）</td><td><span class="dot ok"></span>正常</td></tr><tr><td>リソース</td><td>メモリ使用率</td><td>約 32.0 GB（ブラウザ推定）</td><td><span class="dot ok"></span>正常</td></tr><tr><td>リソース</td><td>ディスクの空き</td><td>ブラウザ領域 空き 10.0 GB / 10.0 GB</td><td><span class="dot ok"></span>正常</td></tr><tr><td>リソース</td><td>本人の一時ファイル</td><td>端末エージェント未導入</td><td><span class="dot ok"></span>正常</td></tr><tr><td>セキュリティ</td><td>ウイルス対策</td><td>端末エージェント未導入</td><td><span class="dot warn"></span>注意</td></tr><tr><td>セキュリティ</td><td>ディスク暗号化</td><td>端末エージェント未導入</td><td><span class="dot warn"></span>注意</td></tr><tr><td>セキュリティ</td><td>OS 更新（apt）</td><td>端末エージェント未導入</td><td><span class="dot warn"></span>注意</td></tr><tr><td>周辺機器</td><td>既定のプリンター</td><td>端末エージェント未導入</td><td><span class="dot ok"></span>正常</td></tr><tr><td>周辺機器</td><td>印刷スプーラ</td><td>端末エージェント未導入</td><td><span class="dot ok"></span>正常</td></tr><tr><td>周辺機器</td><td>印刷キュー</td><td>端末エージェント未導入</td><td><span class="dot ok"></span>正常</td></tr><tr><td>周辺機器</td><td>音声の出力先</td><td>ブラウザ検出 1 台</td><td><span class="dot ok"></span>正常</td></tr><tr><td>周辺機器</td><td>USB機器</td><td>端末エージェント未導入</td><td><span class="dot ok"></span>正常</td></tr><tr><td>ソフトウェア</td><td>Microsoft 365 Apps</td><td>端末エージェント未導入</td><td><span class="dot ok"></span>正常</td></tr><tr><td>ソフトウェア</td><td>Teams</td><td>端末エージェント未導入</td><td><span class="dot ok"></span>正常</td></tr><tr><td>ソフトウェア</td><td>VPNクライアント</td><td>端末エージェント未導入</td><td><span class="dot ok"></span>正常</td></tr><tr><td>ソフトウェア</td><td>DirectCloudドライブ</td><td>端末エージェント未導入</td><td><span class="dot ok"></span>正常</td></tr><tr><td>最近のエラー</td><td>アプリ・システムのエラー（24時間）</td><td>端末エージェント未導入</td><td><span class="dot ok"></span>正常</td></tr><tr><td>ソフトウェア</td><td>ブラウザ</td><td>Chromium 156.0.8078.4</td><td><span class="dot ok"></span>正常</td></tr><tr><td>ソフトウェア</td><td>画面</td><td>1440 × 1200（1x / 24bit）</td><td><span class="dot ok"></span>正常</td></tr><tr><td>ソフトウェア</td><td>GPU</td><td>Google Inc. (Google) ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)</td><td><span class="dot ok"></span>正常</td></tr><tr><td>ソフトウェア</td><td>インストール済みソフト</td><td>端末エージェント未導入</td><td><span class="dot ok"></span>正常</td></tr></tbody></table></details></section>
+  <section class="sec"><h2>AIの一次対応</h2><p class="muted">モデル DeepSeek-V4.1-Flash</p><h3>やり取り</h3><div class="chat"><div class="msg user"><div class="msg-head">山田 太郎 <span class="muted">2026-10-23 23:34</span></div><div class="msg-text">共有フォルダのアクセス権を確認してほしい。異動後に共有フォルダが開けなくなりました。所属は工事部です。添付の資料はありません。</div></div><div class="msg ai"><div class="msg-head">AI <span class="muted">2026-10-23 23:34</span></div><div class="msg-text">🖥️ 相談の前に取得した PC基本情報（WEB-860F746F・14:34・35項目）を確認しました。
+気になる点が 6件 あります。
+★ 共有フォルダ：端末エージェント未導入　端末エージェントを導入すると確認できます
+ドメイン・Entra ID：端末エージェント未導入　端末エージェントを導入すると確認できます
+VPN：端末エージェント未導入
+ウイルス対策：端末エージェント未導入　エージェントを導入すると確認できます
+ディスク暗号化：端末エージェント未導入　エージェントを導入すると確認できます
+OS 更新（apt）：端末エージェント未導入　エージェントを導入すると確認できます
+★＝相談内容に関係しそうな項目です。このあと、相談内容に合わせて詳しく調べます。
+PC基本情報を詳しく見る</div></div><div class="msg user"><div class="msg-head">山田 太郎 <span class="muted">2026-10-23 23:34</span></div><div class="msg-text">共有フォルダのアクセス権を確認してほしい。異動後に共有フォルダが開けなくなりました。所属は工事部です。添付の資料はありません。</div></div><div class="msg system"><div class="msg-head">システム <span class="muted">2026-10-23 23:34</span></div><div class="msg-text">本人が共有に同意して引き継ぎました。</div></div><div class="msg system"><div class="msg-head">システム <span class="muted">2026-10-23 23:34</span></div><div class="msg-text">担当者へ引き継ぎました（TKT-2026-0002 → INC-1008）</div></div><div class="msg ai"><div class="msg-head">AI <span class="muted">2026-10-23 23:34</span></div><div class="msg-text">📬 受付番号 TKT-2026-0002（INC-1008）は、担当者（佐藤）が解決しました。
+原因：異動後の所属グループが共有フォルダの閲覧グループに未追加だったため。
+所属長の承認済みアクセス申請を確認する
+ID管理者が閲覧グループへ追加する
+サインインし直して再確認する
+まだ困っている場合は、もう一度相談してください。</div></div></div></section>
+  <section class="sec"><h2>担当者への引継ぎ</h2><table><thead><tr><th>項目</th><th>内容</th></tr></thead><tbody><tr><td>引継ぎ理由</td><td>AI窓口から引継ぎ（本人同意済みの範囲のみ共有）</td></tr><tr><td>受付番号</td><td>TKT-2026-0002</td></tr><tr><td>ヘルプデスク番号</td><td>INC-1008</td></tr><tr><td>担当</td><td>佐藤</td></tr><tr><td>共有した情報</td><td>相談内容、端末、PC基本情報（事前取得）</td></tr><tr><td>引継ぎ日時</td><td>2026-10-23 23:34:46</td></tr></tbody></table><h3>AIがまとめた引継ぎメモ</h3><pre class="memo">■ 概要：共有フォルダのアクセス権を確認してほしい。異動後に共有フォルダが開けなくなりました。所属は工事部です。添付の資料はありま
+■ 依頼者：東京支店／工事部 山田 太郎（受付：みらいAI窓口）
+■ 優先度：P2　対応期限：10/24 03:34
+■ 引継ぎ理由：みらいAI窓口から引継ぎ（本人同意済みの範囲のみ）
+■ 連携元：AI相談 TKT-2026-0002（本人が共有に同意した情報のみ）
+　- 相談内容：共有フォルダのアクセス権を確認してほしい。異動後に共有フォルダが開けなくなりました。所属は工事部です。添付の資料はありません。
+　- 端末：MRK-[資産番号]／Windows 11 Enterprise 24H2
+　- PC基本情報（事前取得）：
+　　・取得日時：2026-10-23T14:34:37.548Z（読み取りのみ・35項目）
+　　・【気になる点】共有フォルダ：端末エージェント未導入（端末エージェントを導入すると確認できます）
+　　・【気になる点】ドメイン・Entra ID：端末エージェント未導入（端末エージェントを導入すると確認できます）
+　　・【気になる点】VPN：端末エージェント未導入
+　　・【気になる点】ウイルス対策：端末エージェント未導入（エージェントを導入すると確認できます）
+　　・【気になる点】ディスク暗号化：端末エージェント未導入（エージェントを導入すると確認できます）
+　　・【気になる点】OS 更新（apt）：端末エージェント未導入（エージェントを導入すると確認できます）
+　　・コンピュータ名：未検出（ブラウザ）
+　　・OS：Linux Linux x86 64-bit
+　　・前回の再起動から：端末エージェント未導入
+　　・接続の種類：ブラウザ回線: 4G / 約 9.6 Mbps
+　　・IPアドレス：未検出（ブラウザ）
+　　・ディスクの空き：ブラウザ領域 空き 10.0 GB / 10.0 GB
+　　・印刷スプーラ：端末エージェント未導入
+　　・音声の出力先：ブラウザ検出 1 台
+■ AI一次対応の経過：
+　- AI相談で一次対応（診断・資料案内）済み。解決しなかったため本人同意のうえ引継ぎ
+■ 推定分野：セキュリティ　おすすめの担当：MK1073（）
+■ 対象の機器・サービス：CI-002 Entra ID（認証・MFA）（管理：高橋）、CI-005 FortiGate／FortiClient VPN（管理：鈴木）、CI-009 複合機・プリンター（管理：田中）
+■ 推奨アクション：端末のネットワーク隔離を確認 → 認証情報の入力有無を確認 → 該当アカウントのパスワードリセット・セッション無効化を検討 → 同報範囲の調査</pre></section>
+  <section class="sec"><h2>担当者の対応・解決記録</h2><table><thead><tr><th>項目</th><th>内容</th></tr></thead><tbody><tr><td>原因</td><td>異動後の所属グループが共有フォルダの閲覧グループに未追加だったため。</td></tr><tr><td>担当</td><td>佐藤</td></tr></tbody></table><h3>対応手順</h3><ol class="steps"><li>所属長の承認済みアクセス申請を確認する</li><li>ID管理者が閲覧グループへ追加する</li><li>サインインし直して再確認する</li></ol></section>
+  <section class="sec"><h2>ナレッジ化</h2><table><thead><tr><th>項目</th><th>内容</th></tr></thead><tbody><tr><td>下書き</td><td>DR-003</td></tr><tr><td>状態</td><td>draft</td></tr></tbody></table></section>
+  <section class="sec"><h2>遠隔支援（同意した範囲）</h2><p class="note">画面の遠隔操作は行わず、本人の同意を得たうえで、読み取り情報と案内文だけを共有します。</p><table><thead><tr><th>項目</th><th>内容</th></tr></thead><tbody><tr><td>状態</td><td>approved</td></tr><tr><td>依頼</td><td>佐藤 健</td></tr><tr><td>依頼日時</td><td>2026-10-23T14:34:48.438Z</td></tr><tr><td>承認</td><td>山田 太郎</td></tr><tr><td>承認日時</td><td>2026-10-23T14:34:49.854Z</td></tr><tr><td>期限</td><td>2026-10-23T15:04:49.854Z</td></tr><tr><td>範囲</td><td>読み取り情報の共有 + 案内文の送信（画面の遠隔操作・ファイル閲覧・キー入力は含みません）</td></tr></tbody></table><h3>本人へ送った案内</h3><table><thead><tr><th>日時</th><th>送信者</th><th>内容</th><th>状態</th></tr></thead><tbody><tr><td>2026-10-23T14:34:51.955Z</td><td>佐藤 健</td><td>お疲れさまです。共有フォルダの件で、画面を見ながら確認させてください。
+1. 開こうとしているフォルダのパスを確認してください。
+2. 一度サインアウトして、再びサインインしてください。
+3. それでも開けない場合は、表示されるエラー文をそのまま教えてください。
+アクセス権の変更は、所属長の承認を確認したうえで対応します。実施した結果を教えてください。</td><td>done</td></tr></tbody></table></section>
+
+  <div class="footer">
+    <div>この報告書は AI HelpDesk Platform が自動生成したものです。個人情報は伏せ字化しています。</div>
+    <div>本報告書は画面の状態をもとに生成しています。サーバー側の案件台帳との突合は MVP では行いません。</div>
+    <div>報告書ID：<span class="hash">f0ab919c-89f9-41af-986a-859e12820fd2</span></div>
+    <div>SHA-256（内容の同一性確認）：<span class="hash">7a05b05a0fdbb5982f60670e35fa4fa53bdc673a8243b365f0d9453315877117</span></div>
+    <div>出力：2026-10-23T14:56:30.193Z ／ 形式：Standalone HTML（外部ファイル参照なし）</div>
+  </div>
+</div></body>
+</html>

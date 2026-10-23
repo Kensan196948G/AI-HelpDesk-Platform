@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { answerWithDeepSeek } from '../ai/deepseek.js';
 import { personaSwitchMode } from '../auth/persona-switch.js';
 import { authenticateUi } from '../auth/ui.js';
-import { repoRoot } from '../config.js';
+import { config, repoRoot } from '../config.js';
 import { sql } from '../db.js';
 import { ApiError, badRequest } from '../errors.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
@@ -15,6 +15,7 @@ const BRIDGE_FILES = [
   path.join('apps', 'api', 'src', 'prototype', 'bridge.js'),
   path.join('apps', 'api', 'src', 'prototype', 'device-bridge.js'),
   path.join('apps', 'api', 'src', 'prototype', 'employee-bridge.js'),
+  path.join('apps', 'api', 'src', 'prototype', 'assist-bridge.js'),
 ];
 const COWORK_KEY = 'mirai-wizard-v31-cowork';
 const HELPDESK_KEY = 'mirai-wizard-v31-helpdesk';
@@ -101,6 +102,8 @@ function renderPrototype(boot: {
     ...boot,
     // 本番では「操作する人」を本人以外へ切り替えさせない（デモ用アカウントだけ any）。
     switchMode: personaSwitchMode(boot.email),
+    meshcentralUrl: config.MESHCENTRAL_URL,
+    rspBaseUrl: config.RSP_BASE_URL,
   }).replace(/</g, '\\u003c');
   const bootScript = `<script>window.__AIHD_BOOT__=${bootJson};(function(){try{var b=window.__AIHD_BOOT__||{};if(b.email){var e=localStorage.getItem('aihd.access.email');if(e!==b.email){localStorage.removeItem('${COWORK_KEY}');localStorage.removeItem('${HELPDESK_KEY}');localStorage.setItem('aihd.access.email',b.email)}}var orig=Storage.prototype.setItem;Storage.prototype.setItem=function(k,v){var r=orig.call(this,k,v);try{if(String(k).indexOf('mirai-wizard-v31-')===0){window.dispatchEvent(new CustomEvent('aihd-state',{detail:String(k)}))}}catch(e){}return r};if(b.cowork)localStorage.setItem('${COWORK_KEY}',JSON.stringify(b.cowork));if(b.helpdesk)localStorage.setItem('${HELPDESK_KEY}',JSON.stringify(b.helpdesk))}catch(e){}})();</script>`;
 

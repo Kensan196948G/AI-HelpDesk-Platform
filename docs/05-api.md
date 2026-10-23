@@ -132,6 +132,22 @@
 - `/api/ai/answer` の応答に `device: {source, collectedAt}` を含む。PC コンテキストから IP・シリアル・資産番号・メールは除外する。
 - `/api/ai/answer` の根拠は、DB の承認済みナレッジに加え、**本人の helpdesk 画面状態で承認済み（`status: active`）のナレッジ**も対象にする。`sources[].kbNo` は画面の KB 番号（例: `KB-111`）と一致する。使用停止中・形式不正の要素は除外し、他ユーザーの状態は参照しない（`lib/prototype-knowledge.ts`）。
 
+## 6-3. 最終報告書 / 遠隔支援
+
+| Method | Path | 権限 | 説明 |
+|---|---|---|---|
+| POST | `/api/reports/final` | Access 認証 | 画面の構造化データから Standalone HTML と SHA-256 を生成・保存。10 回/分 |
+| GET | `/api/reports/final/:id/html` | Access 認証（作成者のみ） | Standalone HTML（`Content-Disposition: attachment`） |
+| GET | `/api/reports/final/:id/pdf` | Access 認証（作成者のみ） | 保存済み HTML をヘッドレス Chrome で PDF 化。10 回/分 |
+| POST | `/api/ai/remote-prompt` | Access 認証 | STEP 5 の担当者向け「A さんへの案内文」の下書き。実行はしない。20 回/分 |
+
+- 報告書の入力は `FinalReportSchema`（`apps/api/src/domain/final-report.ts`）で検証する。自由記述・PC 情報は保存前に伏せ字化する。
+- 報告書は作成者の `user_email` に紐づけ、他人の ID は 404 にする。
+- PDF 生成のヘッドレスブラウザが見つからない場合は 503 `PDF_UNAVAILABLE`（HTML は利用可能）。
+- `/api/ai/remote-prompt` は文章だけを返す。端末操作は既存の `/api/device/command`（許可リスト + Y/N + 管理者承認）のみ。
+- 報告書のエラー: 429 `RATE_LIMITED` / `REPORT_QUOTA`、502 `PDF_FAILED`、503 `PDF_UNAVAILABLE` / `PDF_BUSY`。
+- 詳細: [21-final-report-export.md](21-final-report-export.md) / [22-remote-assist-handover.md](22-remote-assist-handover.md)。
+
 ## 7. セキュリティ上の前提
 
 - Preview では Worker が `X-Proxy-Secret` を付与し、API は共有秘密のない直接アクセスを拒否する（`REQUIRE_PROXY_SECRET=true`）。

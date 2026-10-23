@@ -125,6 +125,30 @@
 - `deepseek/deepseek-v4.1-flash-1017` は公式 API では 400（受付 ID は `deepseek-flash` / `deepseek-v4-pro` のみ）。他プロバイダの ID を使う場合は `DEEPSEEK_BASE_URL` とキーを合わせる。
 - 残存リスク: DeepSeek への送信内容（伏せ字済み・承認済みナレッジ・関連ソフト名）、外部 API の可用性・費用。
 
+## 7-3. 最終報告書（2026-10-23 追加）
+
+- 画面の構造化データを `FinalReportSchema` で検証し、**すべての文字列と PC 情報を保存前に伏せ字化**してから HTML を生成する。`payload`・SHA-256・HTML は同じ伏せ字化後の内容から作る。
+- 自由記述だけでなく、`role` / `dept` / `device` / `approvedBy` などの構造化フィールドも `redactPII` の対象にする。手編集の案内文は保存前に `dlpMask` で伏せ字化する。
+- PC 情報の `IPアドレス` / `シリアル番号` / `資産番号` は項目名で判定して強制マスクする。
+- HTML は `escapeHtml` を通し、`<script>` 等を文字列として扱う。CSP は `default-src 'none'; style-src 'unsafe-inline'`。スクリプト・外部 CSS・画像を含まない。
+- 日時・STEP と完了経路・遠隔支援の状態整合を `superRefine` で検証する。
+- 取得は作成者の `user_email` に限定する。他人の報告書は 404（存在を隠す）。作成・PDF は 10 回/分、24 時間 50 件/利用者の上限（`REPORT_QUOTA`）。
+- PDF はヘッドレス Chrome を `execFile` で起動する（シェルなし）。HTML は 0600、一時ディレクトリは 0700、処理後に削除。`--no-sandbox` は検証環境の制約だが、変換対象は外部参照のない生成 HTML のみ。
+- PDF の同時実行は 1 本（待ち行列 10 件）、サイズ 10MiB 上限。外部通信を抑止する Chrome フラグを使う。HTML 自体にも CSP メタタグを入れる。
+- 監査: `report_exported`（案件・形式・報告書ID・SHA-256）を監査チェーンに追加。
+- 残存リスク: 報告書は画面状態から生成しており、サーバー側の案件台帳と突合していない。SHA-256 は内容の同一性であり、電子署名ではない。本番の監査証跡にする場合はサーバー正本化が必要。
+
+## 7-4. 遠隔支援（2026-10-23 追加）
+
+- STEP 4 の共有同意と、STEP 5 の遠隔支援同意を分ける。遠隔支援は **依頼 → 本人の承認 → 30 分 → 終了**。A さんのホームにも依頼を表示する。
+- 本 MVP で B さんが送れるのは **案内文（テキスト）だけ**。`/api/ai/remote-prompt` は文章を返すだけで、端末操作・コマンド実行をしない。
+- 本番（`cloudflare-access`）では `/api/ai/remote-prompt` を **DX推進部（ヘルプデスク）またはデモ許可アカウント**に限定する。名簿が取得できない場合は fail-closed（403）。これは「下書きを作れる人」の制限であり、同意の証明ではない。
+- AI 出力は、シェルコマンド（PowerShell の cmdlet を含む）・資格情報の要求・セキュリティ無効化・権限付与の表現を検出したら採用せず、定型文にフォールバックする。
+- 端末の変更は既存の `/api/device/command`（許可リスト `SPOOLER_RESTART` のみ、Y/N + 管理者承認）を通す。B さんが任意のシェルを A さんの PC で実行する経路はない。
+- 監査: `remote_requested` / `remote_approved` / `remote_denied` / `remote_ended` / `remote_expired` / `remote_prompt_sent` / `remote_prompt_done` / `remote_prompt_failed`。最終報告書にも記載する。
+- 残存リスク: 遠隔支援の状態はブラウザの案件状態（`c.remote`）にあり、サーバー側で承認を強制していない。本番はサーバー側セッション表 + 署名付き承認へ移す。A/B が別ログインの場合は案件共有・通知が未実装（同一ログイン内のデモ）。**したがって、現状の「本人同意済み」「監査済み」は認可根拠にできない。**
+- 詳細: [22-remote-assist-handover.md](22-remote-assist-handover.md)。
+
 ## 8. 禁止・対象外
 
 - パスワード確認・再設定、権限付与、セキュリティ判断、端末の隔離・削除は AI が行わない。

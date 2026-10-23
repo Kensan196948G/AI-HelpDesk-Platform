@@ -103,6 +103,19 @@
 - リロード時はサーバーの状態を boot script で localStorage に戻す。
 - 既存の関係モデル（cases / tickets / knowledge / audit 等）と API は維持する。UI はプロトタイプの状態モデルを使う（MVP / デモ用の併存）。
 
+### 2-7. 最終報告書 / 遠隔支援（2026-10-23 追加・ユーザー指示）
+
+ユーザーから、STEP 3（AIで解決）と STEP 5（担当者対応で解決）の双方で最終報告書を Standalone HTML / PDF で出力したい、STEP 5 の引継ぎで担当者（Bさん）が AI と一緒に対応できる UI がほしい、との指示を受けた。
+
+- **試作 HTML は変更しない。** `apps/api/src/prototype/assist-bridge.js` を新規に追加し、既存のブリッジと同じく `</body>` 直前に注入する。
+- 追加する画面要素は、ウィザードのペイン下部の 2 つのカードだけ。
+  - 「📄 最終報告書」: 完了時のみ。Standalone HTML / PDF のボタン。
+  - 「🛟 遠隔支援（同意した範囲）」: STEP 5 の引継ぎ後のみ。依頼・承認・拒否・終了、共有 PC 情報、AI 下書き、案内送信、実施結果。
+  - A さんのホームに「遠隔支援の依頼が届いています」の通知。
+- 画面のレイアウト・CSS・既存の DOM は変更しない。新しい CSS は `#ahd-assist-style` に閉じ込め、既存の `u-*` / `w-*` クラスを再利用する。
+- 追加した API / DB は [21-final-report-export.md](21-final-report-export.md) / [22-remote-assist-handover.md](22-remote-assist-handover.md) を参照。
+- この追加は「画面構成を変えない」という従来方針の例外ではなく、**ユーザー指示による新機能の追加**として扱う。既存の 28 業務ツール・STEP 1〜7 の流れは変えない。
+
 ## 3. 配備
 
 | リソース | 値 |

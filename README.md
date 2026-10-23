@@ -18,9 +18,11 @@
 | OpenDesign | 設計検討の記録（[design/opendesign](design/opendesign/)）。実画面はユーザー指示により既存 HTML が正本 |
 | WebUI（既存プロトタイプ） | **配信中**（レイアウト変更なし。状態/AI のみブリッジ） |
 | Local PostgreSQL | Migration / Seed / Read・Write / Backup-Restore 検証済み |
-| API | Fastify。認証（local / Cloudflare Access）、案件、引継ぎ、解決、ナレッジ、監査、状態保存、実PC情報、AI |
-| Tests | **74 tests 成功**（Unit / API integration / Worker / UI / Access / 許可リスト / 実PC情報・エージェント） |
+| API | Fastify。認証（local / Cloudflare Access）、案件、引継ぎ、解決、ナレッジ、監査、状態保存、実PC情報、AI、最終報告書、遠隔支援 |
+| Tests | **175 tests 成功**（Unit / API integration / Worker / UI / Access / 許可リスト / 実PC情報・エージェント / 最終報告書 / 遠隔支援） |
 | 実PC情報 | **ブラウザ取得 + 端末エージェント**（読み取りのみ。導入ソフトはエージェント） |
+| 最終報告書 | **STEP 3 / STEP 5 の完了時に Standalone HTML / PDF**（個人情報は伏せ字化・作成者のみ取得可） |
+| 遠隔支援 | **STEP 5 で本人同意つきの案内文 + 共有 PC 情報**（画面の遠隔操作・任意シェルはなし。実行は許可リスト + Y/N + 管理者承認） |
 | Cloudflare Preview | **公開中**（Tunnel + Access。OTP ログイン画面を確認） |
 | Access 許可メール | **設定済み**（`docs/MailAddress.txt` + Cloudflare allow ポリシー） |
 | Access OTP ログイン | **確認済み**（2026-10-23 15:32 JST / `onetimepin` / `allowed=true`） |
@@ -28,11 +30,12 @@
 | AI用KB | **9件**（共有フォルダ / Teams / 印刷 / VPN / PC性能 / Windows Update / BitLocker / Defender / ソフト導入） |
 | CI | **GitHub Actions**（`.github/workflows/ci.yml` / job `verify`。PostgreSQL 16 service） |
 
-## 主要 3 Flow
+## 主要 4 Flow
 
 1. **相談受付〜引継ぎ**: 相談種類 → 内容＋PC 基本情報 → AI 一次対応 → 解決 or 引継ぎ（TKT/INC）
-2. **ヘルプデスク対応**: ボード → 案件詳細 → 担当割当 → 解決記録
+2. **ヘルプデスク対応**: ボード → 案件詳細 → 担当割当 → 解決記録（必要なら本人同意つきの遠隔支援）
 3. **ナレッジ化〜完了**: 伏せ字済み下書き → 承認申請 → 別の承認者が承認 → 公開
+4. **最終報告書**: STEP 3（AIで解決）/ STEP 5（担当者対応で解決）のどちらでも Standalone HTML / PDF を出力
 
 ## 構成
 
@@ -48,9 +51,11 @@ Node 22 / Fastify  ai-helpdesk-api.service（127.0.0.1:18950）
   │  ├─ /api/state（prototype_states）
   │  ├─ /api/device/browser・/api/device/inventory（実PC情報）
   │  ├─ /api/device/agent（端末エージェント / デバイストークン）
-  │  └─ /api/ai/answer（deepseek-flash + 承認済みナレッジ + PC情報）
+  │  ├─ /api/ai/answer（deepseek-flash + 承認済みナレッジ + PC情報）
+  │  ├─ /api/reports/final（最終報告書: Standalone HTML / PDF）
+  │  └─ /api/ai/remote-prompt（STEP5 の案内文下書き。実行はしない）
   ▼
-Local PostgreSQL  ai_helpdesk_preview（device_inventories / device_tokens 含む）
+Local PostgreSQL  ai_helpdesk_preview（device_inventories / device_tokens / final_reports 含む）
 ```
 
 - Cloudflare Worker / Pages は、DSH の self-evolution policy gate が `wrangler` 配備を DEPLOY（critical）として拒否するため使用していません。
@@ -135,13 +140,13 @@ AUTH_MODE=cloudflare-access ACCESS_ALLOWLIST_FILE=docs/MailAddress.txt \
 ```bash
 npm run typecheck   # API + worker
 npm run lint
-npm test            # 74 tests（PostgreSQL テスト DB）
+npm test            # 175 tests（PostgreSQL テスト DB）
 npm run build
 bash scripts/scan-secrets.sh
 npm audit --omit=dev --audit-level=high
 ```
 
-実測: TypeCheck ✅ / Lint ✅（error 0）/ 74 tests ✅ / Build ✅ / Secret scan ✅ / npm audit 0 vulnerabilities。
+実測: TypeCheck ✅ / Lint ✅（warning 84 / error 0）/ 175 tests ✅ / Build ✅ / Secret scan ✅ / npm audit 0 vulnerabilities。
 
 ## ドキュメント
 
@@ -152,6 +157,7 @@ npm audit --omit=dev --audit-level=high
 - [Backlog](docs/10-backlog.md) / [受入照合](docs/11-acceptance.md)
 - [Round Log](docs/12-round-log.md) / [Blocker 報告](docs/13-blocked-report.md)
 - **[既存プロトタイプ UI 100% 適用（現行）](docs/14-prototype-ui-integration.md)**
+- [最終報告書のエクスポート](docs/21-final-report-export.md) / [STEP5 引継ぎと遠隔支援のベストプラクティス](docs/22-remote-assist-handover.md) / [RSP / MeshCentral 連携設計](docs/23-rsp-meshcentral-integration.md)
 - [OpenDesign 設計（参考）](design/opendesign/DESIGN.md)
 
 ## 既知の制約・要ユーザー対応
@@ -164,6 +170,8 @@ npm audit --omit=dev --audit-level=high
 - アプリ内の「操作する人」切替は**デモ用**です。実際のログインは Cloudflare Access のみです。
 - 既存プロトタイプの「完全オフライン」等の表示は、事実と異なる主要ラベルだけ更新しています（[docs/14](docs/14-prototype-ui-integration.md) §2-1）。
 - 添付実体・端末修復実行・外部ヘルプデスク基盤連携・SSO は対象外です。
+- 最終報告書は画面の状態から生成します。サーバー側の案件台帳との突合・電子署名は未実装です（[docs/21](docs/21-final-report-export.md) §7-1）。
+- 遠隔支援は同じログイン内のデモです。A/B が別ログインの場合の案件共有・通知・画面共有（MeshCentral 等）は未実装です（[docs/22](docs/22-remote-assist-handover.md) §12）。
 
 ## ライセンス
 

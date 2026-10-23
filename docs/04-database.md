@@ -27,6 +27,7 @@ knowledge 1 ──< knowledge_reviews
 users 1 ──< audit_log (actor)
 users 1 ──< device_inventories (user_email / browser・agent)
 users 1 ──< device_tokens (user_email)
+users 1 ──< final_reports (user_email / 作成者だけが取得可)
 ```
 
 | テーブル | 主な列 | 制約・索引 |
@@ -44,6 +45,8 @@ users 1 ──< device_tokens (user_email)
 | `knowledge_reviews` | knowledge_id, reviewer_id, decision, comment, checklist(jsonb) | knowledge_id + created_at 索引 |
 | `audit_log` | actor_id, action, target_type, target_id, detail(jsonb), prev_hash, hash | created_at / target 索引。追記のみ |
 | `prototype_states` | user_email, name(cowork/helpdesk), data(jsonb), updated_at | 主キー(user_email,name)。既存プロトタイプ UI の状態保存（migration 002） |
+| `device_commands` | user_email, device_id, op_id, params(jsonb), status, result(jsonb), error, created_at, delivered_at, completed_at | 許可リスト実行キュー（migration 005）。status は queued/delivered/done/failed/expired |
+| `final_reports` | id(uuid), user_email, case_id, kind(ai_resolved/helpdesk_resolved), payload(jsonb), html, html_filename, sha256, created_at | 主キー(id)。作成者単位の索引。最終報告書（migration 006）。payload/html は伏せ字化後 |
 
 ### 2-1. 状態値
 
@@ -58,7 +61,7 @@ users 1 ──< device_tokens (user_email)
 
 ## 3. Migration
 
-- ファイル: `db/migrations/001_init.sql` / `002_prototype_states.sql` / `003_device_inventory.sql` / `004_device_scoped_inventory.sql`
+- ファイル: `db/migrations/001_init.sql` / `002_prototype_states.sql` / `003_device_inventory.sql` / `004_device_scoped_inventory.sql` / `005_device_commands.sql` / `006_final_reports.sql`
 - 実行: `npm run db:migrate`
 - `schema_migrations` で適用済みを管理。**空 DB から再実行可能**。
 - SQL は `CREATE TABLE IF NOT EXISTS` / `CREATE INDEX IF NOT EXISTS` のみ。DROP / TRUNCATE を含まない。
