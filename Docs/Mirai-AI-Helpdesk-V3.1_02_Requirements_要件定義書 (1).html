@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<title>みらいAI窓口×ヘルプデスク V3.1 要件定義書</title>
+<!-- Mirai-AI-Helpdesk-V3.1_02_Requirements_要件定義書.html ／ 対象アプリ：Mirai_AIHelpdesk_Cowork_StepWizard_V3.1_PCinfo_Offline.html ／ 2026年10月20日 ／ DX推進部 -->
+<style>
+
+:root{
+  --bg:#f5f7fa; --surface:#ffffff; --surface2:#eef2f6; --ink:#14202e; --muted:#5a6878; --line:#dce3eb;
+  --navy:#0f2a44; --navy2:#173a5c; --on-navy:#ffffff;
+  --accent:#d9731a; --accent-soft:#fff1e2;
+  --ai:#0f8a87; --ai-soft:#e0f4f3;
+  --human:#c64a30; --human-soft:#fbe8e3;
+  --ci:#4f5bd5; --ci-soft:#e9ebfb;
+  --g:#1f8a4c; --g-soft:#e3f5ea; --y:#a87308; --y-soft:#fdf3dc; --r:#c53030; --r-soft:#fbe4e4;
+  --shadow:0 1px 2px rgba(15,42,68,.06),0 8px 24px rgba(15,42,68,.07);
+  --radius:14px;
+  --font:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:ui-monospace,"SFMono-Regular","Cascadia Code",Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0e1621; --surface:#152130; --surface2:#1b2a3c; --ink:#e6edf5; --muted:#9fb0c3; --line:#2a3b50;
+    --navy:#0b1f33; --navy2:#16324f; --on-navy:#ffffff;
+    --accent:#f5a04f; --accent-soft:#3a2a17;
+    --ai:#4fd1cc; --ai-soft:#123534;
+    --human:#f08a72; --human-soft:#3b2019;
+    --ci:#9aa3f5; --ci-soft:#232a52;
+    --g:#5fd394; --g-soft:#173527; --y:#f0c050; --y-soft:#3a2f12; --r:#f08080; --r-soft:#3d1c1c;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.25);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0e1621; --surface:#152130; --surface2:#1b2a3c; --ink:#e6edf5; --muted:#9fb0c3; --line:#2a3b50;
+  --navy:#0b1f33; --navy2:#16324f; --on-navy:#ffffff;
+  --accent:#f5a04f; --accent-soft:#3a2a17;
+  --ai:#4fd1cc; --ai-soft:#123534;
+  --human:#f08a72; --human-soft:#3b2019;
+  --ci:#9aa3f5; --ci-soft:#232a52;
+  --g:#5fd394; --g-soft:#173527; --y:#f0c050; --y-soft:#3a2f12; --r:#f08080; --r-soft:#3d1c1c;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.25);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:15.5px;line-height:1.85;letter-spacing:.01em}
+a{color:var(--ci)}
+code,kbd{font-family:var(--mono);font-size:.9em;background:var(--surface2);border:1px solid var(--line);border-radius:6px;padding:0 .35em}
+.topbar{position:sticky;top:0;z-index:20;background:var(--navy);color:var(--on-navy);display:flex;align-items:center;gap:12px;padding:10px 20px;box-shadow:0 2px 10px rgba(0,0,0,.15)}
+.topbar .brand{font-weight:700;letter-spacing:.04em;white-space:nowrap}
+.topbar .brand small{font-weight:400;opacity:.75;margin-left:8px}
+.topbar .sp{flex:1}
+.topbar a.sw,.topbar button{color:var(--on-navy);background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.22);border-radius:999px;padding:5px 12px;font:inherit;font-size:13px;cursor:pointer;text-decoration:none;white-space:nowrap}
+.topbar a.sw:hover,.topbar button:hover{background:rgba(255,255,255,.2)}
+.hero{background:linear-gradient(135deg,var(--navy) 0%,var(--navy2) 100%);color:var(--on-navy);padding:48px 20px 40px}
+.hero .in{max-width:1180px;margin:0 auto}
+.hero .kicker{display:inline-block;font-size:12.5px;letter-spacing:.12em;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25);border-radius:999px;padding:3px 12px}
+.hero h1{font-size:clamp(26px,4.4vw,40px);line-height:1.3;margin:14px 0 8px}
+.hero p{margin:0;max-width:820px;opacity:.92}
+.hero .meta{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:18px;font-size:13.5px;opacity:.9}
+.layout{max-width:1180px;margin:0 auto;padding:28px 20px 80px;display:grid;grid-template-columns:250px minmax(0,1fr);gap:32px}
+.toc{position:sticky;top:64px;align-self:start;max-height:calc(100vh - 84px);overflow:auto;font-size:13.5px;padding-right:4px}
+.toc b{display:block;font-size:12px;color:var(--muted);letter-spacing:.1em;margin:0 0 6px}
+.toc ol{list-style:none;margin:0;padding:0}
+.toc a{display:block;padding:5px 10px;border-radius:8px;color:var(--ink);text-decoration:none;border-left:3px solid transparent}
+.toc a:hover{background:var(--surface2)}
+.toc a.on{background:var(--accent-soft);border-left-color:var(--accent);font-weight:700}
+.toc-m{display:none}
+main{min-width:0}
+section.sec{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:28px 30px;margin:0 0 24px;scroll-margin-top:72px}
+section.sec>h2{display:flex;align-items:center;gap:12px;font-size:22px;line-height:1.4;margin:0 0 6px}
+section.sec>h2 .no{flex:none;display:grid;place-items:center;width:36px;height:36px;border-radius:10px;background:var(--navy);color:var(--on-navy);font-size:15px}
+section.sec>.sub{color:var(--muted);margin:0 0 18px}
+h3{font-size:17.5px;margin:26px 0 10px;padding-left:10px;border-left:4px solid var(--accent);line-height:1.5}
+h4{font-size:15.5px;margin:18px 0 6px}
+p{margin:0 0 12px}
+ul,ol{margin:0 0 12px;padding-left:1.4em}
+li{margin:2px 0}
+.easy{background:var(--ai-soft);border:1px solid color-mix(in srgb,var(--ai) 35%,transparent);border-radius:12px;padding:14px 16px 12px 16px;margin:12px 0 16px}
+.easy::before{content:"やさしく言うと";display:inline-block;font-size:12px;font-weight:700;color:var(--surface);background:var(--ai);border-radius:999px;padding:1px 10px;margin-bottom:6px}
+.note{background:var(--surface2);border:1px solid var(--line);border-radius:12px;padding:12px 16px;margin:12px 0}
+.warn{background:var(--r-soft);border:1px solid color-mix(in srgb,var(--r) 35%,transparent);border-radius:12px;padding:12px 16px;margin:12px 0}
+.prop{background:var(--y-soft);border:1px dashed color-mix(in srgb,var(--y) 60%,transparent);border-radius:12px;padding:12px 16px;margin:12px 0}
+.prop::before{content:"本書で補った提案";display:inline-block;font-size:12px;font-weight:700;color:var(--y);border:1px solid var(--y);border-radius:999px;padding:0 10px;margin-bottom:4px}
+.tw{overflow-x:auto;margin:10px 0 16px;border:1px solid var(--line);border-radius:12px}
+table{border-collapse:collapse;width:100%;font-size:14px;line-height:1.65}
+th,td{border-bottom:1px solid var(--line);padding:9px 12px;text-align:left;vertical-align:top}
+thead th{background:var(--surface2);font-size:13px;color:var(--muted);white-space:nowrap;position:sticky;top:0}
+tbody tr:last-child td{border-bottom:none}
+tbody tr:hover td{background:color-mix(in srgb,var(--surface2) 50%,transparent)}
+tr.grp td{background:var(--surface2)}
+td.id,th.id{font-family:var(--mono);white-space:nowrap;font-size:13px}
+td.nw{white-space:nowrap}
+.b{display:inline-block;font-size:12px;font-weight:700;border-radius:999px;padding:1px 9px;white-space:nowrap;border:1px solid}
+.b.must{color:var(--human);border-color:var(--human);background:var(--human-soft)}
+.b.should{color:var(--ci);border-color:var(--ci);background:var(--ci-soft)}
+.b.could{color:var(--muted);border-color:var(--line);background:var(--surface2)}
+.src{display:inline-block;font-family:var(--mono);font-size:11.5px;color:var(--muted);border:1px solid var(--line);border-radius:6px;padding:0 5px;margin:1px 2px 1px 0;white-space:nowrap}
+.src.p{color:var(--y);border-color:var(--y)}
+.sig{display:inline-flex;align-items:center;gap:5px;font-weight:700;font-size:13px;border-radius:999px;padding:1px 10px;white-space:nowrap}
+.sig::before{content:"";width:10px;height:10px;border-radius:50%;background:currentColor}
+.sig.g{color:var(--g);background:var(--g-soft)} .sig.y{color:var(--y);background:var(--y-soft)} .sig.r{color:var(--r);background:var(--r-soft)}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin:12px 0 16px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.card h4{margin:0 0 6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.card p{margin:0;font-size:14px;color:var(--muted)}
+.card.ai{border-top:4px solid var(--ai)} .card.ci{border-top:4px solid var(--ci)} .card.hu{border-top:4px solid var(--human)} .card.ac{border-top:4px solid var(--accent)}
+.card.g{border-top:4px solid var(--g)} .card.y{border-top:4px solid var(--y)} .card.r{border-top:4px solid var(--r)}
+.who{font-size:12px;font-weight:700;border-radius:6px;padding:0 7px;white-space:nowrap}
+.who.ai{background:var(--ai-soft);color:var(--ai)} .who.ci{background:var(--ci-soft);color:var(--ci)} .who.hu{background:var(--human-soft);color:var(--human)}
+.steps{counter-reset:s;list-style:none;padding:0;margin:12px 0 16px;display:grid;gap:8px}
+.steps>li{counter-increment:s;display:grid;grid-template-columns:34px 1fr;gap:12px;align-items:start;background:var(--surface2);border-radius:10px;padding:10px 12px}
+.steps>li::before{content:counter(s);display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:var(--navy);color:var(--on-navy);font-weight:700;font-size:14px}
+.steps>li b{display:block}
+figure{margin:14px 0 18px}
+.figwrap{overflow-x:auto}
+figure svg{width:100%;min-width:640px;height:auto;display:block}
+figcaption{font-size:13px;color:var(--muted);margin-top:6px;text-align:center}
+dl.gl{display:grid;grid-template-columns:minmax(120px,190px) 1fr;gap:0;margin:8px 0;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+dl.gl dt,dl.gl dd{margin:0;padding:9px 12px;border-bottom:1px solid var(--line)}
+dl.gl dt{font-weight:700;background:var(--surface2)}
+.filter{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0}
+.filter input{flex:1 1 220px;min-width:0;font:inherit;font-size:14px;padding:7px 12px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--ink)}
+.filter button{font:inherit;font-size:13px;padding:5px 12px;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer}
+.filter button.on{background:var(--navy);color:var(--on-navy);border-color:var(--navy)}
+.sign{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.sign div{border:1px solid var(--line);border-radius:12px;padding:10px 12px;min-height:110px}
+.sign small{color:var(--muted)}
+footer.ft{max-width:1180px;margin:0 auto;padding:0 20px 40px;color:var(--muted);font-size:13px}
+.totop{position:fixed;right:16px;bottom:16px;width:44px;height:44px;border-radius:50%;border:none;background:var(--navy);color:var(--on-navy);font-size:18px;cursor:pointer;box-shadow:var(--shadow);opacity:0;pointer-events:none;transition:opacity .2s}
+.totop.show{opacity:1;pointer-events:auto}
+svg .t{fill:var(--ink);font-family:var(--font)} svg .tm{fill:var(--muted);font-family:var(--font)}
+svg .bx{fill:var(--surface);stroke:var(--line)} svg .bx2{fill:var(--surface2);stroke:var(--line)}
+svg .ai{fill:var(--ai-soft);stroke:var(--ai)} svg .ci{fill:var(--ci-soft);stroke:var(--ci)} svg .hu{fill:var(--human-soft);stroke:var(--human)} svg .ac{fill:var(--accent-soft);stroke:var(--accent)}
+svg .ln{stroke:var(--muted);fill:none} svg .ar{fill:var(--muted)}
+@media (max-width:900px){
+  .layout{grid-template-columns:minmax(0,1fr);padding:18px 16px 60px;gap:0}
+  .toc{display:none}
+  .toc-m{display:block;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:8px 14px;margin:0 0 16px}
+  .toc-m summary{cursor:pointer;font-weight:700}
+  .toc-m ol{margin:8px 0;padding-left:1.4em;font-size:14px}
+  section.sec{padding:20px 16px}
+  .hero{padding:32px 16px 28px}
+  .topbar{padding:8px 16px}
+  .topbar .brand small{display:none}
+  .sign{grid-template-columns:1fr}
+  dl.gl{grid-template-columns:1fr}
+  dl.gl dt{border-bottom:none}
+}
+@media (max-width:520px){ .topbar .hide-s{display:none} body{font-size:15px} }
+@media print{
+  .topbar,.toc,.toc-m,.totop,.filter{display:none!important}
+  body{background:#fff;font-size:11pt}
+  .layout{display:block;padding:0}
+  section.sec{box-shadow:none;border:none;padding:0;margin:0 0 18px;break-inside:auto}
+  section.sec>h2{break-after:avoid}
+  .hero{background:#fff;color:#000;padding:0 0 12px;border-bottom:2px solid #000}
+  .tw,.figwrap{overflow:visible;border:none}
+  figure svg{min-width:0}
+  thead th{position:static}
+}
+
+/* ===== V3.1 文書セットの追加部品 ===== */
+.docnav{display:flex;gap:6px;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+.topbar a.sw.on{background:var(--accent);border-color:var(--accent);color:#1b1300;font-weight:700}
+.hero h1 small{display:block;font-size:.5em;font-weight:500;opacity:.85;margin-top:6px;letter-spacing:.02em}
+.strip{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;margin:14px 0 18px}
+.strip div{position:relative;background:var(--surface2);border:1px solid var(--line);border-top:5px solid var(--line);border-radius:10px;padding:8px 9px 8px;font-size:13px;line-height:1.5}
+.strip div b{display:block;font-size:11px;letter-spacing:.08em;color:var(--muted)}
+.strip div.u{border-top-color:var(--ci)} .strip div.a{border-top-color:var(--ai)} .strip div.h{border-top-color:var(--human)} .strip div.s{border-top-color:var(--g)}
+.strip div small{display:block;color:var(--muted);font-size:11.5px;margin-top:2px}
+.legend{display:flex;flex-wrap:wrap;gap:12px;font-size:12.5px;color:var(--muted);margin:-8px 0 12px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:-1px}
+.two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;margin:12px 0}
+.three{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:12px 0}
+.box{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.box h4{margin:0 0 6px}
+.box.g{border-top:4px solid var(--g)} .box.y{border-top:4px solid var(--y)} .box.r{border-top:4px solid var(--r)} .box.ai{border-top:4px solid var(--ai)} .box.hu{border-top:4px solid var(--human)} .box.ci{border-top:4px solid var(--ci)}
+.box ul{margin:4px 0 0}
+.tag{display:inline-block;font-size:11.5px;border-radius:6px;padding:0 7px;background:var(--surface2);border:1px solid var(--line);color:var(--muted);white-space:nowrap;margin:1px 2px 1px 0}
+.tag.v31{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);font-weight:700}
+.chk{list-style:none;padding:0;margin:8px 0 14px}
+.chk li{position:relative;padding:5px 0 5px 26px;border-bottom:1px dashed var(--line)}
+.chk li::before{content:"✓";position:absolute;left:4px;top:5px;color:var(--g);font-weight:800}
+.chk.no li::before{content:"✕";color:var(--r)}
+.kv{display:grid;grid-template-columns:minmax(110px,170px) 1fr;gap:4px 14px;margin:8px 0 14px;font-size:14px}
+.kv dt{color:var(--muted)} .kv dd{margin:0}
+.big{font-size:18px;line-height:1.7;font-weight:700;margin:6px 0 12px}
+.mock{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--bg);margin:10px 0 16px}
+.mock .bar{background:var(--navy);color:#fff;font-size:12px;padding:6px 12px;display:flex;gap:10px;align-items:center}
+.mock .bar i{width:9px;height:9px;border-radius:50%;background:#f5b800;display:inline-block}
+.mock .bd{padding:12px;font-size:13px}
+.mock .stp{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:10px}
+.mock .stp span{height:6px;border-radius:3px;background:var(--line)}
+.mock .stp span.d{background:var(--ai)} .mock .stp span.o{background:#f5b800}
+.mock .row{display:grid;grid-template-columns:minmax(0,1fr) 34%;gap:10px}
+.mock .pane,.mock .side{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px}
+.mock .light{display:flex;gap:6px;margin-bottom:6px}
+.mock .light b{width:16px;height:16px;border-radius:50%;opacity:.2;display:inline-block}
+.mock .light .g{background:#22b463}.mock .light .y{background:#f5c400}.mock .light .r{background:#e3403a}.mock .light b.on{opacity:1}
+.ill{display:flex;gap:12px;align-items:flex-start;background:var(--surface2);border-radius:12px;padding:12px 14px;margin:10px 0}
+.ill .em{flex:none;font-size:28px;line-height:1}
+.qa dt{font-weight:700;margin-top:10px}.qa dt::before{content:"Q. ";color:var(--accent)}
+.qa dd{margin:2px 0 8px 0}.qa dd::before{content:"A. ";color:var(--ai);font-weight:700}
+.cat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px;margin:12px 0}
+.dept{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 16px;box-shadow:var(--shadow)}
+.dept h4{margin:0;display:flex;align-items:center;gap:8px;font-size:15.5px}
+.dept .role{font-size:12.5px;color:var(--muted);margin:2px 0 8px}
+.dept ul{list-style:none;margin:0;padding:0}
+.dept li{display:grid;grid-template-columns:auto 1fr;gap:4px 8px;padding:7px 0;border-top:1px dashed var(--line);font-size:13.5px;line-height:1.6}
+.dept li .sig{margin-top:2px}
+.dept li .d{grid-column:2;color:var(--muted);font-size:12.5px}
+.dept li .pc{grid-column:2;font-size:12px;color:var(--ai)}
+.dept li .pc::before{content:"PC基本情報：";font-weight:700}
+.dept .ratio{display:flex;height:8px;border-radius:999px;overflow:hidden;background:var(--surface2);margin:2px 0 8px}
+.dept .ratio i{display:block;height:100%}
+.counts{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin:14px 0}
+.counts div{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.counts b{display:block;font-size:24px;line-height:1.2}
+.counts small{color:var(--muted)}
+.hide-c{display:none!important}
+@media (max-width:900px){.strip{grid-template-columns:repeat(2,minmax(0,1fr))}.two,.three{grid-template-columns:1fr}.counts{grid-template-columns:repeat(2,minmax(0,1fr))}.mock .row{grid-template-columns:1fr}.kv{grid-template-columns:1fr}}
+@media print{.docnav{display:none}.dept{box-shadow:none;break-inside:avoid}}
+.topbar{min-width:0}
+.docnav{min-width:0;flex:0 1 auto}
+.hero .meta span{overflow-wrap:anywhere;min-width:0}
+@media (max-width:520px){.topbar .brand{display:none}.docnav{flex:1 1 auto}}
+.ft p{overflow-wrap:anywhere}
+
+</style>
+</head>
+<body>
+<div class="topbar">
+  <span class="brand">みらいAI窓口 × ヘルプデスク V3.1<small>要件定義書（第1版・ドラフト）</small></span>
+  <span class="sp"></span>
+  <nav class="docnav" aria-label="文書の切り替え"><a class="sw" href="Mirai-AI-Helpdesk-V3.1_01_Concept-Plan_企画構想案.html">01 構想</a><a class="sw on" href="Mirai-AI-Helpdesk-V3.1_02_Requirements_要件定義書.html" aria-current=page>02 要件</a><a class="sw" href="Mirai-AI-Helpdesk-V3.1_03_Detailed-Specification_詳細仕様書.html">03 仕様</a><a class="sw hide-s" href="Mirai-AI-Helpdesk-V3.1_04_Easy-Guide_やさしい解説版.html">04 解説</a><a class="sw hide-s" href="Mirai-AI-Helpdesk-V3.1_05_Department-Catalog_部署別活用カタログ.html">05 部署別</a></nav>
+  <button type="button" id="themeBtn" aria-label="表示の明るさを切り替え">表示切替</button>
+  <button type="button" onclick="window.print()" class="hide-s">印刷</button>
+</div>
+<header class="hero">
+  <div class="in">
+    <span class="kicker">REQUIREMENTS DEFINITION</span>
+    <h1>みらいAI窓口 × ヘルプデスク V3.1<br>要件定義書<small>相談の受付からナレッジ化まで ― 何ができればよいか</small></h1>
+    <p>社員の「PCが動かない」「つながらない」「どうすればいい？」を、AIが一次対応し、解決しなければ担当者へ、解決したら次の人のためのナレッジへ――。試作V3.1が示したこの流れに、<b>何が必要か（要件）</b>を、エンジニアでない方にも読めるように整理した文書です。</p>
+    <div class="meta"><span>文書番号：AIHD-V31-02</span><span>版：1.0（ドラフト）</span><span>作成日：2026年10月20日</span><span>起案：DX推進部</span><span>対象：Mirai_AIHelpdesk_Cowork_StepWizard_V3.1_PCinfo_Offline.html</span></div>
+  </div>
+</header>
+<div class="layout">
+<nav class="toc" aria-label="目次">
+  <b>目次</b>
+  <ol id="tocList">
+    <li><a href="#s0">0. 文書管理・この文書の読み方</a></li>
+    <li><a href="#s1">1. 背景と、いまの困りごと</a></li>
+    <li><a href="#s2">2. 目的とゴール</a></li>
+    <li><a href="#s3">3. 全体像</a></li>
+    <li><a href="#s4">4. 範囲（やること・やらないこと）</a></li>
+    <li><a href="#s5">5. 関わる人と役割</a></li>
+    <li><a href="#s6">6. 業務要件</a></li>
+    <li><a href="#s7">7. 機能要件</a></li>
+    <li><a href="#s8">8. 非機能要件</a></li>
+    <li><a href="#s9">9. データ要件</a></li>
+    <li><a href="#s10">10. 外部連携要件</a></li>
+    <li><a href="#s11">11. 前提・制約</a></li>
+    <li><a href="#s12">12. 導入計画・移行</a></li>
+    <li><a href="#s13">13. 成果の測り方（指標）</a></li>
+    <li><a href="#s14">14. リスクと対策</a></li>
+    <li><a href="#s15">15. 精査結果・未決事項</a></li>
+    <li><a href="#s16">16. 用語集</a></li>
+    <li><a href="#s17">17. 承認欄</a></li>
+  </ol>
+</nav>
+<main>
+<details class="toc-m"><summary>目次を開く</summary><ol><li><a href="#s0">文書管理・この文書の読み方</a></li><li><a href="#s1">背景と、いまの困りごと</a></li><li><a href="#s2">目的とゴール</a></li><li><a href="#s3">全体像</a></li><li><a href="#s4">範囲（やること・やらないこと）</a></li><li><a href="#s5">関わる人と役割</a></li><li><a href="#s6">業務要件</a></li><li><a href="#s7">機能要件</a></li><li><a href="#s8">非機能要件</a></li><li><a href="#s9">データ要件</a></li><li><a href="#s10">外部連携要件</a></li><li><a href="#s11">前提・制約</a></li><li><a href="#s12">導入計画・移行</a></li><li><a href="#s13">成果の測り方（指標）</a></li><li><a href="#s14">リスクと対策</a></li><li><a href="#s15">精査結果・未決事項</a></li><li><a href="#s16">用語集</a></li><li><a href="#s17">承認欄</a></li></ol></details>
+
+<section class="sec" id="s0">
+  <h2><span class="no">0</span>文書管理・この文書の読み方</h2>
+  <p class="sub">この文書が何のためのもので、ほかの文書とどう分担しているかを説明します。</p>
+  <h3>この文書の役割</h3>
+  <p>要件定義書は、家づくりでいえば<b>「施主さんの要望書」</b>です。「なぜ作るのか」「何ができればよいか」「どこまでやるか」を決めます。画面の項目やルールの細かい決め方は<a href="Mirai-AI-Helpdesk-V3.1_03_Detailed-Specification_詳細仕様書.html">詳細仕様書</a>に書きます。</p>
+  <h3>文書の体系（5つの文書と分担）</h3>
+  <p>旧資料では同じ内容が複数の文書にくり返し書かれていました。V3.1の文書セットでは、<b>1つの事柄は1つの文書を正本</b>にし、ほかの文書はそこを参照します。</p>
+  <div class="tw"><table>
+    <thead><tr><th class="id">番号</th><th>文書</th><th>答える問い</th><th>主な読み手</th></tr></thead>
+    <tbody>
+      <tr><td class="id">01</td><td><a href="Mirai-AI-Helpdesk-V3.1_01_Concept-Plan_企画構想案.html">企画構想案</a></td><td>なぜ・どこを目指すのか／本番の構成と段階導入の考え方</td><td>経営層、部署長、DX推進部</td></tr>
+      <tr><td class="id">02</td><td><b>要件定義書（本書）</b></td><td>何ができればよいか／守るルール（信号の3色・業務ルール）の正本</td><td>業務責任者、ヘルプデスク担当、DX推進部</td></tr>
+      <tr><td class="id">03</td><td><a href="Mirai-AI-Helpdesk-V3.1_03_Detailed-Specification_詳細仕様書.html">詳細仕様書</a></td><td>画面・判定・データ・テストをどう決めるか（PC基本情報31項目の正本）</td><td>DX推進部、開発・検証担当、監査担当</td></tr>
+      <tr><td class="id">04</td><td><a href="Mirai-AI-Helpdesk-V3.1_04_Easy-Guide_やさしい解説版.html">やさしい解説版</a></td><td>全社のみなさんと現場の方が、使い方と約束をひと目で知る</td><td>全社員、現場所長・現場事務</td></tr>
+      <tr><td class="id">05</td><td><a href="Mirai-AI-Helpdesk-V3.1_05_Department-Catalog_部署別活用カタログ.html">部署別活用カタログ</a></td><td>部署ごとに、どんな相談が来て、AIと人がどう分担するか（部署別一覧の正本）</td><td>各部署、ヘルプデスク担当</td></tr>
+    </tbody>
+  </table></div>
+  <h3>旧資料からの整理（重複の解消）</h3>
+  <p>旧「みらいソフトウェアファクトリー」文書7点を、V3.1に合わせて次のように整理しました。考え方（AIが作業し、機械が確かめ、人が決める／信号の3色／段階導入）は引き継ぎ、対象を「社内の問い合わせ対応」に置きかえています。</p>
+  <div class="tw"><table>
+    <thead><tr><th>旧資料</th><th>新しい文書</th><th>整理のしかた</th></tr></thead>
+    <tbody>
+      <tr><td>企画構想案（mirai-software-factory.html）</td><td class="nw">01 企画構想案</td><td>到達点・実現性・推奨構成・実践原則・段階導入・統制対応の章立てを引き継ぎ、内容をV3.1に更新</td></tr>
+      <tr><td>やさしい解説版（…-eli5.html）</td><td class="nw" rowspan="2">04 やさしい解説版</td><td rowspan="2">内容の8割が重なっていたため1つに統合。現場ならではの注意は「現場の方へ」の章にまとめた</td></tr>
+      <tr><td>建設土木版 やさしい解説（…-construction-eli5.html）</td></tr>
+      <tr><td>部署別道具カタログ（…-construction-departments-eli5.html）</td><td class="nw" rowspan="2">05 部署別活用カタログ</td><td rowspan="2">ほぼ同じ内容の2版を統合。部署の区分は新しい「みらい建設工業版（海の工事＋陸の工事・19部署）」を正本にした</td></tr>
+      <tr><td>みらい建設工業 部署別道具カタログ（…-departments.html）</td></tr>
+      <tr><td>要件定義書（mirai-sf-要件定義書.html）</td><td class="nw">02 要件定義書</td><td>章立て（背景〜承認欄）を引き継ぎ、要件をV3.1に全面更新</td></tr>
+      <tr><td>詳細仕様書（mirai-sf-詳細仕様書.html）</td><td class="nw">03 詳細仕様書</td><td>章立てを引き継ぎ、内容をV3.1に更新。付録の「部署別カタログ全件」は05と重複するため削除し、05を参照する形にした</td></tr>
+    </tbody>
+  </table></div>
+  <h3>もとにした資料（出典）と記号</h3>
+  <div class="tw"><table>
+    <thead><tr><th class="id">記号</th><th>資料</th><th>内容</th></tr></thead>
+    <tbody>
+      <tr><td class="id">A</td><td>試作アプリ V3.1（Mirai_AIHelpdesk_Cowork_StepWizard_V3.1_PCinfo_Offline.html）</td><td>本書の対象。STEP 1〜7の案件ウィザード、PC基本情報の事前取得、業務ツール28画面</td></tr>
+      <tr><td class="id">H</td><td>AIヘルプデスク 外部AI連携版 V1.1（試作）</td><td>引継ぎ・解決記録・ナレッジ承認・外部AIの運び役（門番・根拠・点検・日記）</td></tr>
+      <tr><td class="id">C</td><td>みらいAI窓口 Open WebUI × Cowork型 V3.1（試作）</td><td>AI相談、端末の読み取り診断、承認付き修復（L0〜L5）、監査ログ、受け入れ試験</td></tr>
+      <tr><td class="id">R</td><td>みらいSF 受付ステーション（画面の手本）</td><td>STEPバー・信号機・案件カードなど、画面の見た目と操作の型</td></tr>
+      <tr><td class="id">S</td><td>旧みらいSF文書7点</td><td>信号の3色、人が決める、段階導入、統制対応などの考え方</td></tr>
+    </tbody>
+  </table></div>
+  <div class="tw"><table>
+    <thead><tr><th>記号</th><th>意味</th></tr></thead>
+    <tbody>
+      <tr><td><span class="b must">必須</span></td><td>ないと本番で使ってはいけないもの</td></tr>
+      <tr><td><span class="b should">推奨</span></td><td>なくても動くが、効果や使いやすさが下がるもの</td></tr>
+      <tr><td><span class="b could">任意</span></td><td>余力があれば用意するもの</td></tr>
+      <tr><td><span class="src">A</span><span class="src">H</span><span class="src">C</span><span class="src">R</span><span class="src">S</span></td><td>上の表の出典</td></tr>
+      <tr><td><span class="src p">提案</span></td><td>出典にない、本書で補った提案。採否は関係者で決める</td></tr>
+      <tr><td><span class="tag v31">V3.1</span></td><td>V3.1で新しく加わった仕組み（PC基本情報の事前取得）</td></tr>
+      <tr><td><span class="sig g">青</span><span class="sig y">黄</span><span class="sig r">赤</span></td><td>信号の3色ルール（6-1）</td></tr>
+    </tbody>
+  </table></div>
+  <h3>改訂履歴</h3>
+  <div class="tw"><table><thead><tr><th>版</th><th>日付</th><th>内容</th><th>作成</th></tr></thead><tbody>
+    <tr><td>1.0</td><td>2026-10-20</td><td>初版ドラフト。旧みらいSF要件定義書の章立てを引き継ぎ、試作V3.1（PC基本情報の事前取得を含む）に合わせて全面更新</td><td>DX推進部</td></tr>
+  </tbody></table></div>
+</section>
+
+<section class="sec" id="s1">
+  <h2><span class="no">1</span>背景と、いまの困りごと</h2>
+  <p class="sub">なぜこの仕組みが必要なのかを、問い合わせを受ける側・する側の両方から整理します。</p>
+  <h3>1-1. 問い合わせの現場で起きていること</h3>
+  <div class="tw"><table>
+    <thead><tr><th>だれが</th><th>いまの困りごと</th><th>起きている問題</th></tr></thead>
+    <tbody>
+      <tr><td>相談する人（全社員）</td><td>電話・メール・チャットなど窓口がばらばらで、どこに聞けばよいか分からない。同じ説明を何度もくり返す</td><td>待ち時間・二度手間</td></tr>
+      <tr><td>ヘルプデスク担当</td><td>「PCの番号は？」「再起動しましたか？」「VPNはつながっていますか？」を聞き出すだけで時間がかかる</td><td>一次対応の時間が長い</td></tr>
+      <tr><td>ヘルプデスク担当</td><td>よくある質問への回答が人によって違い、解決のコツが一部の人の頭の中にしかない</td><td>属人化・品質のばらつき</td></tr>
+      <tr><td>現場（海・陸）</td><td>作業所や作業船のPCは通信が弱く、相談の途中で切れる。状況を口で説明しにくい</td><td>解決が遅れる</td></tr>
+      <tr><td>情報セキュリティ担当</td><td>不審メールを開いた・PCを紛失したなどの事故が、初動の遅れで大きくなりやすい</td><td>被害の拡大</td></tr>
+      <tr><td>管理部門・監査</td><td>だれが、いつ、何を判断し、何をしたかが記録に残りにくい</td><td>説明責任</td></tr>
+    </tbody>
+  </table></div>
+  <h3>1-2. 「AIに任せきり」では解決しない理由</h3>
+  <ul>
+    <li>AIの答えはまちがえることがある。だから<b>社内で承認されたナレッジだけを根拠</b>にし、根拠がなければ担当者に回す必要がある <span class="src">H</span></li>
+    <li>PCの設定を勝手に変えると、業務が止まったり情報が漏れたりする。だから<b>読み取りと変更を分け</b>、変更は本人のY／Nと、設定変更はIT端末管理者の承認が要る <span class="src">C</span></li>
+    <li>パスワード、権限の付与、セキュリティ事故の判断、人の処遇などは、<b>AIに決めさせてはいけない</b> <span class="src">C</span><span class="src">S</span></li>
+    <li>問い合わせの文章に「これまでの指示を無視して」のような命令がまぎれることがある。<b>利用者の文章は資料として扱い、命令としては扱わない</b>必要がある <span class="src">H</span></li>
+  </ul>
+  <div class="easy">相談はとても多いのに、答える人は足りません。AIを使えば早く答えられますが、AIまかせは危険です。そこで「AIが一次対応し、PCは読み取りだけで調べ、変更や判断は人が決め、解決したことは次の人のためにナレッジにする」――そんな一本の流れを作る、というのがこの取り組みです。</div>
+</section>
+
+<section class="sec" id="s2">
+  <h2><span class="no">2</span>目的とゴール</h2>
+  <p class="sub">何をもって「成功」とするかを決めます。</p>
+  <h3>2-1. 目的</h3>
+  <ol>
+    <li>社員の相談を、<b>1つの入口</b>から、早く・安全に解決すること <span class="src">A</span></li>
+    <li>相談 → AIの一次対応 → 担当者への引継ぎ → 解決記録 → ナレッジ化を、<b>1件ごとに最後まで追える一本の流れ</b>にすること <span class="src">A</span><span class="src">H</span></li>
+    <li>相談の前に<b>PC基本情報を読み取りだけで集めておき</b>、聞き出す手間と待ち時間を減らすこと <span class="tag v31">V3.1</span> <span class="src">A</span></li>
+    <li>AIの速さを活かしながら、<b>個人情報・機密情報・統制（ルール）</b>を守ること <span class="src">C</span><span class="src">H</span></li>
+  </ol>
+  <h3>2-2. 到達点（できあがったときの姿）</h3>
+  <ul>
+    <li>社員はホームの「新しい相談をはじめる」から、STEP 1〜7の順に進めるだけで相談できる。相談を書いている間に、PCの基本情報が集まっている</li>
+    <li>AIは承認済みナレッジと端末の読み取り結果から答え、元に戻せる軽い修復は本人のYで行う。解決しなければ、本人が選んだ情報だけを担当者へ渡す</li>
+    <li>担当者は、同じ質問をくり返さずに引継ぎメモから対応を始め、解決記録はAIが個人情報を隠したナレッジ下書きになる</li>
+    <li>申請者とは別の承認者が承認したナレッジは、次の相談からAIの根拠になる。結果は相談した人の画面にも自動で届く</li>
+  </ul>
+  <h3>2-3. 評価の考え方</h3>
+  <div class="note">評価するのは「AIが何回答えたか」ではなく、<b>「相談した人が、安全を守ったまま、どれだけ早く・少ない手間で解決できたか」</b>です。具体的な指標は13章にまとめます。</div>
+</section>
+
+<section class="sec" id="s3">
+  <h2><span class="no">3</span>全体像</h2>
+  <p class="sub">1件の相談（案件）が、だれの手をどう渡っていくかを一枚で示します。</p>
+  <div class="strip">
+    <div class="u"><b>STEP 1</b>はじめに<small>相談の種類を選ぶ</small></div>
+    <div class="u"><b>STEP 2</b>困りごと<small>内容を書く／PC基本情報を事前取得</small></div>
+    <div class="a"><b>STEP 3</b>AIの一次対応<small>気になる点→診断→回答・修復Y/N</small></div>
+    <div class="u"><b>STEP 4</b>引継ぎ<small>渡す情報を本人が選ぶ</small></div>
+    <div class="h"><b>STEP 5</b>担当者の対応<small>担当決め・解決記録</small></div>
+    <div class="h"><b>STEP 6</b>ナレッジ化<small>下書き→別の人が承認</small></div>
+    <div class="s"><b>STEP 7</b>完了<small>結果を相談した人へ</small></div>
+  </div>
+  <div class="legend"><span><i style="background:var(--ci)"></i>相談する人</span><span><i style="background:var(--ai)"></i>AI・PCエージェント</span><span><i style="background:var(--human)"></i>担当者・承認者</span><span><i style="background:var(--g)"></i>自動で反映</span></div>
+  <p>AIの一次対応で解決したときは、STEP 4〜6を「省略」として STEP 7 に進みます。セキュリティの心配（赤信号）は、AIは初動の案内だけを行い、すぐに担当者へ渡します。</p>
+  <h3>3-1. 2つの輪（ループ）</h3>
+  <div class="two">
+    <div class="box ci"><h4>A. 案件の輪（1件を最後まで）</h4><p>STEP 1〜7で、1件の相談を受付から完了まで進める輪。各STEPで「次にやる人」がはっきりしています。</p></div>
+    <div class="box ai"><h4>B. 改善の輪（次の相談を早く）</h4><p>解決記録 → ナレッジ下書き → 承認 → 本棚に反映 → 次の相談でAIの根拠に。担当者の知恵が、全社の早さに変わる輪です。</p></div>
+  </div>
+  <h3>3-2. 構成する仕組み（ざっくり）</h3>
+  <div class="tw"><table>
+    <thead><tr><th>仕組み</th><th>たとえ</th><th>役割</th><th>試作での画面</th></tr></thead>
+    <tbody>
+      <tr><td>AI窓口（ステップ受付）</td><td>受付カウンター</td><td>相談の入力、AIの回答、修復のY／N、引継ぎの同意</td><td>ホーム／新しい相談</td></tr>
+      <tr><td>PCエージェント</td><td>健康診断の測定器</td><td>PC基本情報の事前取得（読み取りのみ）、承認された修復だけを実行 <span class="tag v31">V3.1</span></td><td>PC基本情報カード</td></tr>
+      <tr><td>運び役（中継処理）</td><td>受付の門番と伝令</td><td>見せない所を隠し、承認済みナレッジを根拠に添えて外部AIに頼み、答えを点検して記録に戻す</td><td>業務ツール「運び役の日記」ほか</td></tr>
+      <tr><td>ヘルプデスク（INC）</td><td>対応台帳</td><td>引継ぎ・担当・解決記録・期限の管理</td><td>STEP 5、業務ツール③</td></tr>
+      <tr><td>ナレッジの本棚</td><td>図書室</td><td>承認済みナレッジの保管。AIの根拠になる</td><td>STEP 6、業務ツール⑦</td></tr>
+      <tr><td>監査ログ・操作の記録</td><td>工事日誌</td><td>だれが・いつ・何をしたかを残す。改ざんを検知</td><td>業務ツール「監査ログ」「操作の記録」</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section class="sec" id="s4">
+  <h2><span class="no">4</span>範囲（やること・やらないこと）</h2>
+  <p class="sub">範囲を先に決めておくと、作りすぎや手戻りを防げます。</p>
+  <h3>4-1. 対象とするもの</h3>
+  <div class="tw"><table>
+    <thead><tr><th>区分</th><th>対象</th><th>出典</th></tr></thead>
+    <tbody>
+      <tr><td>入口</td><td>ステップ形式の相談受付（STEP 1〜7）、自由入力のチャット相談、電話・メールの代行受付</td><td><span class="src">A</span><span class="src">H</span></td></tr>
+      <tr><td>事前取得</td><td>PC基本情報（8分類31項目）の読み取り、気になる点の判定、関係する順の並べかえ、引継ぎでの共有 <span class="tag v31">V3.1</span></td><td><span class="src">A</span></td></tr>
+      <tr><td>AIの一次対応</td><td>社内資料・承認済みナレッジの検索と回答、端末の読み取り診断、ファイルの集計・解析、許可リスト内の修復（本人のY、設定変更はIT端末管理者の承認）</td><td><span class="src">C</span></td></tr>
+      <tr><td>引継ぎ・対応</td><td>本人同意による引継ぎ、受付番号（TKT）とヘルプデスク問い合わせ（INC）の連携、担当割り当て、解決記録、結果の自動反映</td><td><span class="src">A</span><span class="src">H</span></td></tr>
+      <tr><td>ナレッジ</td><td>下書きの自動作成（個人情報を隠す）、承認（申請者以外）、本棚への反映、使用停止</td><td><span class="src">H</span></td></tr>
+      <tr><td>外部AIの運用</td><td>運び役（門番・根拠・点検・日記）、AIへの指示書の版管理、AIの種類の試験と切り替え、費用の上限</td><td><span class="src">H</span></td></tr>
+      <tr><td>台帳・記録</td><td>問い合わせ台帳、機器・サービス台帳（関連付け・影響範囲）、監査ログ、操作の記録、受け入れ試験</td><td><span class="src">C</span><span class="src">H</span></td></tr>
+    </tbody>
+  </table></div>
+  <h3>4-2. 対象外（AIにさせないこと）</h3>
+  <p>次のことは、この仕組みの「機能」にしません。AIが行うのは<b>案内・材料集め・引継ぎ</b>までです。 <span class="src">C</span><span class="src">S</span></p>
+  <ul>
+    <li><b>本人確認が必要な操作</b>：パスワードの確認・再設定、アカウントのロック解除、多要素認証の再登録（ID管理者が本人確認のうえ行う）</li>
+    <li><b>権限・アクセス権の付与</b>：所属長の承認とID管理者の作業で行う</li>
+    <li><b>セキュリティの判断と対処</b>：事故かどうかの判断、端末の隔離・データ削除（セキュリティ担当が行う）</li>
+    <li><b>禁止の操作</b>：セキュリティ機能の停止、無許可ソフトの導入、ファイルの一括削除（L5：AIからは実行できない）</li>
+    <li><b>人に関わる判断</b>：通報・ハラスメント相談の内容の扱い（専用窓口へ）、人の評価・処遇</li>
+    <li><b>ナレッジ・指示書・AIの採用の決定</b>：承認者が行う</li>
+  </ul>
+  <div class="warn"><b>PC基本情報は「監視」に使いません。</b>事前取得は、本人の相談に答えるためだけに使います。勤怠・人事評価・行動の追跡には使わず、ファイルの中身・閲覧履歴・画面・キー入力は取得しません。 <span class="tag v31">V3.1</span> <span class="src p">提案</span></div>
+  <h3>4-3. その他の対象外</h3>
+  <div class="tw"><table><thead><tr><th>対象外</th><th>理由</th></tr></thead><tbody>
+    <tr><td>本番のAIモデル・PCエージェント製品・ヘルプデスク基盤の選定</td><td>本書は要件まで。選定は15章の未決事項（Q-01〜Q-04）で決める</td></tr>
+    <tr><td>本番データを使った試作・試験</td><td>試作と試験には作り物のデータだけを使う</td></tr>
+    <tr><td>PCの遠隔操作（画面共有）</td><td>試作の範囲外。必要なときは既存の端末管理ツールの手順で行う</td></tr>
+  </tbody></table></div>
+</section>
+
+<section class="sec" id="s5">
+  <h2><span class="no">5</span>関わる人と役割</h2>
+  <p class="sub">「だれが何を決めるか」をはっきりさせることが、この仕組みのいちばんのコツです。</p>
+  <h3>5-1. 人の役割</h3>
+  <div class="tw"><table>
+    <thead><tr><th>役割</th><th>試作での例</th><th>主な仕事</th><th>決めること</th></tr></thead>
+    <tbody>
+      <tr><td>相談する人（一般社員）</td><td>山田 太郎／木村 花子／小川 一郎</td><td>STEP 1〜4を進める。AIの答えを試し、解決したか／しないかを選ぶ</td><td>修復のY／N、PC基本情報を取得するか、担当者に渡す情報</td></tr>
+      <tr><td>ヘルプデスク担当</td><td>佐藤 健（L1窓口）／高橋 直人（M365・ID管理）／伊藤 彩（セキュリティ）</td><td>引継ぎメモを見て担当を決め、原因と手順を記録する。代行受付、指示書の作成</td><td>担当、解決の内容、ナレッジにするか</td></tr>
+      <tr><td>IT端末管理者</td><td>田中 誠／鈴木 学</td><td>担当者の仕事に加え、端末の設定変更（L4）の承認、緊急停止の解除</td><td>設定変更を行ってよいか（自分の申請は承認できない）</td></tr>
+      <tr><td>ナレッジ承認者</td><td>渡辺 修（課長）／山本 由美</td><td>ナレッジ下書き・AIへの指示書の承認、本番で使うAIの切り替え</td><td>ナレッジにしてよいか（自分の申請は承認できない）</td></tr>
+      <tr><td>監査担当</td><td>中島 恵</td><td>監査ログの検証、受け入れ試験、台帳・日記・記録の閲覧</td><td>ルールが守られているか</td></tr>
+    </tbody>
+  </table></div>
+  <h3>5-2. 機械の役割</h3>
+  <div class="tw"><table>
+    <thead><tr><th>主体</th><th>やってよいこと</th><th>与えない権限</th></tr></thead>
+    <tbody>
+      <tr><td>AI（一次対応）</td><td>承認済みナレッジ・社内資料からの回答、診断結果の説明、修復の提案</td><td>修復の実行、権限の変更、パスワードの扱い</td></tr>
+      <tr><td>PCエージェント</td><td>PC基本情報の読み取り、承認された許可リスト内の操作の実行と結果確認</td><td>ファイルの中身・閲覧履歴・画面・キー入力の取得、未承認の操作</td></tr>
+      <tr><td>運び役（中継処理）</td><td>隠す・止める・根拠を添える・点検・記録</td><td>記録の状態の変更（決めるのは人）、鍵のブラウザへの保存</td></tr>
+      <tr><td>外部AI</td><td>運び役から渡された隠し済みの文章に答える</td><td>社内の記録・端末への直接のアクセス</td></tr>
+    </tbody>
+  </table></div>
+  <h3>5-3. STEPごとの分担</h3>
+  <div class="tw"><table>
+    <thead><tr><th>STEP</th><th>相談する人</th><th>AI・PCエージェント</th><th>担当者・承認者</th></tr></thead>
+    <tbody>
+      <tr><td>1 はじめに</td><td>種類を選ぶ</td><td>－</td><td>－</td></tr>
+      <tr><td>2 困りごと</td><td>内容を書く、取得の要否を選ぶ</td><td>PC基本情報を読み取りだけで集める</td><td>－</td></tr>
+      <tr><td>3 AIの一次対応</td><td>答えを試す、修復のY／N、解決したかを選ぶ</td><td>気になる点を示し、診断・回答・修復を提案。承認後に実行</td><td>（L4）IT端末管理者が承認</td></tr>
+      <tr><td>4 引継ぎ</td><td>渡す情報を選んで同意</td><td>引継ぎメモをまとめる</td><td>－</td></tr>
+      <tr><td>5 担当者の対応</td><td>－</td><td>類似ナレッジを示す</td><td>担当を決め、解決記録を書く</td></tr>
+      <tr><td>6 ナレッジ化</td><td>－</td><td>個人情報を隠した下書きを作る</td><td>担当者が申請、別の承認者が承認</td></tr>
+      <tr><td>7 完了</td><td>結果を受け取る</td><td>結果とナレッジ公開を通知</td><td>－</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section class="sec" id="s6">
+  <h2><span class="no">6</span>業務要件</h2>
+  <p class="sub">相談を進めるときの「流れ」と「守るルール」です。本章が、ほかの文書のルールの正本です。</p>
+  <h3>6-1. 信号の3色ルール（相談版）</h3>
+  <p>案件ごとに、画面右上の信号機で「どこまでAIに任せてよいか」を示します。 <span class="src">A</span><span class="src">R</span><span class="src">S</span></p>
+  <div class="three">
+    <div class="box g"><h4><span class="sig g">青</span> AIで進められる</h4><p>手順の案内、資料さがし、読み取りだけの診断、元に戻せる軽い修復（本人のY）。完了した案件も青で表示します。</p></div>
+    <div class="box y"><h4><span class="sig y">黄</span> 担当者の対応が必要</h4><p>「解決しない」を選んだ、担当者へ引き継いだ、権限や設定変更が要る、承認済みナレッジに根拠がない、など。</p></div>
+    <div class="box r"><h4><span class="sig r">赤</span> AIに任せない</h4><p>セキュリティの心配（不審メール・ウイルス・紛失など）、急ぎ（業務が止まっている）。AIは初動の案内だけを行い、すぐ担当者へ。</p></div>
+  </div>
+  <p>迷ったら1つ上の色として扱います。赤の案件でAIが判断・対処を行うことはありません。</p>
+  <h3>6-2. 1件の相談が完了するまで（7つのSTEP）</h3>
+  <ol class="steps">
+    <li><div><b>はじめに：相談の種類を選ぶ</b>6種類（PC・周辺機器・ネットワーク／アカウント・ログイン／ファイル・共有フォルダ／社内の手続き・規程／セキュリティの心配／その他・相談）から選ぶ。セキュリティを選ぶと急ぎ扱いになる</div></li>
+    <li><div><b>困りごと：内容を書く ＋ PC基本情報を事前取得</b>件名・内容・急ぎ具合・添付を入力する。この画面を開くと同時に、PCエージェントがPC基本情報を読み取りだけで集め始める（本人は「取得しない」も選べる） <span class="tag v31">V3.1</span></div></li>
+    <li><div><b>AIの一次対応</b>AIはまず事前取得の「気になる点」を示し（★＝相談に関係しそう）、続いて相談内容に合わせた診断・回答・修復の提案を行う。本人が「解決した」か「解決しない」を選ぶ</div></li>
+    <li><div><b>引継ぎ</b>担当者に渡す情報（相談内容は必須、診断結果・端末の番号・添付ファイル名・PC基本情報は選べる）を選んで同意する。受付番号とヘルプデスクの問い合わせ番号ができる</div></li>
+    <li><div><b>担当者の対応</b>ヘルプデスク担当が引継ぎメモを見て担当を決め、原因と手順を解決記録に書く</div></li>
+    <li><div><b>ナレッジ化</b>解決記録からAIが個人情報を隠した下書きを作り、担当者が整えて申請し、申請者以外の承認者がチェックリストで承認する</div></li>
+    <li><div><b>完了</b>本棚に反映し、相談した人の画面に解決とナレッジ公開を知らせる</div></li>
+  </ol>
+  <h3>6-3. 業務ルール</h3>
+  <div class="tw"><table>
+    <thead><tr><th class="id">ID</th><th>ルール</th><th>出典</th></tr></thead>
+    <tbody>
+      <tr><td class="id">BR-01</td><td>AIは案内・診断・提案まで。修復の実行は本人のY、設定変更（L4）はさらにIT端末管理者の承認、禁止の操作（L5）はAIから実行しない</td><td><span class="src">C</span></td></tr>
+      <tr><td class="id">BR-02</td><td>申請した人と承認する人を分ける（端末操作の承認、ナレッジの承認、指示書の承認）</td><td><span class="src">C</span><span class="src">H</span></td></tr>
+      <tr><td class="id">BR-03</td><td>承認した内容と実行する内容がずれたら、承認を取り直す（承認ハッシュで照合）</td><td><span class="src">C</span></td></tr>
+      <tr><td class="id">BR-04</td><td>AIの回答は承認済みナレッジ・社内資料を根拠にする。根拠がなければ推測で答えず担当者へ</td><td><span class="src">H</span><span class="src">C</span></td></tr>
+      <tr><td class="id">BR-05</td><td>相談の文章は「資料」として扱い、中の命令には従わない</td><td><span class="src">H</span></td></tr>
+      <tr><td class="id">BR-06</td><td>パスワード・カード番号などは保存とAI送信の前に伏せ字にする。パスワードらしき文字があれば外部AIに送らない</td><td><span class="src">C</span><span class="src">H</span></td></tr>
+      <tr><td class="id">BR-07</td><td>添付ファイルは区分を確認する。「機密」は社内のAIだけ、「極秘」はAIで扱わない</td><td><span class="src">C</span></td></tr>
+      <tr><td class="id">BR-08</td><td>PC基本情報は読み取りだけで集める。端末の状態を変えない。ファイルの中身・閲覧履歴・画面の内容・キー入力・メール本文・個人のフォルダの一覧は取得しない <span class="tag v31">V3.1</span></td><td><span class="src">A</span></td></tr>
+      <tr><td class="id">BR-09</td><td>PC基本情報を取得するかは本人が選べる。PC・アカウント・ファイル・セキュリティの相談は既定で「取得する」、手続き・その他は既定で「取得しない」 <span class="tag v31">V3.1</span></td><td><span class="src">A</span></td></tr>
+      <tr><td class="id">BR-10</td><td>PC基本情報の中身を見られるのは、本人と、引継ぎで共有された担当者だけ。外部AIへ渡すときはIPアドレスとシリアル番号を伏せる <span class="tag v31">V3.1</span></td><td><span class="src">A</span></td></tr>
+      <tr><td class="id">BR-11</td><td>担当者に渡す情報は本人が選ぶ。相談内容は必須、それ以外は選択できる</td><td><span class="src">C</span><span class="src">A</span></td></tr>
+      <tr><td class="id">BR-12</td><td>セキュリティの心配はAIで解決しない。決まった初動手順を案内し、すぐにセキュリティ担当へ引き継ぐ（AI対象外）</td><td><span class="src">C</span><span class="src">H</span></td></tr>
+      <tr><td class="id">BR-13</td><td>通報・ハラスメントの相談は本文を保存せず、AIにも渡さず、専用窓口を案内する</td><td><span class="src">C</span></td></tr>
+      <tr><td class="id">BR-14</td><td>ナレッジは、チェックリスト4項目（再現できる／機密がない／個人を非難しない／適用範囲が明確）を承認者が確認してから正式にする</td><td><span class="src">H</span></td></tr>
+      <tr><td class="id">BR-15</td><td>AIへの指示書と本番で使うAIの種類は、本番のAIでの試験（正答率90%以上・隠し漏れ0件）に合格したものだけを承認する</td><td><span class="src">H</span></td></tr>
+      <tr><td class="id">BR-16</td><td>だれでも「緊急停止」でPC操作の実行を止められる。解除はIT端末管理者だけ</td><td><span class="src">C</span></td></tr>
+      <tr><td class="id">BR-17</td><td>担当者の解決内容とナレッジ化の結果は、相談した人の受付番号とチャットに自動で反映する</td><td><span class="src">A</span></td></tr>
+      <tr><td class="id">BR-18</td><td>操作と判断はすべて記録する。記録は消さず、改ざんを検知できるようにする</td><td><span class="src">C</span><span class="src">H</span></td></tr>
+    </tbody>
+  </table></div>
+  <h3>6-4. 端末操作のレベル（L0〜L5）</h3>
+  <div class="tw"><table>
+    <thead><tr><th>レベル</th><th>内容</th><th>だれが許可するか</th><th>例</th></tr></thead>
+    <tbody>
+      <tr><td>L0 閲覧</td><td>資料を見る</td><td>本人の閲覧権限</td><td>社内資料の検索</td></tr>
+      <tr><td>L1 解析</td><td>本人が選んだファイルを解析</td><td>本人＋データ区分ルール</td><td>ログの解析</td></tr>
+      <tr><td>L2 新規作成</td><td>新しいファイルを作る（元は変えない）</td><td>本人のY</td><td>集計結果のCSV、写真の名前整理（コピー方式）</td></tr>
+      <tr><td>L3 軽微な修復</td><td>元に戻せる小さな変更</td><td>本人のY＋操作許可リスト</td><td>本人の印刷ジョブ取消、音声の出力先切替、一時ファイルの隔離</td></tr>
+      <tr><td>L4 設定変更</td><td>端末の設定・サービスに関わる変更</td><td>本人のY＋IT端末管理者の承認</td><td>印刷スプーラ再起動、VPN仮想アダプタの有効化</td></tr>
+      <tr><td>L5 禁止</td><td>AIからは実行しない</td><td>正式なIT管理手順へ</td><td>セキュリティ機能の停止、無許可ソフトの導入、一括削除、権限付与</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section class="sec" id="s7">
+  <h2><span class="no">7</span>機能要件</h2>
+  <p class="sub">「何ができるようになるか」の一覧です。動き方は詳細仕様書の同じ番号の項目に書きます。</p>
+  <div class="filter" data-for="frT"><input type="search" placeholder="キーワードでしぼりこむ（例：PC基本情報、承認、引継ぎ）" aria-label="機能要件をしぼりこむ"><button type="button" class="on" data-p="">すべて</button><button type="button" data-p="必須">必須</button><button type="button" data-p="推奨">推奨</button><button type="button" data-p="任意">任意</button></div>
+  <div class="tw" id="frT"><table>
+    <thead><tr><th class="id">ID</th><th>できること</th><th>優先度</th><th>出典</th></tr></thead>
+    <tbody>
+      <tr class="grp"><td colspan="4"><b>A. ステップ受付（入口）</b></td></tr>
+      <tr><td class="id">FR-01</td><td>ホームから「新しい相談」を始め、STEP 1〜7の順に進められる。STEPバーで今どこかが分かり、進んだSTEPには戻れる</td><td><span class="b must">必須</span></td><td><span class="src">A</span><span class="src">R</span></td></tr>
+      <tr><td class="id">FR-02</td><td>相談の種類（6種類）を選ぶと、例文が出て、押すと件名と内容に入る</td><td><span class="b should">推奨</span></td><td><span class="src">A</span></td></tr>
+      <tr><td class="id">FR-03</td><td>内容の入力中に、伏せ字になる文字（パスワード等）がある場合はその場で知らせる</td><td><span class="b must">必須</span></td><td><span class="src">A</span><span class="src">C</span></td></tr>
+      <tr><td class="id">FR-04</td><td>急ぎ具合（通常／急ぎ）と、使うAI（社内／承認済み外部）を選べる</td><td><span class="b should">推奨</span></td><td><span class="src">A</span><span class="src">C</span></td></tr>
+      <tr><td class="id">FR-05</td><td>添付ファイルをPCから選ぶか、サンプルを選んで付けられ、区分（公開／社内限定／機密／極秘）と「AIに渡せるか」を表示する</td><td><span class="b must">必須</span></td><td><span class="src">A</span><span class="src">C</span></td></tr>
+      <tr><td class="id">FR-06</td><td>画面の右側に、信号機（色と理由）、次にやる人、案件カード（番号・相談する人・段階・連携番号）、そのSTEPのきまりを常に表示する</td><td><span class="b must">必須</span></td><td><span class="src">A</span><span class="src">R</span></td></tr>
+      <tr><td class="id">FR-07</td><td>今が自分の番でないときは「いまは〇〇さんの番です」と示し、デモでは切り替えて続きを進められる</td><td><span class="b should">推奨</span></td><td><span class="src">A</span></td></tr>
+      <tr class="grp"><td colspan="4"><b>B. PC基本情報の事前取得 <span class="tag v31">V3.1</span></b></td></tr>
+      <tr><td class="id">FR-08</td><td>STEP 2 を開くと同時に、PC基本情報（8分類31項目）を読み取りだけで集め始め、進み具合を表示する。入力はその間も続けられる</td><td><span class="b must">必須</span></td><td><span class="src">A</span></td></tr>
+      <tr><td class="id">FR-09</td><td>本人が「取得する／取得しない」を選べる。種類ごとの既定値を持つ（BR-09）</td><td><span class="b must">必須</span></td><td><span class="src">A</span></td></tr>
+      <tr><td class="id">FR-10</td><td>集めた項目を「正常／注意／異常」で判定し、気になる点を、相談内容に関係しそうな順（★）に並べる</td><td><span class="b must">必須</span></td><td><span class="src">A</span></td></tr>
+      <tr><td class="id">FR-11</td><td>送信の時点で取得が終わっていなければ、取得を終えてから回答に使う</td><td><span class="b must">必須</span></td><td><span class="src">A</span></td></tr>
+      <tr><td class="id">FR-12</td><td>STEP 3 の最初の返答で、事前取得の結果（項目数・気になる点）を示す</td><td><span class="b must">必須</span></td><td><span class="src">A</span></td></tr>
+      <tr><td class="id">FR-13</td><td>「詳しく見る」で全項目・取得しない情報・AIに渡した形（外部AIでは伏せた形）を確認できる</td><td><span class="b must">必須</span></td><td><span class="src">A</span></td></tr>
+      <tr><td class="id">FR-14</td><td>修復のあとに「最新にする」で取り直し、前回から変わった点を表示する（本人のみ）</td><td><span class="b should">推奨</span></td><td><span class="src">A</span></td></tr>
+      <tr><td class="id">FR-15</td><td>引継ぎで「PC基本情報」を渡すか選べ（既定はオン）、渡すと引継ぎメモに要点と気になる点が入る</td><td><span class="b must">必須</span></td><td><span class="src">A</span></td></tr>
+      <tr><td class="id">FR-16</td><td>業務ツールの一覧で、取得した記録（案件・端末・日時・項目数・気になる点・共有の有無）を見られる</td><td><span class="b should">推奨</span></td><td><span class="src">A</span></td></tr>
+      <tr class="grp"><td colspan="4"><b>C. AIの一次対応と端末操作</b></td></tr>
+      <tr><td class="id">FR-17</td><td>相談内容から用件（印刷・VPN・音声・容量・共有フォルダ・ログイン・セキュリティ・手続きなど）を見分け、端末の読み取り診断と回答を返す</td><td><span class="b must">必須</span></td><td><span class="src">C</span></td></tr>
+      <tr><td class="id">FR-18</td><td>社内資料と承認済みナレッジを、本人の閲覧権限の範囲だけで検索し、出典を示して答える。権限外の資料は題名も出さない</td><td><span class="b must">必須</span></td><td><span class="src">C</span><span class="src">A</span></td></tr>
+      <tr><td class="id">FR-19</td><td>修復は「提案（影響・戻し方・必要な承認）→本人のY／N→（L4）IT端末管理者の承認→実行前検証→実行→結果確認」で行う</td><td><span class="b must">必須</span></td><td><span class="src">C</span></td></tr>
+      <tr><td class="id">FR-20</td><td>元に戻せる操作は「元に戻す」で変更前の状態にできる</td><td><span class="b must">必須</span></td><td><span class="src">C</span></td></tr>
+      <tr><td class="id">FR-21</td><td>CSVの集計結果を新しいファイルとして作り、保存できる（元のファイルは変えない）</td><td><span class="b could">任意</span></td><td><span class="src">C</span></td></tr>
+      <tr><td class="id">FR-22</td><td>本人が「解決した」を選ぶとSTEP 7（4〜6は省略）へ、「解決しない」を選ぶとSTEP 4へ進む</td><td><span class="b must">必須</span></td><td><span class="src">A</span></td></tr>
+      <tr><td class="id">FR-23</td><td>緊急停止中はPC操作の実行をすべて止め、実行中の作業も中断する</td><td><span class="b must">必須</span></td><td><span class="src">C</span></td></tr>
+      <tr class="grp"><td colspan="4"><b>D. 引継ぎとヘルプデスク対応</b></td></tr>
+      <tr><td class="id">FR-24</td><td>本人が同意すると受付番号（TKT）ができ、ヘルプデスクに問い合わせ（INC）として届く。分野・優先度・おすすめの担当を自動で決める</td><td><span class="b must">必須</span></td><td><span class="src">A</span><span class="src">H</span></td></tr>
+      <tr><td class="id">FR-25</td><td>引継ぎメモに、同意した情報・AIの経過・推定分野・対象の機器・似ている未解決の問い合わせ・推奨アクションをまとめる</td><td><span class="b must">必須</span></td><td><span class="src">H</span><span class="src">A</span></td></tr>
+      <tr><td class="id">FR-26</td><td>担当者がSTEP 5で担当を決め、解決記録（原因・手順・所要時間）を登録できる</td><td><span class="b must">必須</span></td><td><span class="src">H</span></td></tr>
+      <tr><td class="id">FR-27</td><td>担当者・状態・解決内容を、TKTと相談した人のチャットに自動で反映する</td><td><span class="b must">必須</span></td><td><span class="src">A</span></td></tr>
+      <tr><td class="id">FR-28</td><td>電話・メールの問い合わせを担当者が代行で受け付け、運び役を通してAIの回答案を得られる</td><td><span class="b should">推奨</span></td><td><span class="src">H</span></td></tr>
+      <tr class="grp"><td colspan="4"><b>E. ナレッジ化</b></td></tr>
+      <tr><td class="id">FR-29</td><td>解決記録から、氏名・メールアドレス・電話番号・IPアドレス・資産番号・パスワード等を隠したナレッジ下書きを自動で作る</td><td><span class="b must">必須</span></td><td><span class="src">H</span></td></tr>
+      <tr><td class="id">FR-30</td><td>下書きを新規または既存ナレッジの改訂として申請し、承認者がチェックリストで承認・差戻しできる（差戻しは理由必須）</td><td><span class="b must">必須</span></td><td><span class="src">H</span></td></tr>
+      <tr><td class="id">FR-31</td><td>承認と同時に本棚と分野別のきまりを更新し、次の相談からAIの根拠にする</td><td><span class="b must">必須</span></td><td><span class="src">H</span><span class="src">A</span></td></tr>
+      <tr class="grp"><td colspan="4"><b>F. 外部AIの運用（運び役）</b></td></tr>
+      <tr><td class="id">FR-32</td><td>AIへの依頼は運び役を通す（受付の取得→AI対象外の判定→隠す→根拠探し→AIに頼む→点検→記録に戻す→日記）</td><td><span class="b must">必須</span></td><td><span class="src">H</span></td></tr>
+      <tr><td class="id">FR-33</td><td>AIの答えを5項目（出典がある／させない操作がない／機密がない／担当者への案内がある／600字以内）で点検し、不合格なら担当者へ</td><td><span class="b must">必須</span></td><td><span class="src">H</span></td></tr>
+      <tr><td class="id">FR-34</td><td>確認モード（担当者が確かめてから伝える）と直接回答モードを切り替えられ、履歴を残す</td><td><span class="b should">推奨</span></td><td><span class="src">H</span></td></tr>
+      <tr><td class="id">FR-35</td><td>AIへの指示書を版で管理し、試験と承認を経て本番にする</td><td><span class="b must">必須</span></td><td><span class="src">H</span></td></tr>
+      <tr><td class="id">FR-36</td><td>本番と試験の費用の上限・通知割合を設定し、上限に達したらAIを呼ばず担当者へ回す</td><td><span class="b must">必須</span></td><td><span class="src">H</span></td></tr>
+      <tr class="grp"><td colspan="4"><b>G. 見る・探す・記録する</b></td></tr>
+      <tr><td class="id">FR-37</td><td>ボードで案件を段階ごとの列に並べ、自分の番の案件を目立たせる</td><td><span class="b should">推奨</span></td><td><span class="src">A</span><span class="src">R</span></td></tr>
+      <tr><td class="id">FR-38</td><td>案件一覧で、信号・段階・次にやる人・連携番号を見られる</td><td><span class="b should">推奨</span></td><td><span class="src">A</span></td></tr>
+      <tr><td class="id">FR-39</td><td>問い合わせ台帳で、検索・絞り込み・並べ替え・一括の関連付け・CSV出力ができる</td><td><span class="b should">推奨</span></td><td><span class="src">H</span></td></tr>
+      <tr><td class="id">FR-40</td><td>機器・サービス台帳で、つながりと影響範囲を見られる</td><td><span class="b could">任意</span></td><td><span class="src">H</span></td></tr>
+      <tr><td class="id">FR-41</td><td>監査ログをハッシュチェーンで検証し、改ざんを検知できる。JSON・CSVで出力できる</td><td><span class="b must">必須</span></td><td><span class="src">C</span></td></tr>
+      <tr><td class="id">FR-42</td><td>受け入れ試験（19項目）とAIの試験（12問）を、画面から実行できる</td><td><span class="b should">推奨</span></td><td><span class="src">C</span><span class="src">H</span></td></tr>
+      <tr><td class="id">FR-43</td><td>操作する人の役割に応じて、ボード・業務ツールで見られる画面を変える</td><td><span class="b must">必須</span></td><td><span class="src">A</span></td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section class="sec" id="s8">
+  <h2><span class="no">8</span>非機能要件</h2>
+  <p class="sub">「どれだけ安全に・確実に・使いやすく」動くべきかの要件です。家でいえば、間取りではなく耐震性・断熱性・防犯性にあたります。</p>
+  <div class="tw"><table>
+    <thead><tr><th class="id">ID</th><th>分類</th><th>要件</th><th>優先度</th><th>出典</th></tr></thead>
+    <tbody>
+      <tr class="grp"><td colspan="5"><b>セキュリティ・プライバシー</b></td></tr>
+      <tr><td class="id">NFR-01</td><td>読み取りと変更の分離</td><td>PCエージェントの読み取り（事前取得・診断）は端末の状態を変えない。変更は承認済みの許可リスト内の操作だけ</td><td><span class="b must">必須</span></td><td><span class="src">A</span><span class="src">C</span></td></tr>
+      <tr><td class="id">NFR-02</td><td>最小限の取得</td><td>PC基本情報は相談の解決に必要な項目だけにし、取得しない情報（6種類）を画面と文書に明示する <span class="tag v31">V3.1</span></td><td><span class="b must">必須</span></td><td><span class="src">A</span></td></tr>
+      <tr><td class="id">NFR-03</td><td>目的外利用の禁止</td><td>PC基本情報・相談の記録を、勤怠管理・人事評価・行動の追跡に使わない <span class="tag v31">V3.1</span></td><td><span class="b must">必須</span></td><td><span class="src p">提案</span></td></tr>
+      <tr><td class="id">NFR-04</td><td>伏せ字・門番</td><td>パスワード・カード番号・個人番号らしき数字は保存前に伏せ字にする。外部AIへは氏名・問い合わせ番号を送らず、メール・電話・IPアドレス・資産番号・シリアル番号を隠す</td><td><span class="b must">必須</span></td><td><span class="src">C</span><span class="src">H</span><span class="src">A</span></td></tr>
+      <tr><td class="id">NFR-05</td><td>データ区分</td><td>機密は社内のAIだけ、極秘はAIで扱わない</td><td><span class="b must">必須</span></td><td><span class="src">C</span></td></tr>
+      <tr><td class="id">NFR-06</td><td>命令文対策</td><td>相談の文章は〈利用者の文章〉として囲んで渡し、答えは点検で確かめる</td><td><span class="b must">必須</span></td><td><span class="src">H</span></td></tr>
+      <tr><td class="id">NFR-07</td><td>職務分離</td><td>端末の設定変更・ナレッジ・指示書・AIの切り替えは、申請者以外の権限者が承認する</td><td><span class="b must">必須</span></td><td><span class="src">C</span><span class="src">H</span></td></tr>
+      <tr><td class="id">NFR-08</td><td>認証</td><td>本番は社内のシングルサインオン（Entra ID）で人と役割を判別する。試作の「操作する人」の切り替えは使わない</td><td><span class="b must">必須</span></td><td><span class="src p">提案</span></td></tr>
+      <tr><td class="id">NFR-09</td><td>鍵の保管</td><td>外部AIの鍵は運び役の金庫に保管し、ブラウザやスクリプトに書かない。本番用と試験用を分ける</td><td><span class="b must">必須</span></td><td><span class="src">H</span></td></tr>
+      <tr><td class="id">NFR-10</td><td>通信</td><td>試作は外部と一切通信しない（CSPで遮断）。本番は社内の運び役から承認済みの宛先へ出ていく通信だけにする</td><td><span class="b must">必須</span></td><td><span class="src">A</span><span class="src">H</span></td></tr>
+      <tr><td class="id">NFR-11</td><td>通報者保護</td><td>通報・ハラスメントの相談は本文を保存しない</td><td><span class="b must">必須</span></td><td><span class="src">C</span></td></tr>
+      <tr class="grp"><td colspan="5"><b>記録・監査</b></td></tr>
+      <tr><td class="id">NFR-12</td><td>証跡</td><td>相談・判断・承認・実行・取得・連携について、だれが・いつ・何を・どの対象に行ったかを残す。PC基本情報の取得記録には値を残さず、項目数と気になる点の件数だけを残す</td><td><span class="b must">必須</span></td><td><span class="src">C</span><span class="src">A</span></td></tr>
+      <tr><td class="id">NFR-13</td><td>改ざん検知</td><td>監査ログは前の記録のハッシュを含むつながりにし、1件でも書き換えると検知できる</td><td><span class="b must">必須</span></td><td><span class="src">C</span></td></tr>
+      <tr><td class="id">NFR-14</td><td>記録の一本化</td><td>本番では、端末操作の監査ログとヘルプデスクの操作の記録を、改ざんを防げる1つの保存先にまとめる</td><td><span class="b should">推奨</span></td><td><span class="src p">提案</span></td></tr>
+      <tr class="grp"><td colspan="5"><b>使いやすさ・可用性</b></td></tr>
+      <tr><td class="id">NFR-15</td><td>やさしさ</td><td>やさしい言葉・例文・ヒントを画面に出し、STEPごとに「このSTEPのきまり」を示す</td><td><span class="b must">必須</span></td><td><span class="src">A</span></td></tr>
+      <tr><td class="id">NFR-16</td><td>止まっても困らない</td><td>AIサービスが止まったり費用の上限に達したりしても、受付を止めずに担当者へ切り替える</td><td><span class="b must">必須</span></td><td><span class="src">H</span></td></tr>
+      <tr><td class="id">NFR-17</td><td>現場の通信</td><td>通信が弱い現場では、入力した内容と事前取得の結果が消えないようにし、つながらないときは電話窓口を案内する</td><td><span class="b should">推奨</span></td><td><span class="src">C</span><span class="src p">提案</span></td></tr>
+      <tr><td class="id">NFR-18</td><td>対応環境</td><td>社内PCの主要ブラウザ（Edge・Chrome）と、スマートフォンの幅（下部メニュー）で使える。明るい表示と暗い表示の両方に対応する</td><td><span class="b should">推奨</span></td><td><span class="src">A</span></td></tr>
+      <tr><td class="id">NFR-19</td><td>アクセシビリティ</td><td>色だけで意味を伝えない（色名の文字を併記）。キーボードで操作でき、Escで小窓を閉じられる。「動きを減らす」設定に従う</td><td><span class="b should">推奨</span></td><td><span class="src">C</span><span class="src">A</span></td></tr>
+      <tr><td class="id">NFR-20</td><td>応答性</td><td>PC基本情報の取得は、入力の手を止めずに数秒で終わる（試作は約3秒）</td><td><span class="b should">推奨</span></td><td><span class="src">A</span></td></tr>
+      <tr class="grp"><td colspan="5"><b>費用・保守</b></td></tr>
+      <tr><td class="id">NFR-21</td><td>費用の上限</td><td>外部AIの本番・試験の月の上限と通知を設ける</td><td><span class="b must">必須</span></td><td><span class="src">H</span></td></tr>
+      <tr><td class="id">NFR-22</td><td>モデルの版の固定</td><td>本番で使うAIは種類と版を固定し、取り替える前に試験する</td><td><span class="b must">必須</span></td><td><span class="src">H</span></td></tr>
+      <tr><td class="id">NFR-23</td><td>データの保全</td><td>本番のデータはサーバ側で保存・定期バックアップし、復元手順を用意する（試作のブラウザ保存は本番で使わない）</td><td><span class="b must">必須</span></td><td><span class="src p">提案</span></td></tr>
+    </tbody>
+  </table></div>
+  <h3>8-1. 既存の社内統制との対応（参考）</h3>
+  <p>対応関係は検討の起点として示した例です。適用範囲・管理策の採否は、自社の適用宣言書・内部統制文書にもとづいて確定します。</p>
+  <div class="tw"><table>
+    <thead><tr><th>この仕組み</th><th>ISO/IEC 27001:2022 附属書A（例）</th><th>ISO/IEC 20000-1（例）</th><th>J-SOX IT全般統制（例）</th></tr></thead>
+    <tbody>
+      <tr><td>引継ぎ・担当・解決記録・期限</td><td>5.24〜5.26 インシデント管理</td><td>8.6.1 インシデント管理／8.6.2 サービス要求管理</td><td>運用管理</td></tr>
+      <tr><td>ナレッジ化と本棚</td><td>5.27 インシデントからの学習</td><td>7.6 知識（ナレッジ）／8.6.3 問題管理</td><td>－</td></tr>
+      <tr><td>PC基本情報の事前取得・端末操作</td><td>8.1 利用者エンドポイント機器／5.34 プライバシー及びPIIの保護</td><td>8.6.1 インシデント管理</td><td>アクセス管理</td></tr>
+      <tr><td>承認付きの修復・職務分離</td><td>8.32 変更管理／8.2 特権的アクセス権</td><td>8.5.1 変更管理</td><td>変更管理・職務分離</td></tr>
+      <tr><td>門番・データ区分</td><td>8.12 データ漏えい防止／5.23 クラウドサービスの利用における情報セキュリティ</td><td>－</td><td>－</td></tr>
+      <tr><td>監査ログ・日記</td><td>8.15 ログ取得／8.16 監視活動</td><td>－</td><td>ログの取得と保全</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section class="sec" id="s9">
+  <h2><span class="no">9</span>データ要件</h2>
+  <p class="sub">扱う主な情報と、気をつける情報です。項目の定義は詳細仕様書の「データ仕様」にあります。</p>
+  <h3>9-1. 主な情報</h3>
+  <div class="tw"><table>
+    <thead><tr><th>情報</th><th>中身</th><th>本番の正本（案）</th></tr></thead>
+    <tbody>
+      <tr><td>案件（CASE）</td><td>案件番号、相談する人、種類、件名・内容、急ぎ、今のSTEP、AIで解決したか、共有の選択、PC取得の選択</td><td>AI窓口のサーバ</td></tr>
+      <tr><td>PC基本情報（事前取得） <span class="tag v31">V3.1</span></td><td>取得日時、端末、8分類31項目の値と判定、前回の値（取り直し時）</td><td>AI窓口のサーバ（保存期間はQ-06）</td></tr>
+      <tr><td>チャット</td><td>相談・AIの回答・診断・提案・実行結果・通知</td><td>AI窓口のサーバ</td></tr>
+      <tr><td>修復の提案</td><td>操作ID、レベル、対象、承認ハッシュ、本人と管理者の判断、結果、変更前の状態</td><td>AI窓口のサーバ</td></tr>
+      <tr><td>受付番号（TKT）</td><td>共有した情報、状態、担当、解決内容、INCとの対応</td><td>AI窓口のサーバ</td></tr>
+      <tr><td>問い合わせ（INC）</td><td>分野、優先度、期限、引継ぎメモ、担当、解決記録、関連付け</td><td>desknet's NEO AppSuite（Q-01）</td></tr>
+      <tr><td>ナレッジ・下書き</td><td>症状・原因・手順・キーワード、版、承認者、利用回数・役に立った率</td><td>ナレッジDB</td></tr>
+      <tr><td>運び役の日記</td><td>隠した後の送信内容、根拠、AIの種類と版、指示書の版、答え、点検結果、費用</td><td>運び役のサーバ</td></tr>
+      <tr><td>監査ログ・操作の記録</td><td>だれが・いつ・何を・どの対象に。ハッシュのつながり</td><td>改ざん防止の保存先（NFR-14）</td></tr>
+    </tbody>
+  </table></div>
+  <h3>9-2. 特に気をつける情報</h3>
+  <div class="tw"><table>
+    <thead><tr><th>区分</th><th>例</th><th>守り方</th></tr></thead>
+    <tbody>
+      <tr><td>認証情報</td><td>パスワード、カード番号</td><td>保存前に伏せ字。パスワードらしき文字があれば外部AIに送らない</td></tr>
+      <tr><td>個人情報</td><td>氏名、メールアドレス、電話番号、社員番号</td><td>外部AIへは送らない・隠す。ナレッジ下書きでは自動で隠す</td></tr>
+      <tr><td>端末を特定する情報 <span class="tag v31">V3.1</span></td><td>IPアドレス、シリアル番号、資産番号</td><td>社内では担当者に必要な範囲で見せ、外部AIには伏せる</td></tr>
+      <tr><td>人事・評価に関わる情報</td><td>人事評価一覧など「極秘」区分</td><td>AIで扱わない</td></tr>
+      <tr><td>通報・相談の内容</td><td>ハラスメント・内部通報</td><td>保存しない。専用窓口へ</td></tr>
+    </tbody>
+  </table></div>
+  <h3>9-3. 情報のバトン（だれからだれへ渡るか）</h3>
+  <p>部署別の具体例は<a href="Mirai-AI-Helpdesk-V3.1_05_Department-Catalog_部署別活用カタログ.html">部署別活用カタログ</a>の「相談のバトン」にあります。</p>
+  <div class="tw"><table>
+    <thead><tr><th>渡す情報</th><th>渡す人</th><th>受け取る人</th><th>ポイント</th></tr></thead>
+    <tbody>
+      <tr><td>PC基本情報の要点</td><td>相談する人（同意）</td><td>ヘルプデスク担当</td><td>同じ質問をくり返さない。渡すかは本人が選ぶ</td></tr>
+      <tr><td>引継ぎメモ</td><td>AI</td><td>ヘルプデスク担当</td><td>経過・推定分野・推奨アクション。説明のやり直しをなくす</td></tr>
+      <tr><td>解決記録</td><td>担当者</td><td>相談する人／ナレッジ下書き</td><td>結果は自動で届く。下書きでは個人情報を隠す</td></tr>
+      <tr><td>承認済みナレッジ</td><td>承認者</td><td>AI・全社員</td><td>次の相談の根拠になる</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section class="sec" id="s10">
+  <h2><span class="no">10</span>外部連携要件</h2>
+  <p class="sub">本番でつながる外部の仕組みです。試作はすべて模擬で、外部と通信しません。</p>
+  <div class="tw"><table>
+    <thead><tr><th>連携先</th><th>何のために</th><th>求めること</th><th>状況</th></tr></thead>
+    <tbody>
+      <tr><td>desknet's NEO／AppSuite</td><td>問い合わせ記録（INC）の正本、通知</td><td>INCの登録・更新、状態変化の通知、記録の出力</td><td>連携方式は未決（Q-01）</td></tr>
+      <tr><td>Entra ID（Microsoft 365）</td><td>人と役割の判別</td><td>シングルサインオン、グループによる閲覧権限</td><td>提案</td></tr>
+      <tr><td>PCエージェント</td><td>PC基本情報の取得、承認された操作の実行</td><td>署名付きで配布、読み取りと変更の権限を分ける、既存の端末管理（SKYSEA Client View）と整合</td><td>方式は未決（Q-02）</td></tr>
+      <tr><td>Active Directory／HENNGE One／FortiGate</td><td>ログオン・アクセス制御・VPNの状態の参照</td><td>参照だけ。変更は各管理者の手順で行う</td><td>提案</td></tr>
+      <tr><td>外部AI（承認済みのAPI）または社内のAI</td><td>回答案の作成</td><td>会社の承認、学習に使われない契約、保存場所と期間の確認、版の固定</td><td>製品は未決（Q-03）</td></tr>
+      <tr><td>文書管理（DirectCloud等）</td><td>社内資料・添付の保管</td><td>閲覧権限と連動した検索</td><td>提案</td></tr>
+      <tr><td>改ざん防止の保存先／SIEM</td><td>監査ログの保全と監視</td><td>追記のみ、保存期間の規程化</td><td>提案</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section class="sec" id="s11">
+  <h2><span class="no">11</span>前提・制約</h2>
+  <div class="tw"><table>
+    <thead><tr><th class="id">ID</th><th>前提・制約</th></tr></thead>
+    <tbody>
+      <tr><td class="id">C-01</td><td>試作V3.1のAIの答えはルールにもとづく模擬で、PC基本情報の値は作り物のデータである</td></tr>
+      <tr><td class="id">C-02</td><td>試作のデータはブラウザ内（localStorage）だけに保存され、外部と通信しない</td></tr>
+      <tr><td class="id">C-03</td><td>全社標準のAIはCopilotとする方針のもと、追加のAI窓口は導入審査が前提である</td></tr>
+      <tr><td class="id">C-04</td><td>生成AIの利用は「生成AI利用ガイドライン」に従う（承認済みのAIのみ、入力区分ルール、出力は人が確認）</td></tr>
+      <tr><td class="id">C-05</td><td>人物・部署・ナレッジ・機器は検討用の例で、実際の組織とは異なる</td></tr>
+      <tr><td class="id">C-06</td><td>統制枠組みとの対応は検討の起点。採否は自社の文書にもとづいて確定する</td></tr>
+      <tr><td class="id">C-07</td><td>段階は期間ではなく終了条件で進める（企画構想案の段階導入）</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section class="sec" id="s12">
+  <h2><span class="no">12</span>導入計画・移行</h2>
+  <p class="sub">段階の考え方の正本は<a href="Mirai-AI-Helpdesk-V3.1_01_Concept-Plan_企画構想案.html">企画構想案</a>にあります。ここでは要件として守ることだけを示します。</p>
+  <p>Phase 0〜4の目的・対象・終了条件は企画構想案の6章を見てください。</p>
+  <ul>
+    <li>どのPhaseでも、信号ルール（6-1）・操作許可リスト（BR-01）・受け入れ試験（FR-42）を満たしてから次へ進む</li>
+    <li>PC基本情報の事前取得は、取得項目と同意の取り方を社内規程上確定させた後（Phase 0の終了条件）にだけ有効にする <span class="tag v31">V3.1</span></li>
+    <li>L4の修復と直接回答モードは、前のPhaseの指標（13章）を確認してから有効にする</li>
+  </ul>
+  <h3>12-1. 試作から本番への移行</h3>
+  <ul>
+    <li>試作の画面とルールは「業務の流れの確認」に使い、本番に引き継ぐ部分と作り直す部分をPhase 0で決める</li>
+    <li>操作する人の切り替えをやめ、Entra IDで判別する（NFR-08）。データはサーバ側に保存する（NFR-23）</li>
+    <li>試作のデータはJSONで書き出せるため、初期のナレッジ・機器台帳の取り込みに使える</li>
+  </ul>
+</section>
+
+<section class="sec" id="s13">
+  <h2><span class="no">13</span>成果の測り方（指標）</h2>
+  <p class="sub">目標値は Phase 1 の実績を見て決めます。</p>
+  <div class="tw"><table>
+    <thead><tr><th>#</th><th>指標</th><th>見るポイント</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>AIで解決した割合</td><td>STEP 3で「解決した」となった割合</td></tr>
+      <tr><td>2</td><td>受付から解決までの時間</td><td>AI解決・担当者解決それぞれ</td></tr>
+      <tr><td>3</td><td>引継ぎ後の聞き直し回数 <span class="tag v31">V3.1</span></td><td>事前取得と引継ぎメモで、担当者が利用者に聞き直した回数が減ったか</td></tr>
+      <tr><td>4</td><td>事前取得の的中率 <span class="tag v31">V3.1</span></td><td>★を付けた気になる点が、実際の原因だった割合</td></tr>
+      <tr><td>5</td><td>期限を過ぎた問い合わせ</td><td>P1 1時間／P2 4時間／P3 8時間／P4 3日</td></tr>
+      <tr><td>6</td><td>ナレッジが役に立った率</td><td>提示後に「解決した」となった割合。低いものは見直す</td></tr>
+      <tr><td>7</td><td>承認待ちの時間</td><td>L4の承認、ナレッジの承認で止まっていた時間</td></tr>
+      <tr><td>8</td><td>信号ルールの守られ方</td><td>赤の案件にAIの判断が入っていないか、禁止操作のブロック件数</td></tr>
+      <tr><td>9</td><td>1件あたりの外部AI費用</td><td>運び役の日記から集計</td></tr>
+      <tr><td>10</td><td>取得を「しない」を選んだ割合 <span class="tag v31">V3.1</span></td><td>多い場合は、説明や取得項目を見直す</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section class="sec" id="s14">
+  <h2><span class="no">14</span>リスクと対策</h2>
+  <div class="tw"><table>
+    <thead><tr><th>リスク</th><th>起きると何が困るか</th><th>対策（要件ID）</th></tr></thead>
+    <tbody>
+      <tr><td>AIがまちがった答えをする</td><td>業務の混乱</td><td>承認済みナレッジを根拠に、根拠がなければ担当者へ。答えの点検（BR-04、FR-33）</td></tr>
+      <tr><td>AIがPCを壊す・業務を止める</td><td>業務停止</td><td>読み取りと変更の分離、許可リスト、本人のY・管理者の承認、元に戻す、緊急停止（NFR-01、BR-01、FR-20、FR-23）</td></tr>
+      <tr><td>事前取得が「監視」と受け取られる</td><td>信頼の低下、利用されない</td><td>取得しない情報の明示、本人の選択、目的外利用の禁止、取得記録に値を残さない（BR-08〜10、NFR-02〜03、NFR-12）</td></tr>
+      <tr><td>個人情報・機密が外部へ漏れる</td><td>情報漏えい</td><td>門番、伏せ字、データ区分、外部AIでIP・シリアルを伏せる（NFR-04〜05、BR-10）</td></tr>
+      <tr><td>文章にまぎれた命令にAIが従う</td><td>不正な操作の案内</td><td>資料扱いで渡す、禁止操作の点検（NFR-06）</td></tr>
+      <tr><td>自分の申請を自分で承認する</td><td>統制の形骸化</td><td>職務分離、2人以上の承認者を指名（NFR-07、Q-05）</td></tr>
+      <tr><td>AIサービスの停止・費用超過</td><td>受付が止まる</td><td>障害時は担当者へ切り替え、費用の上限（NFR-16、NFR-21）</td></tr>
+      <tr><td>試作の仮の仕組みが本番に残る</td><td>認証・権限の穴</td><td>本番はEntra IDで判別、サーバ側で再検証（NFR-08、F-11）</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section class="sec" id="s15">
+  <h2><span class="no">15</span>精査結果・未決事項</h2>
+  <p class="sub">試作V3.1を精査して見つかった論点と、関係者で決める必要があることです。</p>
+  <h3>15-1. 精査で見つかった論点</h3>
+  <p>試作として作られたものなので不具合ではありませんが、本番では次のように扱うことを提案します。</p>
+  <div class="tw"><table>
+    <thead><tr><th class="id">ID</th><th>見つかったこと</th><th>なぜ問題か</th><th>本番での扱い（提案）</th></tr></thead>
+    <tbody>
+      <tr><td class="id">F-01</td><td>「操作する人」をだれでも切り替えられる</td><td>なりすましができてしまう</td><td>Entra IDで判別し、切り替えはなくす</td></tr>
+      <tr><td class="id">F-02</td><td>データがブラウザ内だけにある</td><td>別のPCで続きができない、消えると戻せない</td><td>サーバ側に保存し、バックアップする</td></tr>
+      <tr><td class="id">F-03</td><td>AIの答え・PC基本情報の値が模擬</td><td>本当の環境での精度が分からない</td><td>Phase 1で実データでの的中率を測る（13章 指標4）</td></tr>
+      <tr><td class="id">F-04</td><td>端末操作の監査ログ（ハッシュのつながり）と、ヘルプデスクの操作の記録が別々</td><td>監査で2か所を見る必要がある</td><td>1つの改ざん防止の保存先にまとめる（NFR-14）</td></tr>
+      <tr><td class="id">F-05</td><td>ナレッジ化の経路が2つ（AI窓口のFAQ候補と、ヘルプデスクの下書き→承認）</td><td>どちらが正式か迷う</td><td>引き継いだ案件は下書き→承認に一本化済み。FAQ候補は廃止するか決める（Q-08）</td></tr>
+      <tr><td class="id">F-06</td><td>受付番号が「TKT-2026-」で年が固定</td><td>2027年以降もそのまま</td><td>受け付けた年で番号を付ける</td></tr>
+      <tr><td class="id">F-07</td><td>ヘルプデスク側を初期化すると、問い合わせ番号が再利用されることがある</td><td>別の問い合わせに結びつくおそれ</td><td>試作は照合で保護済み（「連携先が見つかりません」と表示）。本番は番号を再利用しない</td></tr>
+      <tr><td class="id">F-08</td><td>「最新にする」（取り直し）は本人だけができる</td><td>担当者が今の状態を見たいときに困る</td><td>担当者からの取り直し依頼を本人が承認する流れを作るか決める（Q-07）</td></tr>
+      <tr><td class="id">F-09</td><td>おすすめの担当が分野ごとに固定</td><td>担当の不在・負荷に追従できない</td><td>担当の割り当て表をマスタで管理</td></tr>
+      <tr><td class="id">F-10</td><td>対応期限が暦の時間（休日・営業時間を考えない）</td><td>夜間・休日の期限超過が多く出る</td><td>営業時間カレンダーで計算する</td></tr>
+      <tr><td class="id">F-11</td><td>承認や実行前の検証が、試作ではブラウザの中で行われる</td><td>本番では書き換えられるおそれ</td><td>サーバ側で再検証する</td></tr>
+      <tr><td class="id">F-12</td><td>ステップ画面の一部の動き（回転・矢印）が「動きを減らす」設定に未対応</td><td>動きが苦手な人の負担</td><td>設定に従って止める（NFR-19）</td></tr>
+    </tbody>
+  </table></div>
+  <h3>15-2. 関係者で決めること（未決事項）</h3>
+  <div class="tw"><table>
+    <thead><tr><th class="id">ID</th><th>決めること</th><th>決める人（案）</th><th>期限（案）</th></tr></thead>
+    <tbody>
+      <tr><td class="id">Q-01</td><td>問い合わせ記録の正本をAppSuiteに置くか、AI窓口と両方か。連携の方式</td><td>DX推進部＋総務</td><td>Phase 0</td></tr>
+      <tr><td class="id">Q-02</td><td>PCエージェントの方式（既存の端末管理ツールの機能を使うか、専用に作るか）、署名と配布の方法</td><td>DX推進部</td><td>Phase 0</td></tr>
+      <tr><td class="id">Q-03</td><td>使うAI（社内のAI／承認済みの外部API）と契約条件</td><td>DX推進部＋法務</td><td>Phase 0</td></tr>
+      <tr><td class="id">Q-04</td><td>運び役（中継サーバ）の置き場所と運用担当（2人以上）</td><td>DX推進部</td><td>Phase 0</td></tr>
+      <tr><td class="id">Q-05</td><td>IT端末管理者・ナレッジ承認者の指名（各2人以上）</td><td>部署長</td><td>Phase 0</td></tr>
+      <tr><td class="id">Q-06</td><td>PC基本情報の取得項目の確定、既定値、保存期間、社内規程への位置づけと従業員への説明</td><td>DX推進部＋人事＋法務＋リスク統括部</td><td>Phase 0</td></tr>
+      <tr><td class="id">Q-07</td><td>担当者からの取り直し依頼の流れ（F-08）</td><td>DX推進部</td><td>Phase 1</td></tr>
+      <tr><td class="id">Q-08</td><td>FAQ候補の経路を残すか（F-05）</td><td>ナレッジ承認者</td><td>Phase 1</td></tr>
+      <tr><td class="id">Q-09</td><td>監査ログ・相談記録の保存期間と廃棄ルール</td><td>総務・法務＋内部監査</td><td>Phase 2</td></tr>
+      <tr><td class="id">Q-10</td><td>各指標（13章）の目標値</td><td>DX推進部＋業務責任者</td><td>Phase 1 の結果を見て</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section class="sec" id="s16">
+  <h2><span class="no">16</span>用語集</h2>
+  <p class="sub">やさしい言いかえは<a href="Mirai-AI-Helpdesk-V3.1_04_Easy-Guide_やさしい解説版.html">やさしい解説版</a>の「ことばのミニ辞典」にもあります。</p>
+  <dl class="gl">
+    <dt>案件（CASE）</dt><dd>1件の相談。STEP 1〜7で最後まで進める単位</dd>
+    <dt>ステップ受付（ウィザード）</dt><dd>STEP 1〜7の順に入力・確認しながら進める画面の形</dd>
+    <dt>PC基本情報（事前取得）</dt><dd>相談を書いている間に、PCエージェントが読み取りだけで集めるPCの基本的な状態（8分類31項目）</dd>
+    <dt>気になる点</dt><dd>事前取得の結果のうち「注意」「異常」と判定された項目。★は相談内容に関係しそうなもの</dd>
+    <dt>PCエージェント</dt><dd>PCの中で動く小さなプログラム。読み取りと、承認された操作の実行だけを行う</dd>
+    <dt>信号の色</dt><dd>青＝AIで進められる、黄＝担当者の対応が必要、赤＝AIに任せない</dd>
+    <dt>L0〜L5</dt><dd>端末操作の危なさのレベル。危なくなるほど承認者が増え、L5は禁止</dd>
+    <dt>承認ハッシュ</dt><dd>承認した内容の「指紋」。実行時に照らし合わせ、内容が変わっていたら実行しない</dd>
+    <dt>緊急停止</dt><dd>すべてのPC操作の実行を止めるボタン</dd>
+    <dt>受付番号（TKT）／問い合わせ（INC）</dt><dd>AI窓口の受付番号と、ヘルプデスクの対応記録の番号。1対1で結ばれる</dd>
+    <dt>引継ぎメモ</dt><dd>AIがまとめた、担当者が最初に読む経過の要約</dd>
+    <dt>ナレッジ／本棚</dt><dd>承認済みの解決手順と、その置き場所。AIの根拠になる</dd>
+    <dt>運び役（中継処理）</dt><dd>AI窓口・ヘルプデスクと外部AIの間に立ち、隠す・止める・根拠を添える・点検する・記録する仕組み</dd>
+    <dt>門番</dt><dd>運び役のうち、見せてはいけない所を隠したり、送るのを止めたりする役目</dd>
+    <dt>AIへの指示書</dt><dd>AIに渡す会社のきまり。版で管理し、試験と承認を経て本番にする</dd>
+    <dt>確認モード／直接回答モード</dt><dd>AIの答えを担当者が確かめてから伝えるか、利用者に直接見せるか</dd>
+    <dt>ハッシュチェーン</dt><dd>記録ごとに前の記録の指紋を含め、1件でも書き換えると分かるようにしたつながり</dd>
+    <dt>CSP</dt><dd>ブラウザに「外部と通信しない」などを守らせる設定。試作は外部との通信をすべて止めている</dd>
+  </dl>
+</section>
+
+<section class="sec" id="s17">
+  <h2><span class="no">17</span>承認欄</h2>
+  <p class="sub">本書の内容で次の工程（詳細仕様の確定・Phase 0）へ進めてよいかを判断し、記名します。</p>
+  <div class="sign">
+    <div><b>作成</b><br><small>DX推進部</small><br><br><small>日付：　　年　　月　　日</small></div>
+    <div><b>確認</b><br><small>業務責任者（代表）・リスク統括部</small><br><br><small>日付：　　年　　月　　日</small></div>
+    <div><b>承認</b><br><small>管理本部長</small><br><br><small>日付：　　年　　月　　日</small></div>
+  </div>
+</section>
+
+</main>
+</div>
+<footer class="ft">
+  <p>みらいAI窓口 × ヘルプデスク V3.1 要件定義書（第1版・ドラフト）｜DX推進部｜2026年10月20日</p>
+  <p>本資料は、完全オフラインの試作アプリ「Mirai_AIHelpdesk_Cowork_StepWizard_V3.1_PCinfo_Offline.html」の内容にもとづきます。試作のAIの答え・PC基本情報の値・人物・部署は検討用の例です。採用するときは、実際の組織・業務・関係法令・社内規程・契約に照らして確定してください。製品の機能・制約は変わることがあるため、採用時に最新の公式情報を確認してください。</p>
+</footer>
+<button type="button" class="totop" id="totop" aria-label="ページの先頭へ">↑</button>
+<script>
+
+(function(){
+  var root=document.documentElement, KEY='mirai-aihd-v31-doc-theme';
+  try{ var t=localStorage.getItem(KEY); if(t==='light'||t==='dark') root.setAttribute('data-theme',t); }catch(e){}
+  document.getElementById('themeBtn').addEventListener('click',function(){
+    var cur=root.getAttribute('data-theme') || (window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');
+    var nx=cur==='dark'?'light':'dark'; root.setAttribute('data-theme',nx);
+    try{ localStorage.setItem(KEY,nx); }catch(e){}
+  });
+  var links=[].slice.call(document.querySelectorAll('#tocList a'));
+  var map={}; links.forEach(function(a){ map[a.getAttribute('href').slice(1)]=a; });
+  if('IntersectionObserver' in window){
+    var io=new IntersectionObserver(function(es){ es.forEach(function(e){ if(e.isIntersecting){ links.forEach(function(a){a.classList.remove('on');}); var a=map[e.target.id]; if(a) a.classList.add('on'); } }); },{rootMargin:'-20% 0px -70% 0px'});
+    document.querySelectorAll('section.sec').forEach(function(s){ io.observe(s); });
+  }
+  var tt=document.getElementById('totop');
+  window.addEventListener('scroll',function(){ tt.classList.toggle('show', window.scrollY>600); },{passive:true});
+  tt.addEventListener('click',function(){ window.scrollTo({top:0}); });
+  document.querySelectorAll('.filter').forEach(function(f){
+    var tb=document.getElementById(f.getAttribute('data-for')); if(!tb) return;
+    var inp=f.querySelector('input'), pr='';
+    function run(){
+      var q=inp.value.trim().toLowerCase();
+      var rows=[].slice.call(tb.querySelectorAll('tbody tr')), lastGrp=null, grpHas=false;
+      function closeGrp(){ if(lastGrp) lastGrp.style.display=grpHas?'':'none'; }
+      rows.forEach(function(r){
+        if(r.classList.contains('grp')){ closeGrp(); lastGrp=r; grpHas=false; return; }
+        var bd=r.querySelector('.b,.sig');
+        var ok=(!q||r.textContent.toLowerCase().indexOf(q)>=0)&&(!pr||(bd&&bd.textContent===pr));
+        r.style.display=ok?'':'none'; if(ok) grpHas=true;
+      });
+      closeGrp();
+    }
+    inp.addEventListener('input',run);
+    f.querySelectorAll('button').forEach(function(b){ b.addEventListener('click',function(){ pr=b.getAttribute('data-p'); f.querySelectorAll('button').forEach(function(x){x.classList.toggle('on',x===b);}); run(); }); });
+  });
+})();
+
+
+</script>
+</body>
+</html>

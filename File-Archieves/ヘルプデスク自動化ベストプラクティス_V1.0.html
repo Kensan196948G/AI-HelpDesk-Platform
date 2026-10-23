@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ヘルプデスク自動化ベストプラクティス</title>
+<style>
+/* Layout: 単一カラムの読み物。全体像の図 → 10のルール → 段階 → 自動化の線引き → 門番 → 置き場所 → よくある失敗 → チェックリスト → ことば */
+:root{
+  --bg:#f5f7f9; --surface:#ffffff; --sunk:#eaeff3; --fg:#17222c; --muted:#56656f;
+  --line:#d3dce3; --accent:#1d5f86; --accent-soft:#e1edf5;
+  --ok:#2c7a4b; --ok-soft:#e2f2e8; --warn:#9a5b00; --warn-soft:#fbefd9; --crit:#a3342a; --crit-soft:#f8e3e0;
+  --f-display:"Hiragino Kaku Gothic StdN","Hiragino Sans","BIZ UDPGothic","Yu Gothic UI","Meiryo",sans-serif;
+  --f-body:"BIZ UDPGothic","Hiragino Sans","Yu Gothic","Meiryo",sans-serif;
+  --f-mono:"Consolas","SFMono-Regular","Menlo",monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#11181e; --surface:#172129; --sunk:#1d2a33; --fg:#e3eaef; --muted:#9aabb7;
+  --line:#2c3b46; --accent:#7cb9e0; --accent-soft:#1c3444;
+  --ok:#7fd1a0; --ok-soft:#183427; --warn:#f0bd6a; --warn-soft:#3a2c14; --crit:#f19a8f; --crit-soft:#3d1f1c; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#11181e; --surface:#172129; --sunk:#1d2a33; --fg:#e3eaef; --muted:#9aabb7;
+  --line:#2c3b46; --accent:#7cb9e0; --accent-soft:#1c3444;
+  --ok:#7fd1a0; --ok-soft:#183427; --warn:#f0bd6a; --warn-soft:#3a2c14; --crit:#f19a8f; --crit-soft:#3d1f1c; color-scheme:dark}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15.5px;line-height:1.85;padding:0 16px}
+.wrap{max-width:1100px;margin:0 auto;padding-block:32px 64px;display:grid;gap:46px}
+header{display:grid;gap:12px;border-bottom:2px solid var(--fg);padding-bottom:22px}
+.eyebrow{font-family:var(--f-mono);font-size:12px;color:var(--muted);letter-spacing:.04em}
+h1{font-family:var(--f-display);font-weight:800;font-size:clamp(26px,4vw,34px);line-height:1.3;margin:0;text-wrap:balance}
+.lead{margin:0;max-width:60em}
+.summary{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(230px,1fr))}
+.summary div{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:12px 16px;display:grid;gap:2px;align-content:start}
+.summary b{font-family:var(--f-display);font-size:15px}
+.summary span{font-size:13.5px;color:var(--muted)}
+nav.toc{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13.5px}
+nav.toc a{color:var(--accent);text-decoration:none;border-bottom:1px solid transparent}
+nav.toc a:hover,nav.toc a:focus-visible{border-bottom-color:var(--accent);outline:none}
+section{display:grid;gap:14px;scroll-margin-top:16px;min-width:0}
+h2{font-family:var(--f-display);font-weight:700;font-size:21px;margin:0;display:flex;align-items:baseline;gap:12px;text-wrap:balance}
+h2 .no{font-family:var(--f-mono);font-size:13px;color:var(--accent);font-weight:600}
+.note{margin:0;color:var(--muted);font-size:14.5px;max-width:62em}
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;min-width:760px;font-size:14px;line-height:1.7}
+th,td{text-align:left;vertical-align:top;padding:11px 14px;border-bottom:1px solid var(--line)}
+thead th{background:var(--sunk);font-family:var(--f-display);font-weight:700;font-size:13px;letter-spacing:.03em;white-space:nowrap}
+tbody tr:last-child td{border-bottom:none}
+td.k{font-weight:700}
+td.n{font-family:var(--f-mono);color:var(--accent);font-weight:600;white-space:nowrap}
+.pill{display:inline-block;font-size:12px;font-weight:700;padding:1px 9px;border-radius:999px;white-space:nowrap}
+.p-ok{background:var(--ok-soft);color:var(--ok)}
+.p-warn{background:var(--warn-soft);color:var(--warn)}
+.p-crit{background:var(--crit-soft);color:var(--crit)}
+.p-info{background:var(--accent-soft);color:var(--accent)}
+.fig{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:16px}
+.fig svg{display:block;min-width:820px;width:100%;height:auto}
+svg text{font-family:var(--f-body);font-size:13.5px;fill:var(--fg)}
+svg .sub{font-size:11px;fill:var(--muted)}
+svg .ttl{font-family:var(--f-display);font-weight:700;font-size:13px;fill:var(--muted)}
+svg .box{fill:var(--sunk);stroke:var(--line)}
+svg .core{fill:var(--accent-soft);stroke:var(--accent)}
+svg .gate{fill:var(--warn-soft);stroke:var(--warn)}
+svg .ai{fill:var(--ok-soft);stroke:var(--ok)}
+svg .frame{fill:none;stroke:var(--line);stroke-dasharray:4 4}
+svg .ln{stroke:var(--muted);stroke-width:1.4;fill:none}
+svg .ah{fill:var(--muted)}
+svg .lbl{font-family:var(--f-mono);font-size:11px;fill:var(--accent)}
+.steps{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(230px,1fr))}
+.step{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:14px 16px;display:grid;gap:6px;align-content:start}
+.step .lv{font-family:var(--f-mono);font-size:12px;color:var(--accent);font-weight:600}
+.step b{font-family:var(--f-display);font-size:16px}
+.step p{margin:0;font-size:14px}
+.step .go{font-size:13px;color:var(--muted);border-top:1px dashed var(--line);padding-top:6px}
+.step.now{border-color:var(--accent)}
+.check{display:grid;gap:8px}
+.check label{display:flex;gap:10px;align-items:flex-start;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px 14px;font-size:14px;cursor:pointer}
+.check input{margin-top:5px;width:16px;height:16px;accent-color:var(--accent);flex:none}
+.check label span small{display:block;color:var(--muted);font-size:12.5px}
+.check input:checked + span{color:var(--muted);text-decoration:line-through}
+.progress{display:flex;align-items:center;gap:12px;font-size:13.5px;color:var(--muted)}
+.bar{flex:1;max-width:320px;height:8px;background:var(--sunk);border-radius:999px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .2s}
+footer{font-size:12.5px;color:var(--muted);border-top:1px solid var(--line);padding-top:16px}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}.bar i{transition:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div class="eyebrow">desknet's NEO ／ AppSuite ／ Lightblue ・ 自動化とシステム化の進め方 ・ V1.0 ・ 2026-10-13</div>
+  <h1>ヘルプデスク自動化ベストプラクティス</h1>
+  <p class="lead">ヘルプデスクの仕事を、機械に任せる部分と人がやる部分に分けて、少しずつ自動にしていくための考え方をまとめました。むずかしい言葉はできるだけ使わず、使うときは最後の「ことばの説明」で説明しています。</p>
+  <div class="summary">
+    <div><b>小さく始める</b><span>問合せは月に7〜9件ほど。全部を一度に自動にするより、効果の大きい所から順番に。</span></div>
+    <div><b>大事な判断は人が持つ</b><span>ナレッジの承認やセキュリティの判断は自動にしない。</span></div>
+    <div><b>AIの前に門番を置く</b><span>名前や連絡先、パスワードはAIに渡さない。渡した内容は記録に残す。</span></div>
+    <div><b>止まっても困らない</b><span>自動の仕組みが止まったら、すぐ手作業に戻れるようにしておく。</span></div>
+  </div>
+  <nav class="toc" aria-label="目次">
+    <a href="#map">全体像</a><a href="#rules">10のルール</a><a href="#stages">進める順番</a><a href="#line">自動にしてよい所・だめな所</a><a href="#gate">AIに渡すもの</a><a href="#place">運び役の置き場所</a><a href="#fail">よくある失敗</a><a href="#check">始める前のチェック</a><a href="#words">ことばの説明</a>
+  </nav>
+</header>
+
+<section id="map">
+  <h2><span class="no">01</span>全体像：だれが何の係か</h2>
+  <p class="note">学校にたとえると、AppSuiteは「記録ノート」、Lightblueは「物知り係」、desknet's NEOは「掲示板」です。自動化とは、この間で書類を運ぶ「運び役」を置くことです。運び役は、物知り係に書類を渡す前に、見せてはいけない所を隠す「門番」の役目も持ちます。</p>
+  <div class="fig" role="img" aria-label="利用者の問合せはAppSuiteの記録ノートに入る。運び役（中継処理）が門番として個人情報を外し、症状だけをLightblueに渡して回答を受け取る。承認済みナレッジは運び役が本棚（参照データ）に置き、Lightblueはそこを読んで答える。お知らせやFAQはNEOの掲示板に載る。">
+    <svg viewBox="0 0 900 250" xmlns="http://www.w3.org/2000/svg">
+      <defs><marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0 0 L10 5 L0 10 z"/></marker></defs>
+      <rect class="box" x="20" y="55" width="140" height="60" rx="8"/><text x="90" y="80" text-anchor="middle" font-weight="700">利用者</text><text class="sub" x="90" y="99" text-anchor="middle">困っている社員</text>
+
+      <rect class="frame" x="215" y="18" width="250" height="215" rx="10"/><text class="ttl" x="228" y="38">desknet's NEO</text>
+      <rect class="core" x="235" y="55" width="210" height="60" rx="8"/><text x="340" y="80" text-anchor="middle" font-weight="700">AppSuite（記録ノート）</text><text class="sub" x="340" y="99" text-anchor="middle">問合せとナレッジの本物はここだけ</text>
+      <rect class="box" x="235" y="155" width="210" height="60" rx="8"/><text x="340" y="180" text-anchor="middle">掲示板</text><text class="sub" x="340" y="199" text-anchor="middle">お知らせ・よくある質問</text>
+
+      <rect class="frame" x="495" y="18" width="170" height="215" rx="10"/><text class="ttl" x="508" y="38">中継処理（運び役）</text>
+      <rect class="gate" x="510" y="55" width="140" height="60" rx="8"/><text x="580" y="80" text-anchor="middle" font-weight="700">門番</text><text class="sub" x="580" y="99" text-anchor="middle">隠す・記録する</text>
+      <rect class="box" x="510" y="155" width="140" height="60" rx="8"/><text x="580" y="180" text-anchor="middle">定期便</text><text class="sub" x="580" y="199" text-anchor="middle">承認分を運ぶ・古いのを捨てる</text>
+
+      <rect class="ai" x="700" y="55" width="180" height="60" rx="8"/><text x="790" y="80" text-anchor="middle" font-weight="700">Lightblue（物知り係）</text><text class="sub" x="790" y="99" text-anchor="middle">答えと下書きを作る</text>
+      <rect class="box" x="700" y="155" width="180" height="60" rx="8"/><text x="790" y="180" text-anchor="middle">本棚（参照データ）</text><text class="sub" x="790" y="199" text-anchor="middle">承認済みナレッジのコピー</text>
+
+      <path class="ln" marker-end="url(#a1)" d="M160 85 H233"/><text class="lbl" x="196" y="78" text-anchor="middle">問合せ</text>
+      <path class="ln" marker-end="url(#a1)" d="M445 85 H508"/>
+      <path class="ln" marker-end="url(#a1)" d="M650 74 H698"/><text class="lbl" x="674" y="66" text-anchor="middle">症状だけ</text>
+      <path class="ln" marker-end="url(#a1)" d="M700 98 H652"/><text class="lbl" x="676" y="128" text-anchor="middle">回答</text>
+      <path class="ln" marker-end="url(#a1)" d="M340 115 V153"/>
+      <path class="ln" marker-end="url(#a1)" d="M445 108 H478 V185 H508"/><text class="lbl" x="472" y="204">承認分</text>
+      <path class="ln" marker-end="url(#a1)" d="M650 185 H698"/>
+      <path class="ln" marker-end="url(#a1)" d="M790 155 V117"/><text class="lbl" x="796" y="140">読む</text>
+    </svg>
+  </div>
+</section>
+
+<section id="rules">
+  <h2><span class="no">02</span>自動化の10のルール</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>No</th><th>ルール</th><th>かんたんに言うと</th><th>なぜ大事か</th><th>このシステムでやること</th></tr></thead>
+    <tbody>
+      <tr><td class="n">1</td><td class="k">小さく始める</td><td>いちばん困っている所から1つずつ自動にする</td><td>一度に全部作ると、どこで壊れたか分からなくなる</td><td>最初は「承認済みナレッジを本棚へ運ぶ」と「放置された問合せを知らせる」の2つだけ</td></tr>
+      <tr><td class="n">2</td><td class="k">大事な判断は人が持つ</td><td>機械は運ぶ・数える・知らせる係。決めるのは人</td><td>間違ったナレッジが自動で広まると、たくさんの人が間違った手順を試してしまう</td><td>ナレッジの承認、セキュリティ事象の判断、権限の付与は自動にしない</td></tr>
+      <tr><td class="n">3</td><td class="k">AIの前に門番を置く</td><td>AIに見せてよい所だけ渡す</td><td>社内の生成AI利用ガイドライン第6条で、個人情報やパスワードは原則入力しないと決まっている</td><td>名前・連絡先・パスワードらしい文字を外し、症状・製品・エラー内容だけを渡す</td></tr>
+      <tr><td class="n">4</td><td class="k">合鍵は金庫にしまう</td><td>システム同士がつながるための鍵（APIキー）を大切に扱う</td><td>鍵が漏れると、外の人が記録を読んだり書き換えたりできてしまう</td><td>個人ではなく仕組み専用のアカウントで作る。必要な権限だけ与える。スクリプトに直接書かず安全な場所に保管し、定期的に交換する</td></tr>
+      <tr><td class="n">5</td><td class="k">日記をつける</td><td>いつ、何を、どこへ送ったかを残す</td><td>あとで「AIに何を見せたか」を説明できる。トラブルの原因も追える</td><td>送った項目、送った時間、結果、失敗の理由を記録し、保存期間を決める</td></tr>
+      <tr><td class="n">6</td><td class="k">やり直しても大丈夫に作る</td><td>同じ作業を2回しても、2件にならない</td><td>通信が途中で切れたら、もう一度やり直すのが普通だから</td><td>問合せIDやナレッジIDで「もう処理したか」を確かめてから登録・更新する</td></tr>
+      <tr><td class="n">7</td><td class="k">止まったら気づけるようにする</td><td>動かなかったら知らせてくれる</td><td>静かに止まると、本棚のナレッジが古いまま何週間も使われてしまう</td><td>失敗したら担当者に通知。毎朝「昨日は何件運んだか」を短く報告させる</td></tr>
+      <tr><td class="n">8</td><td class="k">練習場で試す</td><td>本番の記録を使わずに試す</td><td>試しの書き込みで本物の記録を壊さないため</td><td>テスト用のAppSuiteアプリとダミーデータを用意し、そこで動きを確かめてから本番へ</td></tr>
+      <tr><td class="n">9</td><td class="k">本物の置き場所は1つ</td><td>正しい内容はAppSuiteにだけある。他はコピー</td><td>同じ内容が2か所で別々に直されると、どちらが正しいか分からなくなる</td><td>ナレッジはAppSuiteで直す。本棚はAppSuiteから作り直す。廃止したら本棚からも消す</td></tr>
+      <tr><td class="n">10</td><td class="k">係と説明書を決める</td><td>だれが面倒を見るか、どう直すかを書いておく</td><td>作った人しか直せないと、その人が休んだときに止まる</td><td>担当を2人以上にし、仕組みの説明書と「止まったときの手順」を残す</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="stages">
+  <h2><span class="no">03</span>進める順番</h2>
+  <p class="note">階段のように1段ずつ上がります。次の段に進むのは、下の「次へ進む合図」がそろってからです。</p>
+  <div class="steps">
+    <div class="step"><span class="lv">段階0</span><b>準備</b><p>Lightblueが会社の承認を受けているか、AppSuiteとLightblueにどんな窓口（API）があるかを確かめる。</p><span class="go">次へ進む合図：確認事項の答えがそろう</span></div>
+    <div class="step now"><span class="lv">段階1</span><b>手作業で回す</b><p>受付・記録・承認はAppSuiteで行い、AIとのやり取りは人がつなぐ。ここで流れのムダや迷う所を見つける。</p><span class="go">次へ進む合図：2〜3か月回して、手順が固まる</span></div>
+    <div class="step"><span class="lv">段階2</span><b>定期便を自動にする</b><p>承認済みナレッジを本棚へ運ぶ、廃止分を捨てる、放置された問合せを知らせる。決まった時間に動けば十分。</p><span class="go">次へ進む合図：失敗通知と毎朝の報告が1か月安定</span></div>
+    <div class="step"><span class="lv">段階3</span><b>AIとの連携を自動にする</b><p>受付内容から症状だけをLightblueへ送り、答えを書き戻す。解決記録から下書きを作らせる。門番と日記がそろっていることが条件。</p><span class="go">続ける合図：AI解決率と誤回答の数を毎月確かめる</span></div>
+  </div>
+</section>
+
+<section id="line">
+  <h2><span class="no">04</span>自動にしてよい所・だめな所</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>区分</th><th>作業</th><th>理由</th></tr></thead>
+    <tbody>
+      <tr><td><span class="pill p-ok">自動にしてよい</span></td><td>受付番号をつける、担当者に知らせる、放置を見つける、承認済みを本棚へ運ぶ、廃止分を本棚から消す、件数を数える</td><td>決まった手順どおりで、間違っても影響が小さく、すぐ直せる</td></tr>
+      <tr><td><span class="pill p-info">自動＋人の確認</span></td><td>AIの一次回答、ナレッジの下書き、問合せの種類の振り分け</td><td>AIは間違えることがある。最後に人が見るか、利用者が「解決しなかった」と言える道を残す</td></tr>
+      <tr><td><span class="pill p-crit">人だけがやる</span></td><td>ナレッジの承認、セキュリティ事象の判断、アカウントの解除や権限の付与、Skills（AIへの指示）の変更</td><td>間違えると影響が大きい。社内規程でも判断と行動の主体は人と決まっている（第7条）</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="gate">
+  <h2><span class="no">05</span>門番のルール：AIに渡すもの・渡さないもの</h2>
+  <p class="note">門番は、AppSuiteの記録をLightblueへ渡す前に、項目ごとに通すか止めるかを決めます。自由に書ける欄（症状など）にも名前やパスワードがまぎれ込むことがあるので、決まった形の文字は自動で隠し、それでも残ったものは人が確認します。</p>
+  <div class="tbl"><table>
+    <thead><tr><th>項目</th><th>渡す？</th><th>理由・やり方</th></tr></thead>
+    <tbody>
+      <tr><td class="k">症状・製品・エラー内容</td><td><span class="pill p-ok">渡す</span></td><td>答えを探すのに必要</td></tr>
+      <tr><td class="k">問合せ種別・原因カテゴリ</td><td><span class="pill p-ok">渡す</span></td><td>答えの候補をしぼるのに役立つ</td></tr>
+      <tr><td class="k">問合せID</td><td><span class="pill p-info">番号だけ</span></td><td>答えを正しい記録に書き戻すための目印。中身の情報は含まない</td></tr>
+      <tr><td class="k">問合せ者の名前・連絡先</td><td><span class="pill p-crit">渡さない</span></td><td>個人情報（ガイドライン第6条（1））</td></tr>
+      <tr><td class="k">パスワード・管理用アカウントの情報</td><td><span class="pill p-crit">渡さない</span></td><td>認証情報（第6条（5））。見つけたら隠して担当者に知らせる</td></tr>
+      <tr><td class="k">サーバ名・社内のパス・IPアドレス</td><td><span class="pill p-crit">渡さない</span></td><td>社内の作りが外から分かってしまう</td></tr>
+      <tr><td class="k">セキュリティ事象の内容</td><td><span class="pill p-crit">渡さない</span></td><td>脆弱性やマルウェアの情報（第6条（6））。この種別は丸ごとAIを通さない</td></tr>
+      <tr><td class="k">資産番号</td><td><span class="pill p-warn">原則渡さない</span></td><td>答えを探すのに必要ないことが多い。機種名が必要なら機種だけ渡す</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="place">
+  <h2><span class="no">06</span>運び役（中継処理）の置き場所</h2>
+  <p class="note">いきなり専用のサーバを用意する必要はありません。段階と、desknet's NEOが社内にあるかクラウドにあるかで選びます。</p>
+  <div class="tbl"><table>
+    <thead><tr><th>置き場所</th><th>向いている時</th><th>気をつけること</th><th>おすすめの段階</th></tr></thead>
+    <tbody>
+      <tr><td class="k">運び役なし（人が運ぶ）</td><td>始めたばかり。件数が少ない</td><td>運び忘れ、消し忘れ。週1回の確認日を決める</td><td><span class="pill p-info">段階1</span></td></tr>
+      <tr><td class="k">今あるサーバでPowerShellを定期実行</td><td>desknet's NEOが社内にある。チームがPowerShellに慣れている</td><td>説明書と担当2人。鍵の保管場所</td><td><span class="pill p-ok">段階2</span></td></tr>
+      <tr><td class="k">Power Automate</td><td>desknet's NEOがクラウドにある、または外から届く</td><td>外部とつなぐ部品は追加ライセンスが要る場合がある。社内のNEOに届けるには中継用の部品（ゲートウェイ）が要る</td><td><span class="pill p-ok">段階2</span></td></tr>
+      <tr><td class="k">専用の中継サーバ</td><td>AIとの連携を自動にする。門番と日記を1か所にまとめたい</td><td>更新・監視・障害対応の手間。鍵が集まるので守りを固くする</td><td><span class="pill p-warn">段階3で判断</span></td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="fail">
+  <h2><span class="no">07</span>よくある失敗と防ぎ方</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>よくある失敗</th><th>起きること</th><th>防ぎ方</th></tr></thead>
+    <tbody>
+      <tr><td class="k">全部を一度に自動にする</td><td>どこが悪いのか分からず、結局手作業に戻る</td><td>ルール1。1つずつ、効果を確かめてから次へ</td></tr>
+      <tr><td class="k">記録をまるごとAIに渡す</td><td>名前やパスワードがAIに渡ってしまう</td><td>ルール3。門番の表のとおり、項目ごとに通すか決める</td></tr>
+      <tr><td class="k">個人のアカウントで鍵を作る</td><td>その人が異動・退職すると仕組みが止まる</td><td>ルール4。仕組み専用のアカウントにする</td></tr>
+      <tr><td class="k">廃止したナレッジを本棚に残す</td><td>AIが古い手順や間違った手順を答え続ける</td><td>ルール9。本棚はAppSuiteから毎回作り直す</td></tr>
+      <tr><td class="k">失敗しても誰も気づかない</td><td>何週間も本棚が更新されない</td><td>ルール7。失敗通知と毎朝の報告</td></tr>
+      <tr><td class="k">承認まで自動にする</td><td>人が見ていないナレッジが広まる</td><td>ルール2。承認は必ず人</td></tr>
+      <tr><td class="k">作った人しか分からない</td><td>休みや異動で直せなくなる</td><td>ルール10。説明書と担当2人</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="check">
+  <h2><span class="no">08</span>始める前のチェック</h2>
+  <div class="progress"><span id="count">0 / 12 確認済み</span><span class="bar"><i id="barfill"></i></span></div>
+  <div class="check">
+    <label for="c1"><input type="checkbox" id="c1"><span>Lightblueが会社の承認を受けた生成AIである<small>生成AI利用ガイドライン第4条。利用者向けに使える範囲も確認</small></span></label>
+    <label for="c2"><input type="checkbox" id="c2"><span>Lightblueに、外から質問を送って答えを受け取る窓口（API）がある<small>段階3の一次回答・下書きの自動化に必要</small></span></label>
+    <label for="c3"><input type="checkbox" id="c3"><span>LightblueのSkillsの作り方・直し方が分かっている<small>管理画面だけか、外から更新できるか</small></span></label>
+    <label for="c4"><input type="checkbox" id="c4"><span>本棚（参照データ）に使える保管先と、消したときに反映されるまでの時間が分かっている</span></label>
+    <label for="c5"><input type="checkbox" id="c5"><span>自社のdesknet's NEOとAppSuiteでAPIが使える。つなぎ方（認証）が分かっている</span></label>
+    <label for="c6"><input type="checkbox" id="c6"><span>desknet's NEOが社内にあるかクラウドにあるかを確認した<small>運び役の置き場所が決まる</small></span></label>
+    <label for="c7"><input type="checkbox" id="c7"><span>仕組み専用のアカウントと、鍵の保管場所を決めた</span></label>
+    <label for="c8"><input type="checkbox" id="c8"><span>テスト用のAppSuiteアプリとダミーデータがある</span></label>
+    <label for="c9"><input type="checkbox" id="c9"><span>日記（ログ）に残す項目と、保存する期間を決めた</span></label>
+    <label for="c10"><input type="checkbox" id="c10"><span>止まったときに手作業へ戻る手順を書いた</span></label>
+    <label for="c11"><input type="checkbox" id="c11"><span>仕組みの面倒を見る担当を2人以上決めた</span></label>
+    <label for="c12"><input type="checkbox" id="c12"><span>ナレッジの承認者を指名した<small>下書きを作る人とは別の人</small></span></label>
+  </div>
+  <p class="note">チェックはこの画面の中だけで使えます。ページを閉じると元に戻ります。</p>
+</section>
+
+<section id="words">
+  <h2><span class="no">09</span>ことばの説明</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>ことば</th><th>意味</th></tr></thead>
+    <tbody>
+      <tr><td class="k">API</td><td>システム同士がやり取りするための受付窓口。人が画面を操作する代わりに、プログラムがデータを読んだり書いたりする</td></tr>
+      <tr><td class="k">中継処理</td><td>2つのシステムの間で、データを取りに行って運ぶプログラム。この資料では「運び役」</td></tr>
+      <tr><td class="k">マスキング</td><td>見せてはいけない部分を隠すこと。この資料では「門番」の仕事</td></tr>
+      <tr><td class="k">ログ</td><td>いつ何をしたかの記録。この資料では「日記」</td></tr>
+      <tr><td class="k">APIキー</td><td>APIを使うための鍵。この資料では「合鍵」</td></tr>
+      <tr><td class="k">参照データ（RAG）</td><td>AIが答える前に読む資料。AIは覚えていることだけでなく、ここを調べて答える。この資料では「本棚」</td></tr>
+      <tr><td class="k">Skills</td><td>Lightblueに「こういう時はこう対応する」と教えておく指示。ここには手順と判断のルールを置き、個々のナレッジは本棚に置く</td></tr>
+      <tr><td class="k">正本</td><td>正しい内容が入っている、ただ1つの場所。この仕組みではAppSuite</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<footer>本書は「AppSuite ヘルプデスク整理ガイド」と「ヘルプデスク作業プロセス V1.0」の構成にもとづきます。Lightblueの連携仕様（API・Skillsの更新方法・参照データの保管先）は公開情報で確認できなかったため、導入前に提供元へ確認してください。</footer>
+</div>
+<script>
+(function(){
+  var boxes = document.querySelectorAll('.check input');
+  var count = document.getElementById('count');
+  var fill = document.getElementById('barfill');
+  function update(){
+    var n = 0; boxes.forEach(function(b){ if (b.checked) n++; });
+    count.textContent = n + ' / ' + boxes.length + ' 確認済み';
+    fill.style.width = (n / boxes.length * 100) + '%';
+  }
+  boxes.forEach(function(b){ b.addEventListener('change', update); });
+  update();
+})();
+</script>
+</body>
+</html>

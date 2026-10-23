@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<title>みらいAI窓口×ヘルプデスク V3.1 詳細仕様書</title>
+<!-- Mirai-AI-Helpdesk-V3.1_03_Detailed-Specification_詳細仕様書.html ／ 対象アプリ：Mirai_AIHelpdesk_Cowork_StepWizard_V3.1_PCinfo_Offline.html ／ 2026年10月20日 ／ DX推進部 -->
+<style>
+
+:root{
+  --bg:#f5f7fa; --surface:#ffffff; --surface2:#eef2f6; --ink:#14202e; --muted:#5a6878; --line:#dce3eb;
+  --navy:#0f2a44; --navy2:#173a5c; --on-navy:#ffffff;
+  --accent:#d9731a; --accent-soft:#fff1e2;
+  --ai:#0f8a87; --ai-soft:#e0f4f3;
+  --human:#c64a30; --human-soft:#fbe8e3;
+  --ci:#4f5bd5; --ci-soft:#e9ebfb;
+  --g:#1f8a4c; --g-soft:#e3f5ea; --y:#a87308; --y-soft:#fdf3dc; --r:#c53030; --r-soft:#fbe4e4;
+  --shadow:0 1px 2px rgba(15,42,68,.06),0 8px 24px rgba(15,42,68,.07);
+  --radius:14px;
+  --font:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:ui-monospace,"SFMono-Regular","Cascadia Code",Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0e1621; --surface:#152130; --surface2:#1b2a3c; --ink:#e6edf5; --muted:#9fb0c3; --line:#2a3b50;
+    --navy:#0b1f33; --navy2:#16324f; --on-navy:#ffffff;
+    --accent:#f5a04f; --accent-soft:#3a2a17;
+    --ai:#4fd1cc; --ai-soft:#123534;
+    --human:#f08a72; --human-soft:#3b2019;
+    --ci:#9aa3f5; --ci-soft:#232a52;
+    --g:#5fd394; --g-soft:#173527; --y:#f0c050; --y-soft:#3a2f12; --r:#f08080; --r-soft:#3d1c1c;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.25);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0e1621; --surface:#152130; --surface2:#1b2a3c; --ink:#e6edf5; --muted:#9fb0c3; --line:#2a3b50;
+  --navy:#0b1f33; --navy2:#16324f; --on-navy:#ffffff;
+  --accent:#f5a04f; --accent-soft:#3a2a17;
+  --ai:#4fd1cc; --ai-soft:#123534;
+  --human:#f08a72; --human-soft:#3b2019;
+  --ci:#9aa3f5; --ci-soft:#232a52;
+  --g:#5fd394; --g-soft:#173527; --y:#f0c050; --y-soft:#3a2f12; --r:#f08080; --r-soft:#3d1c1c;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.25);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:15.5px;line-height:1.85;letter-spacing:.01em}
+a{color:var(--ci)}
+code,kbd{font-family:var(--mono);font-size:.9em;background:var(--surface2);border:1px solid var(--line);border-radius:6px;padding:0 .35em}
+.topbar{position:sticky;top:0;z-index:20;background:var(--navy);color:var(--on-navy);display:flex;align-items:center;gap:12px;padding:10px 20px;box-shadow:0 2px 10px rgba(0,0,0,.15)}
+.topbar .brand{font-weight:700;letter-spacing:.04em;white-space:nowrap}
+.topbar .brand small{font-weight:400;opacity:.75;margin-left:8px}
+.topbar .sp{flex:1}
+.topbar a.sw,.topbar button{color:var(--on-navy);background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.22);border-radius:999px;padding:5px 12px;font:inherit;font-size:13px;cursor:pointer;text-decoration:none;white-space:nowrap}
+.topbar a.sw:hover,.topbar button:hover{background:rgba(255,255,255,.2)}
+.hero{background:linear-gradient(135deg,var(--navy) 0%,var(--navy2) 100%);color:var(--on-navy);padding:48px 20px 40px}
+.hero .in{max-width:1180px;margin:0 auto}
+.hero .kicker{display:inline-block;font-size:12.5px;letter-spacing:.12em;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25);border-radius:999px;padding:3px 12px}
+.hero h1{font-size:clamp(26px,4.4vw,40px);line-height:1.3;margin:14px 0 8px}
+.hero p{margin:0;max-width:820px;opacity:.92}
+.hero .meta{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:18px;font-size:13.5px;opacity:.9}
+.layout{max-width:1180px;margin:0 auto;padding:28px 20px 80px;display:grid;grid-template-columns:250px minmax(0,1fr);gap:32px}
+.toc{position:sticky;top:64px;align-self:start;max-height:calc(100vh - 84px);overflow:auto;font-size:13.5px;padding-right:4px}
+.toc b{display:block;font-size:12px;color:var(--muted);letter-spacing:.1em;margin:0 0 6px}
+.toc ol{list-style:none;margin:0;padding:0}
+.toc a{display:block;padding:5px 10px;border-radius:8px;color:var(--ink);text-decoration:none;border-left:3px solid transparent}
+.toc a:hover{background:var(--surface2)}
+.toc a.on{background:var(--accent-soft);border-left-color:var(--accent);font-weight:700}
+.toc-m{display:none}
+main{min-width:0}
+section.sec{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:28px 30px;margin:0 0 24px;scroll-margin-top:72px}
+section.sec>h2{display:flex;align-items:center;gap:12px;font-size:22px;line-height:1.4;margin:0 0 6px}
+section.sec>h2 .no{flex:none;display:grid;place-items:center;width:36px;height:36px;border-radius:10px;background:var(--navy);color:var(--on-navy);font-size:15px}
+section.sec>.sub{color:var(--muted);margin:0 0 18px}
+h3{font-size:17.5px;margin:26px 0 10px;padding-left:10px;border-left:4px solid var(--accent);line-height:1.5}
+h4{font-size:15.5px;margin:18px 0 6px}
+p{margin:0 0 12px}
+ul,ol{margin:0 0 12px;padding-left:1.4em}
+li{margin:2px 0}
+.easy{background:var(--ai-soft);border:1px solid color-mix(in srgb,var(--ai) 35%,transparent);border-radius:12px;padding:14px 16px 12px 16px;margin:12px 0 16px}
+.easy::before{content:"やさしく言うと";display:inline-block;font-size:12px;font-weight:700;color:var(--surface);background:var(--ai);border-radius:999px;padding:1px 10px;margin-bottom:6px}
+.note{background:var(--surface2);border:1px solid var(--line);border-radius:12px;padding:12px 16px;margin:12px 0}
+.warn{background:var(--r-soft);border:1px solid color-mix(in srgb,var(--r) 35%,transparent);border-radius:12px;padding:12px 16px;margin:12px 0}
+.prop{background:var(--y-soft);border:1px dashed color-mix(in srgb,var(--y) 60%,transparent);border-radius:12px;padding:12px 16px;margin:12px 0}
+.prop::before{content:"本書で補った提案";display:inline-block;font-size:12px;font-weight:700;color:var(--y);border:1px solid var(--y);border-radius:999px;padding:0 10px;margin-bottom:4px}
+.tw{overflow-x:auto;margin:10px 0 16px;border:1px solid var(--line);border-radius:12px}
+table{border-collapse:collapse;width:100%;font-size:14px;line-height:1.65}
+th,td{border-bottom:1px solid var(--line);padding:9px 12px;text-align:left;vertical-align:top}
+thead th{background:var(--surface2);font-size:13px;color:var(--muted);white-space:nowrap;position:sticky;top:0}
+tbody tr:last-child td{border-bottom:none}
+tbody tr:hover td{background:color-mix(in srgb,var(--surface2) 50%,transparent)}
+tr.grp td{background:var(--surface2)}
+td.id,th.id{font-family:var(--mono);white-space:nowrap;font-size:13px}
+td.nw{white-space:nowrap}
+.b{display:inline-block;font-size:12px;font-weight:700;border-radius:999px;padding:1px 9px;white-space:nowrap;border:1px solid}
+.b.must{color:var(--human);border-color:var(--human);background:var(--human-soft)}
+.b.should{color:var(--ci);border-color:var(--ci);background:var(--ci-soft)}
+.b.could{color:var(--muted);border-color:var(--line);background:var(--surface2)}
+.src{display:inline-block;font-family:var(--mono);font-size:11.5px;color:var(--muted);border:1px solid var(--line);border-radius:6px;padding:0 5px;margin:1px 2px 1px 0;white-space:nowrap}
+.src.p{color:var(--y);border-color:var(--y)}
+.sig{display:inline-flex;align-items:center;gap:5px;font-weight:700;font-size:13px;border-radius:999px;padding:1px 10px;white-space:nowrap}
+.sig::before{content:"";width:10px;height:10px;border-radius:50%;background:currentColor}
+.sig.g{color:var(--g);background:var(--g-soft)} .sig.y{color:var(--y);background:var(--y-soft)} .sig.r{color:var(--r);background:var(--r-soft)}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin:12px 0 16px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.card h4{margin:0 0 6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.card p{margin:0;font-size:14px;color:var(--muted)}
+.card.ai{border-top:4px solid var(--ai)} .card.ci{border-top:4px solid var(--ci)} .card.hu{border-top:4px solid var(--human)} .card.ac{border-top:4px solid var(--accent)}
+.card.g{border-top:4px solid var(--g)} .card.y{border-top:4px solid var(--y)} .card.r{border-top:4px solid var(--r)}
+.who{font-size:12px;font-weight:700;border-radius:6px;padding:0 7px;white-space:nowrap}
+.who.ai{background:var(--ai-soft);color:var(--ai)} .who.ci{background:var(--ci-soft);color:var(--ci)} .who.hu{background:var(--human-soft);color:var(--human)}
+.steps{counter-reset:s;list-style:none;padding:0;margin:12px 0 16px;display:grid;gap:8px}
+.steps>li{counter-increment:s;display:grid;grid-template-columns:34px 1fr;gap:12px;align-items:start;background:var(--surface2);border-radius:10px;padding:10px 12px}
+.steps>li::before{content:counter(s);display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:var(--navy);color:var(--on-navy);font-weight:700;font-size:14px}
+.steps>li b{display:block}
+figure{margin:14px 0 18px}
+.figwrap{overflow-x:auto}
+figure svg{width:100%;min-width:640px;height:auto;display:block}
+figcaption{font-size:13px;color:var(--muted);margin-top:6px;text-align:center}
+dl.gl{display:grid;grid-template-columns:minmax(120px,190px) 1fr;gap:0;margin:8px 0;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+dl.gl dt,dl.gl dd{margin:0;padding:9px 12px;border-bottom:1px solid var(--line)}
+dl.gl dt{font-weight:700;background:var(--surface2)}
+.filter{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0}
+.filter input{flex:1 1 220px;min-width:0;font:inherit;font-size:14px;padding:7px 12px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--ink)}
+.filter button{font:inherit;font-size:13px;padding:5px 12px;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer}
+.filter button.on{background:var(--navy);color:var(--on-navy);border-color:var(--navy)}
+.sign{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.sign div{border:1px solid var(--line);border-radius:12px;padding:10px 12px;min-height:110px}
+.sign small{color:var(--muted)}
+footer.ft{max-width:1180px;margin:0 auto;padding:0 20px 40px;color:var(--muted);font-size:13px}
+.totop{position:fixed;right:16px;bottom:16px;width:44px;height:44px;border-radius:50%;border:none;background:var(--navy);color:var(--on-navy);font-size:18px;cursor:pointer;box-shadow:var(--shadow);opacity:0;pointer-events:none;transition:opacity .2s}
+.totop.show{opacity:1;pointer-events:auto}
+svg .t{fill:var(--ink);font-family:var(--font)} svg .tm{fill:var(--muted);font-family:var(--font)}
+svg .bx{fill:var(--surface);stroke:var(--line)} svg .bx2{fill:var(--surface2);stroke:var(--line)}
+svg .ai{fill:var(--ai-soft);stroke:var(--ai)} svg .ci{fill:var(--ci-soft);stroke:var(--ci)} svg .hu{fill:var(--human-soft);stroke:var(--human)} svg .ac{fill:var(--accent-soft);stroke:var(--accent)}
+svg .ln{stroke:var(--muted);fill:none} svg .ar{fill:var(--muted)}
+@media (max-width:900px){
+  .layout{grid-template-columns:minmax(0,1fr);padding:18px 16px 60px;gap:0}
+  .toc{display:none}
+  .toc-m{display:block;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:8px 14px;margin:0 0 16px}
+  .toc-m summary{cursor:pointer;font-weight:700}
+  .toc-m ol{margin:8px 0;padding-left:1.4em;font-size:14px}
+  section.sec{padding:20px 16px}
+  .hero{padding:32px 16px 28px}
+  .topbar{padding:8px 16px}
+  .topbar .brand small{display:none}
+  .sign{grid-template-columns:1fr}
+  dl.gl{grid-template-columns:1fr}
+  dl.gl dt{border-bottom:none}
+}
+@media (max-width:520px){ .topbar .hide-s{display:none} body{font-size:15px} }
+@media print{
+  .topbar,.toc,.toc-m,.totop,.filter{display:none!important}
+  body{background:#fff;font-size:11pt}
+  .layout{display:block;padding:0}
+  section.sec{box-shadow:none;border:none;padding:0;margin:0 0 18px;break-inside:auto}
+  section.sec>h2{break-after:avoid}
+  .hero{background:#fff;color:#000;padding:0 0 12px;border-bottom:2px solid #000}
+  .tw,.figwrap{overflow:visible;border:none}
+  figure svg{min-width:0}
+  thead th{position:static}
+}
+
+/* ===== V3.1 文書セットの追加部品 ===== */
+.docnav{display:flex;gap:6px;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+.topbar a.sw.on{background:var(--accent);border-color:var(--accent);color:#1b1300;font-weight:700}
+.hero h1 small{display:block;font-size:.5em;font-weight:500;opacity:.85;margin-top:6px;letter-spacing:.02em}
+.strip{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;margin:14px 0 18px}
+.strip div{position:relative;background:var(--surface2);border:1px solid var(--line);border-top:5px solid var(--line);border-radius:10px;padding:8px 9px 8px;font-size:13px;line-height:1.5}
+.strip div b{display:block;font-size:11px;letter-spacing:.08em;color:var(--muted)}
+.strip div.u{border-top-color:var(--ci)} .strip div.a{border-top-color:var(--ai)} .strip div.h{border-top-color:var(--human)} .strip div.s{border-top-color:var(--g)}
+.strip div small{display:block;color:var(--muted);font-size:11.5px;margin-top:2px}
+.legend{display:flex;flex-wrap:wrap;gap:12px;font-size:12.5px;color:var(--muted);margin:-8px 0 12px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:-1px}
+.two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;margin:12px 0}
+.three{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:12px 0}
+.box{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.box h4{margin:0 0 6px}
+.box.g{border-top:4px solid var(--g)} .box.y{border-top:4px solid var(--y)} .box.r{border-top:4px solid var(--r)} .box.ai{border-top:4px solid var(--ai)} .box.hu{border-top:4px solid var(--human)} .box.ci{border-top:4px solid var(--ci)}
+.box ul{margin:4px 0 0}
+.tag{display:inline-block;font-size:11.5px;border-radius:6px;padding:0 7px;background:var(--surface2);border:1px solid var(--line);color:var(--muted);white-space:nowrap;margin:1px 2px 1px 0}
+.tag.v31{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);font-weight:700}
+.chk{list-style:none;padding:0;margin:8px 0 14px}
+.chk li{position:relative;padding:5px 0 5px 26px;border-bottom:1px dashed var(--line)}
+.chk li::before{content:"✓";position:absolute;left:4px;top:5px;color:var(--g);font-weight:800}
+.chk.no li::before{content:"✕";color:var(--r)}
+.kv{display:grid;grid-template-columns:minmax(110px,170px) 1fr;gap:4px 14px;margin:8px 0 14px;font-size:14px}
+.kv dt{color:var(--muted)} .kv dd{margin:0}
+.big{font-size:18px;line-height:1.7;font-weight:700;margin:6px 0 12px}
+.mock{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--bg);margin:10px 0 16px}
+.mock .bar{background:var(--navy);color:#fff;font-size:12px;padding:6px 12px;display:flex;gap:10px;align-items:center}
+.mock .bar i{width:9px;height:9px;border-radius:50%;background:#f5b800;display:inline-block}
+.mock .bd{padding:12px;font-size:13px}
+.mock .stp{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:10px}
+.mock .stp span{height:6px;border-radius:3px;background:var(--line)}
+.mock .stp span.d{background:var(--ai)} .mock .stp span.o{background:#f5b800}
+.mock .row{display:grid;grid-template-columns:minmax(0,1fr) 34%;gap:10px}
+.mock .pane,.mock .side{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px}
+.mock .light{display:flex;gap:6px;margin-bottom:6px}
+.mock .light b{width:16px;height:16px;border-radius:50%;opacity:.2;display:inline-block}
+.mock .light .g{background:#22b463}.mock .light .y{background:#f5c400}.mock .light .r{background:#e3403a}.mock .light b.on{opacity:1}
+.ill{display:flex;gap:12px;align-items:flex-start;background:var(--surface2);border-radius:12px;padding:12px 14px;margin:10px 0}
+.ill .em{flex:none;font-size:28px;line-height:1}
+.qa dt{font-weight:700;margin-top:10px}.qa dt::before{content:"Q. ";color:var(--accent)}
+.qa dd{margin:2px 0 8px 0}.qa dd::before{content:"A. ";color:var(--ai);font-weight:700}
+.cat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px;margin:12px 0}
+.dept{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 16px;box-shadow:var(--shadow)}
+.dept h4{margin:0;display:flex;align-items:center;gap:8px;font-size:15.5px}
+.dept .role{font-size:12.5px;color:var(--muted);margin:2px 0 8px}
+.dept ul{list-style:none;margin:0;padding:0}
+.dept li{display:grid;grid-template-columns:auto 1fr;gap:4px 8px;padding:7px 0;border-top:1px dashed var(--line);font-size:13.5px;line-height:1.6}
+.dept li .sig{margin-top:2px}
+.dept li .d{grid-column:2;color:var(--muted);font-size:12.5px}
+.dept li .pc{grid-column:2;font-size:12px;color:var(--ai)}
+.dept li .pc::before{content:"PC基本情報：";font-weight:700}
+.dept .ratio{display:flex;height:8px;border-radius:999px;overflow:hidden;background:var(--surface2);margin:2px 0 8px}
+.dept .ratio i{display:block;height:100%}
+.counts{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin:14px 0}
+.counts div{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.counts b{display:block;font-size:24px;line-height:1.2}
+.counts small{color:var(--muted)}
+.hide-c{display:none!important}
+@media (max-width:900px){.strip{grid-template-columns:repeat(2,minmax(0,1fr))}.two,.three{grid-template-columns:1fr}.counts{grid-template-columns:repeat(2,minmax(0,1fr))}.mock .row{grid-template-columns:1fr}.kv{grid-template-columns:1fr}}
+@media print{.docnav{display:none}.dept{box-shadow:none;break-inside:avoid}}
+.topbar{min-width:0}
+.docnav{min-width:0;flex:0 1 auto}
+.hero .meta span{overflow-wrap:anywhere;min-width:0}
+@media (max-width:520px){.topbar .brand{display:none}.docnav{flex:1 1 auto}}
+.ft p{overflow-wrap:anywhere}
+
+</style>
+</head>
+<body>
+<div class="topbar">
+  <span class="brand">みらいAI窓口 × ヘルプデスク V3.1<small>詳細仕様書（第1版・ドラフト）</small></span>
+  <span class="sp"></span>
+  <nav class="docnav" aria-label="文書の切り替え"><a class="sw hide-s" href="Mirai-AI-Helpdesk-V3.1_01_Concept-Plan_企画構想案.html">01 構想</a><a class="sw" href="Mirai-AI-Helpdesk-V3.1_02_Requirements_要件定義書.html">02 要件</a><a class="sw on" href="Mirai-AI-Helpdesk-V3.1_03_Detailed-Specification_詳細仕様書.html" aria-current=page>03 仕様</a><a class="sw" href="Mirai-AI-Helpdesk-V3.1_04_Easy-Guide_やさしい解説版.html">04 解説</a><a class="sw hide-s" href="Mirai-AI-Helpdesk-V3.1_05_Department-Catalog_部署別活用カタログ.html">05 部署別</a></nav>
+  <button type="button" id="themeBtn" aria-label="表示の明るさを切り替え">表示切替</button>
+  <button type="button" onclick="window.print()" class="hide-s">印刷</button>
+</div>
+<header class="hero">
+  <div class="in">
+    <span class="kicker">DETAILED SPECIFICATION</span>
+    <h1>みらいAI窓口 × ヘルプデスク V3.1<br>詳細仕様書<small>画面・判定・データ・テストの決め方</small></h1>
+    <p>要件定義書で決めた「何ができればよいか」を、試作V3.1が実際にどう動いているかにもとづいて<b>具体的なルール・数値・項目</b>に落とした文書です。本番で作り直すときの設計の原案として使います。</p>
+    <div class="meta"><span>文書番号：AIHD-V31-03</span><span>版：1.0（ドラフト）</span><span>作成日：2026年10月20日</span><span>起案：DX推進部</span><span>対象：Mirai_AIHelpdesk_Cowork_StepWizard_V3.1_PCinfo_Offline.html</span></div>
+  </div>
+</header>
+<div class="layout">
+<nav class="toc" aria-label="目次">
+  <b>目次</b>
+  <ol id="tocList">
+    <li><a href="#s0">0. 文書管理・この文書の読み方</a></li>
+    <li><a href="#s1">1. システム構成</a></li>
+    <li><a href="#s2">2. 画面仕様</a></li>
+    <li><a href="#s3">3. 機能仕様（ステップ受付）</a></li>
+    <li><a href="#s4">4. 機能仕様（PC基本情報の事前取得） V3.1</a></li>
+    <li><a href="#s5">5. 機能仕様（端末操作と安全装置）</a></li>
+    <li><a href="#s6">6. 機能仕様（引継ぎとヘルプデスク対応）</a></li>
+    <li><a href="#s7">7. 機能仕様（ナレッジ化）</a></li>
+    <li><a href="#s8">8. 機能仕様（運び役と外部AI）</a></li>
+    <li><a href="#s9">9. データ仕様</a></li>
+    <li><a href="#s10">10. 非機能仕様</a></li>
+    <li><a href="#s11">11. テスト仕様</a></li>
+    <li><a href="#s12">12. 運用仕様</a></li>
+    <li><a href="#s13">13. 要件との対応表</a></li>
+  </ol>
+</nav>
+<main>
+<details class="toc-m"><summary>目次を開く</summary><ol><li><a href="#s0">文書管理・この文書の読み方</a></li><li><a href="#s1">システム構成</a></li><li><a href="#s2">画面仕様</a></li><li><a href="#s3">機能仕様（ステップ受付）</a></li><li><a href="#s4">機能仕様（PC基本情報の事前取得） V3.1</a></li><li><a href="#s5">機能仕様（端末操作と安全装置）</a></li><li><a href="#s6">機能仕様（引継ぎとヘルプデスク対応）</a></li><li><a href="#s7">機能仕様（ナレッジ化）</a></li><li><a href="#s8">機能仕様（運び役と外部AI）</a></li><li><a href="#s9">データ仕様</a></li><li><a href="#s10">非機能仕様</a></li><li><a href="#s11">テスト仕様</a></li><li><a href="#s12">運用仕様</a></li><li><a href="#s13">要件との対応表</a></li></ol></details>
+
+<section class="sec" id="s0">
+  <h2><span class="no">0</span>文書管理・この文書の読み方</h2>
+  <p class="sub">本書は<a href="Mirai-AI-Helpdesk-V3.1_02_Requirements_要件定義書.html">要件定義書</a>と対になります。要件のID（FR・NFR・BR）は要件定義書の正本を使い、本書では「どう動くか」だけを書きます。</p>
+  <div class="note">旧「みらいSF 詳細仕様書」にあった付録「部署別道具カタログ全件」は、<a href="Mirai-AI-Helpdesk-V3.1_05_Department-Catalog_部署別活用カタログ.html">部署別活用カタログ</a>と重複するため本書から外しました。部署ごとの相談例は05を見てください。</div>
+  <h3>この文書の正本となる事柄</h3>
+  <ul>
+    <li>画面の構成と、STEPの進み方の判定（2章・3章）</li>
+    <li>PC基本情報（事前取得）の31項目と判定のしきい値（4章） <span class="tag v31">V3.1</span></li>
+    <li>端末操作の許可リストと実行前検証（5章）、運び役の処理と点検（8章）</li>
+    <li>データ項目と番号の付け方（9章）、テスト（11章）</li>
+  </ul>
+  <h3>改訂履歴</h3>
+  <div class="tw"><table><thead><tr><th>版</th><th>日付</th><th>内容</th><th>作成</th></tr></thead><tbody>
+    <tr><td>1.0</td><td>2026-10-20</td><td>初版ドラフト。試作V3.1の実装（受け入れ試験19項目・画面確認30項目に合格した状態）から仕様を起こした</td><td>DX推進部</td></tr>
+  </tbody></table></div>
+</section>
+
+<section class="sec" id="s1">
+  <h2><span class="no">1</span>システム構成</h2>
+  <p class="sub">試作（いま動くもの）と、本番の構成案を分けて示します。</p>
+  <h3>1-1. 試作V3.1の構成</h3>
+  <div class="tw"><table>
+    <thead><tr><th>部分</th><th>中身</th></tr></thead>
+    <tbody>
+      <tr><td>形</td><td>1つのHTMLファイル（約490KB）。ダブルクリックでブラウザで開く。外部のライブラリ・フォント・画像は読み込まない</td></tr>
+      <tr><td>通信</td><td>Content-Security-Policy で外部への通信をすべて禁止（connect-src 'none' ほか）。実際のブラウザでの試験で通信0件を確認</td></tr>
+      <tr><td>中の仕組み</td><td>① ヘルプデスク（引継ぎ・解決記録・ナレッジ・運び役・台帳）、② AI相談（Cowork：端末診断・承認付き修復・監査ログ）、③ ステップ受付と共通の枠（ホーム・STEP 1〜7・ボード・一覧・業務ツール）、④ PC基本情報の事前取得</td></tr>
+      <tr><td>保存</td><td>ブラウザの localStorage。キーは <code>mirai-wizard-v31-cowork</code> と <code>mirai-wizard-v31-helpdesk</code>。V3.0とは別の保存領域</td></tr>
+      <tr><td>AI</td><td>ルールにもとづく模擬（社内LLM／外部APIの役）。外部へは何も送らない</td></tr>
+    </tbody>
+  </table></div>
+  <h3>1-2. 本番の構成（案）</h3>
+  <figure><div class="figwrap"><svg viewBox="0 0 960 330" role="img" aria-label="本番の構成案">
+    <rect class="bx2" x="10" y="20" width="200" height="290" rx="12"/><text class="t" x="110" y="44" text-anchor="middle" font-weight="700" font-size="14">社員のPC</text>
+    <rect class="ci" x="28" y="62" width="164" height="54" rx="10"/><text class="t" x="110" y="86" text-anchor="middle" font-size="13">ブラウザ</text><text class="tm" x="110" y="104" text-anchor="middle" font-size="11">ステップ受付・チャット</text>
+    <rect class="ai" x="28" y="132" width="164" height="70" rx="10"/><text class="t" x="110" y="156" text-anchor="middle" font-size="13">PCエージェント</text><text class="tm" x="110" y="174" text-anchor="middle" font-size="11">事前取得（読み取り）</text><text class="tm" x="110" y="190" text-anchor="middle" font-size="11">承認済み操作の実行</text>
+    <rect class="bx" x="28" y="218" width="164" height="76" rx="10"/><text class="tm" x="110" y="244" text-anchor="middle" font-size="11">取得しない：ファイルの中身</text><text class="tm" x="110" y="262" text-anchor="middle" font-size="11">閲覧履歴・画面・キー入力</text><text class="tm" x="110" y="280" text-anchor="middle" font-size="11">メール本文ほか</text>
+    <rect class="bx2" x="260" y="20" width="420" height="290" rx="12"/><text class="t" x="470" y="44" text-anchor="middle" font-weight="700" font-size="14">社内のサーバ</text>
+    <rect class="ac" x="280" y="62" width="180" height="70" rx="10"/><text class="t" x="370" y="88" text-anchor="middle" font-size="13">AI窓口アプリ</text><text class="tm" x="370" y="106" text-anchor="middle" font-size="11">案件・承認・実行前検証</text><text class="tm" x="370" y="122" text-anchor="middle" font-size="11">（サーバ側で再検証）</text>
+    <rect class="ai" x="480" y="62" width="180" height="70" rx="10"/><text class="t" x="570" y="88" text-anchor="middle" font-size="13">運び役（中継）</text><text class="tm" x="570" y="106" text-anchor="middle" font-size="11">門番・根拠・点検・日記</text><text class="tm" x="570" y="122" text-anchor="middle" font-size="11">鍵は金庫に保管</text>
+    <rect class="hu" x="280" y="150" width="180" height="62" rx="10"/><text class="t" x="370" y="176" text-anchor="middle" font-size="13">ヘルプデスク（INC）</text><text class="tm" x="370" y="194" text-anchor="middle" font-size="11">desknet's NEO AppSuite</text>
+    <rect class="bx" x="480" y="150" width="180" height="62" rx="10"/><text class="t" x="570" y="176" text-anchor="middle" font-size="13">ナレッジの本棚</text><text class="tm" x="570" y="194" text-anchor="middle" font-size="11">承認済みのみ</text>
+    <rect class="bx" x="280" y="230" width="380" height="62" rx="10"/><text class="t" x="470" y="256" text-anchor="middle" font-size="13">監査ログ（改ざん防止の保存先）／ SIEM</text><text class="tm" x="470" y="274" text-anchor="middle" font-size="11">端末操作・ヘルプデスク・運び役の記録を一本化</text>
+    <rect class="bx2" x="730" y="20" width="220" height="290" rx="12"/><text class="t" x="840" y="44" text-anchor="middle" font-weight="700" font-size="14">つながる先</text>
+    <rect class="bx" x="748" y="62" width="184" height="50" rx="10"/><text class="t" x="840" y="92" text-anchor="middle" font-size="12.5">Entra ID（SSO）</text>
+    <rect class="bx" x="748" y="124" width="184" height="50" rx="10"/><text class="t" x="840" y="154" text-anchor="middle" font-size="12.5">承認済みの外部AI API</text>
+    <rect class="bx" x="748" y="186" width="184" height="50" rx="10"/><text class="t" x="840" y="210" text-anchor="middle" font-size="12">AD・HENNGE One・FortiGate</text><text class="tm" x="840" y="226" text-anchor="middle" font-size="11">（参照のみ）</text>
+    <rect class="bx" x="748" y="248" width="184" height="50" rx="10"/><text class="t" x="840" y="272" text-anchor="middle" font-size="12">端末管理（SKYSEA等）</text><text class="tm" x="840" y="288" text-anchor="middle" font-size="11">エージェントと整合</text>
+    <path class="ln" d="M192 89 H280" stroke-width="2"/><path class="ln" d="M192 167 C230 167 240 110 280 110" stroke-width="2"/>
+    <path class="ln" d="M460 97 H480" stroke-width="2"/><path class="ln" d="M660 97 C700 97 710 149 748 149" stroke-width="2"/>
+    <path class="ln" d="M370 132 V150" stroke-width="2"/><path class="ln" d="M570 132 V150" stroke-width="2"/>
+    <path class="ln" d="M660 87 C700 87 710 87 748 87" stroke-width="2"/>
+  </svg></div><figcaption>図1-1　本番の構成案（提案）。外部AIへは運び役からだけ出ていく</figcaption></figure>
+  <div class="prop">本番では、承認・実行前検証・権限の判定をサーバ側で行い、ブラウザの中の判定だけに頼りません（要件定義書 F-11）。PCエージェントは署名付きで配布し、読み取り用と実行用の権限を分けます。</div>
+</section>
+
+<section class="sec" id="s2">
+  <h2><span class="no">2</span>画面仕様</h2>
+  <p class="sub">見た目は「受付ステーション」の型に合わせています。</p>
+  <h3>2-1. 共通の枠</h3>
+  <div class="tw"><table>
+    <thead><tr><th>場所</th><th>内容</th></tr></thead>
+    <tbody>
+      <tr><td>左のメニュー（紺）</td><td>ホーム／新しい相談／ボード（自分の番の件数バッジ）／一覧／業務ツール／データ。幅820px以下では画面下のメニューになる</td></tr>
+      <tr><td>上部の帯</td><td>題名、「完全オフライン」表示、外部AIの状態（担当者以上・押すと設定を開く）、緊急停止、操作する人（4グループ11人）、役割</td></tr>
+      <tr><td>帯の下</td><td>緊急停止中は赤い帯を表示。業務ツールの画面では「← 業務ツール」の戻り道を表示</td></tr>
+    </tbody>
+  </table></div>
+  <h3>2-2. ホーム</h3>
+  <ul>
+    <li>あいさつ（時刻で「おはようございます／こんにちは／おつかれさまです」）と「新しい相談をはじめる」ボタン。担当者には「引継ぎ N件を見る」も表示</li>
+    <li>信号の色の割合（案件の青・黄・赤の件数）</li>
+    <li>件数5枚：AIが対応中／引継ぎ・担当者対応／ナレッジ化・承認待ち／完了／AIで解決した割合</li>
+    <li>「あなたの相談」（一般社員）または「あなたの番の案件」（担当者以上）と、最近の動き（一般社員は自分の分だけ）</li>
+  </ul>
+  <h3>2-3. 新しい相談（STEP 1〜7）</h3>
+  <div class="mock" aria-hidden="true"><div class="bar"><i></i>STEP 3　AIの一次対応</div><div class="bd">
+    <div class="stp"><span class="d"></span><span class="d"></span><span class="o"></span><span></span><span></span><span></span><span></span></div>
+    <div class="row"><div class="pane"><b>AIの一次対応</b><br><span style="color:var(--muted)">🖥️ 事前に取得したPC基本情報を確認しました。気になる点が3件あります…</span><br>🔍 診断（読み取りのみ）→ 🛠️ 修復の提案［Y］［N］</div>
+    <div class="side"><div class="light"><b class="g on"></b><b class="y"></b><b class="r"></b></div><b>次にやる人</b><br>相談する人<hr style="border:0;border-top:1px solid var(--line)"><b>PC基本情報</b><br>取得済み・気になる点 3件<hr style="border:0;border-top:1px solid var(--line)"><b>案件カード</b></div></div>
+  </div></div>
+  <div class="tw"><table>
+    <thead><tr><th>STEP</th><th>画面の中身</th><th>操作できる人</th><th>進む条件</th></tr></thead>
+    <tbody>
+      <tr><td>1 はじめに</td><td>6種類の選択カード、相談する人の表示</td><td>相談する人</td><td>種類を選んで「つぎへ」</td></tr>
+      <tr><td>2 困りごと</td><td>例文、件名、内容（必須）、伏せ字の予告、PC基本情報の取得の選択と進み具合カード、急ぎ具合、使うAI、添付（区分つき）</td><td>相談する人</td><td>「AIに相談する」（内容が空なら止める）</td></tr>
+      <tr><td>3 AIの一次対応</td><td>チャット（PC基本情報の要約→診断→回答・提案・実行）、追加の入力欄、「解決した」「解決しない → 担当者へ」</td><td>相談する人（担当者は閲覧のみ）</td><td>解決した→7／解決しない→4／チャット内で引継ぎに同意→4</td></tr>
+      <tr><td>4 引継ぎ</td><td>渡す情報の選択（相談内容は必須）、引継ぎ先、急ぎ。同意後は受付番号・INC番号・引継ぎメモ</td><td>相談する人</td><td>「同意して引き継ぐ」</td></tr>
+      <tr><td>5 担当者の対応</td><td>担当者以外：「いまは〇〇さんの番です」と切り替えボタン。担当者：ヘルプデスクの対応パネル（引継ぎメモ・類似ナレッジ・担当割り当て・解決記録）</td><td>ヘルプデスク担当・IT端末管理者・承認者</td><td>解決記録の登録で自動的に6へ</td></tr>
+      <tr><td>6 ナレッジ化</td><td>下書き → 承認待ち → 承認・反映済の段階表示。下書きパネル／承認パネル</td><td>担当者（申請）、承認者（承認）</td><td>承認で自動的に7へ</td></tr>
+      <tr><td>7 完了</td><td>完了の表示、経過のタイムライン、相談した人への通知の件数、「相談した人の画面で見る」</td><td>だれでも</td><td>－</td></tr>
+    </tbody>
+  </table></div>
+  <p>右側には常に、信号機（色・理由）、次にやる人（切り替えボタン）、PC基本情報カード（STEP 2以外・見られる人だけ）、案件カード、「このSTEPのきまり」を表示します。</p>
+  <h3>2-4. ボード・一覧</h3>
+  <ul>
+    <li><b>ボード</b>：列は「AIが対応中／引継ぎ待ち／担当者が対応中／ナレッジ化・承認待ち／完了」。カードは案件と、電話・メール等で受けた問い合わせ（担当者以上）。自分の番は黄色の枠。「すべて／あなたの番だけ」で絞る</li>
+    <li><b>一覧</b>：案件番号・件名・相談する人・種類・信号・今の段階・次にやる人・受付番号・INC・開始日時。一般社員は自分の案件だけ</li>
+  </ul>
+  <h3>2-5. 業務ツール（28画面）</h3>
+  <div class="tw"><table>
+    <thead><tr><th>グループ</th><th>画面</th><th>見られる人</th></tr></thead>
+    <tbody>
+      <tr><td>相談する</td><td>統合の流れ／チャットで相談（自由入力）／問い合わせ状況／ナレッジ検索／組織別の使い方</td><td>全員</td></tr>
+      <tr><td>ヘルプデスク業務</td><td>全体の状況／① 代行受付／② 運び役・AI一次対応／③ 引継ぎ・④ 解決記録／⑤ ナレッジ下書き／⑥ 承認者の確認</td><td>担当者・IT端末管理者・承認者</td></tr>
+      <tr><td>ナレッジ</td><td>⑦ ナレッジDB／本棚・分野別のきまり</td><td>担当者以上＋監査</td></tr>
+      <tr><td>端末操作</td><td>承認キュー（全員：自分の申請）／PC基本情報（事前取得）（全員：見られる分だけ）／操作許可リスト（担当者以上＋監査）</td><td>表のとおり</td></tr>
+      <tr><td>AIの運用</td><td>運び役の日記／AIへの指示書／AIの種類と試験（担当者以上＋監査）／門番・費用・動かし方（担当者以上）</td><td>表のとおり</td></tr>
+      <tr><td>台帳・記録</td><td>問い合わせ台帳／機器・サービス台帳／監査ログ（全員：自分の分）／操作の記録／受け入れ試験／AI窓口の利用状況</td><td>担当者以上＋監査（監査ログは全員）</td></tr>
+      <tr><td>説明・設定</td><td>12のルール・導入チェック（担当者以上＋監査）／設定・データ（全員）</td><td>表のとおり</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section class="sec" id="s3">
+  <h2><span class="no">3</span>機能仕様（ステップ受付）</h2>
+  <p class="sub">STEPの進み方・信号・次にやる人を決めるルールです。</p>
+  <h3>3-1. 相談の種類（6種類）</h3>
+  <div class="tw"><table>
+    <thead><tr><th>種類</th><th>PC基本情報の既定</th><th>引継ぎの区分</th><th>例文</th></tr></thead>
+    <tbody>
+      <tr><td>PC・周辺機器・ネットワーク</td><td>取得する</td><td>IT端末</td><td>印刷ができません／VPNにつながらない／Teamsの音が出ない／PCが遅い・容量不足</td></tr>
+      <tr><td>アカウント・ログイン</td><td>取得する</td><td>ID・アクセス権</td><td>ログインできない／機種変更でMFA</td></tr>
+      <tr><td>ファイル・共有フォルダ</td><td>取得する</td><td>ID・アクセス権</td><td>共有フォルダが開けない／DirectCloudの同期／工事写真の名前を揃えたい／工事日報を集計（サンプル添付）</td></tr>
+      <tr><td>社内の手続き・規程</td><td>取得しない</td><td>業務・規程</td><td>経費精算の手順／人事異動の手続／ヒヤリハット報告</td></tr>
+      <tr><td>セキュリティの心配</td><td>取得する（急ぎ扱い）</td><td>セキュリティ事故</td><td>不審なメールを開いた／PCを紛失した</td></tr>
+      <tr><td>その他・相談</td><td>取得しない</td><td>AI窓口</td><td>生成AIの使い方／現場で通信できない</td></tr>
+    </tbody>
+  </table></div>
+  <h3>3-2. 進めるSTEPの上限（到達点）</h3>
+  <p>STEPバーでは、到達点までのSTEPだけを押せます。到達点は次の順に判定します。</p>
+  <ol>
+    <li>AIで解決した → 7</li>
+    <li>種類が選ばれた → 2、送信した → 3、引継ぎ済み（受付番号あり）または「解決しない」を選んだ → 4、INCができた → 5</li>
+    <li>INCが解決済み → 6、ナレッジが公開された、または解決済みで下書きを作らなかった → 7</li>
+  </ol>
+  <p>次の場合は自動で次のSTEPへ進みます：STEP 3 で受付番号ができた → 4／STEP 5 でINCが解決済みになった → 6／STEP 6 でナレッジが公開された → 7。</p>
+  <h3>3-3. 信号の判定</h3>
+  <div class="tw"><table>
+    <thead><tr><th>順</th><th>条件</th><th>色</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>完了（AIで解決／ナレッジ公開／ナレッジにしないで解決）し、種類がセキュリティでない</td><td><span class="sig g">青</span></td></tr>
+      <tr><td>2</td><td>種類がセキュリティ、INCがセキュリティ事象、急ぎ、または内容に「不審・ウイルス・感染・紛失・盗難・フィッシング」を含む</td><td><span class="sig r">赤</span></td></tr>
+      <tr><td>3</td><td>受付番号がある、または「解決しない」を選んだ</td><td><span class="sig y">黄</span></td></tr>
+      <tr><td>4</td><td>それ以外</td><td><span class="sig g">青</span></td></tr>
+    </tbody>
+  </table></div>
+  <h3>3-4. 次にやる人</h3>
+  <div class="tw"><table>
+    <thead><tr><th>状態</th><th>次にやる人</th><th>すること</th></tr></thead>
+    <tbody>
+      <tr><td>送信前</td><td>相談する人</td><td>種類と内容を入力して、AIに相談する</td></tr>
+      <tr><td>送信後・引継ぎ前</td><td>相談する人</td><td>AIの答えを試し、解決したか／しないかを選ぶ（「解決しない」後は渡す情報を選ぶ）</td></tr>
+      <tr><td>INCが引継ぎ待ち・対応中</td><td>担当（未定ならおすすめの担当）</td><td>担当を決める／解決記録を書く</td></tr>
+      <tr><td>下書き・差戻し</td><td>下書きの申請者</td><td>下書きを整えて承認申請する</td></tr>
+      <tr><td>承認待ち</td><td>申請者ではない承認者</td><td>チェックリストで確認して承認する</td></tr>
+      <tr><td>完了</td><td>－</td><td>－</td></tr>
+    </tbody>
+  </table></div>
+  <h3>3-5. AIの一次対応で見分ける用件</h3>
+  <div class="tw"><table>
+    <thead><tr><th>用件</th><th>AIの動き</th></tr></thead>
+    <tbody>
+      <tr><td>通報・ハラスメント</td><td>本文を保存せず、AIにも渡さず、専用窓口を案内</td></tr>
+      <tr><td>禁止の操作の依頼</td><td>L5としてブロックし、正式なIT管理手順を案内</td></tr>
+      <tr><td>セキュリティ事故の可能性</td><td>決まった初動手順を表示し、緊急で引継ぎカードを出す</td></tr>
+      <tr><td>ログインできない</td><td>確認事項を案内。パスワードは扱わず、ID管理者へ</td></tr>
+      <tr><td>印刷／VPN／音声／容量／共有フォルダ</td><td>読み取り診断のあと、原因に応じた修復提案（L3またはL4）か、担当者への引継ぎ</td></tr>
+      <tr><td>写真の名前整理／CSV集計／ログ解析</td><td>プレビュー・集計・解析のあと、新規ファイル作成やコピー方式の整理（L2）を提案</td></tr>
+      <tr><td>そのほか</td><td>閲覧権限の範囲で社内資料・承認済みナレッジを検索し、出典つきで回答。根拠がなければ推測せず担当部門へ</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section class="sec" id="s4">
+  <h2><span class="no">4</span>機能仕様（PC基本情報の事前取得） <span class="tag v31">V3.1</span></h2>
+  <p class="sub">V3.1で加わった仕組みの正本です。</p>
+  <h3>4-1. 動きの順番</h3>
+  <ol class="steps">
+    <li><div><b>始まる時</b>STEP 2 を開いたとき（相談する人本人・種類が選ばれている・未送信・「取得する」）。約0.2秒後に開始</div></li>
+    <li><div><b>集め方</b>8分類を順に、1分類あたり約0.38秒で読み取り（全体で約3秒）。進み具合（N/8）と分類ごとの✓を表示。入力はその間も続けられる</div></li>
+    <li><div><b>終わった時</b>31項目を「正常／注意／異常」で判定し、気になる点を表示。監査ログに「PC基本情報を事前取得（読み取りのみ）」を、案件・端末・項目数・気になる点の件数だけで記録（値は残さない）</div></li>
+    <li><div><b>送信した時</b>取得中なら取得を終えてから、STEP 3 の最初の返答で要約（端末・時刻・項目数・気になる点の一覧・★）を示す。取得しない設定なら、その旨を表示</div></li>
+    <li><div><b>取り直す時</b>「最新にする」（本人のみ）で再取得し、前回の値と比べて変わった項目を「前回から変わった点」として表示</div></li>
+  </ol>
+  <h3>4-2. 取得する項目（8分類31項目）と判定</h3>
+  <div class="filter" data-for="pcT"><input type="search" placeholder="項目をしぼりこむ（例：VPN、ディスク）" aria-label="項目をしぼりこむ"></div>
+  <div class="tw" id="pcT"><table>
+    <thead><tr><th>分類</th><th>項目</th><th>判定（注意・異常になる条件）</th><th>関係しそうな相談の言葉（★）</th></tr></thead>
+    <tbody>
+      <tr class="grp"><td colspan="4"><b>端末（6）</b></td></tr>
+      <tr><td>端末</td><td>資産番号</td><td>常に正常</td><td>－</td></tr>
+      <tr><td>端末</td><td>機種</td><td>常に正常</td><td>－</td></tr>
+      <tr><td>端末</td><td>シリアル番号</td><td>常に正常（外部AIへは伏せる）</td><td>－</td></tr>
+      <tr><td>端末</td><td>OS（ビルド）</td><td>常に正常</td><td>－</td></tr>
+      <tr><td>端末</td><td>前回の再起動から</td><td>14日以上で注意</td><td>遅い・重い・動作・固まる・更新</td></tr>
+      <tr><td>端末</td><td>PCエージェント</td><td>常に正常（署名あり・読み取りのみ）</td><td>－</td></tr>
+      <tr class="grp"><td colspan="4"><b>アカウント（3）</b></td></tr>
+      <tr><td>アカウント</td><td>サインイン中の人</td><td>常に正常</td><td>－</td></tr>
+      <tr><td>アカウント</td><td>ドメイン・Entra ID</td><td>参加済みで正常</td><td>ログイン・サインイン・ロック・MFA・認証</td></tr>
+      <tr><td>アカウント</td><td>多要素認証</td><td>登録済みで正常</td><td>ログイン・サインイン・MFA・認証・機種変更</td></tr>
+      <tr class="grp"><td colspan="4"><b>ネットワーク（5）</b></td></tr>
+      <tr><td>ネットワーク</td><td>接続の種類</td><td>常に正常</td><td>VPN・つながる・接続・ネット・遅い</td></tr>
+      <tr><td>ネットワーク</td><td>IPアドレス</td><td>常に正常（外部AIへは伏せる）</td><td>－</td></tr>
+      <tr><td>ネットワーク</td><td>VPN</td><td>仮想アダプタ無効で異常、未接続で注意</td><td>VPN・つながる・接続・リモート・現場</td></tr>
+      <tr><td>ネットワーク</td><td>社内ポータルへの到達</td><td>到達できないで異常</td><td>VPN・つながる・接続・ネット・開けない</td></tr>
+      <tr><td>ネットワーク</td><td>共有フォルダ</td><td>アクセス権なしで異常</td><td>共有・フォルダ・ファイルサーバ・アクセス</td></tr>
+      <tr class="grp"><td colspan="4"><b>リソース（4）</b></td></tr>
+      <tr><td>リソース</td><td>CPU使用率（5分平均）</td><td>常に正常</td><td>遅い・重い・固まる</td></tr>
+      <tr><td>リソース</td><td>メモリ使用率</td><td>80%以上で注意</td><td>遅い・重い・固まる</td></tr>
+      <tr><td>リソース</td><td>ディスクの空き</td><td>15GB未満で異常、40GB未満で注意</td><td>遅い・重い・容量・空き・保存</td></tr>
+      <tr><td>リソース</td><td>本人の一時ファイル</td><td>2GBを超えると注意</td><td>遅い・重い・容量・空き</td></tr>
+      <tr class="grp"><td colspan="4"><b>セキュリティ（3）</b></td></tr>
+      <tr><td>セキュリティ</td><td>ウイルス対策</td><td>有効で正常</td><td>ウイルス・不審・感染・セキュリティ</td></tr>
+      <tr><td>セキュリティ</td><td>ディスク暗号化</td><td>有効で正常</td><td>紛失・盗難</td></tr>
+      <tr><td>セキュリティ</td><td>Windows Update</td><td>再起動待ちの更新があると注意</td><td>遅い・更新・再起動・不具合</td></tr>
+      <tr class="grp"><td colspan="4"><b>周辺機器（5）</b></td></tr>
+      <tr><td>周辺機器</td><td>既定のプリンター</td><td>常に正常</td><td>印刷・プリンタ・複合機</td></tr>
+      <tr><td>周辺機器</td><td>印刷スプーラ</td><td>停止で異常</td><td>印刷・プリンタ・複合機</td></tr>
+      <tr><td>周辺機器</td><td>印刷キュー</td><td>本人のエラージョブがあると注意</td><td>印刷・プリンタ・複合機</td></tr>
+      <tr><td>周辺機器</td><td>音声の出力先</td><td>ヘッドセットがあるのに出力がモニター（HDMI）で注意</td><td>音・Teams・聞こえない・スピーカー・ヘッドセット・マイク・会議</td></tr>
+      <tr><td>周辺機器</td><td>USB機器</td><td>常に正常（台数のみ）</td><td>USB</td></tr>
+      <tr class="grp"><td colspan="4"><b>ソフトウェア（4）</b></td></tr>
+      <tr><td>ソフトウェア</td><td>Microsoft 365 Apps</td><td>常に正常（版）</td><td>Outlook・Excel・Word・メール</td></tr>
+      <tr><td>ソフトウェア</td><td>Teams</td><td>常に正常（版）</td><td>Teams・会議・音</td></tr>
+      <tr><td>ソフトウェア</td><td>VPNクライアント</td><td>常に正常（版）</td><td>VPN</td></tr>
+      <tr><td>ソフトウェア</td><td>DirectCloudドライブ</td><td>常に正常（版・同期）</td><td>DirectCloud・同期</td></tr>
+      <tr class="grp"><td colspan="4"><b>最近のエラー（1）</b></td></tr>
+      <tr><td>最近のエラー</td><td>アプリ・システムのエラー（24時間）</td><td>8件以上で注意（件数のみ）</td><td>－</td></tr>
+    </tbody>
+  </table></div>
+  <div class="warn"><b>取得しない情報</b>：ファイルの中身、Webの閲覧履歴、画面の内容、キー入力、メール本文、個人のフォルダの一覧。受け入れ試験で「項目に含まれないこと」を毎回確かめます。</div>
+  <h3>4-3. 並べ方・渡し方・見せ方</h3>
+  <div class="tw"><table>
+    <thead><tr><th>場面</th><th>決め方</th></tr></thead>
+    <tbody>
+      <tr><td>気になる点の並び</td><td>相談の件名・内容が項目の言葉に当たるもの（★）を先、同じなら異常を注意より先</td></tr>
+      <tr><td>AIへ渡す形</td><td>「分類／項目：値」の行。外部AIを選んだときは、IPアドレスを［IPアドレス］、シリアル番号を［シリアル番号］に置きかえる。社内のAIではそのまま</td></tr>
+      <tr><td>引継ぎで渡す要点</td><td>1行目に取得日時（読み取りのみ・項目数）、続けて【気になる点】の全件、最後に正常な主な項目（資産番号・OS・再起動から・接続の種類・IPアドレス・VPN・ディスクの空き・Windows Update・印刷スプーラ・音声の出力先）</td></tr>
+      <tr><td>見られる人</td><td>本人は常に。それ以外は、引継ぎでPC基本情報が共有された案件だけ（業務ツールの一覧では「共有されていない」と表示）</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section class="sec" id="s5">
+  <h2><span class="no">5</span>機能仕様（端末操作と安全装置）</h2>
+  <h3>5-1. 操作許可リスト</h3>
+  <div class="tw"><table>
+    <thead><tr><th>レベル</th><th>操作ID</th><th>操作</th><th>元に戻す</th></tr></thead>
+    <tbody>
+      <tr><td>L0</td><td class="id">KB_READ</td><td>社内資料の検索・閲覧</td><td>－</td></tr>
+      <tr><td>L1</td><td class="id">FILE_ANALYZE</td><td>本人が選んだファイルの解析</td><td>－</td></tr>
+      <tr><td>L2</td><td class="id">FILE_CREATE</td><td>作業フォルダへ新規ファイル作成</td><td>作ったファイルを消すだけ</td></tr>
+      <tr><td>L2</td><td class="id">FILE_RENAME_BATCH</td><td>工事写真の名前整理（コピー方式）</td><td>ボタン1つ（コピーを削除）</td></tr>
+      <tr><td>L3</td><td class="id">PRINT_JOB_CANCEL_OWN</td><td>本人の印刷ジョブ取り消し</td><td>元の文書から再印刷</td></tr>
+      <tr><td>L3</td><td class="id">AUDIO_DEVICE_SET</td><td>既定の音声出力デバイスの切替</td><td>ボタン1つ</td></tr>
+      <tr><td>L3</td><td class="id">TEMP_CLEAN_USER</td><td>本人の一時ファイル整理（隔離・7日保持）</td><td>7日以内なら復元</td></tr>
+      <tr><td>L4</td><td class="id">SPOOLER_RESTART</td><td>印刷スプーラサービスの再起動</td><td>再起動のみ（失敗時は引継ぎ）</td></tr>
+      <tr><td>L4</td><td class="id">VPN_ADAPTER_ENABLE</td><td>VPN仮想アダプタの有効化</td><td>無効に戻せる</td></tr>
+      <tr><td>L5</td><td class="id">SEC_DISABLE／SW_INSTALL／BULK_DELETE／PRIV_GRANT</td><td>セキュリティ停止／無許可ソフト導入／一括削除／権限付与</td><td>AIからは提案も作らずブロック</td></tr>
+    </tbody>
+  </table></div>
+  <h3>5-2. 実行前検証（サーバ側で行う7項目）</h3>
+  <ol>
+    <li>操作IDが許可リストに登録済み（L5ではない）</li>
+    <li>緊急停止が解除されている</li>
+    <li>本人の承認（Y）が記録されている</li>
+    <li>承認した時から操作の内容が変わっていない（承認ハッシュが一致）</li>
+    <li>対象の端末が、依頼した人に割り当てられた端末</li>
+    <li>（L4のみ）IT端末管理者の承認があり、自分の申請の承認ではない</li>
+    <li>申請の状態が「実行可能」</li>
+  </ol>
+  <p>1つでも不合格なら実行せず、端末は変更しません。実行中に緊急停止されたら中断し、失敗したら「変更なし」で止めて担当者への引継ぎを案内します。</p>
+</section>
+
+<section class="sec" id="s6">
+  <h2><span class="no">6</span>機能仕様（引継ぎとヘルプデスク対応）</h2>
+  <h3>6-1. 同意して渡す情報</h3>
+  <div class="tw"><table><thead><tr><th>項目</th><th>既定</th><th>中身</th></tr></thead><tbody>
+    <tr><td>相談内容</td><td>必須</td><td>伏せ字にした後の相談の要約</td></tr>
+    <tr><td>AIの診断結果</td><td>オン</td><td>設定・サービスの状態・件数（ファイルの中身は含まない）</td></tr>
+    <tr><td>端末の番号・OS</td><td>オン</td><td>資産番号とOS</td></tr>
+    <tr><td>添付ファイルの名前</td><td>オフ</td><td>名前だけ（中身は渡さない）</td></tr>
+    <tr><td>PC基本情報（事前取得） <span class="tag v31">V3.1</span></td><td>オン</td><td>4-3の「引継ぎで渡す要点」</td></tr>
+  </tbody></table></div>
+  <h3>6-2. 問い合わせ（INC）の作り方</h3>
+  <ul>
+    <li><b>分野</b>：引継ぎの区分（IT端末→端末、ID・アクセス権→アカウント、セキュリティ事故→セキュリティ、業務・規程／AI窓口→その他）。セキュリティの言葉があればセキュリティ。「その他・端末」は承認済みナレッジの検索結果（近さ22%以上）で分野を推定しなおす</li>
+    <li><b>優先度</b>：急ぎ（緊急）はP1。それ以外は緊急度「中」×影響「個人」で計算（セキュリティの疑いはP2以上）。期限はP1 1時間／P2 4時間／P3 8時間／P4 3日</li>
+    <li><b>おすすめの担当</b>：アカウント・メール→高橋、ネットワーク→鈴木、端末・ファイル→田中、セキュリティ→伊藤、その他→佐藤（試作の例）</li>
+    <li><b>引継ぎメモ</b>：概要、依頼者、優先度と期限、引継ぎ理由、連携元（TKT番号と同意した情報）、AIの経過、推定分野とおすすめの担当、対象の機器・サービス、似ている未解決の問い合わせ、推奨アクション</li>
+  </ul>
+  <h3>6-3. 結果の戻し方</h3>
+  <div class="tw"><table><thead><tr><th>ヘルプデスクの状態</th><th>受付番号（TKT）の状態</th><th>相談した人への知らせ</th></tr></thead><tbody>
+    <tr><td>引継ぎ待ち</td><td>受付</td><td>－</td></tr>
+    <tr><td>対応中（担当が決まった）</td><td>対応中（担当者名）</td><td>－</td></tr>
+    <tr><td>解決済み</td><td>解決（原因と手順）</td><td>チャットに「担当者が解決しました」と原因・手順</td></tr>
+    <tr><td>ナレッジ公開</td><td>（ナレッジ番号を記録）</td><td>チャットに「社内ナレッジになりました」</td></tr>
+  </tbody></table></div>
+  <p>INC番号と受付番号の組み合わせを照合し、合わないとき（ヘルプデスク側の初期化など）は「連携先が見つかりません」と表示します。</p>
+</section>
+
+<section class="sec" id="s7">
+  <h2><span class="no">7</span>機能仕様（ナレッジ化）</h2>
+  <ul>
+    <li><b>下書き</b>：解決記録（原因・手順）と相談内容から作る。メールアドレス・IPアドレス・電話番号・パスワード等・社員番号・資産番号・依頼者と担当者の氏名を自動で隠し、隠した件数を表示。申請時にもう一度隠し漏れを確かめる</li>
+    <li><b>登録方法</b>：新規ナレッジ、または既存ナレッジの改訂（版が上がる）</li>
+    <li><b>承認</b>：申請者以外の承認者が、チェックリスト4項目（第三者が再現できる手順／機密情報がない／個人を評価・非難しない／適用範囲が明確）をすべて確認。差戻しはコメント必須</li>
+    <li><b>反映</b>：承認と同時にナレッジDBに保存、本棚を作りなおし、分野別のきまりの版を上げ、反映ログに記録。次の相談からAIの根拠（AI相談のナレッジ検索にも出る）</li>
+    <li><b>見直し</b>：利用3回以上で役に立った率60%未満は「見直し推奨」。承認者は使用停止・再開ができる</li>
+  </ul>
+</section>
+
+<section class="sec" id="s8">
+  <h2><span class="no">8</span>機能仕様（運び役と外部AI）</h2>
+  <h3>8-1. 処理の流れ</h3>
+  <ol class="steps">
+    <li><div><b>受付を取得</b>問い合わせ番号はAIに送らず、手元で持つ</div></li>
+    <li><div><b>門番：AI対象外の判定</b>セキュリティ事象（常に対象外）、アカウントロック・パスワード、ハード故障・起動不可、権限付与・各種申請</div></li>
+    <li><div><b>門番：見せない所を隠す</b>氏名・問い合わせ番号は送らない。メール・電話・IP・資産番号を隠す。パスワードらしき文字があれば送らずに停止。命令文らしき文を検出し、資料として渡す</div></li>
+    <li><div><b>本棚から根拠を探す</b>承認済みナレッジを近さで探す。近さ22%未満しかなければAIを呼ばず担当者へ</div></li>
+    <li><div><b>AIに頼む</b>費用の上限と障害を確認してから、指示書＋根拠＋〈利用者の文章〉を送る</div></li>
+    <li><div><b>答えを点検</b>出典がある／利用者にさせない操作がない／機密が入っていない／担当者への案内がある／600字以内</div></li>
+    <li><div><b>記録に戻す</b>確認モードは担当者だけが見る「回答案」、直接回答モードは利用者への回答。状態は変えない</div></li>
+    <li><div><b>日記をつける</b>隠した後の送信内容・根拠・AIの種類と版・指示書の版・答え・点検・費用</div></li>
+  </ol>
+  <h3>8-2. 設定値（試作）</h3>
+  <div class="tw"><table><thead><tr><th>設定</th><th>値</th></tr></thead><tbody>
+    <tr><td>回答の近さのしきい値</td><td>42%以上で回答、22%〜42%で候補提示、22%未満は担当者へ</td></tr>
+    <tr><td>費用の上限</td><td>本番 月3,000円（80%で通知）、試験 月500円（模擬の金額）</td></tr>
+    <tr><td>日記の保持</td><td>最新300件</td></tr>
+    <tr><td>試験の合格条件</td><td>試験問題12問で正答率90%以上、かつ隠し漏れ0件</td></tr>
+    <tr><td>動かし方</td><td>確認モード（3a）／直接回答モード（3b）。目安：回答案の採用率が直近20件で80%以上</td></tr>
+  </tbody></table></div>
+</section>
+
+<section class="sec" id="s9">
+  <h2><span class="no">9</span>データ仕様</h2>
+  <h3>9-1. 番号の付け方</h3>
+  <div class="tw"><table><thead><tr><th>もの</th><th>形式</th><th>例</th></tr></thead><tbody>
+    <tr><td>案件</td><td>CASE-連番4桁</td><td>CASE-0001</td></tr>
+    <tr><td>受付番号</td><td>TKT-年-連番4桁（試作は年が固定：要件定義書 F-06）</td><td>TKT-2026-0002</td></tr>
+    <tr><td>問い合わせ</td><td>INC-連番</td><td>INC-1008</td></tr>
+    <tr><td>修復の提案</td><td>OP-連番4桁</td><td>OP-0003</td></tr>
+    <tr><td>ナレッジ下書き／ナレッジ</td><td>DR-連番3桁／KB-連番</td><td>DR-003／KB-112</td></tr>
+    <tr><td>運び役の記録／試験</td><td>RL-連番4桁／TS-連番4桁、TR-連番3桁</td><td>RL-0008</td></tr>
+  </tbody></table></div>
+  <h3>9-2. 案件（CASE）の主な項目</h3>
+  <div class="tw"><table><thead><tr><th>項目</th><th>内容</th></tr></thead><tbody>
+    <tr><td>id／userId／created</td><td>案件番号、相談する人、開始日時</td></tr>
+    <tr><td>step</td><td>今のSTEP（1〜7）</td></tr>
+    <tr><td>kind／subject／body／urg</td><td>種類、件名、内容、急ぎ（通常／緊急）</td></tr>
+    <tr><td>chatId</td><td>AIとのやりとり（チャット）への参照。受付番号・INCはここからたどる</td></tr>
+    <tr><td>closed／want</td><td>AIで解決したか、「解決しない」を選んだか</td></tr>
+    <tr><td>share</td><td>渡す情報の選択（diag／device／atts／pc）</td></tr>
+    <tr><td>pcOpt／pc／pcPrev <span class="tag v31">V3.1</span></td><td>取得するか、取得の状態（running／done）と結果、取り直し前の結果</td></tr>
+  </tbody></table></div>
+  <h3>9-3. PC基本情報の結果</h3>
+  <div class="tw"><table><thead><tr><th>項目</th><th>内容</th></tr></thead><tbody>
+    <tr><td>at／device／userId／ver</td><td>取得日時、端末、相談する人、形式の版</td></tr>
+    <tr><td>items[]</td><td>grp（分類）、k（項目）、v（値）、lv（ok／warn／ng）、note（説明）、tag（関係しそうな言葉）</td></tr>
+  </tbody></table></div>
+  <p>そのほかの情報（チャット・修復の提案・受付番号・INC・ナレッジ・機器台帳・関連付け・運び役の日記・監査ログ）は、要件定義書9-1の一覧のとおりです。全データは「設定・データ」からJSONで書き出し・読み込みできます。</p>
+</section>
+
+<section class="sec" id="s10">
+  <h2><span class="no">10</span>非機能仕様</h2>
+  <div class="tw"><table><thead><tr><th>項目</th><th>試作での実装</th><th>本番での扱い</th></tr></thead><tbody>
+    <tr><td>通信の遮断</td><td>CSP（default-src／connect-src／frame-src／form-action などを 'none'）</td><td>運び役からの承認済みの宛先のみ</td></tr>
+    <tr><td>伏せ字</td><td>保存前にパスワード等・カード番号らしき数字・個人番号らしき12桁を伏せ字</td><td>同じルールをサーバ側でも適用</td></tr>
+    <tr><td>改ざん検知</td><td>監査ログをSHA-256のハッシュのつながりで記録し、画面から検証</td><td>改ざん防止の保存先・SIEM</td></tr>
+    <tr><td>画面の幅</td><td>820px以下は下部メニュー、1100px以下で右欄を下へ</td><td>同じ</td></tr>
+    <tr><td>表示</td><td>明るい／暗い表示（端末の設定に追従、設定で切替）</td><td>同じ</td></tr>
+    <tr><td>色の意味</td><td>信号は色名の文字（青・黄・赤）を必ず併記</td><td>同じ</td></tr>
+    <tr><td>動きを減らす</td><td>一部未対応（要件定義書 F-12）</td><td>設定に従って止める</td></tr>
+  </tbody></table></div>
+</section>
+
+<section class="sec" id="s11">
+  <h2><span class="no">11</span>テスト仕様</h2>
+  <h3>11-1. 受け入れ試験（画面から実行・19項目）</h3>
+  <div class="tw"><table><thead><tr><th>#</th><th>試験項目</th><th>根拠</th></tr></thead><tbody>
+    <tr><td>1</td><td>権限のない資料を表示しない</td><td>FR-18</td></tr>
+    <tr><td>2</td><td>承認前に変更しない</td><td>FR-19</td></tr>
+    <tr><td>3</td><td>Nを押したら変更しない</td><td>FR-19</td></tr>
+    <tr><td>4</td><td>操作ログが残る</td><td>NFR-12</td></tr>
+    <tr><td>5</td><td>元に戻す仕組みが機能する</td><td>FR-20</td></tr>
+    <tr><td>6</td><td>異常時は変更せず担当者へ渡せる</td><td>NFR-16</td></tr>
+    <tr><td>7</td><td>承認後に内容が変わったら実行しない</td><td>BR-03</td></tr>
+    <tr><td>8</td><td>設定変更（L4）は管理者承認なしに実行しない</td><td>BR-01</td></tr>
+    <tr><td>9</td><td>自己承認を禁止（職務分離）</td><td>BR-02</td></tr>
+    <tr><td>10</td><td>禁止操作はAIから実行できない</td><td>BR-01</td></tr>
+    <tr><td>11</td><td>許可リストにない操作は作れない</td><td>NFR-01</td></tr>
+    <tr><td>12</td><td>緊急停止中は実行しない</td><td>BR-16</td></tr>
+    <tr><td>13</td><td>機密・極秘データの送信を制御</td><td>NFR-05</td></tr>
+    <tr><td>14</td><td>パスワード等をマスクして保存</td><td>NFR-04</td></tr>
+    <tr><td>15</td><td>監査ログの改ざんを検知</td><td>NFR-13</td></tr>
+    <tr><td>16</td><td>PC基本情報の事前取得は読み取りのみ（端末を変えない） <span class="tag v31">V3.1</span></td><td>BR-08</td></tr>
+    <tr><td>17</td><td>事前取得に「取得しない情報」が含まれない <span class="tag v31">V3.1</span></td><td>NFR-02</td></tr>
+    <tr><td>18</td><td>外部AIへはIPアドレス・シリアル番号を伏せる <span class="tag v31">V3.1</span></td><td>BR-10</td></tr>
+    <tr><td>19</td><td>事前取得の異常を、相談内容に関係する順に示す <span class="tag v31">V3.1</span></td><td>FR-10</td></tr>
+  </tbody></table></div>
+  <h3>11-2. AIの試験（12問）</h3>
+  <p>メールが届かない、Teamsの音、印刷、VPN、機種変更のMFA、USB、共有リンク、HENNGEのアクセス拒否（以上8問は該当ナレッジで回答できること）、不審メール（AI対象外）、BIMの遅さ（根拠なし→担当者）、パスワード入り（門番で停止）、命令文入り（命令に従わず正しく回答）。</p>
+  <h3>11-3. 画面での通し確認（30項目）</h3>
+  <p>実際のブラウザで、引継ぎの往復（STEP 1〜7）、AIで解決する流れ、PC基本情報の取得・詳しく見る・取り直しの差分、担当者側への共有、業務ツール28画面の巡回、再読み込み後の保持、暗い表示・スマートフォン幅を確認し、エラーと外部への通信がどちらも0件であることを確かめました。</p>
+</section>
+
+<section class="sec" id="s12">
+  <h2><span class="no">12</span>運用仕様</h2>
+  <div class="tw"><table><thead><tr><th>場面</th><th>だれが</th><th>すること</th></tr></thead><tbody>
+    <tr><td>毎日</td><td>ヘルプデスク担当</td><td>ボードの「あなたの番だけ」と業務ツール③で、引継ぎ待ちと期限を確認</td></tr>
+    <tr><td>毎日</td><td>IT端末管理者</td><td>承認キューのL4申請を判断（周囲への影響・戻し方を確認）</td></tr>
+    <tr><td>週1回</td><td>ナレッジ承認者</td><td>承認待ちの下書き、見直し推奨のナレッジを確認</td></tr>
+    <tr><td>月1回</td><td>DX推進部</td><td>運び役の費用・日記、指標（要件定義書13章）を確認。月替わりで費用をリセット</td></tr>
+    <tr><td>指示書・AIの変更時</td><td>作成者→承認者</td><td>試験に合格してから承認</td></tr>
+    <tr><td>監査時</td><td>監査担当</td><td>監査ログの検証、受け入れ試験の実行、記録のCSV出力</td></tr>
+    <tr><td>事故の疑い</td><td>だれでも</td><td>緊急停止。解除はIT端末管理者</td></tr>
+  </tbody></table></div>
+</section>
+
+<section class="sec" id="s13">
+  <h2><span class="no">13</span>要件との対応表</h2>
+  <div class="tw"><table><thead><tr><th>要件</th><th>本書の章</th></tr></thead><tbody>
+    <tr><td>FR-01〜07（ステップ受付）</td><td>2-3、3章</td></tr>
+    <tr><td>FR-08〜16（PC基本情報の事前取得）</td><td>4章、9-3</td></tr>
+    <tr><td>FR-17〜23（AIの一次対応と端末操作）</td><td>3-5、5章</td></tr>
+    <tr><td>FR-24〜28（引継ぎとヘルプデスク）</td><td>6章</td></tr>
+    <tr><td>FR-29〜31（ナレッジ化）</td><td>7章</td></tr>
+    <tr><td>FR-32〜36（運び役）</td><td>8章</td></tr>
+    <tr><td>FR-37〜43（見る・探す・記録）</td><td>2-4、2-5、11章</td></tr>
+    <tr><td>NFR全般</td><td>10章、11章</td></tr>
+  </tbody></table></div>
+</section>
+
+</main>
+</div>
+<footer class="ft">
+  <p>みらいAI窓口 × ヘルプデスク V3.1 詳細仕様書（第1版・ドラフト）｜DX推進部｜2026年10月20日</p>
+  <p>本資料は、完全オフラインの試作アプリ「Mirai_AIHelpdesk_Cowork_StepWizard_V3.1_PCinfo_Offline.html」の内容にもとづきます。試作のAIの答え・PC基本情報の値・人物・部署は検討用の例です。採用するときは、実際の組織・業務・関係法令・社内規程・契約に照らして確定してください。製品の機能・制約は変わることがあるため、採用時に最新の公式情報を確認してください。</p>
+</footer>
+<button type="button" class="totop" id="totop" aria-label="ページの先頭へ">↑</button>
+<script>
+
+(function(){
+  var root=document.documentElement, KEY='mirai-aihd-v31-doc-theme';
+  try{ var t=localStorage.getItem(KEY); if(t==='light'||t==='dark') root.setAttribute('data-theme',t); }catch(e){}
+  document.getElementById('themeBtn').addEventListener('click',function(){
+    var cur=root.getAttribute('data-theme') || (window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');
+    var nx=cur==='dark'?'light':'dark'; root.setAttribute('data-theme',nx);
+    try{ localStorage.setItem(KEY,nx); }catch(e){}
+  });
+  var links=[].slice.call(document.querySelectorAll('#tocList a'));
+  var map={}; links.forEach(function(a){ map[a.getAttribute('href').slice(1)]=a; });
+  if('IntersectionObserver' in window){
+    var io=new IntersectionObserver(function(es){ es.forEach(function(e){ if(e.isIntersecting){ links.forEach(function(a){a.classList.remove('on');}); var a=map[e.target.id]; if(a) a.classList.add('on'); } }); },{rootMargin:'-20% 0px -70% 0px'});
+    document.querySelectorAll('section.sec').forEach(function(s){ io.observe(s); });
+  }
+  var tt=document.getElementById('totop');
+  window.addEventListener('scroll',function(){ tt.classList.toggle('show', window.scrollY>600); },{passive:true});
+  tt.addEventListener('click',function(){ window.scrollTo({top:0}); });
+  document.querySelectorAll('.filter').forEach(function(f){
+    var tb=document.getElementById(f.getAttribute('data-for')); if(!tb) return;
+    var inp=f.querySelector('input'), pr='';
+    function run(){
+      var q=inp.value.trim().toLowerCase();
+      var rows=[].slice.call(tb.querySelectorAll('tbody tr')), lastGrp=null, grpHas=false;
+      function closeGrp(){ if(lastGrp) lastGrp.style.display=grpHas?'':'none'; }
+      rows.forEach(function(r){
+        if(r.classList.contains('grp')){ closeGrp(); lastGrp=r; grpHas=false; return; }
+        var bd=r.querySelector('.b,.sig');
+        var ok=(!q||r.textContent.toLowerCase().indexOf(q)>=0)&&(!pr||(bd&&bd.textContent===pr));
+        r.style.display=ok?'':'none'; if(ok) grpHas=true;
+      });
+      closeGrp();
+    }
+    inp.addEventListener('input',run);
+    f.querySelectorAll('button').forEach(function(b){ b.addEventListener('click',function(){ pr=b.getAttribute('data-p'); f.querySelectorAll('button').forEach(function(x){x.classList.toggle('on',x===b);}); run(); }); });
+  });
+})();
+
+
+</script>
+</body>
+</html>

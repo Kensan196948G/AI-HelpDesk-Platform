@@ -1,0 +1,1450 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>みらいAI窓口 × ヘルプデスク MVP — OpenDesign 画面設計 v1.0</title>
+<style>
+  :root{
+    --navy-900:#0A1F38; --navy-800:#0E2A4A; --navy-700:#14375E;
+    --brand-600:#1D4ED8; --brand-500:#2563EB; --brand-50:#EFF5FF;
+    --bg:#F5F7FB; --surface:#FFFFFF; --surface-2:#F9FBFD;
+    --text:#0F1B2D; --muted:#5B6B80; --border:#E3E9F2;
+    --blue:#1D4ED8; --blue-bg:#EAF1FF;
+    --amber:#B45309; --amber-bg:#FFF4E5;
+    --red:#B91C1C; --red-bg:#FDECEC;
+    --green:#15803D; --green-bg:#EAF7EF;
+    --shadow:0 1px 2px rgba(15,27,45,.04), 0 8px 24px rgba(15,27,45,.04);
+    --radius:14px; --radius-sm:10px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:#EDF1F7;color:var(--text);
+    font-family:"Noto Sans JP","Hiragino Kaku Gothic ProN","Yu Gothic",system-ui,-apple-system,sans-serif;
+    font-size:14px;line-height:1.75;-webkit-font-smoothing:antialiased}
+  button,input,textarea,select{font:inherit;color:inherit}
+  a{color:var(--brand-600)}
+  .mono{font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;font-variant-numeric:tabular-nums}
+  .muted{color:var(--muted)}
+  .small{font-size:12px}
+  .strong{font-weight:700}
+  .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+  :focus-visible{outline:3px solid var(--brand-600);outline-offset:2px}
+
+  /* ===== Board chrome ===== */
+  .board-head{background:var(--navy-900);color:#fff;padding:28px 40px 24px}
+  .board-head .kicker{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:#9FB3CC}
+  .board-head h1{margin:6px 0 8px;font-size:28px;line-height:1.35;letter-spacing:-.01em}
+  .board-head p{margin:0;max-width:900px;color:#C5D3E4;font-size:13px}
+  .board-meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+  .board-meta span{border:1px solid rgba(255,255,255,.2);border-radius:999px;padding:4px 10px;font-size:11px;color:#DCE7F4}
+  .tabs{position:sticky;top:0;z-index:50;display:flex;gap:4px;overflow:auto;padding:10px 24px;
+    background:rgba(255,255,255,.92);backdrop-filter:blur(10px);border-bottom:1px solid var(--border)}
+  .tabs button{border:0;background:transparent;color:var(--muted);padding:8px 12px;border-radius:999px;
+    cursor:pointer;white-space:nowrap;font-size:12.5px;font-weight:600}
+  .tabs button:hover{background:var(--surface-2);color:var(--text)}
+  .tabs button[aria-selected="true"]{background:var(--navy-900);color:#fff}
+  .board-wrap{max-width:1360px;margin:0 auto;padding:28px 24px 80px}
+  .view{display:none}
+  .view.active{display:block;animation:fade .18s ease}
+  @keyframes fade{from{opacity:.4;transform:translateY(3px)}to{opacity:1;transform:none}}
+
+  /* ===== Generic ===== */
+  .sec-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin:0 0 14px}
+  .sec-head h2{margin:0;font-size:22px;letter-spacing:-.01em}
+  .sec-head p{margin:2px 0 0;color:var(--muted);font-size:12.5px}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow)}
+  .note{font-size:12px;color:var(--muted)}
+  .dot{width:8px;height:8px;border-radius:50%;display:inline-block;flex:0 0 auto}
+  .row{display:flex;align-items:center;gap:10px}
+  .between{display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .stack{display:flex;flex-direction:column;gap:12px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+  .grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+
+  /* ===== Frames ===== */
+  .frame{background:#fff;border:1px solid #D7DEE9;border-radius:16px;overflow:hidden;box-shadow:0 20px 50px rgba(15,27,45,.10);margin:0 0 18px}
+  .browser{display:flex;align-items:center;gap:10px;background:#F1F4F9;border-bottom:1px solid #DDE4EE;padding:9px 14px}
+  .browser .dots{display:flex;gap:5px}
+  .browser .dots i{width:9px;height:9px;border-radius:50%;background:#CBD5E1;display:block}
+  .browser .url{flex:1;text-align:center;font-size:11px;color:#64748B;background:#fff;border:1px solid #E2E8F0;border-radius:6px;padding:2px 10px}
+  .annotation{display:flex;flex-wrap:wrap;gap:8px 18px;margin:0 0 26px;padding:12px 16px;background:#fff;border:1px solid var(--border);border-radius:12px;font-size:12.5px;color:#3B4C63}
+  .annotation b{color:var(--text)}
+  .annotation .tag{display:inline-block;background:var(--brand-50);color:var(--brand-600);border-radius:6px;padding:1px 7px;font-size:11px;font-weight:700}
+
+  /* ===== App chrome ===== */
+  .app{display:flex;min-height:760px;background:var(--bg)}
+  .side{width:232px;flex:0 0 232px;background:var(--navy-900);color:#C9D6E6;display:flex;flex-direction:column}
+  .brand{display:flex;align-items:center;gap:10px;padding:20px 18px 16px;color:#fff}
+  .brand .logo{width:32px;height:32px;border-radius:9px;background:#fff;color:var(--navy-900);display:grid;place-items:center;font-weight:800;font-size:14px}
+  .brand b{display:block;font-size:13.5px;line-height:1.3;letter-spacing:.01em}
+  .brand small{display:block;font-size:10px;color:#93A8C2;letter-spacing:.08em;margin-top:2px}
+  .nav{padding:8px 10px;display:flex;flex-direction:column;gap:2px}
+  .nav .group{font-size:10px;letter-spacing:.14em;color:#7D93AE;padding:14px 10px 6px;text-transform:uppercase}
+  .nav a{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:9px;color:#C9D6E6;text-decoration:none;font-size:13px;font-weight:500}
+  .nav a svg{width:17px;height:17px;flex:0 0 auto;opacity:.9}
+  .nav a:hover{background:rgba(255,255,255,.07);color:#fff}
+  .nav a.active{background:#fff;color:var(--navy-900);font-weight:700}
+  .nav a .count{margin-left:auto;font-size:10px;font-weight:700;background:var(--amber);color:#fff;border-radius:999px;padding:1px 7px}
+  .nav a.active .count{background:var(--amber);color:#fff}
+  .side-foot{margin-top:auto;padding:12px;border-top:1px solid rgba(255,255,255,.09)}
+  .me{display:flex;align-items:center;gap:9px;padding:8px;border-radius:9px}
+  .avatar{width:30px;height:30px;border-radius:50%;background:#DCE7F4;color:var(--navy-900);display:grid;place-items:center;font-weight:800;font-size:12px;flex:0 0 auto}
+  .me b{display:block;font-size:12px;color:#fff;line-height:1.3}
+  .me small{display:block;font-size:10px;color:#93A8C2}
+  .main{flex:1;min-width:0;display:flex;flex-direction:column}
+  .top{height:64px;background:#fff;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px;padding:0 24px;flex:0 0 64px}
+  .top h2{font-size:16px;margin:0;letter-spacing:-.01em}
+  .top .sub{font-size:11.5px;color:var(--muted);border-left:1px solid var(--border);padding-left:12px}
+  .top .spacer{flex:1}
+  .env{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;color:var(--amber);background:var(--amber-bg);border:1px solid #F3D6A8;border-radius:999px;padding:4px 10px}
+  .legend{display:flex;gap:10px;align-items:center;font-size:11px;color:var(--muted)}
+  .legend .item{display:flex;align-items:center;gap:5px}
+  .content{padding:22px 24px 32px;min-width:0}
+  .content.tight{padding:18px 20px 28px}
+  .page-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:18px}
+  .page-head h1{margin:0;font-size:24px;line-height:1.35;letter-spacing:-.015em}
+  .page-head p{margin:4px 0 0;color:var(--muted);font-size:12.5px}
+  .page-head .actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .cols{display:grid;grid-template-columns:minmax(0,1fr) 304px;gap:20px;align-items:start}
+  .cols.wide{grid-template-columns:minmax(0,1fr) 336px}
+  .rail{display:flex;flex-direction:column;gap:14px;position:sticky;top:16px}
+
+  /* ===== Buttons / pills ===== */
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;border:1px solid transparent;border-radius:var(--radius-sm);
+    padding:9px 14px;font-size:13px;font-weight:700;cursor:pointer;text-decoration:none;line-height:1.4;white-space:nowrap}
+  .btn svg{width:16px;height:16px}
+  .btn-primary{background:var(--brand-600);color:#fff}
+  .btn-primary:hover{background:#1E40AF}
+  .btn-secondary{background:#fff;border-color:#CDD7E5;color:var(--text)}
+  .btn-secondary:hover{background:var(--surface-2)}
+  .btn-ghost{background:transparent;color:var(--brand-600)}
+  .btn-danger{background:#fff;border-color:#F1C6C6;color:var(--red)}
+  .btn-lg{padding:12px 20px;font-size:14px}
+  .btn-sm{padding:6px 10px;font-size:12px}
+  .btn[disabled],.btn.disabled{opacity:.5;cursor:not-allowed}
+  .pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:3px 9px;font-size:11px;font-weight:700;line-height:1.5;white-space:nowrap}
+  .pill.blue{background:var(--blue-bg);color:var(--blue)}
+  .pill.amber{background:var(--amber-bg);color:var(--amber)}
+  .pill.red{background:var(--red-bg);color:var(--red)}
+  .pill.green{background:var(--green-bg);color:var(--green)}
+  .pill.gray{background:#F1F4F9;color:#475569}
+  .pill.outline{background:#fff;border:1px solid var(--border);color:var(--muted)}
+  .pill .dot{width:7px;height:7px}
+  .tag{display:inline-flex;align-items:center;gap:5px;background:#F4F7FB;border:1px solid var(--border);border-radius:6px;padding:2px 7px;font-size:11px;color:#3B4C63}
+  .tag.blue{background:var(--brand-50);border-color:#D6E4FF;color:var(--brand-600)}
+
+  /* ===== Cards / KPI ===== */
+  .card-pad{padding:18px}
+  .card-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 18px;border-bottom:1px solid var(--border)}
+  .card-head h3{margin:0;font-size:14px;font-weight:700}
+  .card-body{padding:16px 18px}
+  .kpi{padding:16px 18px;display:flex;flex-direction:column;gap:6px}
+  .kpi .label{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:7px}
+  .kpi .num{font-size:28px;font-weight:800;letter-spacing:-.02em;line-height:1.15}
+  .kpi .foot{font-size:11px;color:var(--muted)}
+  .kpi.hero{background:linear-gradient(135deg,#0E2A4A,#14375E);color:#fff;border-color:transparent}
+  .kpi.hero .label,.kpi.hero .foot{color:#C5D3E4}
+  .kpi.hero .num{color:#fff}
+  .bar{height:8px;border-radius:999px;background:#EDF1F7;overflow:hidden;display:flex}
+  .bar i{display:block;height:100%}
+  .bar .b{background:var(--blue)} .bar .a{background:var(--amber)} .bar .r{background:var(--red)} .bar .g{background:var(--green)}
+
+  /* ===== Forms ===== */
+  .field{display:flex;flex-direction:column;gap:6px;margin-bottom:16px}
+  .field label{font-size:12.5px;font-weight:700}
+  .field .hint{font-size:11.5px;color:var(--muted)}
+  .field .err{font-size:11.5px;color:var(--red);font-weight:600}
+  .input,.select,.textarea{width:100%;border:1px solid #CBD5E1;background:#fff;border-radius:var(--radius-sm);padding:10px 12px;font-size:13.5px;line-height:1.6;color:var(--text)}
+  .textarea{min-height:104px;resize:vertical}
+  .input:focus,.select:focus,.textarea:focus{outline:3px solid rgba(29,78,216,.18);border-color:var(--brand-600)}
+  .input.invalid,.textarea.invalid{border-color:#DC2626;background:#FFF8F8}
+  .check{display:flex;align-items:flex-start;gap:9px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:#fff;font-size:12.5px}
+  .check input{width:16px;height:16px;margin-top:2px;accent-color:var(--brand-600)}
+  .check b{display:block;font-size:12.5px}
+  .check small{display:block;color:var(--muted);font-size:11px}
+  .radio-row{display:flex;gap:8px;flex-wrap:wrap}
+  .radio{display:inline-flex;align-items:center;gap:7px;border:1px solid #CBD5E1;border-radius:9px;padding:8px 11px;font-size:12.5px;background:#fff;cursor:pointer}
+  .radio.on{border-color:var(--brand-600);background:var(--brand-50);color:var(--brand-600);font-weight:700}
+  .radio input{accent-color:var(--brand-600)}
+
+  /* ===== Stepper ===== */
+  .steps{display:flex;align-items:flex-start;gap:0;padding:16px 18px;background:#fff;border:1px solid var(--border);border-radius:var(--radius);margin-bottom:18px;overflow:auto}
+  .step{display:flex;align-items:center;gap:8px;min-width:0;flex:1}
+  .step .n{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-size:11.5px;font-weight:800;background:#EEF2F7;color:#7C8DA5;flex:0 0 auto}
+  .step .t{font-size:11.5px;color:#7C8DA5;white-space:nowrap}
+  .step.done .n{background:var(--green-bg);color:var(--green)}
+  .step.done .t{color:#3B4C63}
+  .step.now .n{background:var(--navy-900);color:#fff}
+  .step.now .t{color:var(--navy-900);font-weight:800}
+  .step .line{height:1px;background:var(--border);flex:1;margin:0 8px;min-width:12px}
+
+  /* ===== Wizard ===== */
+  .choice-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .choice{border:1px solid var(--border);border-radius:12px;padding:13px 14px;background:#fff;cursor:pointer;display:flex;gap:11px;align-items:flex-start}
+  .choice:hover{border-color:#B9C7DA;background:#FCFDFF}
+  .choice.on{border-color:var(--brand-600);background:var(--brand-50);box-shadow:0 0 0 1px var(--brand-600) inset}
+  .choice .ic{width:34px;height:34px;border-radius:9px;background:#F1F5FB;display:grid;place-items:center;flex:0 0 auto;color:var(--navy-800)}
+  .choice.on .ic{background:#fff;color:var(--brand-600)}
+  .choice b{display:block;font-size:13px;line-height:1.5}
+  .choice small{display:block;color:var(--muted);font-size:11.5px;line-height:1.55;margin-top:3px}
+  .choice .meta{display:flex;gap:6px;margin-top:7px;flex-wrap:wrap}
+  .wizard-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;border-top:1px solid var(--border);background:#fff;border-radius:0 0 var(--radius) var(--radius)}
+  .pc-card{padding:16px 18px}
+  .pc-ring{width:44px;height:44px;border-radius:50%;background:conic-gradient(var(--brand-600) 270deg,#E8EDF5 0);display:grid;place-items:center;font-size:10px;font-weight:800;color:var(--navy-900);position:relative}
+  .pc-ring::after{content:"";position:absolute;inset:5px;background:#fff;border-radius:50%}
+  .pc-ring span{position:relative;z-index:1}
+  .pc-cats{display:grid;grid-template-columns:1fr 1fr;gap:6px 10px;margin-top:12px}
+  .pc-cat{display:flex;align-items:center;gap:7px;font-size:11px;color:#3B4C63}
+  .pc-cat .ok{width:16px;height:16px;border-radius:50%;background:var(--green-bg);color:var(--green);display:grid;place-items:center;font-size:10px;font-weight:800;flex:0 0 auto}
+  .concern{display:flex;align-items:flex-start;gap:8px;padding:9px 10px;border-radius:9px;background:#FBFCFE;border:1px solid var(--border);font-size:11.5px}
+  .concern .star{color:#B45309;font-weight:800;flex:0 0 auto}
+  .concern b{display:block;font-size:11.5px}
+  .concern small{display:block;color:var(--muted);font-size:10.5px}
+
+  /* ===== Chat ===== */
+  .chat{display:flex;flex-direction:column;gap:14px}
+  .msg{display:flex;gap:10px;align-items:flex-start}
+  .msg .who{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;font-weight:800;font-size:11px;flex:0 0 auto}
+  .msg.ai .who{background:var(--navy-900);color:#fff}
+  .msg.user .who{background:#E8EEF7;color:var(--navy-900)}
+  .bubble{background:#fff;border:1px solid var(--border);border-radius:12px;padding:12px 14px;min-width:0;flex:1}
+  .msg.user .bubble{background:var(--brand-50);border-color:#D6E4FF}
+  .bubble p{margin:0 0 8px}
+  .bubble p:last-child{margin-bottom:0}
+  .bubble h4{margin:0 0 6px;font-size:12.5px}
+  .bubble ul{margin:6px 0 0;padding-left:18px}
+  .bubble li{margin:3px 0}
+  .source{display:flex;gap:10px;align-items:flex-start;margin-top:10px;padding:10px 12px;border:1px solid #D6E4FF;background:#FAFCFF;border-radius:10px;font-size:11.5px}
+  .source .ic{width:26px;height:26px;border-radius:7px;background:var(--brand-50);color:var(--brand-600);display:grid;place-items:center;flex:0 0 auto}
+  .source b{display:block;font-size:12px}
+  .source small{display:block;color:var(--muted);font-size:10.5px}
+  .ai-note{display:flex;align-items:center;gap:8px;background:#FFFDF6;border:1px solid #F1DFB5;color:#7A5A13;border-radius:9px;padding:8px 11px;font-size:11.5px}
+  .answer-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+
+  /* ===== Tables / lists ===== */
+  table.tbl{width:100%;border-collapse:collapse;font-size:12.5px}
+  .tbl th{text-align:left;font-size:11px;color:var(--muted);font-weight:700;letter-spacing:.02em;padding:9px 12px;border-bottom:1px solid var(--border);background:#FBFCFE;white-space:nowrap}
+  .tbl td{padding:11px 12px;border-bottom:1px solid #EEF2F7;vertical-align:middle}
+  .tbl tr:last-child td{border-bottom:0}
+  .tbl tr:hover td{background:#FCFDFF}
+  .case-no{display:block;font-size:12px;font-weight:700;white-space:nowrap;line-height:1.5}
+  .case-title{display:block;font-weight:700;font-size:12.5px;line-height:1.5}
+  .case-sub{display:block;color:var(--muted);font-size:11px;font-weight:400}
+  .avatar-sm{width:24px;height:24px;border-radius:50%;background:#E8EEF7;color:var(--navy-900);display:inline-grid;place-items:center;font-size:10px;font-weight:800;margin-right:6px}
+
+  /* ===== Kanban ===== */
+  .kanban{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;align-items:start}
+  .kcol{background:#EFF3F9;border:1px solid #E1E8F2;border-radius:12px;padding:10px;min-height:420px}
+  .kcol h4{margin:2px 4px 10px;font-size:12px;display:flex;align-items:center;justify-content:space-between;color:#3B4C63}
+  .kcol h4 span{background:#fff;border:1px solid var(--border);border-radius:999px;font-size:10px;padding:1px 7px;color:var(--muted)}
+  .kcard{background:#fff;border:1px solid var(--border);border-radius:10px;padding:11px;margin-bottom:9px;box-shadow:0 1px 2px rgba(15,27,45,.03);cursor:pointer}
+  .kcard:hover{border-color:#B9C7DA}
+  .kcard.mine{border-left:3px solid var(--amber)}
+  .kcard .topline{display:flex;justify-content:space-between;gap:8px;align-items:center;margin-bottom:6px}
+  .kcard b{display:block;font-size:12px;line-height:1.55}
+  .kcard small{display:block;color:var(--muted);font-size:10.5px;margin-top:5px}
+  .kmeta{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px;font-size:10.5px;color:var(--muted)}
+
+  /* ===== Timeline ===== */
+  .timeline{display:flex;flex-direction:column;gap:0;padding:2px 0}
+  .tl{display:flex;gap:12px;position:relative;padding-bottom:18px}
+  .tl:last-child{padding-bottom:0}
+  .tl::before{content:"";position:absolute;left:11px;top:24px;bottom:0;width:1px;background:var(--border)}
+  .tl:last-child::before{display:none}
+  .tl .dot2{width:23px;height:23px;border-radius:50%;display:grid;place-items:center;background:#EEF2F7;color:#7C8DA5;font-size:10px;font-weight:800;flex:0 0 auto;z-index:1;border:2px solid #fff}
+  .tl.done .dot2{background:var(--green-bg);color:var(--green)}
+  .tl.now .dot2{background:var(--navy-900);color:#fff}
+  .tl b{display:block;font-size:12.5px}
+  .tl small{display:block;color:var(--muted);font-size:11px}
+  .tl .body{padding-top:1px}
+
+  /* ===== Misc ===== */
+  .kbd{display:inline-block;border:1px solid #CBD5E1;border-bottom-width:2px;border-radius:5px;background:#fff;padding:0 5px;font-size:10.5px;color:#475569}
+  .code{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:11px;background:#F4F7FB;border:1px solid var(--border);border-radius:6px;padding:1px 6px}
+  .banner{display:flex;align-items:flex-start;gap:10px;border-radius:10px;padding:11px 13px;font-size:12px;border:1px solid}
+  .banner.info{background:var(--brand-50);border-color:#D6E4FF;color:#1E3A8A}
+  .banner.warn{background:var(--amber-bg);border-color:#F3D6A8;color:#7A4A06}
+  .banner.danger{background:var(--red-bg);border-color:#F1C6C6;color:#7F1D1D}
+  .banner.ok{background:var(--green-bg);border-color:#BFE3CC;color:#14532D}
+  .banner b{font-weight:800}
+  .divider{height:1px;background:var(--border);margin:14px 0}
+  .list-plain{margin:0;padding:0;list-style:none}
+  .list-plain li{display:flex;gap:9px;align-items:flex-start;padding:7px 0;border-bottom:1px solid #F0F3F8;font-size:12px}
+  .list-plain li:last-child{border-bottom:0}
+  .list-plain .ic{width:22px;height:22px;border-radius:6px;background:#F1F5FB;display:grid;place-items:center;flex:0 0 auto;color:var(--navy-800)}
+  .list-plain small{display:block;color:var(--muted);font-size:10.5px}
+  .seg{display:inline-flex;background:#EEF2F7;border-radius:9px;padding:3px}
+  .seg button{border:0;background:transparent;padding:6px 11px;border-radius:7px;font-size:11.5px;font-weight:700;color:var(--muted);cursor:pointer}
+  .seg button.on{background:#fff;color:var(--text);box-shadow:0 1px 2px rgba(15,27,45,.08)}
+  .search{display:flex;align-items:center;gap:8px;border:1px solid #CBD5E1;border-radius:9px;padding:6px 10px;background:#fff;min-width:220px}
+  .search input{border:0;outline:0;font-size:12px;width:100%;background:transparent}
+  .search svg{width:15px;height:15px;color:var(--muted)}
+
+  /* ===== Login ===== */
+  .login{display:grid;grid-template-columns:1.05fr .95fr;min-height:760px;background:#fff}
+  .login-hero{background:var(--navy-900);color:#fff;padding:48px 52px;display:flex;flex-direction:column;position:relative;overflow:hidden}
+  .login-hero::after{content:"";position:absolute;right:-120px;bottom:-140px;width:420px;height:420px;border-radius:50%;border:1px solid rgba(255,255,255,.10)}
+  .login-hero::before{content:"";position:absolute;right:-40px;bottom:-60px;width:260px;height:260px;border-radius:50%;border:1px solid rgba(255,255,255,.08)}
+  .login-hero .brand2{display:flex;align-items:center;gap:10px;font-weight:800;letter-spacing:.01em}
+  .login-hero .brand2 .lg{width:36px;height:36px;border-radius:10px;background:#fff;color:var(--navy-900);display:grid;place-items:center;font-size:15px}
+  .login-hero h2{font-size:30px;line-height:1.45;letter-spacing:-.015em;margin:44px 0 12px;max-width:440px}
+  .login-hero p{color:#C5D3E4;font-size:13px;max-width:420px}
+  .login-hero .features{display:flex;flex-direction:column;gap:12px;margin-top:28px;max-width:420px}
+  .login-hero .feature{display:flex;gap:11px;align-items:flex-start}
+  .login-hero .feature .fi{width:28px;height:28px;border-radius:8px;background:rgba(255,255,255,.10);display:grid;place-items:center;flex:0 0 auto;color:#fff}
+  .login-hero .feature b{display:block;font-size:12.5px}
+  .login-hero .feature small{display:block;color:#9FB3CC;font-size:11px;line-height:1.6}
+  .login-hero .foot{margin-top:auto;padding-top:24px;font-size:10.5px;color:#7D93AE}
+  .login-panel{display:flex;align-items:center;justify-content:center;padding:42px}
+  .login-box{width:100%;max-width:380px}
+  .login-box h3{margin:0 0 4px;font-size:22px;letter-spacing:-.01em}
+  .login-box .lead{color:var(--muted);font-size:12.5px;margin:0 0 24px}
+  .demo-row{display:flex;gap:7px;flex-wrap:wrap;margin:4px 0 18px}
+  .demo{border:1px solid var(--border);background:#FBFCFE;border-radius:8px;padding:6px 9px;font-size:11px;cursor:pointer;color:#3B4C63}
+  .demo:hover{border-color:var(--brand-600);color:var(--brand-600)}
+  .login-box .btn{width:100%}
+  .login-help{margin-top:18px;padding-top:14px;border-top:1px solid var(--border);font-size:11px;color:var(--muted)}
+
+  /* ===== States grid ===== */
+  .state-card{border:1px solid var(--border);border-radius:12px;background:#fff;overflow:hidden}
+  .state-card .sh{padding:8px 12px;border-bottom:1px solid var(--border);font-size:11px;font-weight:800;color:#3B4C63;background:#FBFCFE;display:flex;justify-content:space-between}
+  .state-card .sb{padding:14px;min-height:150px;display:flex;flex-direction:column;justify-content:center;gap:10px;background:var(--bg)}
+  .sk{height:11px;border-radius:6px;background:#E6ECF5}
+  .sk.w40{width:40%} .sk.w60{width:60%} .sk.w80{width:80%}
+  .sk.circle{width:34px;height:34px;border-radius:50%}
+  .empty-ic{width:44px;height:44px;border-radius:12px;background:#EDF2F9;display:grid;place-items:center;color:#7C8DA5;margin:0 auto}
+
+  /* ===== Responsive ===== */
+  @media (max-width:1100px){
+    .cols,.cols.wide{grid-template-columns:1fr}
+    .rail{position:static}
+    .grid4{grid-template-columns:repeat(2,1fr)}
+    .kanban{grid-template-columns:repeat(2,minmax(0,1fr))}
+    .login{grid-template-columns:1fr}
+    .login-hero{display:none}
+  }
+  @media (max-width:820px){
+    .side{width:64px;flex-basis:64px}
+    .brand{padding:14px 10px}
+    .brand b,.brand small,.nav .group,.nav a span,.nav a .count,.side-foot .me b,.side-foot .me small{display:none}
+    .nav a{justify-content:center;padding:11px 8px}
+    .side-foot{padding:8px}
+    .me{justify-content:center;padding:6px}
+    .content{padding:16px}
+    .choice-grid,.grid2,.grid3,.grid4{grid-template-columns:1fr}
+    .kanban{grid-template-columns:1fr}
+    .steps .t{display:none}
+    .top .legend,.top .sub{display:none}
+    .board-head{padding:20px 18px}
+    .board-head h1{font-size:22px}
+    .board-wrap{padding:18px 12px 60px}
+  }
+  @media (prefers-reduced-motion:reduce){
+    *{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+  }
+  @media print{
+    .tabs{display:none}
+    .view{display:block!important;page-break-before:always}
+    .frame{box-shadow:none}
+  }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-home" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M9 21v-6h6v6"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-board" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M15 4v16"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4.5 6v5.5c0 5 3.2 8.4 7.5 9.5 4.3-1.1 7.5-4.5 7.5-9.5V6L12 3z"/><path d="m9.5 12 1.8 1.8 3.4-3.6"/></symbol>
+  <symbol id="i-logout" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/><path d="M21 3v18"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 4.5 4.5L19 6.5"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2.8 20h18.4L12 3z"/><path d="M12 9v5"/><path d="M12 17.5h.01"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6 8-6s8 2 8 6"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 6l-6 6 6 6"/></symbol>
+  <symbol id="i-pc" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="1.6"/><path d="M8 20h8M12 16v4"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-6-6z"/><path d="M14 3v6h6"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></symbol>
+  <symbol id="i-wifi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8.5a15 15 0 0 1 20 0"/><path d="M5 12a10.5 10.5 0 0 1 14 0"/><path d="M8.5 15.5a5.5 5.5 0 0 1 7 0"/><path d="M12 19h.01"/></symbol>
+  <symbol id="i-proc" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l2.5 1.5"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h.01M12 12h.01M19 12h.01"/></symbol>
+  <symbol id="i-external" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3h7v7"/><path d="M10 14 21 3"/><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></symbol>
+</svg>
+
+<header class="board-head">
+  <div class="kicker">OpenDesign · UI Design Board</div>
+  <h1>みらいAI窓口 × ヘルプデスク MVP</h1>
+  <p>相談受付 → AI一次対応 → 引継ぎ → ヘルプデスク対応 → ナレッジ承認までを、1つの流れで操作できる個人利用 MVP の画面設計です。既存要件 V3.1 の STEP 1〜7 と信号の3色ルールを、MVP の8画面に絞り込みました。</p>
+  <div class="board-meta">
+    <span>v1.0 / 2026-10-23</span>
+    <span>Design direction: Tech / utility</span>
+    <span>Target: PC browser（820px以下は簡易対応）</span>
+    <span>Status: 承認待ち</span>
+    <span>Project: b740d7e6</span>
+  </div>
+</header>
+
+<nav class="tabs" role="tablist" aria-label="設計ボードの表示切替">
+  <button role="tab" data-tab="tokens" aria-selected="false">Tokens</button>
+  <button role="tab" data-tab="map" aria-selected="false">Flow / Roles</button>
+  <button role="tab" data-tab="login" aria-selected="false">S1 ログイン</button>
+  <button role="tab" data-tab="home-req" aria-selected="true">S2 ホーム（相談者）</button>
+  <button role="tab" data-tab="home-desk" aria-selected="false">S2 ホーム（担当者）</button>
+  <button role="tab" data-tab="w1" aria-selected="false">S3-1 種類</button>
+  <button role="tab" data-tab="w2" aria-selected="false">S3-2 内容</button>
+  <button role="tab" data-tab="w3" aria-selected="false">S3-3 AI</button>
+  <button role="tab" data-tab="w4" aria-selected="false">S3-4 引継ぎ</button>
+  <button role="tab" data-tab="case" aria-selected="false">S4 相談状況</button>
+  <button role="tab" data-tab="desk" aria-selected="false">S5 ボード</button>
+  <button role="tab" data-tab="desk-case" aria-selected="false">S6 案件対応</button>
+  <button role="tab" data-tab="kb" aria-selected="false">S7 ナレッジ</button>
+  <button role="tab" data-tab="kb-detail" aria-selected="false">S7 承認</button>
+  <button role="tab" data-tab="audit" aria-selected="false">S8 監査</button>
+  <button role="tab" data-tab="states" aria-selected="false">States</button>
+</nav>
+
+<main class="board-wrap">
+
+  <!-- ================= TOKENS ================= -->
+  <section class="view" id="view-tokens" data-od-id="design-tokens" role="tabpanel">
+    <div class="sec-head"><div><h2>Design tokens</h2><p>OpenDesign の Tech / utility 方向を基に、社内ヘルプデスク向けの navy と信号色を定義。</p></div></div>
+    <div class="grid2">
+      <div class="card card-pad">
+        <div class="strong" style="margin-bottom:12px">Color</div>
+        <div class="grid4" style="gap:10px">
+          <div><div style="height:44px;border-radius:9px;background:#0A1F38"></div><div class="small mono">#0A1F38</div><div class="small muted">navy-900</div></div>
+          <div><div style="height:44px;border-radius:9px;background:#1D4ED8"></div><div class="small mono">#1D4ED8</div><div class="small muted">brand-600</div></div>
+          <div><div style="height:44px;border-radius:9px;background:#F5F7FB;border:1px solid #E3E9F2"></div><div class="small mono">#F5F7FB</div><div class="small muted">bg</div></div>
+          <div><div style="height:44px;border-radius:9px;background:#0F1B2D"></div><div class="small mono">#0F1B2D</div><div class="small muted">text</div></div>
+          <div><div style="height:44px;border-radius:9px;background:#EAF1FF;border:1px solid #D6E4FF"></div><div class="small mono">#EAF1FF</div><div class="small muted">blue-bg / 青</div></div>
+          <div><div style="height:44px;border-radius:9px;background:#FFF4E5;border:1px solid #F3D6A8"></div><div class="small mono">#FFF4E5</div><div class="small muted">amber-bg / 黄</div></div>
+          <div><div style="height:44px;border-radius:9px;background:#FDECEC;border:1px solid #F1C6C6"></div><div class="small mono">#FDECEC</div><div class="small muted">red-bg / 赤</div></div>
+          <div><div style="height:44px;border-radius:9px;background:#EAF7EF;border:1px solid #BFE3CC"></div><div class="small mono">#EAF7EF</div><div class="small muted">green-bg / 完了</div></div>
+        </div>
+        <div class="divider"></div>
+        <div class="strong" style="margin-bottom:8px">Signal component</div>
+        <div class="row" style="flex-wrap:wrap">
+          <span class="pill blue"><span class="dot" style="background:#1D4ED8"></span>青 / AIで進行</span>
+          <span class="pill amber"><span class="dot" style="background:#B45309"></span>黄 / 担当者対応</span>
+          <span class="pill red"><span class="dot" style="background:#B91C1C"></span>赤 / AI対象外</span>
+          <span class="pill green"><span class="dot" style="background:#15803D"></span>完了</span>
+        </div>
+        <p class="note" style="margin:10px 0 0">色だけで意味を伝えない。必ず日本語ラベルと理由を併記する。</p>
+      </div>
+      <div class="card card-pad">
+        <div class="strong" style="margin-bottom:12px">Type / spacing</div>
+        <div style="font-size:24px;font-weight:800;letter-spacing:-.015em">ページタイトル 24 / 700</div>
+        <div style="font-size:18px;font-weight:700;margin-top:8px">セクション見出し 18 / 700</div>
+        <div style="font-size:15px;font-weight:700;margin-top:8px">カード見出し 15 / 700</div>
+        <div style="font-size:14px;margin-top:8px">本文 14 / 400 / line-height 1.75。読みやすさを最優先し、1行を長くしすぎない。</div>
+        <div class="small muted" style="margin-top:8px">補助 12 / 400 ・ ケース番号 13 / 600 mono</div>
+        <div class="divider"></div>
+        <div class="row" style="gap:6px">
+          <span class="tag">4</span><span class="tag">8</span><span class="tag">12</span><span class="tag">16</span><span class="tag">20</span><span class="tag">24</span><span class="tag">32</span><span class="tag">40</span>
+        </div>
+        <p class="note" style="margin:8px 0 0">8px グリッド。カード角丸 14、入力 10、ピル 999。</p>
+        <div class="divider"></div>
+        <div class="strong" style="margin-bottom:8px">Buttons</div>
+        <div class="row" style="flex-wrap:wrap">
+          <button class="btn btn-primary">新しい相談をはじめる <svg><use href="#i-arrow"/></svg></button>
+          <button class="btn btn-secondary">戻る</button>
+          <button class="btn btn-ghost">詳しく見る</button>
+          <button class="btn btn-danger btn-sm">差戻し</button>
+        </div>
+        <div class="strong" style="margin:16px 0 8px">Step bar</div>
+        <div class="steps" style="margin:0;padding:10px 12px">
+          <div class="step done"><span class="n">✓</span><span class="t">種類</span><span class="line"></span></div>
+          <div class="step done"><span class="n">✓</span><span class="t">内容</span><span class="line"></span></div>
+          <div class="step now"><span class="n">3</span><span class="t">AI一次対応</span><span class="line"></span></div>
+          <div class="step"><span class="n">4</span><span class="t">引継ぎ</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="card card-pad" style="margin-top:16px">
+      <div class="strong" style="margin-bottom:10px">Design principles</div>
+      <div class="grid4">
+        <div><div class="pill blue">1</div><b style="display:block;margin-top:8px;font-size:13px">次にやることが1つ</b><p class="note" style="margin:4px 0 0">各画面に主ボタンを1つだけ置く。迷わせない。</p></div>
+        <div><div class="pill amber">2</div><b style="display:block;margin-top:8px;font-size:13px">AIの限界を隠さない</b><p class="note" style="margin:4px 0 0">「MVP / ルールベース / デモデータ」を常時表示。</p></div>
+        <div><div class="pill green">3</div><b style="display:block;margin-top:8px;font-size:13px">状態を設計する</b><p class="note" style="margin:4px 0 0">空・読込・入力エラー・通信エラーを全画面に用意。</p></div>
+        <div><div class="pill gray">4</div><b style="display:block;margin-top:8px;font-size:13px">職務分離</b><p class="note" style="margin:4px 0 0">自分の申請は承認できない。UIとAPIの両方で。</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= MAP ================= -->
+  <section class="view" id="view-map" data-od-id="flow-roles" role="tabpanel">
+    <div class="sec-head"><div><h2>Flow / Roles</h2><p>主要3 Flow と、ロールごとの画面・操作範囲。</p></div></div>
+    <div class="card card-pad">
+      <div class="strong" style="margin-bottom:14px">主要 3 Flow</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
+        <div style="border:1px solid var(--border);border-radius:12px;padding:14px;background:#FBFCFE">
+          <span class="pill blue">Flow A</span>
+          <b style="display:block;margin-top:9px">相談受付〜引継ぎ</b>
+          <p class="note" style="margin:5px 0 0">種類 → 内容＋PC情報 → AI一次対応 → 解決 or 引継ぎ（TKT/INC発行）</p>
+          <div class="small mono" style="margin-top:10px;color:#3B4C63">STEP 1 → 2 → 3 → 4</div>
+        </div>
+        <div style="border:1px solid var(--border);border-radius:12px;padding:14px;background:#FBFCFE">
+          <span class="pill amber">Flow B</span>
+          <b style="display:block;margin-top:9px">ヘルプデスク対応</b>
+          <p class="note" style="margin:5px 0 0">ボード → 案件 → 担当割当 → 解決記録（原因・手順・所要時間）</p>
+          <div class="small mono" style="margin-top:10px;color:#3B4C63">STEP 5</div>
+        </div>
+        <div style="border:1px solid var(--border);border-radius:12px;padding:14px;background:#FBFCFE">
+          <span class="pill green">Flow C</span>
+          <b style="display:block;margin-top:9px">ナレッジ化〜完了</b>
+          <p class="note" style="margin:5px 0 0">伏せ字下書き → 申請 → 別の承認者が承認 → 公開 → 次のAI根拠へ</p>
+          <div class="small mono" style="margin-top:10px;color:#3B4C63">STEP 6 → 7</div>
+        </div>
+      </div>
+      <div class="divider"></div>
+      <div class="strong" style="margin-bottom:10px">画面遷移</div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:11.5px">
+        <span class="tag">S1 ログイン</span><span class="muted">→</span>
+        <span class="tag">S2 ホーム</span><span class="muted">→</span>
+        <span class="tag blue">S3 ウィザード</span><span class="muted">→</span>
+        <span class="tag">S4 相談状況</span><span class="muted">⇄</span>
+        <span class="tag">S5 ボード</span><span class="muted">→</span>
+        <span class="tag">S6 案件対応</span><span class="muted">→</span>
+        <span class="tag">S7 ナレッジ</span><span class="muted">→</span>
+        <span class="tag">S8 監査</span>
+      </div>
+    </div>
+    <div class="card" style="margin-top:16px;overflow:hidden">
+      <div class="card-head"><h3>権限マトリクス</h3><span class="note">API 側でも同じ制約を検証</span></div>
+      <table class="tbl">
+        <thead><tr><th>操作</th><th>相談者</th><th>ヘルプデスク</th><th>承認者</th></tr></thead>
+        <tbody>
+          <tr><td>自分の相談を作成・閲覧</td><td><span class="pill green">○</span></td><td><span class="pill green">○</span></td><td><span class="pill green">○</span></td></tr>
+          <tr><td>他人の相談を閲覧</td><td><span class="pill red">×</span></td><td><span class="pill green">○</span></td><td><span class="pill gray">参照</span></td></tr>
+          <tr><td>PC基本情報の閲覧</td><td>本人のみ</td><td>共有時のみ</td><td>共有時のみ</td></tr>
+          <tr><td>担当割当・状態変更</td><td><span class="pill red">×</span></td><td><span class="pill green">○</span></td><td><span class="pill red">×</span></td></tr>
+          <tr><td>解決記録の登録</td><td><span class="pill red">×</span></td><td><span class="pill green">○</span></td><td><span class="pill red">×</span></td></tr>
+          <tr><td>ナレッジ下書き・申請</td><td><span class="pill red">×</span></td><td><span class="pill green">○</span></td><td><span class="pill red">×</span></td></tr>
+          <tr><td>ナレッジ承認</td><td><span class="pill red">×</span></td><td><span class="pill amber">自分の申請は不可</span></td><td><span class="pill green">○</span></td></tr>
+          <tr><td>監査ログ</td><td><span class="pill red">×</span></td><td><span class="pill red">×</span></td><td><span class="pill green">○</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ================= LOGIN ================= -->
+  <section class="view" id="view-login" data-od-id="screen-login" role="tabpanel">
+    <div class="sec-head"><div><h2>S1 ログイン</h2><p>3 ロールのデモアカウントでログイン。認証は MVP 用のメール＋パスワード。</p></div><span class="pill outline">/login</span></div>
+    <div class="frame">
+      <div class="browser"><span class="dots"><i></i><i></i><i></i></span><span class="url">https://ai-helpdesk-mvp.example.com/login</span></div>
+      <div class="login">
+        <div class="login-hero">
+          <div class="brand2"><span class="lg">み</span> みらいAI窓口</div>
+          <h2>相談は、ひとつの窓口から。<br>PCの情報も、いっしょに。</h2>
+          <p>社員の「困った」をAIが一次対応し、必要ならヘルプデスクへ。解決した知見は、次の人のためのナレッジになります。</p>
+          <div class="features">
+            <div class="feature"><span class="fi"><svg width="15" height="15"><use href="#i-pc"/></svg></span><div><b>PC基本情報を事前取得</b><small>読み取りのみ。8分類31項目を相談前に確認（MVPはデモ）</small></div></div>
+            <div class="feature"><span class="fi"><svg width="15" height="15"><use href="#i-shield"/></svg></span><div><b>信号の3色で安全に</b><small>青=AIで進行 / 黄=担当者対応 / 赤=AI対象外</small></div></div>
+            <div class="feature"><span class="fi"><svg width="15" height="15"><use href="#i-book"/></svg></span><div><b>解決がナレッジになる</b><small>個人情報を伏せた下書きを、別の承認者が確認</small></div></div>
+          </div>
+          <div class="foot">MVP / Prototype · デモデータのみ · 本番環境ではありません</div>
+        </div>
+        <div class="login-panel">
+          <div class="login-box">
+            <h3>ログイン</h3>
+            <p class="lead">デモアカウントを選ぶと、メールアドレスが入力されます。</p>
+            <div class="demo-row">
+              <button class="demo" data-demo="yamada@example.com">相談者 山田</button>
+              <button class="demo" data-demo="sato@example.com">担当者 佐藤</button>
+              <button class="demo" data-demo="watanabe@example.com">承認者 渡辺</button>
+            </div>
+            <div class="field"><label for="email">メールアドレス</label><input class="input" id="email" value="yamada@example.com" autocomplete="username"></div>
+            <div class="field"><label for="password">パスワード</label><input class="input" id="password" type="password" value="••••••••••"></div>
+            <button class="btn btn-primary btn-lg">ログイン <svg><use href="#i-arrow"/></svg></button>
+            <div class="login-help">パスワードは配備時に別途共有します。ログイン試行はレート制限されます。<br>本番想定の SSO（Entra ID）は MVP 対象外です。</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="annotation"><b>設計メモ</b> <span><span class="tag">状態</span> 入力エラーはフィールド直下、認証エラーは上部の赤帯。送信中はボタンを `aria-busy` に。</span><span><span class="tag">セキュリティ</span> Cookie は HttpOnly / SameSite=Lax / Secure。ロールは API で判定。</span></div>
+  </section>
+
+  <!-- ================= HOME REQUESTER ================= -->
+  <section class="view active" id="view-home-req" data-od-id="screen-home-requester" role="tabpanel">
+    <div class="sec-head"><div><h2>S2 ホーム（相談者）</h2><p>「新しい相談」を主役に、自分の相談と全体の信号を俯瞰。</p></div><span class="pill outline">/</span></div>
+    <div class="frame">
+      <div class="browser"><span class="dots"><i></i><i></i><i></i></span><span class="url">https://ai-helpdesk-mvp.example.com/</span></div>
+      <div class="app" data-chrome data-role="requester" data-active="home" data-title="ホーム" data-sub="相談者 / 山田 太郎">
+        <aside class="sidebar-slot"></aside>
+        <div class="main">
+          <header class="topbar-slot"></header>
+          <div class="content">
+            <div class="page-head">
+              <div><h1>おはようございます、山田さん</h1><p>2026年10月23日（金） · 総務部</p></div>
+              <div class="actions"></div>
+            </div>
+            <div class="cols">
+              <div class="stack">
+                <div class="card kpi hero" style="padding:22px 24px">
+                  <div class="between">
+                    <div>
+                      <div class="label">困ったときは、1つの入口から</div>
+                      <div style="font-size:22px;font-weight:800;margin:6px 0 4px;letter-spacing:-.01em">新しい相談をはじめる</div>
+                      <div class="foot">相談しながら、PCの基本情報を読み取りで確認します（MVPはデモ）。</div>
+                    </div>
+                    <button class="btn btn-primary btn-lg">相談をはじめる <svg><use href="#i-arrow"/></svg></button>
+                  </div>
+                </div>
+                <div class="grid4">
+                  <div class="card kpi"><div class="label"><span class="dot" style="background:#1D4ED8"></span>相談中</div><div class="num">1</div><div class="foot">AIが一次対応中</div></div>
+                  <div class="card kpi"><div class="label"><span class="dot" style="background:#B45309"></span>担当者対応中</div><div class="num">1</div><div class="foot">佐藤さんが対応</div></div>
+                  <div class="card kpi"><div class="label"><span class="dot" style="background:#15803D"></span>完了</div><div class="num">2</div><div class="foot">今月の解決</div></div>
+                  <div class="card kpi"><div class="label">AIで解決した割合</div><div class="num">50<span style="font-size:14px;font-weight:600">%</span></div><div class="foot">4件中2件</div></div>
+                </div>
+                <div class="card">
+                  <div class="card-head"><h3>あなたの相談</h3><button class="btn btn-ghost btn-sm">すべて見る</button></div>
+                  <table class="tbl">
+                    <thead><tr><th>受付 / 件名</th><th>信号</th><th>今の段階</th><th>更新</th></tr></thead>
+                    <tbody>
+                      <tr><td><span class="case-no">TKT-2026-0007</span><span class="case-title">共有フォルダが開けません</span><span class="case-sub">ファイル・共有フォルダ</span></td><td><span class="pill amber"><span class="dot" style="background:#B45309"></span>黄</span></td><td><span class="pill gray">担当者対応中</span></td><td class="small muted">10分前</td></tr>
+                      <tr><td><span class="case-no">TKT-2026-0006</span><span class="case-title">Teamsの音が出ません</span><span class="case-sub">PC・周辺機器</span></td><td><span class="pill blue"><span class="dot" style="background:#1D4ED8"></span>青</span></td><td><span class="pill green">AIで解決</span></td><td class="small muted">昨日</td></tr>
+                      <tr><td><span class="case-no">TKT-2026-0004</span><span class="case-title">経費精算の手順を確認したい</span><span class="case-sub">社内の手続き・規程</span></td><td><span class="pill blue"><span class="dot" style="background:#1D4ED8"></span>青</span></td><td><span class="pill green">完了</span></td><td class="small muted">10月20日</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div class="card card-pad">
+                  <div class="between" style="margin-bottom:8px"><div class="strong">信号の内訳</div><span class="note">自分の相談 4件</span></div>
+                  <div class="bar"><i class="b" style="width:50%"></i><i class="a" style="width:25%"></i><i class="g" style="width:25%"></i></div>
+                  <div class="row" style="gap:16px;margin-top:8px;font-size:11px;color:var(--muted)"><span class="row"><span class="dot" style="background:#1D4ED8"></span>青 2</span><span class="row"><span class="dot" style="background:#B45309"></span>黄 1</span><span class="row"><span class="dot" style="background:#15803D"></span>完了 1</span><span class="row"><span class="dot" style="background:#B91C1C"></span>赤 0</span></div>
+                </div>
+              </div>
+              <aside class="rail">
+                <div class="card card-pad">
+                  <div class="between"><div class="strong">お知らせ</div><span class="pill outline">2件</span></div>
+                  <ul class="list-plain" style="margin-top:8px">
+                    <li><span class="ic"><svg width="13" height="13"><use href="#i-bell"/></svg></span><div><b>共有フォルダの相談に返信があります</b><small>佐藤さんが対応を開始しました · 10分前</small></div></li>
+                    <li><span class="ic"><svg width="13" height="13"><use href="#i-book"/></svg></span><div><b>ナレッジが公開されました</b><small>「Teamsの音が出ないとき」 · 昨日</small></div></li>
+                  </ul>
+                </div>
+                <div class="card card-pad">
+                  <div class="strong">はじめての方へ</div>
+                  <p class="note" style="margin:6px 0 10px">相談の流れと、AIに任せてよいこと・よくないことを3分で確認できます。</p>
+                  <button class="btn btn-secondary btn-sm">使い方を見る</button>
+                </div>
+              </aside>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="annotation"><b>設計メモ</b> <span><span class="tag">主役</span> ヒーローカードの「相談をはじめる」を唯一の主ボタンに。</span><span><span class="tag">空状態</span> 相談0件なら KPI の下に空状態カードを表示。</span><span><span class="tag">権限</span> 担当者以上は右レールが「あなたの番」に変わる。</span></div>
+  </section>
+
+  <!-- ================= HOME DESK ================= -->
+  <section class="view" id="view-home-desk" data-od-id="screen-home-helpdesk" role="tabpanel">
+    <div class="sec-head"><div><h2>S2 ホーム（ヘルプデスク）</h2><p>「あなたの番」を最上位に。ボードと承認待ちへ即移動。</p></div><span class="pill outline">/</span></div>
+    <div class="frame">
+      <div class="browser"><span class="dots"><i></i><i></i><i></i></span><span class="url">https://ai-helpdesk-mvp.example.com/</span></div>
+      <div class="app" data-chrome data-role="helpdesk" data-active="home" data-title="ホーム" data-sub="ヘルプデスク / 佐藤 健">
+        <aside class="sidebar-slot"></aside>
+        <div class="main">
+          <header class="topbar-slot"></header>
+          <div class="content">
+            <div class="page-head">
+              <div><h1>佐藤さん、あなたの番です</h1><p>引継ぎ待ち 3件 · 本日の完了 4件 · 承認待ち 1件</p></div>
+              <div class="actions"><span class="pill amber"><span class="dot" style="background:#B45309"></span>あなたの番 3</span><button class="btn btn-primary">ボードを開く <svg><use href="#i-arrow"/></svg></button></div>
+            </div>
+            <div class="grid4">
+              <div class="card kpi"><div class="label"><span class="dot" style="background:#B45309"></span>引継ぎ待ち</div><div class="num">3</div><div class="foot">うち急ぎ 1件</div></div>
+              <div class="card kpi"><div class="label"><span class="dot" style="background:#1D4ED8"></span>対応中</div><div class="num">2</div><div class="foot">自分 1 / 高橋 1</div></div>
+              <div class="card kpi"><div class="label"><span class="dot" style="background:#15803D"></span>今日の完了</div><div class="num">4</div><div class="foot">平均 28分</div></div>
+              <div class="card kpi"><div class="label">ナレッジ承認待ち</div><div class="num">1</div><div class="foot">渡辺さんの承認待ち</div></div>
+            </div>
+            <div class="cols" style="margin-top:16px">
+              <div class="card">
+                <div class="card-head"><h3>あなたの番</h3><span class="note">経過時間の長い順</span></div>
+                <div class="card-body stack">
+                  <div class="card" style="box-shadow:none;border-left:3px solid #B45309">
+                    <div class="card-body" style="padding:12px 14px">
+                      <div class="between"><div class="row"><span class="pill amber"><span class="dot" style="background:#B45309"></span>黄</span><span class="case-no">TKT-2026-0007</span><span class="pill red">急ぎ</span></div><span class="small muted">経過 10分</span></div>
+                      <div class="case-title" style="margin-top:6px">共有フォルダが開けません</div>
+                      <div class="case-sub">山田 太郎（総務部） · ファイル・共有フォルダ · INC-0007</div>
+                      <div class="row" style="margin-top:8px;gap:8px"><span class="tag blue">PC情報 共有あり</span><span class="tag">類似ナレッジ 1件</span><button class="btn btn-primary btn-sm">対応する</button></div>
+                    </div>
+                  </div>
+                  <div class="card" style="box-shadow:none">
+                    <div class="card-body" style="padding:12px 14px">
+                      <div class="between"><div class="row"><span class="pill amber"><span class="dot" style="background:#B45309"></span>黄</span><span class="case-no">TKT-2026-0005</span></div><span class="small muted">経過 42分</span></div>
+                      <div class="case-title" style="margin-top:6px">VPNにつながらない（現場）</div>
+                      <div class="case-sub">小川 一郎（土木部） · ネットワーク · INC-0006</div>
+                      <div class="row" style="margin-top:8px;gap:8px"><span class="tag">PC情報 共有なし</span><span class="tag">類似ナレッジ 2件</span><button class="btn btn-secondary btn-sm">対応する</button></div>
+                    </div>
+                  </div>
+                  <div class="card" style="box-shadow:none">
+                    <div class="card-body" style="padding:12px 14px">
+                      <div class="between"><div class="row"><span class="pill red"><span class="dot" style="background:#B91C1C"></span>赤</span><span class="case-no">TKT-2026-0003</span></div><span class="small muted">経過 1時間</span></div>
+                      <div class="case-title" style="margin-top:6px">不審なメールを開いてしまった</div>
+                      <div class="case-sub">木村 花子（営業部） · セキュリティ · 初動手順 送信済</div>
+                      <div class="row" style="margin-top:8px;gap:8px"><span class="pill red">セキュリティ担当へ</span><button class="btn btn-secondary btn-sm">対応する</button></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <aside class="rail">
+                <div class="card card-pad">
+                  <div class="strong">ボードの状況</div>
+                  <div class="stack" style="margin-top:10px;gap:8px">
+                    <div class="between"><span class="row"><span class="dot" style="background:#B45309"></span>引継ぎ待ち</span><b>3</b></div>
+                    <div class="between"><span class="row"><span class="dot" style="background:#1D4ED8"></span>対応中</span><b>2</b></div>
+                    <div class="between"><span class="row"><span class="dot" style="background:#15803D"></span>承認待ち</span><b>1</b></div>
+                    <div class="between"><span class="row"><span class="dot" style="background:#94A3B8"></span>完了</span><b>4</b></div>
+                  </div>
+                  <div class="divider"></div>
+                  <button class="btn btn-secondary btn-sm" style="width:100%">ボードを開く</button>
+                </div>
+                <div class="card card-pad">
+                  <div class="between"><div class="strong">最近の動き</div><span class="pill outline">live</span></div>
+                  <ul class="list-plain" style="margin-top:8px">
+                    <li><span class="ic"><svg width="13" height="13"><use href="#i-check"/></svg></span><div><b>高橋さんが TKT-0006 を解決</b><small>ナレッジ下書きを作成 · 5分前</small></div></li>
+                    <li><span class="ic"><svg width="13" height="13"><use href="#i-book"/></svg></span><div><b>渡辺さんがナレッジを承認</b><small>「Teamsの音が出ないとき」 · 20分前</small></div></li>
+                  </ul>
+                </div>
+              </aside>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="annotation"><b>設計メモ</b> <span><span class="tag">優先</span> 経過時間と信号で並べる。赤はセキュリティ担当へ誘導。</span><span><span class="tag">情報</span> PC情報の共有有無をカード上に明示。</span></div>
+  </section>
+
+  <!-- ================= WIZARD 1 ================= -->
+  <section class="view" id="view-w1" data-od-id="screen-wizard-types" role="tabpanel">
+    <div class="sec-head"><div><h2>S3-1 相談ウィザード / 種類</h2><p>6種類から選ぶ。選択に応じて例文とPC取得の既定が変わる。</p></div><span class="pill outline">/consult/new · STEP 1/7</span></div>
+    <div class="frame">
+      <div class="browser"><span class="dots"><i></i><i></i><i></i></span><span class="url">https://ai-helpdesk-mvp.example.com/consult/new</span></div>
+      <div class="app" data-chrome data-role="requester" data-active="consult" data-title="新しい相談" data-sub="STEP 1 / 7 · 相談の種類">
+        <aside class="sidebar-slot"></aside>
+        <div class="main">
+          <header class="topbar-slot"></header>
+          <div class="content">
+            <div class="steps" style="margin-top:0">
+              <div class="step now"><span class="n">1</span><span class="t">種類</span><span class="line"></span></div>
+              <div class="step"><span class="n">2</span><span class="t">内容</span><span class="line"></span></div>
+              <div class="step"><span class="n">3</span><span class="t">AI一次対応</span><span class="line"></span></div>
+              <div class="step"><span class="n">4</span><span class="t">引継ぎ</span><span class="line"></span></div>
+              <div class="step"><span class="n">5</span><span class="t">担当者</span><span class="line"></span></div>
+              <div class="step"><span class="n">6</span><span class="t">ナレッジ</span><span class="line"></span></div>
+              <div class="step"><span class="n">7</span><span class="t">完了</span></div>
+            </div>
+            <div class="cols">
+              <div class="card">
+                <div class="card-head"><h3>どんな相談ですか？</h3><span class="note">あとから変更できます</span></div>
+                <div class="card-body">
+                  <div class="choice-grid">
+                    <div class="choice on">
+                      <span class="ic"><svg width="17" height="17"><use href="#i-pc"/></svg></span>
+                      <div><b>PC・周辺機器・ネットワーク</b><small>印刷できない / VPN / 音が出ない / 遅い</small><div class="meta"><span class="tag blue">PC情報: 取得する</span></div></div>
+                    </div>
+                    <div class="choice">
+                      <span class="ic"><svg width="17" height="17"><use href="#i-lock"/></svg></span>
+                      <div><b>アカウント・ログイン</b><small>ログインできない / MFA / 機種変更</small><div class="meta"><span class="tag blue">PC情報: 取得する</span></div></div>
+                    </div>
+                    <div class="choice">
+                      <span class="ic"><svg width="17" height="17"><use href="#i-file"/></svg></span>
+                      <div><b>ファイル・共有フォルダ</b><small>共有フォルダ / 同期 / 写真整理 / 集計</small><div class="meta"><span class="tag blue">PC情報: 取得する</span><span class="tag">選択中</span></div></div>
+                    </div>
+                    <div class="choice">
+                      <span class="ic"><svg width="17" height="17"><use href="#i-book"/></svg></span>
+                      <div><b>社内の手続き・規程</b><small>経費精算 / 人事異動 / ヒヤリハット</small><div class="meta"><span class="tag">PC情報: 取得しない</span></div></div>
+                    </div>
+                    <div class="choice">
+                      <span class="ic"><svg width="17" height="17"><use href="#i-shield"/></svg></span>
+                      <div><b>セキュリティの心配</b><small>不審メール / ウイルス / 紛失・盗難</small><div class="meta"><span class="tag red">急ぎ扱い</span><span class="tag blue">PC情報: 取得する</span></div></div>
+                    </div>
+                    <div class="choice">
+                      <span class="ic"><svg width="17" height="17"><use href="#i-more"/></svg></span>
+                      <div><b>その他・相談</b><small>生成AIの使い方 / 現場の通信 / その他</small><div class="meta"><span class="tag">PC情報: 取得しない</span></div></div>
+                    </div>
+                  </div>
+                  <div class="banner info" style="margin-top:14px"><svg width="16" height="16"><use href="#i-alert"/></svg><div><b>「ファイル・共有フォルダ」を選びました。</b> 例文がSTEP 2に入ります。PC基本情報は既定で「取得する」です。</div></div>
+                </div>
+                <div class="wizard-foot"><button class="btn btn-secondary"><svg><use href="#i-back"/></svg> ホームへ</button><button class="btn btn-primary">つぎへ <svg><use href="#i-arrow"/></svg></button></div>
+              </div>
+              <aside class="rail">
+                <div class="card card-pad">
+                  <div class="between"><div class="strong">信号</div><span class="pill blue"><span class="dot" style="background:#1D4ED8"></span>青 / AIで進行</span></div>
+                  <p class="note" style="margin:8px 0 0">まだ送信前です。相談の内容によって黄・赤に変わります。</p>
+                </div>
+                <div class="card card-pad">
+                  <div class="strong">次にやる人</div>
+                  <div class="row" style="margin-top:8px"><span class="avatar">山</span><div><b style="font-size:12.5px">あなた（山田 太郎）</b><small class="muted" style="display:block;font-size:11px">種類を選んで「つぎへ」</small></div></div>
+                </div>
+                <div class="card card-pad">
+                  <div class="strong">このSTEPのきまり</div>
+                  <p class="note" style="margin:6px 0 0">セキュリティの心配を選ぶと、AIは判断せず初動手順だけを案内し、すぐ担当者へ渡します。</p>
+                </div>
+              </aside>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="annotation"><b>設計メモ</b> <span><span class="tag">選択</span> カード全体がクリック領域。選択中は枠＋背景＋「選択中」タグ。</span><span><span class="tag">安心</span> PC取得の既定をカード上に明示し、STEP 2で変更可能にする。</span></div>
+  </section>
+
+  <!-- ================= WIZARD 2 ================= -->
+  <section class="view" id="view-w2" data-od-id="screen-wizard-content" role="tabpanel">
+    <div class="sec-head"><div><h2>S3-2 相談ウィザード / 内容</h2><p>件名・内容・急ぎを入力。右レールでPC基本情報の取得進捗を表示。</p></div><span class="pill outline">/consult/new · STEP 2/7</span></div>
+    <div class="frame">
+      <div class="browser"><span class="dots"><i></i><i></i><i></i></span><span class="url">https://ai-helpdesk-mvp.example.com/consult/new</span></div>
+      <div class="app" data-chrome data-role="requester" data-active="consult" data-title="新しい相談" data-sub="STEP 2 / 7 · 困りごと">
+        <aside class="sidebar-slot"></aside>
+        <div class="main">
+          <header class="topbar-slot"></header>
+          <div class="content">
+            <div class="steps" style="margin-top:0">
+              <div class="step done"><span class="n">✓</span><span class="t">種類</span><span class="line"></span></div>
+              <div class="step now"><span class="n">2</span><span class="t">内容</span><span class="line"></span></div>
+              <div class="step"><span class="n">3</span><span class="t">AI一次対応</span><span class="line"></span></div>
+              <div class="step"><span class="n">4</span><span class="t">引継ぎ</span><span class="line"></span></div>
+              <div class="step"><span class="n">5</span><span class="t">担当者</span><span class="line"></span></div>
+              <div class="step"><span class="n">6</span><span class="t">ナレッジ</span><span class="line"></span></div>
+              <div class="step"><span class="n">7</span><span class="t">完了</span></div>
+            </div>
+            <div class="cols">
+              <div class="card">
+                <div class="card-head"><h3>困りごとを教えてください</h3><span class="pill gray">ファイル・共有フォルダ</span></div>
+                <div class="card-body">
+                  <div class="field">
+                    <label for="subject">件名 <span style="color:var(--red)">*</span></label>
+                    <input class="input" id="subject" value="共有フォルダが開けません">
+                  </div>
+                  <div class="field">
+                    <label for="body">内容 <span style="color:var(--red)">*</span></label>
+                    <textarea class="textarea" id="body">工事写真を保存しようとすると「アクセスが拒否されました」と表示されます。先週までは使えていました。VPNには接続しています。</textarea>
+                    <div class="hint">例文: <span class="tag" style="cursor:pointer">共有フォルダが開けない</span> <span class="tag" style="cursor:pointer">DirectCloudの同期が止まる</span> <span class="tag" style="cursor:pointer">写真の名前を揃えたい</span></div>
+                    <div class="hint">パスワード・カード番号らしき文字は、保存前に自動で伏せ字になります。</div>
+                  </div>
+                  <div class="field">
+                    <label>急ぎ具合</label>
+                    <div class="radio-row">
+                      <label class="radio on"><input type="radio" name="urg" checked> 通常</label>
+                      <label class="radio"><input type="radio" name="urg"> 急ぎ（業務が止まっている）</label>
+                    </div>
+                  </div>
+                  <div class="banner info"><svg width="16" height="16"><use href="#i-pc"/></svg><div><b>PC基本情報を読み取りで確認しています。</b> 取得中も入力できます。取得しない場合は右の「取得しない」を選べます。</div></div>
+                </div>
+                <div class="wizard-foot"><button class="btn btn-secondary"><svg><use href="#i-back"/></svg> 戻る</button><button class="btn btn-primary">AIに相談する <svg><use href="#i-arrow"/></svg></button></div>
+              </div>
+              <aside class="rail">
+                <div class="card pc-card">
+                  <div class="between"><div class="strong">PC基本情報</div><span class="pill blue"><span class="dot" style="background:#1D4ED8"></span>取得中 6/8</span></div>
+                  <div class="row" style="margin-top:12px;gap:12px">
+                    <div class="pc-ring"><span>75%</span></div>
+                    <div><b style="font-size:12.5px">読み取りのみ</b><div class="small muted">約3秒で完了 · 端末は変更しません</div></div>
+                  </div>
+                  <div class="pc-cats">
+                    <div class="pc-cat"><span class="ok">✓</span>端末</div>
+                    <div class="pc-cat"><span class="ok">✓</span>アカウント</div>
+                    <div class="pc-cat"><span class="ok">✓</span>ネットワーク</div>
+                    <div class="pc-cat"><span class="ok">✓</span>リソース</div>
+                    <div class="pc-cat"><span class="ok">✓</span>セキュリティ</div>
+                    <div class="pc-cat"><span class="ok">✓</span>周辺機器</div>
+                    <div class="pc-cat"><span style="width:16px;height:16px;border-radius:50%;background:#E8EDF5;display:grid;place-items:center;font-size:9px;color:#7C8DA5">…</span>ソフトウェア</div>
+                    <div class="pc-cat"><span style="width:16px;height:16px;border-radius:50%;background:#E8EDF5;display:grid;place-items:center;font-size:9px;color:#7C8DA5">…</span>最近のエラー</div>
+                  </div>
+                  <div class="divider"></div>
+                  <div class="small muted">取得しない情報: ファイルの中身 / 閲覧履歴 / 画面 / キー入力 / メール本文 / 個人フォルダ一覧</div>
+                  <button class="btn btn-ghost btn-sm" style="padding-left:0;margin-top:4px">取得しない</button>
+                </div>
+                <div class="card card-pad">
+                  <div class="between"><div class="strong">信号</div><span class="pill blue"><span class="dot" style="background:#1D4ED8"></span>青</span></div>
+                  <p class="note" style="margin:6px 0 0">送信後、内容に応じて黄・赤に変わります。</p>
+                </div>
+              </aside>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="annotation"><b>設計メモ</b> <span><span class="tag">入力</span> 件名・内容は必須。空のまま送信するとフィールド直下にエラー。</span><span><span class="tag">PC</span> 取得中も入力可能。完了時に「気になる点」を右レールへ。</span><span><span class="tag">PII</span> 伏せ字予告を入力中に表示。</span></div>
+  </section>
+
+  <!-- ================= WIZARD 3 ================= -->
+  <section class="view" id="view-w3" data-od-id="screen-wizard-ai" role="tabpanel">
+    <div class="sec-head"><div><h2>S3-3 相談ウィザード / AI一次対応</h2><p>PC情報の要約 → 診断 → 根拠付き回答。解決した／しないを選ぶ。</p></div><span class="pill outline">/consult/new · STEP 3/7</span></div>
+    <div class="frame">
+      <div class="browser"><span class="dots"><i></i><i></i><i></i></span><span class="url">https://ai-helpdesk-mvp.example.com/consult/new</span></div>
+      <div class="app" data-chrome data-role="requester" data-active="consult" data-title="新しい相談" data-sub="STEP 3 / 7 · AI一次対応">
+        <aside class="sidebar-slot"></aside>
+        <div class="main">
+          <header class="topbar-slot"></header>
+          <div class="content">
+            <div class="steps" style="margin-top:0">
+              <div class="step done"><span class="n">✓</span><span class="t">種類</span><span class="line"></span></div>
+              <div class="step done"><span class="n">✓</span><span class="t">内容</span><span class="line"></span></div>
+              <div class="step now"><span class="n">3</span><span class="t">AI一次対応</span><span class="line"></span></div>
+              <div class="step"><span class="n">4</span><span class="t">引継ぎ</span><span class="line"></span></div>
+              <div class="step"><span class="n">5</span><span class="t">担当者</span><span class="line"></span></div>
+              <div class="step"><span class="n">6</span><span class="t">ナレッジ</span><span class="line"></span></div>
+              <div class="step"><span class="n">7</span><span class="t">完了</span></div>
+            </div>
+            <div class="cols wide">
+              <div class="card">
+                <div class="card-head"><h3>AIの一次対応</h3><span class="pill blue">MVP: ルールベース</span></div>
+                <div class="card-body">
+                  <div class="ai-note"><svg width="16" height="16"><use href="#i-alert"/></svg><div><b>外部AIには接続していません。</b> 承認済みナレッジと入力内容から、決められたルールで回答しています。</div></div>
+                  <div class="chat" style="margin-top:14px">
+                    <div class="msg ai"><span class="who">AI</span><div class="bubble">
+                      <p>PC基本情報を確認しました。気になる点が <b>2件</b> あります。</p>
+                      <div class="grid2" style="gap:8px">
+                        <div class="concern"><span class="star">★</span><div><b>共有フォルダ: アクセス権なし</b><small>異常 · 相談内容に関係しそうです</small></div></div>
+                        <div class="concern"><span class="star">★</span><div><b>ディスクの空き: 12.4GB</b><small>異常 · 保存できない原因の可能性</small></div></div>
+                      </div>
+                    </div></div>
+                    <div class="msg ai"><span class="who">AI</span><div class="bubble">
+                      <h4>診断（読み取りのみ）</h4>
+                      <p>共有フォルダへのアクセス権が不足している可能性があります。あわせて、ディスクの空きが少ないため保存時に失敗している可能性があります。</p>
+                      <h4 style="margin-top:10px">試してほしいこと</h4>
+                      <ul>
+                        <li>エクスプローラーで共有フォルダのプロパティ →「セキュリティ」を確認する</li>
+                        <li>空き容量を確認し、不要な一時ファイルを整理する（自分で消せない場合は担当者へ）</li>
+                        <li>VPN接続を一度切断し、再接続する</li>
+                      </ul>
+                      <div class="source"><span class="ic"><svg width="14" height="14"><use href="#i-book"/></svg></span><div><b>共有フォルダにアクセスできないときの確認手順</b><small>承認済みナレッジ · 2026-10-12 承認 · 版 3</small></div></div>
+                      <div class="answer-actions"><button class="btn btn-primary btn-sm">解決した</button><button class="btn btn-secondary btn-sm">解決しない → 担当者へ</button><button class="btn btn-ghost btn-sm">追加で質問</button></div>
+                    </div></div>
+                    <div class="msg user"><span class="who">山</span><div class="bubble"><p>共有フォルダのプロパティは見られましたが、セキュリティタブが表示されません。</p></div></div>
+                    <div class="msg ai"><span class="who">AI</span><div class="bubble"><p>セキュリティタブが表示されない場合、権限変更は本人では行えません。担当者へ引き継ぐことをおすすめします。</p><div class="answer-actions"><button class="btn btn-secondary btn-sm">解決しない → 担当者へ</button></div></div></div>
+                  </div>
+                </div>
+              </div>
+              <aside class="rail">
+                <div class="card card-pad">
+                  <div class="between"><div class="strong">信号</div><span class="pill blue"><span class="dot" style="background:#1D4ED8"></span>青 / AIで進行</span></div>
+                  <p class="note" style="margin:8px 0 0">AIで解決できる可能性があります。解決しない場合は黄になります。</p>
+                </div>
+                <div class="card card-pad">
+                  <div class="strong">次にやる人</div>
+                  <div class="row" style="margin-top:8px"><span class="avatar">山</span><div><b style="font-size:12.5px">あなた（山田 太郎）</b><small class="muted" style="display:block;font-size:11px">答えを試して、解決したかを選ぶ</small></div></div>
+                </div>
+                <div class="card card-pad">
+                  <div class="between"><div class="strong">PC基本情報</div><span class="pill green">取得済み</span></div>
+                  <div class="small" style="margin-top:8px">31項目 · 気になる点 2件</div>
+                  <div class="divider" style="margin:10px 0"></div>
+                  <div class="small"><b>端末:</b> PC-0241 / Windows 11 23H2</div>
+                  <div class="small"><b>共有:</b> 未共有（引継ぎで選択）</div>
+                  <button class="btn btn-ghost btn-sm" style="padding-left:0;margin-top:4px">詳しく見る</button>
+                </div>
+                <div class="card card-pad">
+                  <div class="strong">このSTEPのきまり</div>
+                  <p class="note" style="margin:6px 0 0">パスワード・権限付与・セキュリティ判断はAIが行いません。担当者へ渡します。</p>
+                </div>
+              </aside>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="annotation"><b>設計メモ</b> <span><span class="tag">根拠</span> 回答には必ず出典（承認済みナレッジ）を付ける。根拠なしは「担当者へ」。</span><span><span class="tag">限界</span> 「MVP: ルールベース / 外部AI未接続」を常時表示。</span><span><span class="tag">赤</span> セキュリティは初動手順のみ＋即引継ぎ（States参照）。</span></div>
+  </section>
+
+  <!-- ================= WIZARD 4 ================= -->
+  <section class="view" id="view-w4" data-od-id="screen-wizard-handoff" role="tabpanel">
+    <div class="sec-head"><div><h2>S3-4 相談ウィザード / 引継ぎ</h2><p>渡す情報を本人が選び、同意して受付番号を発行。同意は必須。</p></div><span class="pill outline">/consult/new · STEP 4/7</span></div>
+    <div class="frame">
+      <div class="browser"><span class="dots"><i></i><i></i><i></i></span><span class="url">https://ai-helpdesk-mvp.example.com/consult/new</span></div>
+      <div class="app" data-chrome data-role="requester" data-active="consult" data-title="新しい相談" data-sub="STEP 4 / 7 · 引継ぎ">
+        <aside class="sidebar-slot"></aside>
+        <div class="main">
+          <header class="topbar-slot"></header>
+          <div class="content">
+            <div class="steps" style="margin-top:0">
+              <div class="step done"><span class="n">✓</span><span class="t">種類</span><span class="line"></span></div>
+              <div class="step done"><span class="n">✓</span><span class="t">内容</span><span class="line"></span></div>
+              <div class="step done"><span class="n">✓</span><span class="t">AI一次対応</span><span class="line"></span></div>
+              <div class="step now"><span class="n">4</span><span class="t">引継ぎ</span><span class="line"></span></div>
+              <div class="step"><span class="n">5</span><span class="t">担当者</span><span class="line"></span></div>
+              <div class="step"><span class="n">6</span><span class="t">ナレッジ</span><span class="line"></span></div>
+              <div class="step"><span class="n">7</span><span class="t">完了</span></div>
+            </div>
+            <div class="cols">
+              <div class="card">
+                <div class="card-head"><h3>担当者に渡す情報を選んでください</h3><span class="pill amber"><span class="dot" style="background:#B45309"></span>黄 / 担当者対応</span></div>
+                <div class="card-body">
+                  <div class="stack">
+                    <label class="check"><input type="checkbox" checked disabled><div><b>相談の内容（必須）</b><small>件名・本文・急ぎ具合</small></div></label>
+                    <label class="check"><input type="checkbox" checked><div><b>AIの診断結果</b><small>気になる点・試したこと・回答の要約</small></div></label>
+                    <label class="check"><input type="checkbox" checked><div><b>端末の番号</b><small>資産番号 PC-0241 / 機種</small></div></label>
+                    <label class="check"><input type="checkbox" checked><div><b>PC基本情報（31項目）</b><small>共有すると、担当者は気になる点と値を確認できます。既定はオンです。</small></div></label>
+                    <label class="check"><input type="checkbox"><div><b>添付ファイル</b><small>MVPでは添付は対象外です。</small></div></label>
+                  </div>
+                  <div class="divider"></div>
+                  <div class="grid2">
+                    <div class="field" style="margin:0"><label>引継ぎ先</label><div class="input" style="background:#F8FAFC">IT端末（自動判定）</div></div>
+                    <div class="field" style="margin:0"><label>急ぎ具合</label><div class="input" style="background:#F8FAFC">通常</div></div>
+                  </div>
+                  <div class="banner warn" style="margin-top:14px"><svg width="16" height="16"><use href="#i-alert"/></svg><div><b>同意すると、受付番号（TKT）とヘルプデスクの問い合わせ番号（INC）が発行されます。</b> 共有した情報は、この案件の担当者だけが閲覧できます。</div></div>
+                </div>
+                <div class="wizard-foot"><button class="btn btn-secondary"><svg><use href="#i-back"/></svg> AIの回答に戻る</button><button class="btn btn-primary">同意して引き継ぐ <svg><use href="#i-arrow"/></svg></button></div>
+              </div>
+              <aside class="rail">
+                <div class="card card-pad">
+                  <div class="between"><div class="strong">引継ぎメモ（プレビュー）</div><span class="pill gray">未発行</span></div>
+                  <div class="divider" style="margin:10px 0"></div>
+                  <div class="small strong">推定分野</div><div class="small">ID・アクセス権 / 共有フォルダ</div>
+                  <div class="small strong" style="margin-top:8px">対象の機器</div><div class="small">PC-0241（Windows 11 23H2）</div>
+                  <div class="small strong" style="margin-top:8px">推奨アクション</div><div class="small">共有フォルダのアクセス権を確認。必要なら権限付与の手続きへ。</div>
+                  <div class="small strong" style="margin-top:8px">似ている未解決</div><div class="small">TKT-2026-0002（VPN / 共有フォルダ）</div>
+                </div>
+                <div class="card card-pad">
+                  <div class="strong">次にやる人</div>
+                  <div class="row" style="margin-top:8px"><span class="avatar" style="background:#FFF4E5;color:#B45309">担</span><div><b style="font-size:12.5px">ヘルプデスク担当</b><small class="muted" style="display:block;font-size:11px">同意後、おすすめの担当に届きます</small></div></div>
+                </div>
+              </aside>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="annotation"><b>設計メモ</b> <span><span class="tag">同意</span> 同意チェックがないと送信不可。チェックなしのまま押すとエラー。</span><span><span class="tag">共有</span> PC情報は既定オン。オフにすると担当者には「共有なし」と表示。</span><span><span class="tag">結果</span> 成功後は S4 相談状況へ遷移し、TKT/INC を表示。</span></div>
+  </section>
+
+  <!-- ================= CASE ================= -->
+  <section class="view" id="view-case" data-od-id="screen-case-status" role="tabpanel">
+    <div class="sec-head"><div><h2>S4 相談の状況（相談者）</h2><p>受付から完了までの経過、担当、解決内容、ナレッジ公開を1画面で。</p></div><span class="pill outline">/cases/:id</span></div>
+    <div class="frame">
+      <div class="browser"><span class="dots"><i></i><i></i><i></i></span><span class="url">https://ai-helpdesk-mvp.example.com/cases/TKT-2026-0007</span></div>
+      <div class="app" data-chrome data-role="requester" data-active="cases" data-title="相談の状況" data-sub="TKT-2026-0007">
+        <aside class="sidebar-slot"></aside>
+        <div class="main">
+          <header class="topbar-slot"></header>
+          <div class="content">
+            <div class="page-head">
+              <div><div class="row"><span class="pill amber"><span class="dot" style="background:#B45309"></span>黄 / 担当者対応</span><span class="pill gray">対応中</span></div><h1 style="margin-top:8px">共有フォルダが開けません</h1><p>TKT-2026-0007 · INC-0007 · 2026年10月23日 10:12 受付</p></div>
+              <div class="actions"><button class="btn btn-secondary">同じ相談をもう一度</button></div>
+            </div>
+            <div class="cols">
+              <div class="stack">
+                <div class="card card-pad">
+                  <div class="between"><div class="strong">担当者</div><span class="pill gray">対応中</span></div>
+                  <div class="row" style="margin-top:10px"><span class="avatar" style="background:#E8EEF7">佐</span><div><b>佐藤 健</b><small class="muted" style="display:block;font-size:11px">ヘルプデスク（L1窓口） · 10:18 に担当</small></div></div>
+                  <div class="divider"></div>
+                  <div class="small muted">担当者から追加の確認が来た場合は、この画面とメールでお知らせします。</div>
+                </div>
+                <div class="card">
+                  <div class="card-head"><h3>経過</h3><span class="note">自動で更新</span></div>
+                  <div class="card-body">
+                    <div class="timeline">
+                      <div class="tl done"><span class="dot2">✓</span><div class="body"><b>相談を受け付けました</b><small>10:12 · AIが一次対応を開始</small></div></div>
+                      <div class="tl done"><span class="dot2">✓</span><div class="body"><b>AIが一次対応しました</b><small>10:13 · 承認済みナレッジを根拠に回答。解決しないを選択</small></div></div>
+                      <div class="tl done"><span class="dot2">✓</span><div class="body"><b>担当者へ引き継ぎました</b><small>10:15 · TKT-2026-0007 / INC-0007 を発行</small></div></div>
+                      <div class="tl now"><span class="dot2">3</span><div class="body"><b>佐藤さんが対応中です</b><small>10:18 · 共有フォルダの権限を確認しています</small></div></div>
+                      <div class="tl"><span class="dot2">4</span><div class="body"><b>解決記録・ナレッジ化</b><small>解決後に自動で反映されます</small></div></div>
+                    </div>
+                  </div>
+                </div>
+                <div class="card">
+                  <div class="card-head"><h3>共有した情報</h3><span class="note">あなたが選択</span></div>
+                  <div class="card-body">
+                    <div class="row" style="flex-wrap:wrap;gap:8px"><span class="tag blue">相談内容</span><span class="tag blue">AI診断</span><span class="tag blue">端末番号</span><span class="tag blue">PC基本情報</span></div>
+                    <div class="divider"></div>
+                    <div class="small"><b>PC基本情報:</b> 31項目 · 気になる点 2件（共有フォルダ / ディスク空き）</div>
+                  </div>
+                </div>
+              </div>
+              <aside class="rail">
+                <div class="card card-pad">
+                  <div class="strong">次にやる人</div>
+                  <div class="row" style="margin-top:8px"><span class="avatar" style="background:#FFF4E5;color:#B45309">佐</span><div><b style="font-size:12.5px">佐藤 健（担当者）</b><small class="muted" style="display:block;font-size:11px">対応中です。お待ちください</small></div></div>
+                </div>
+                <div class="card card-pad">
+                  <div class="strong">解決内容</div>
+                  <p class="note" style="margin:6px 0 0">解決後にここへ表示されます。</p>
+                  <div class="divider"></div>
+                  <div class="strong">ナレッジ</div>
+                  <p class="note" style="margin:6px 0 0">解決後、伏せ字済みの下書きが作られます。承認されると公開されます。</p>
+                </div>
+                <div class="card card-pad">
+                  <div class="strong">この案件のルール</div>
+                  <p class="note" style="margin:6px 0 0">権限の付与・パスワードの確認は、担当者が本人確認のうえ行います。AIは実行しません。</p>
+                </div>
+              </aside>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="annotation"><b>設計メモ</b> <span><span class="tag">反映</span> 担当者・状態・解決内容・ナレッジ公開は自動反映（ポーリング or 再読込）。</span><span><span class="tag">空</span> 解決前は「解決後に表示されます」を明示。</span></div>
+  </section>
+
+  <!-- ================= DESK BOARD ================= -->
+  <section class="view" id="view-desk" data-od-id="screen-desk-board" role="tabpanel">
+    <div class="sec-head"><div><h2>S5 ヘルプデスク ボード</h2><p>段階ごとの列で俯瞰。自分の番は黄色の左ボーダーで強調。</p></div><span class="pill outline">/desk</span></div>
+    <div class="frame">
+      <div class="browser"><span class="dots"><i></i><i></i><i></i></span><span class="url">https://ai-helpdesk-mvp.example.com/desk</span></div>
+      <div class="app" data-chrome data-role="helpdesk" data-active="board" data-title="ボード" data-sub="ヘルプデスク / 佐藤 健">
+        <aside class="sidebar-slot"></aside>
+        <div class="main">
+          <header class="topbar-slot"></header>
+          <div class="content tight">
+            <div class="page-head">
+              <div><h1>ボード</h1><p>引継ぎ待ち 3件 · 対応中 2件 · 承認待ち 1件</p></div>
+              <div class="actions"><div class="seg"><button class="on">ボード</button><button>一覧</button></div><div class="seg"><button class="on">すべて</button><button>あなたの番</button></div><div class="search"><svg><use href="#i-search"/></svg><input placeholder="案件番号・件名で検索"></div></div>
+            </div>
+            <div class="kanban">
+              <div class="kcol"><h4>引継ぎ待ち <span>3</span></h4>
+                <div class="kcard mine"><div class="topline"><span class="case-no">TKT-0007</span><span class="pill amber"><span class="dot" style="background:#B45309"></span>黄</span></div><b>共有フォルダが開けません</b><small>山田 太郎 · ファイル・共有フォルダ</small><div class="kmeta"><span>経過 10分</span><span class="pill red">急ぎ</span></div></div>
+                <div class="kcard"><div class="topline"><span class="case-no">TKT-0005</span><span class="pill amber"><span class="dot" style="background:#B45309"></span>黄</span></div><b>VPNにつながらない（現場）</b><small>小川 一郎 · ネットワーク</small><div class="kmeta"><span>経過 42分</span><span class="tag">PC共有なし</span></div></div>
+                <div class="kcard"><div class="topline"><span class="case-no">TKT-0003</span><span class="pill red"><span class="dot" style="background:#B91C1C"></span>赤</span></div><b>不審なメールを開いてしまった</b><small>木村 花子 · セキュリティ</small><div class="kmeta"><span>経過 1時間</span><span class="tag">初動手順 送信済</span></div></div>
+              </div>
+              <div class="kcol"><h4>対応中 <span>2</span></h4>
+                <div class="kcard"><div class="topline"><span class="case-no">TKT-0006</span><span class="pill blue"><span class="dot" style="background:#1D4ED8"></span>青</span></div><b>Teamsの音が出ません</b><small>木村 花子 · PC・周辺機器</small><div class="kmeta"><span>高橋 直人</span><span class="tag">類似 1件</span></div></div>
+                <div class="kcard"><div class="topline"><span class="case-no">TKT-0002</span><span class="pill amber"><span class="dot" style="background:#B45309"></span>黄</span></div><b>共有フォルダの権限を追加したい</b><small>伊藤 彩 · ID・アクセス権</small><div class="kmeta"><span>佐藤 健</span><span class="tag">承認待ち</span></div></div>
+              </div>
+              <div class="kcol"><h4>ナレッジ化・承認待ち <span>1</span></h4>
+                <div class="kcard"><div class="topline"><span class="case-no">TKT-0001</span><span class="pill green"><span class="dot" style="background:#15803D"></span>解決済</span></div><b>印刷ジョブが消えない</b><small>山田 太郎 · 周辺機器</small><div class="kmeta"><span>下書き申請済</span><span class="tag blue">承認待ち</span></div></div>
+              </div>
+              <div class="kcol"><h4>完了 <span>2</span></h4>
+                <div class="kcard"><div class="topline"><span class="case-no">TKT-0004</span><span class="pill blue"><span class="dot" style="background:#1D4ED8"></span>青</span></div><b>経費精算の手順を確認したい</b><small>山田 太郎 · 手続き</small><div class="kmeta"><span>AIで解決</span><span class="small">昨日</span></div></div>
+                <div class="kcard"><div class="topline"><span class="case-no">TKT-0000</span><span class="pill green"><span class="dot" style="background:#15803D"></span>完了</span></div><b>Teamsの音が出ない</b><small>木村 花子 · 周辺機器</small><div class="kmeta"><span>ナレッジ公開</span><span class="small">10月21日</span></div></div>
+              </div>
+            </div>
+            <div class="card card-pad" style="margin-top:14px"><div class="between"><div class="small muted">ボードはドラッグ&ドロップではなく、案件詳細の「状態」ボタンで更新します（MVP）。</div><button class="btn btn-secondary btn-sm">一覧で見る</button></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="annotation"><b>設計メモ</b> <span><span class="tag">自分の番</span> 黄色の左ボーダー＋上部の件数バッジ。色だけに頼らない。</span><span><span class="tag">MVP</span> ドラッグ&ドロップは対象外。カードクリック→詳細で更新。</span><span><span class="tag">空</span> 列ごとに「該当なし」を表示。</span></div>
+  </section>
+
+  <!-- ================= DESK CASE ================= -->
+  <section class="view" id="view-desk-case" data-od-id="screen-desk-case" role="tabpanel">
+    <div class="sec-head"><div><h2>S6 案件対応（ヘルプデスク）</h2><p>引継ぎメモ・共有PC情報を確認し、担当割当→解決記録→下書き作成。</p></div><span class="pill outline">/desk/cases/:id</span></div>
+    <div class="frame">
+      <div class="browser"><span class="dots"><i></i><i></i><i></i></span><span class="url">https://ai-helpdesk-mvp.example.com/desk/cases/TKT-2026-0007</span></div>
+      <div class="app" data-chrome data-role="helpdesk" data-active="board" data-title="案件対応" data-sub="TKT-2026-0007 / INC-0007">
+        <aside class="sidebar-slot"></aside>
+        <div class="main">
+          <header class="topbar-slot"></header>
+          <div class="content">
+            <div class="page-head">
+              <div><div class="row"><span class="pill amber"><span class="dot" style="background:#B45309"></span>黄 / 担当者対応</span><span class="pill gray">対応中</span><span class="pill red">急ぎ</span></div><h1 style="margin-top:8px">共有フォルダが開けません</h1><p>TKT-2026-0007 · INC-0007 · 山田 太郎（総務部） · 10:12 受付</p></div>
+              <div class="actions"><button class="btn btn-secondary">状態を変更</button><button class="btn btn-primary">自分を担当者にする</button></div>
+            </div>
+            <div class="cols wide">
+              <div class="stack">
+                <div class="card">
+                  <div class="card-head"><h3>相談内容</h3><span class="note">本人の文章（データとして扱う）</span></div>
+                  <div class="card-body"><p style="margin:0">工事写真を保存しようとすると「アクセスが拒否されました」と表示されます。先週までは使えていました。VPNには接続しています。</p><div class="row" style="margin-top:8px"><span class="tag">急ぎ: 通常</span><span class="tag">AI対象: はい</span><span class="tag">PII: 検出なし</span></div></div>
+                </div>
+                <div class="card">
+                  <div class="card-head"><h3>AI一次対応の経過</h3><span class="pill blue">ルールベース MVP</span></div>
+                  <div class="card-body">
+                    <div class="timeline">
+                      <div class="tl done"><span class="dot2">1</span><div class="body"><b>PC基本情報を確認</b><small>31項目 / 気になる点 2件（共有フォルダ・ディスク空き）</small></div></div>
+                      <div class="tl done"><span class="dot2">2</span><div class="body"><b>診断: アクセス権不足の可能性</b><small>根拠: 共有フォルダ アクセス権なし / 承認済みナレッジ「共有フォルダにアクセスできないとき」</small></div></div>
+                      <div class="tl done"><span class="dot2">3</span><div class="body"><b>本人が「解決しない」を選択</b><small>10:15 · 引継ぎに同意</small></div></div>
+                    </div>
+                  </div>
+                </div>
+                <div class="card">
+                  <div class="card-head"><h3>共有されたPC基本情報</h3><span class="pill green">本人が共有に同意</span></div>
+                  <div class="card-body">
+                    <div class="grid3" style="gap:10px">
+                      <div><div class="small muted">端末</div><b class="small">PC-0241 / Windows 11 23H2</b></div>
+                      <div><div class="small muted">再起動から</div><b class="small">18日（注意）</b></div>
+                      <div><div class="small muted">ディスク空き</div><b class="small" style="color:var(--red)">12.4GB（異常）</b></div>
+                      <div><div class="small muted">VPN</div><b class="small">接続中</b></div>
+                      <div><div class="small muted">共有フォルダ</div><b class="small" style="color:var(--red)">アクセス権なし（異常）</b></div>
+                      <div><div class="small muted">Windows Update</div><b class="small">再起動待ち 2件（注意）</b></div>
+                    </div>
+                    <div class="divider"></div>
+                    <div class="small muted">取得日時 2026-10-23 10:12 / 読み取りのみ / デモデータ。IPアドレス・シリアル番号は担当者にも原則表示しません。</div>
+                  </div>
+                </div>
+                <div class="card">
+                  <div class="card-head"><h3>引継ぎメモ</h3><span class="note">AIが作成</span></div>
+                  <div class="card-body grid2" style="gap:12px">
+                    <div><div class="small muted">推定分野</div><b class="small">ID・アクセス権 / 共有フォルダ</b></div>
+                    <div><div class="small muted">対象の機器</div><b class="small">PC-0241</b></div>
+                    <div><div class="small muted">推奨アクション</div><b class="small">共有フォルダのアクセス権を確認。必要なら権限付与の手続きへ。</b></div>
+                    <div><div class="small muted">似ている未解決</div><b class="small">TKT-2026-0002（VPN / 共有フォルダ）</b></div>
+                  </div>
+                </div>
+              </div>
+              <aside class="rail">
+                <div class="card card-pad">
+                  <div class="between"><div class="strong">対応</div><span class="pill amber">対応中</span></div>
+                  <div class="field" style="margin-top:10px"><label>担当者</label><div class="input" style="background:#F8FAFC">佐藤 健（自分）</div></div>
+                  <div class="field"><label>状態</label><select class="select"><option>対応中</option><option>引継ぎ待ち</option><option>完了</option></select></div>
+                  <div class="divider"></div>
+                  <div class="strong" style="margin-bottom:8px">解決記録</div>
+                  <div class="field"><label for="cause">原因 <span style="color:var(--red)">*</span></label><textarea class="textarea" id="cause" style="min-height:64px">共有フォルダのセキュリティグループに所属していなかったため。</textarea></div>
+                  <div class="field"><label for="steps">手順 <span style="color:var(--red)">*</span></label><textarea class="textarea" id="steps" style="min-height:76px">1. 共有フォルダの ACL を確認\n2. 所属部署のセキュリティグループを追加\n3. 再接続を依頼し、保存できることを確認</textarea></div>
+                  <div class="field"><label for="min">所要時間（分）</label><input class="input" id="min" value="25"></div>
+                  <button class="btn btn-primary" style="width:100%">解決を記録して下書きを作成</button>
+                  <p class="note" style="margin:8px 0 0">保存後、個人情報を伏せたナレッジ下書きが自動で作られます。</p>
+                </div>
+                <div class="card card-pad">
+                  <div class="strong">類似ナレッジ</div>
+                  <ul class="list-plain" style="margin-top:6px">
+                    <li><span class="ic"><svg width="13" height="13"><use href="#i-book"/></svg></span><div><b>共有フォルダにアクセスできないとき</b><small>公開済み · 版3 · 役に立った 12</small></div></li>
+                    <li><span class="ic"><svg width="13" height="13"><use href="#i-book"/></svg></span><div><b>VPN接続後に共有フォルダが遅い</b><small>公開済み · 版1</small></div></li>
+                  </ul>
+                </div>
+              </aside>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="annotation"><b>設計メモ</b> <span><span class="tag">情報</span> 相談本文・AI経過・PC情報・引継ぎメモを縦に並べ、対応パネルは右固定。</span><span><span class="tag">入力</span> 原因・手順が空なら保存不可。所要時間は数値のみ。</span><span><span class="tag">分離</span> 解決記録の登録者と承認者が別であることを次画面で示す。</span></div>
+  </section>
+
+  <!-- ================= KB LIST ================= -->
+  <section class="view" id="view-kb" data-od-id="screen-knowledge-list" role="tabpanel">
+    <div class="sec-head"><div><h2>S7 ナレッジ一覧</h2><p>承認待ちを最上位に。公開済みは次の相談の根拠になる。</p></div><span class="pill outline">/knowledge</span></div>
+    <div class="frame">
+      <div class="browser"><span class="dots"><i></i><i></i><i></i></span><span class="url">https://ai-helpdesk-mvp.example.com/knowledge</span></div>
+      <div class="app" data-chrome data-role="approver" data-active="knowledge" data-title="ナレッジ" data-sub="承認者 / 渡辺 修">
+        <aside class="sidebar-slot"></aside>
+        <div class="main">
+          <header class="topbar-slot"></header>
+          <div class="content">
+            <div class="page-head"><div><h1>ナレッジ</h1><p>公開済み 3件 · 承認待ち 1件 · 下書き 1件</p></div><div class="actions"><div class="search"><svg><use href="#i-search"/></svg><input placeholder="症状・キーワードで検索"></div></div></div>
+            <div class="card">
+              <div class="card-head" style="padding:0 18px">
+                <div class="seg" style="margin:12px 0"><button>すべて</button><button class="on">承認待ち <span style="color:var(--amber)">1</span></button><button>公開済み</button><button>下書き</button><button>差戻し</button></div>
+              </div>
+              <table class="tbl">
+                <thead><tr><th>タイトル</th><th>分野</th><th>状態</th><th>申請者</th><th>更新</th><th></th></tr></thead>
+                <tbody>
+                  <tr><td><b>共有フォルダにアクセスできないときの確認手順</b><span class="case-sub">元案件: TKT-2026-0007 · 版 4（改訂）</span></td><td>ID・アクセス権</td><td><span class="pill amber"><span class="dot" style="background:#B45309"></span>承認待ち</span></td><td>佐藤 健</td><td class="small muted">5分前</td><td><button class="btn btn-primary btn-sm">確認する</button></td></tr>
+                  <tr><td><b>Teamsの音が出ないとき（出力先の確認）</b><span class="case-sub">元案件: TKT-2026-0006 · 版 3</span></td><td>周辺機器</td><td><span class="pill green">公開済み</span></td><td>高橋 直人</td><td class="small muted">昨日</td><td><button class="btn btn-ghost btn-sm">開く</button></td></tr>
+                  <tr><td><b>印刷ジョブが消えないときの対処</b><span class="case-sub">元案件: TKT-2026-0001 · 版 2</span></td><td>周辺機器</td><td><span class="pill green">公開済み</span></td><td>佐藤 健</td><td class="small muted">10月21日</td><td><button class="btn btn-ghost btn-sm">開く</button></td></tr>
+                  <tr><td><b>VPN接続後に共有フォルダが遅い</b><span class="case-sub">元案件: TKT-2026-0002 · 版 1</span></td><td>ネットワーク</td><td><span class="pill green">公開済み</span></td><td>高橋 直人</td><td class="small muted">10月18日</td><td><button class="btn btn-ghost btn-sm">開く</button></td></tr>
+                  <tr><td><b>DirectCloudの同期が止まるとき</b><span class="case-sub">下書き · 未申請</span></td><td>ファイル</td><td><span class="pill gray">下書き</span></td><td>佐藤 健</td><td class="small muted">10月22日</td><td><button class="btn btn-ghost btn-sm">編集</button></td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="annotation" style="margin-top:14px"><b>承認待ちの根拠</b> <span>申請者（佐藤）と承認者（渡辺）が別であることを、一覧と詳細の両方に表示する。</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= KB DETAIL ================= -->
+  <section class="view" id="view-kb-detail" data-od-id="screen-knowledge-approval" role="tabpanel">
+    <div class="sec-head"><div><h2>S7 ナレッジ承認</h2><p>4項目チェックリストで確認。差戻しは理由必須。自分の申請は承認不可。</p></div><span class="pill outline">/knowledge/:id</span></div>
+    <div class="frame">
+      <div class="browser"><span class="dots"><i></i><i></i><i></i></span><span class="url">https://ai-helpdesk-mvp.example.com/knowledge/KB-0004</span></div>
+      <div class="app" data-chrome data-role="approver" data-active="knowledge" data-title="ナレッジ承認" data-sub="KB-0004 · 版 4">
+        <aside class="sidebar-slot"></aside>
+        <div class="main">
+          <header class="topbar-slot"></header>
+          <div class="content">
+            <div class="page-head">
+              <div><div class="row"><span class="pill amber"><span class="dot" style="background:#B45309"></span>承認待ち</span><span class="pill outline">改訂 · 版 4</span></div><h1 style="margin-top:8px">共有フォルダにアクセスできないときの確認手順</h1><p>申請者: 佐藤 健 · 申請: 2026-10-23 11:05 · 元案件: TKT-2026-0007</p></div>
+              <div class="actions"><button class="btn btn-secondary">プレビュー</button></div>
+            </div>
+            <div class="cols wide">
+              <div class="stack">
+                <div class="card card-pad">
+                  <div class="banner info"><svg width="16" height="16"><use href="#i-shield"/></svg><div><b>個人情報は自動で伏せ字になっています。</b> 氏名・メール・電話・IP・資産番号・パスワード等。公開前に必ず内容を確認してください。</div></div>
+                  <div style="margin-top:16px">
+                    <div class="small muted">症状</div><p style="margin:4px 0 14px">共有フォルダを開くと「アクセスが拒否されました」と表示される。VPN接続は正常。</p>
+                    <div class="small muted">原因</div><p style="margin:4px 0 14px">共有フォルダのセキュリティグループに、利用者が所属していないため。</p>
+                    <div class="small muted">手順</div>
+                    <ol style="margin:4px 0 14px;padding-left:20px">
+                      <li>共有フォルダの ACL を確認する</li>
+                      <li>所属部署のセキュリティグループを追加する（権限付与の手続き）</li>
+                      <li>利用者に再接続を依頼し、保存できることを確認する</li>
+                    </ol>
+                    <div class="small muted">キーワード</div><div class="row" style="flex-wrap:wrap;gap:6px;margin-top:4px"><span class="tag">共有フォルダ</span><span class="tag">アクセス拒否</span><span class="tag">セキュリティグループ</span><span class="tag">VPN</span></div>
+                  </div>
+                </div>
+                <div class="card card-pad">
+                  <div class="strong">元の解決記録</div>
+                  <div class="grid2" style="margin-top:8px">
+                    <div><div class="small muted">原因</div><div class="small">セキュリティグループ未所属</div></div>
+                    <div><div class="small muted">所要時間</div><div class="small">25分</div></div>
+                  </div>
+                  <div class="divider"></div>
+                  <div class="small muted">伏せ字例: 山田 太郎 → [氏名]、10.20.30.40 → [IPアドレス]、PC-0241 → [資産番号]</div>
+                </div>
+              </div>
+              <aside class="rail">
+                <div class="card card-pad">
+                  <div class="strong">承認チェックリスト</div>
+                  <div class="stack" style="margin-top:10px;gap:8px">
+                    <label class="check"><input type="checkbox" checked><div><b>再現できる</b><small>症状と手順が具体的</small></div></label>
+                    <label class="check"><input type="checkbox" checked><div><b>機密がない</b><small>伏せ字・社外秘なし</small></div></label>
+                    <label class="check"><input type="checkbox" checked><div><b>個人を非難しない</b><small>表現を確認</small></div></label>
+                    <label class="check"><input type="checkbox" checked><div><b>適用範囲が明確</b><small>対象部署・環境を明記</small></div></label>
+                  </div>
+                  <div class="divider"></div>
+                  <div class="banner ok" style="font-size:11.5px"><svg width="15" height="15"><use href="#i-check"/></svg><div>申請者と承認者が別です。承認できます。</div></div>
+                  <div class="field" style="margin-top:12px"><label for="comment">差戻し理由（差戻す場合）</label><textarea class="textarea" id="comment" style="min-height:64px" placeholder="例: 手順3の確認方法を具体化してください"></textarea></div>
+                  <div class="row" style="gap:8px"><button class="btn btn-primary" style="flex:1">承認して公開</button><button class="btn btn-danger">差戻し</button></div>
+                  <p class="note" style="margin:8px 0 0">承認すると本棚に反映され、次の相談のAI根拠になります。</p>
+                </div>
+                <div class="card card-pad">
+                  <div class="strong">承認者</div>
+                  <div class="row" style="margin-top:8px"><span class="avatar" style="background:#EAF7EF;color:#15803D">渡</span><div><b style="font-size:12.5px">渡辺 修（あなた）</b><small class="muted" style="display:block;font-size:11px">ナレッジ承認者</small></div></div>
+                  <p class="note" style="margin:8px 0 0">自分の申請は承認できません。その場合は別の承認者に切り替わります。</p>
+                </div>
+              </aside>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="annotation"><b>設計メモ</b> <span><span class="tag">分離</span> 申請者=承認者の場合は承認ボタンを無効化し、理由を表示。</span><span><span class="tag">差戻し</span> 理由が空ならエラー。差戻し後は申請者の下書きへ。</span><span><span class="tag">公開</span> 承認後に案件をSTEP 7へ進め、相談者へ通知。</span></div>
+  </section>
+
+  <!-- ================= AUDIT ================= -->
+  <section class="view" id="view-audit" data-od-id="screen-audit" role="tabpanel">
+    <div class="sec-head"><div><h2>S8 監査ログ</h2><p>だれが・いつ・何をしたか。ハッシュチェーンで改ざんを検知。</p></div><span class="pill outline">/audit · 承認者のみ</span></div>
+    <div class="frame">
+      <div class="browser"><span class="dots"><i></i><i></i><i></i></span><span class="url">https://ai-helpdesk-mvp.example.com/audit</span></div>
+      <div class="app" data-chrome data-role="approver" data-active="audit" data-title="監査ログ" data-sub="承認者 / 渡辺 修">
+        <aside class="sidebar-slot"></aside>
+        <div class="main">
+          <header class="topbar-slot"></header>
+          <div class="content">
+            <div class="page-head"><div><h1>監査ログ</h1><p>直近 42 件 · 最終検証 2026-10-23 11:20</p></div><div class="actions"><div class="search"><svg><use href="#i-search"/></svg><input placeholder="操作・対象で絞り込み"></div><button class="btn btn-secondary">CSV</button><button class="btn btn-primary">ハッシュを検証</button></div></div>
+            <div class="banner ok" style="margin-bottom:14px"><svg width="18" height="18"><use href="#i-check"/></svg><div><b>ハッシュチェーンは正常です。</b> 42 件の記録に改ざんは見つかりませんでした。前の記録のハッシュと一致しています。</div></div>
+            <div class="card">
+              <table class="tbl">
+                <thead><tr><th>日時</th><th>操作者</th><th>操作</th><th>対象</th><th>ハッシュ</th></tr></thead>
+                <tbody>
+                  <tr><td class="mono small">10-23 11:20</td><td>渡辺 修</td><td><span class="pill green">ナレッジ承認</span></td><td>KB-0004 共有フォルダ…</td><td class="mono small">9f2c1a7b3d…</td></tr>
+                  <tr><td class="mono small">10-23 11:05</td><td>佐藤 健</td><td><span class="pill amber">承認申請</span></td><td>KB-0004 共有フォルダ…</td><td class="mono small">71ab0e9c22…</td></tr>
+                  <tr><td class="mono small">10-23 10:48</td><td>佐藤 健</td><td><span class="pill blue">解決記録</span></td><td>TKT-2026-0007</td><td class="mono small">c4d9f02e18…</td></tr>
+                  <tr><td class="mono small">10-23 10:18</td><td>佐藤 健</td><td><span class="pill gray">担当割当</span></td><td>TKT-2026-0007</td><td class="mono small">2b7e51aa90…</td></tr>
+                  <tr><td class="mono small">10-23 10:15</td><td>山田 太郎</td><td><span class="pill gray">引継ぎ同意</span></td><td>TKT-2026-0007 / INC-0007</td><td class="mono small">e81c3d5f47…</td></tr>
+                  <tr><td class="mono small">10-23 10:12</td><td>山田 太郎</td><td><span class="pill gray">相談作成</span></td><td>TKT-2026-0007</td><td class="mono small">5a0f9b2c61…</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="note" style="margin-top:10px">記録は追記のみ。1件でも書き換えると、後続のハッシュが一致しなくなり検知されます。MVP ではハッシュチェーンの検証のみ実装し、SIEM 連携は対象外です。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="annotation"><b>設計メモ</b> <span><span class="tag">検証</span> ボタンでサーバ側のチェーン検証 API を呼び、結果をバナー表示。</span><span><span class="tag">改ざん</span> 不一致時は赤帯＋該当行を強調（States参照）。</span></div>
+  </section>
+
+  <!-- ================= STATES ================= -->
+  <section class="view" id="view-states" data-od-id="screen-states" role="tabpanel">
+    <div class="sec-head"><div><h2>States</h2><p>正常だけでは終わらせない。空・読込・入力エラー・通信エラー・権限・404・成功・赤信号。</p></div></div>
+    <div class="grid3">
+      <div class="state-card"><div class="sh"><span>Loading</span><span>スケルトン</span></div><div class="sb"><div class="row" style="gap:10px"><div class="sk circle"></div><div style="flex:1"><div class="sk w60" style="margin-bottom:6px"></div><div class="sk w40"></div></div></div><div class="sk w80"></div><div class="sk w80"></div><div class="sk w60"></div><div class="small muted" style="text-align:center">読み込み中…</div></div></div>
+      <div class="state-card"><div class="sh"><span>Empty</span><span>相談0件</span></div><div class="sb"><div class="empty-ic"><svg width="22" height="22"><use href="#i-file"/></svg></div><div style="text-align:center"><b style="font-size:13px">まだ相談はありません</b><div class="small muted">困ったときは、1つの入口から。</div></div><div style="text-align:center"><button class="btn btn-primary btn-sm">新しい相談をはじめる</button></div></div></div>
+      <div class="state-card"><div class="sh"><span>Validation error</span><span>入力エラー</span></div><div class="sb" style="justify-content:flex-start"><div class="field" style="margin:0"><label>件名 <span style="color:var(--red)">*</span></label><input class="input invalid" value=""><div class="err">件名を入力してください。</div></div><div class="field" style="margin:0"><label>内容 <span style="color:var(--red)">*</span></label><textarea class="textarea invalid" style="min-height:52px"></textarea><div class="err">内容を入力してください。</div></div></div></div>
+      <div class="state-card"><div class="sh"><span>Communication error</span><span>通信失敗</span></div><div class="sb"><div class="banner danger" style="width:100%"><svg width="16" height="16"><use href="#i-alert"/></svg><div><b>通信できませんでした。</b><br>入力内容は保持されています。再試行してください。</div></div><div class="row" style="justify-content:center"><button class="btn btn-primary btn-sm">再試行</button><button class="btn btn-secondary btn-sm">電話窓口を案内</button></div></div></div>
+      <div class="state-card"><div class="sh"><span>Forbidden</span><span>403</span></div><div class="sb"><div class="empty-ic" style="background:var(--red-bg);color:var(--red)"><svg width="22" height="22"><use href="#i-lock"/></svg></div><div style="text-align:center"><b style="font-size:13px">この操作はできません</b><div class="small muted">あなたの権限では、この画面を表示できません。</div></div><div style="text-align:center"><button class="btn btn-secondary btn-sm">ホームへ戻る</button></div></div></div>
+      <div class="state-card"><div class="sh"><span>Not found</span><span>404</span></div><div class="sb"><div class="empty-ic"><svg width="22" height="22"><use href="#i-search"/></svg></div><div style="text-align:center"><b style="font-size:13px">案件が見つかりません</b><div class="small muted">TKT-2026-9999 は存在しないか、削除されています。</div></div><div style="text-align:center"><button class="btn btn-secondary btn-sm">一覧へ戻る</button></div></div></div>
+      <div class="state-card"><div class="sh"><span>Success</span><span>トースト</span></div><div class="sb"><div class="banner ok" style="width:100%"><svg width="16" height="16"><use href="#i-check"/></svg><div><b>引継ぎが完了しました。</b><br>TKT-2026-0007 / INC-0007 を発行しました。</div></div><div class="small muted" style="text-align:center">3秒で自動的に消えます（aria-live）。</div></div></div>
+      <div class="state-card"><div class="sh"><span>Security / 赤</span><span>AI対象外</span></div><div class="sb"><div class="banner danger" style="width:100%"><svg width="16" height="16"><use href="#i-shield"/></svg><div><b>セキュリティの心配として受け付けました。</b><br>AIは判断しません。次の初動手順を確認し、すぐ担当者へ引き継ぎます。</div></div><div class="row" style="justify-content:center;gap:6px"><span class="tag red">端末をネットから切断</span><span class="tag red">画面を閉じない</span></div><div style="text-align:center"><button class="btn btn-primary btn-sm">緊急で担当者へ</button></div></div></div>
+      <div class="state-card"><div class="sh"><span>Audit tamper</span><span>改ざん検知</span></div><div class="sb"><div class="banner danger" style="width:100%"><svg width="16" height="16"><use href="#i-alert"/></svg><div><b>ハッシュの不一致を検知しました。</b><br>3件目以降の記録を確認してください。管理者へ連絡してください。</div></div><div class="small mono" style="text-align:center;color:var(--red)">expected 9f2c… / actual 4a11…</div></div></div>
+    </div>
+    <div class="card card-pad" style="margin-top:18px">
+      <div class="strong">状態の実装方針</div>
+      <div class="grid2" style="margin-top:10px">
+        <div><div class="small"><b>Loading</b>: API 呼び出し中はスケルトン。3秒超で補足文。ボタンは二重送信防止。</div><div class="small"><b>Empty</b>: データ0件と検索0件を区別。次の行動ボタンを必ず置く。</div><div class="small"><b>Validation</b>: クライアント検証＋サーバ検証。サーバの details をフィールドへマップ。</div></div>
+        <div><div class="small"><b>Communication</b>: 入力値を保持。再試行ボタン。オフライン時は電話窓口を案内。</div><div class="small"><b>Forbidden / 404</b>: ルート単位で表示。権限外の情報は返さない。</div><div class="small"><b>Success</b>: トースト＋画面内の完了表示。次にやることを明示。</div></div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<script>
+  // Tabs
+  const tabs = Array.from(document.querySelectorAll('.tabs button'));
+  const views = Array.from(document.querySelectorAll('.view'));
+  function select(id){
+    tabs.forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === id)));
+    views.forEach(v => v.classList.toggle('active', v.id === 'view-' + id));
+    const active = tabs.find(b => b.dataset.tab === id);
+    const strip = document.querySelector('.tabs');
+    if (active && strip) strip.scrollTo({ left: Math.max(0, active.offsetLeft - 40), behavior: 'smooth' });
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }
+  tabs.forEach(b => b.addEventListener('click', () => { select(b.dataset.tab); history.replaceState(null,'','#'+b.dataset.tab); }));
+  if (location.hash) {
+    const id = location.hash.slice(1);
+    if (document.getElementById('view-' + id)) select(id);
+  }
+
+  // Demo account quick fill
+  document.querySelectorAll('.demo').forEach(b => b.addEventListener('click', () => {
+    const input = document.getElementById('email');
+    if (input) input.value = b.dataset.demo;
+  }));
+
+  // Inject app chrome (sidebar + topbar) to keep the mock markup compact.
+  const icon = (name) => `<svg aria-hidden="true"><use href="#i-${name}"/></svg>`;
+  const navByRole = {
+    requester: [
+      ['home','ホーム','i-home'],['consult','新しい相談','i-plus'],['cases','マイ相談','i-list'],['knowledge','ナレッジ','i-book']
+    ],
+    helpdesk: [
+      ['home','ホーム','i-home'],['board','ボード','i-board'],['cases','案件一覧','i-list'],['knowledge','ナレッジ','i-book']
+    ],
+    approver: [
+      ['home','ホーム','i-home'],['board','ボード','i-board'],['knowledge','ナレッジ','i-book'],['audit','監査ログ','i-shield']
+    ]
+  };
+  const roleLabel = {requester:'相談者', helpdesk:'ヘルプデスク', approver:'承認者'};
+  const userName = {requester:'山田 太郎', helpdesk:'佐藤 健', approver:'渡辺 修'};
+  const userInit = {requester:'山', helpdesk:'佐', approver:'渡'};
+
+  document.querySelectorAll('.app[data-chrome]').forEach(app => {
+    const role = app.dataset.role || 'requester';
+    const active = app.dataset.active || 'home';
+    const title = app.dataset.title || 'ホーム';
+    const sub = app.dataset.sub || (roleLabel[role] + ' / ' + userName[role]);
+    const nav = (navByRole[role] || navByRole.requester).map(([key,label,ic]) => {
+      const badge = key === 'board' && role === 'helpdesk' ? '<span class="count">3</span>' : '';
+      return `<a href="#" class="${key===active?'active':''}" aria-current="${key===active?'page':'false'}">${icon(ic.replace('i-',''))}<span>${label}</span>${badge}</a>`;
+    }).join('');
+    const side = `
+      <div class="brand"><span class="logo">み</span><div><b>みらいAI窓口</b><small>HELPDESK MVP</small></div></div>
+      <nav class="nav" aria-label="メインナビゲーション">
+        <div class="group">メニュー</div>
+        ${nav}
+        <div class="group">その他</div>
+        <a href="#">${icon('more')}<span>設定・ヘルプ</span></a>
+      </nav>
+      <div class="side-foot"><div class="me"><span class="avatar">${userInit[role]}</span><div><b>${userName[role]}</b><small>${roleLabel[role]}</small></div></div></div>`;
+    const top = `
+      <div><h2>${title}</h2><span class="sub">${sub}</span></div>
+      <div class="spacer"></div>
+      <span class="env">● 検証環境 / DEMO</span>
+      <div class="legend"><span class="item"><span class="dot" style="background:#1D4ED8"></span>青</span><span class="item"><span class="dot" style="background:#B45309"></span>黄</span><span class="item"><span class="dot" style="background:#B91C1C"></span>赤</span></div>
+      <div class="row" style="gap:8px"><button class="btn btn-ghost btn-sm" aria-label="通知">${icon('bell')}</button><span class="avatar" style="width:28px;height:28px;font-size:11px">${userInit[role]}</span></div>`;
+    const sideSlot = app.querySelector('.sidebar-slot');
+    const topSlot = app.querySelector('.topbar-slot');
+    if (sideSlot) { const el = document.createElement('aside'); el.className = 'side'; el.innerHTML = side; sideSlot.replaceWith(el); }
+    if (topSlot) { const el = document.createElement('header'); el.className = 'top'; el.innerHTML = top; topSlot.replaceWith(el); }
+  });
+
+  // Keep tab hash in sync on load
+  if (location.hash && document.getElementById('view-' + location.hash.slice(1))) {
+    select(location.hash.slice(1));
+  } else {
+    select('home-req');
+  }
+  // The browser's fragment scroll can fire after the script; keep the board at the top.
+  window.addEventListener('load', () => window.scrollTo(0, 0));
+  setTimeout(() => window.scrollTo(0, 0), 0);
+</script>
+</body>
+</html>

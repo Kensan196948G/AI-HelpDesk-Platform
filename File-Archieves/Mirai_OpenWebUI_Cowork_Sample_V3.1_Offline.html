@@ -1,0 +1,823 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; font-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<title>みらいAI窓口 サンプル V3.1</title>
+<style>
+:root{--bg:#f3f6fb;--panel:#fff;--panel2:#f8fafc;--line:#e2e8f0;--text:#1e293b;--muted:#64748b;--acc:#2563eb;--acc2:#1d4ed8;--accsoft:#e8efff;--ok:#047857;--oksoft:#e3f6ee;--warn:#a16207;--warnsoft:#fff5d9;--ng:#be123c;--ngsoft:#ffedf0;--info:#0369a1;--infosoft:#e0f2fe;--side:#0f1d33;--sidetext:#c3cfdf;--sideact:#1f3a60;--userbub:#e6eeff;--code:#eef2f7;--shadow:0 6px 22px rgba(15,29,51,.07)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0b1220;--panel:#111a2b;--panel2:#16213a;--line:#25344f;--text:#e2e8f0;--muted:#94a3b8;--acc:#4f8cff;--acc2:#3b7bf5;--accsoft:#1a2b52;--ok:#34d399;--oksoft:#0f2e25;--warn:#fbbf24;--warnsoft:#33280c;--ng:#fb7185;--ngsoft:#3a1520;--info:#38bdf8;--infosoft:#0c2a3d;--side:#070d18;--sidetext:#b6c3d6;--sideact:#1a2d4a;--userbub:#1a2b52;--code:#0d1526;--shadow:0 6px 22px rgba(0,0,0,.35)}}
+:root[data-theme="dark"]{--bg:#0b1220;--panel:#111a2b;--panel2:#16213a;--line:#25344f;--text:#e2e8f0;--muted:#94a3b8;--acc:#4f8cff;--acc2:#3b7bf5;--accsoft:#1a2b52;--ok:#34d399;--oksoft:#0f2e25;--warn:#fbbf24;--warnsoft:#33280c;--ng:#fb7185;--ngsoft:#3a1520;--info:#38bdf8;--infosoft:#0c2a3d;--side:#070d18;--sidetext:#b6c3d6;--sideact:#1a2d4a;--userbub:#1a2b52;--code:#0d1526;--shadow:0 6px 22px rgba(0,0,0,.35)}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI","Yu Gothic UI","Hiragino Kaku Gothic ProN","Meiryo",sans-serif;font-size:14px;line-height:1.7;overflow:hidden}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+code{background:var(--code);padding:1px 6px;border-radius:5px;font-family:ui-monospace,Consolas,monospace;font-size:12.5px}
+a{color:var(--acc)}
+.app{display:grid;grid-template-columns:262px 1fr;height:100vh;height:100dvh}
+/* sidebar */
+.side{background:var(--side);color:var(--sidetext);display:flex;flex-direction:column;min-height:0}
+.brand{padding:16px 16px 10px;border-bottom:1px solid #ffffff14}
+.brand b{display:block;color:#fff;font-size:15px}
+.brand small{font-size:11px;color:#8fa3bf}
+.newbtn{margin:12px 14px 6px;padding:9px 12px;border-radius:10px;border:1px solid #ffffff2a;background:#ffffff10;color:#fff;font-weight:700;text-align:left}
+.newbtn:hover{background:#ffffff1c}
+.nav{padding:6px 8px}
+.nav button{display:flex;align-items:center;gap:9px;width:100%;border:0;background:transparent;color:var(--sidetext);padding:7px 10px;border-radius:8px;text-align:left;font-size:13.5px}
+.nav button:hover{background:#ffffff0f}
+.nav button.on{background:var(--sideact);color:#fff;font-weight:700}
+.nav .cnt{margin-left:auto;background:#f59e0b;color:#1b1300;border-radius:99px;font-size:11px;font-weight:800;padding:0 7px}
+.histh{padding:10px 18px 4px;font-size:11px;color:#8193ad;letter-spacing:.06em}
+.hist{flex:1;overflow:auto;padding:0 8px 8px;min-height:0}
+.hist .hi{display:flex;align-items:center;gap:4px;border-radius:8px}
+.hist .hi button.t{flex:1;border:0;background:transparent;color:var(--sidetext);text-align:left;padding:6px 10px;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hist .hi.on{background:#ffffff14}.hist .hi.on button.t{color:#fff}
+.hist .hi button.x{border:0;background:transparent;color:#7d8ea8;padding:2px 8px;visibility:hidden}
+.hist .hi:hover button.x{visibility:visible}
+.sidefoot{padding:10px 16px;border-top:1px solid #ffffff14;font-size:11px;color:#8496b0}
+.sidefoot .off{display:inline-block;background:#064e3b;color:#a7f3d0;border-radius:99px;padding:1px 8px;margin-bottom:4px}
+/* main */
+.main{display:flex;flex-direction:column;min-width:0;min-height:0}
+.top{display:flex;align-items:center;gap:10px;padding:9px 16px;background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap}
+.top h1{font-size:15px;margin:0;font-weight:800}
+.top .sp{flex:1}
+.ham{display:none;border:1px solid var(--line);background:var(--panel2);border-radius:8px;padding:4px 10px}
+.persona{display:flex;align-items:center;gap:6px;font-size:12.5px}
+.persona select{border:1px solid var(--line);background:var(--panel2);border-radius:8px;padding:5px 8px;max-width:300px}
+.rolebadge{font-size:11px;border-radius:99px;padding:1px 8px;font-weight:700;background:var(--accsoft);color:var(--acc)}
+.estop{border:1px solid var(--ng);color:var(--ng);background:var(--ngsoft);border-radius:8px;padding:5px 10px;font-weight:800}
+.estop.on{background:var(--ng);color:#fff}
+.banner{padding:6px 16px;font-size:12.5px;background:var(--warnsoft);color:var(--warn);border-bottom:1px solid var(--line)}
+.banner.ng{background:var(--ng);color:#fff;font-weight:700}
+.view{flex:1;overflow:auto;padding:22px;min-height:0}
+.view.chatv{padding:0;overflow:hidden;display:flex}
+/* chat */
+.chatwrap{display:grid;grid-template-columns:1fr 310px;flex:1;min-height:0;width:100%}
+.chatcol{display:flex;flex-direction:column;min-height:0;min-width:0}
+.msgs{flex:1;overflow:auto;padding:22px 26px 10px;min-height:0}
+.msg{display:flex;gap:10px;margin:0 auto 16px;max-width:860px}
+.msg .av{flex:0 0 32px;height:32px;border-radius:50%;display:grid;place-items:center;background:var(--accsoft);font-size:16px}
+.msg .body{flex:1;min-width:0}
+.msg.user{flex-direction:row-reverse}
+.msg.user .body{display:flex;flex-direction:column;align-items:flex-end}
+.msg.user .bub{background:var(--userbub);border-radius:16px 16px 4px 16px;padding:9px 14px;max-width:85%;white-space:pre-wrap;word-break:break-word}
+.msg .meta{font-size:11px;color:var(--muted);margin-top:4px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.aitext p{margin:4px 0 8px}.aitext ul,.aitext ol{margin:4px 0 8px;padding-left:22px}
+.attchip{display:inline-flex;gap:6px;align-items:center;border:1px solid var(--line);background:var(--panel);border-radius:9px;padding:3px 9px;font-size:12px;margin:4px 0 0 4px}
+.attchip.ng{border-color:var(--ng);color:var(--ng)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px;box-shadow:var(--shadow);margin:2px 0}
+.card .ch{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-weight:800;margin-bottom:8px}
+.card .ch .r{margin-left:auto;font-weight:600;font-size:12px;color:var(--muted)}
+.card.ng{border-color:var(--ng);background:var(--ngsoft)}
+.card.warn{border-color:#e9b949;background:var(--warnsoft)}
+.card.ok{border-color:#6fcfa8;background:var(--oksoft)}
+.kv{display:grid;grid-template-columns:120px 1fr;gap:4px 12px;margin:6px 0;font-size:13.5px}
+.kv dt{color:var(--muted)}.kv dd{margin:0}
+.steps{list-style:none;margin:6px 0;padding:0}
+.steps li{display:flex;gap:10px;padding:5px 0;border-bottom:1px dashed var(--line);font-size:13.5px}
+.steps li:last-child{border-bottom:0}
+.steps .k{color:var(--muted);min-width:170px}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:1px}
+.dot.ok{background:#10b981}.dot.warn{background:#f59e0b}.dot.ng{background:#ef4444}.dot.info{background:#38bdf8}.dot.mute{background:#94a3b8}
+.btns{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.btn{border:1px solid var(--line);background:var(--panel2);border-radius:9px;padding:6px 12px;font-weight:700;font-size:13px}
+.btn:hover{filter:brightness(.97)}
+.btn.pri{background:var(--acc);border-color:var(--acc);color:#fff}
+.btn.y{background:#047857;border-color:#047857;color:#fff}
+.btn.n{background:var(--ngsoft);border-color:var(--ng);color:var(--ng)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn.sm{padding:3px 9px;font-size:12px}
+.badge{display:inline-block;font-size:11px;font-weight:800;border-radius:99px;padding:1px 9px;border:1px solid transparent}
+.badge.ok{background:var(--oksoft);color:var(--ok);border-color:#6fcfa855}
+.badge.warn{background:var(--warnsoft);color:var(--warn);border-color:#e9b94955}
+.badge.ng{background:var(--ngsoft);color:var(--ng);border-color:#fb718555}
+.badge.info{background:var(--infosoft);color:var(--info)}
+.badge.mute{background:var(--panel2);color:var(--muted);border-color:var(--line)}
+.lv{font-size:11px;font-weight:800;border-radius:6px;padding:1px 7px;color:#fff}
+.lv0{background:#64748b}.lv1{background:#0e7490}.lv2{background:#2563eb}.lv3{background:#047857}.lv4{background:#b45309}.lv5{background:#be123c}
+.hash{font-family:ui-monospace,Consolas,monospace;font-size:11.5px;color:var(--muted)}
+.typing{display:flex;gap:5px;padding:12px 4px}.typing span{width:7px;height:7px;border-radius:50%;background:var(--muted);animation:tp 1.2s infinite}.typing span:nth-child(2){animation-delay:.2s}.typing span:nth-child(3){animation-delay:.4s}
+@keyframes tp{0%,60%,100%{opacity:.25;transform:translateY(0)}30%{opacity:1;transform:translateY(-3px)}}
+.src{display:inline-block;border:1px solid var(--line);background:var(--panel2);border-radius:7px;padding:0 7px;font-size:11.5px;margin:2px 3px 0 0;cursor:pointer}
+.src:hover{border-color:var(--acc)}
+.kbhit{border-top:1px solid var(--line);padding:8px 0}.kbhit:first-of-type{border-top:0}
+.kbhit b{color:var(--acc)}
+.muted{color:var(--muted)}.small{font-size:12px}
+/* composer */
+.composer{border-top:1px solid var(--line);background:var(--panel);padding:10px 18px 10px}
+.chips{display:flex;gap:6px;overflow-x:auto;padding-bottom:8px;scrollbar-width:thin}
+.chip{flex:0 0 auto;border:1px solid var(--line);background:var(--panel2);border-radius:99px;padding:3px 11px;font-size:12px}
+.chip:hover{border-color:var(--acc);color:var(--acc)}
+.pend{display:flex;flex-wrap:wrap;gap:6px}
+.pend .pa{display:flex;gap:6px;align-items:center;border:1px solid var(--line);border-radius:9px;padding:4px 8px;font-size:12px;background:var(--panel2);margin-bottom:6px}
+.pend select{border:1px solid var(--line);background:var(--panel);border-radius:6px;font-size:12px;padding:1px 4px}
+.inrow{display:flex;gap:8px;align-items:flex-end;max-width:900px;margin:0 auto}
+.inrow textarea{flex:1;resize:none;border:1px solid var(--line);background:var(--panel2);border-radius:12px;padding:9px 12px;max-height:160px;min-height:42px;outline:none}
+.inrow textarea:focus{border-color:var(--acc)}
+.ibtn{border:1px solid var(--line);background:var(--panel2);border-radius:10px;height:42px;width:42px;font-size:17px}
+.send{height:42px;border:0;background:var(--acc);color:#fff;border-radius:10px;padding:0 18px;font-weight:800}
+.attwrap{position:relative}
+.attmenu{position:absolute;bottom:48px;left:0;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:6px;width:290px;z-index:20}
+.attmenu button{display:block;width:100%;text-align:left;border:0;background:transparent;padding:7px 10px;border-radius:8px;font-size:13px}
+.attmenu button:hover{background:var(--panel2)}
+.cfoot{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:11.5px;color:var(--muted);max-width:900px;margin:7px auto 0}
+.cfoot select{border:1px solid var(--line);background:var(--panel2);border-radius:7px;padding:2px 6px;font-size:12px}
+/* device panel */
+.devpanel{border-left:1px solid var(--line);background:var(--panel);overflow:auto;padding:16px;min-height:0}
+.devpanel h4{margin:0 0 6px;font-size:13.5px}
+.devrow{display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--line);font-size:12.5px}
+.devrow span:first-child{color:var(--muted)}
+.devrow span:last-child{text-align:right}
+.note{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:12px;margin:12px 0}
+.tips li{margin:3px 0}
+/* generic view */
+.vh{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.vh h2{margin:0;font-size:20px}
+.vh p{margin:2px 0 0;color:var(--muted)}
+.vh .sp{flex:1}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:12px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:16px}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;box-shadow:var(--shadow)}
+.kpi b{display:block;font-size:24px;color:var(--acc)}
+.kpi small{color:var(--muted)}
+.tblw{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--panel)}
+table{border-collapse:collapse;width:100%;font-size:13px;min-width:640px}
+th{background:var(--panel2);text-align:left;font-weight:800;color:var(--muted);font-size:12px}
+th,td{padding:8px 11px;border-bottom:1px solid var(--line);vertical-align:top}
+tr:last-child td{border-bottom:0}
+tr.click{cursor:pointer}tr.click:hover td{background:var(--panel2)}
+.sec{margin:22px 0 10px;font-size:15px;font-weight:800}
+.bar{height:10px;background:var(--panel2);border-radius:99px;overflow:hidden;border:1px solid var(--line)}
+.bar i{display:block;height:100%;background:linear-gradient(90deg,var(--acc),#10b981)}
+.barrow{display:grid;grid-template-columns:150px 1fr 70px;gap:10px;align-items:center;font-size:12.5px;margin:5px 0}
+.search{border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:8px 12px;width:min(420px,100%)}
+textarea.cm{width:100%;border:1px solid var(--line);background:var(--panel2);border-radius:9px;padding:7px 10px;min-height:56px}
+.grp{margin:18px 0 8px;font-weight:800;color:var(--acc)}
+.orgc{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.orgc h3{margin:0 0 6px;font-size:14px}
+.orgc .q{background:var(--accsoft);border-radius:8px;padding:6px 9px;font-size:13px}
+.orgc .a{font-size:12.5px;color:var(--muted);margin:6px 0}
+.pass{color:var(--ok);font-weight:800}.fail{color:var(--ng);font-weight:800}
+/* modal & toast */
+.modal{position:fixed;inset:0;background:#0b122099;display:grid;place-items:center;z-index:100;padding:16px}
+.modal .mbox{background:var(--panel);border-radius:16px;max-width:720px;width:100%;max-height:88vh;overflow:auto;padding:20px 22px;box-shadow:0 20px 60px #0006}
+.modal .mh{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.modal .mh h3{margin:0;font-size:17px;flex:1}
+.toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#0f1d33;color:#fff;padding:9px 18px;border-radius:99px;font-size:13px;z-index:120;box-shadow:0 8px 24px #0005;transition:opacity .3s}
+.hide{display:none!important}
+.overlay{display:none}
+@media(max-width:1180px){.chatwrap{grid-template-columns:1fr}.devpanel{display:none}.devpanel.show{display:block;position:fixed;right:0;top:0;bottom:0;width:min(340px,92vw);z-index:60;box-shadow:-10px 0 30px #0004}.devtgl{display:inline-block!important}}
+@media(max-width:820px){.app{grid-template-columns:1fr}.side{position:fixed;left:0;top:0;bottom:0;width:270px;z-index:70;transform:translateX(-100%);transition:transform .25s}.app.sideopen .side{transform:none}.app.sideopen .overlay{display:block;position:fixed;inset:0;background:#0007;z-index:65}.ham{display:inline-block}.msgs{padding:16px 14px 8px}.composer{padding:8px 12px}.view{padding:16px}.kv{grid-template-columns:96px 1fr}.steps .k{min-width:120px}.persona select{max-width:190px}.persona>.muted{display:none}.top{gap:6px;padding:8px 12px}.estop{padding:4px 8px;font-size:12px}.top h1{font-size:14px}}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+@media print{body{overflow:visible}.side,.composer,.top,.banner,.devpanel{display:none!important}.app{display:block;height:auto}.view,.msgs{overflow:visible}}
+</style>
+</head>
+<body>
+<noscript><p style="padding:20px">このサンプルはJavaScriptを使用します。ブラウザでJavaScriptを有効にしてください。</p></noscript>
+<div class="app" id="app">
+  <aside class="side" id="side">
+    <div class="brand"><b>🏗️ みらいAI窓口</b><small>Open WebUI × Cowork型｜全社AI業務支援 V3.1 サンプル</small></div>
+    <button class="newbtn" data-act="newChat">＋ 新しい相談</button>
+    <nav class="nav" id="nav"></nav>
+    <div class="histh">相談履歴（この利用者）</div>
+    <div class="hist" id="hist"></div>
+    <div class="sidefoot"><span class="off">● 完全オフライン</span><br>外部通信なし（CSPで遮断）／データはこのブラウザ内のみ</div>
+  </aside>
+  <div class="overlay" data-act="toggleSide"></div>
+  <div class="main">
+    <div class="top">
+      <button class="ham" data-act="toggleSide" aria-label="メニュー">☰</button>
+      <h1 id="vtitle">AI相談</h1>
+      <span class="sp"></span>
+      <button class="btn sm devtgl hide" data-act="toggleDev" style="display:none">🖥️ 端末</button>
+      <div class="persona"><span class="muted">利用者（デモ切替）</span><select id="persona" aria-label="利用者切替"></select><span class="rolebadge" id="rolebadge"></span></div>
+      <button class="estop" id="estop" data-act="estop">🛑 緊急停止</button>
+    </div>
+    <div class="banner" id="banner"></div>
+    <div class="view" id="view"></div>
+  </div>
+</div>
+<div id="modal" class="modal hide" data-act="closeModalBg"><div class="mbox" id="mbox"></div></div>
+<div id="toast" class="toast hide"></div>
+<input type="file" id="file" multiple hidden>
+<script>
+'use strict';
+/* ============ ユーティリティ ============ */
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const pad=(n,l=2)=>String(n).padStart(l,'0');
+function nowISO(){const d=new Date();return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+' '+pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds())}
+let _u=0;const uid=()=>Date.now().toString(36)+(++_u).toString(36)+Math.random().toString(36).slice(2,6);
+const clone=o=>JSON.parse(JSON.stringify(o));
+/* SHA-256（外部ライブラリなし） */
+const sha256=(()=>{const K=[],H=[];let n=2,c=0;const isP=x=>{for(let i=2;i*i<=x;i++)if(x%i===0)return false;return true};const fr=x=>((x-Math.floor(x))*4294967296)|0;while(c<64){if(isP(n)){if(c<8)H[c]=fr(Math.pow(n,1/2));K[c]=fr(Math.pow(n,1/3));c++}n++}
+const ror=(x,r)=>(x>>>r)|(x<<(32-r));
+return s=>{const b=Array.from(new TextEncoder().encode(s));const l=b.length*8;b.push(0x80);while(b.length%64!==56)b.push(0);b.push(0,0,0,0,(l>>>24)&255,(l>>>16)&255,(l>>>8)&255,l&255);const h=H.slice(),w=new Array(64);
+for(let j=0;j<b.length;j+=64){for(let i=0;i<16;i++)w[i]=(b[j+4*i]<<24)|(b[j+4*i+1]<<16)|(b[j+4*i+2]<<8)|b[j+4*i+3];
+for(let i=16;i<64;i++){const x=w[i-15],y=w[i-2];w[i]=(w[i-16]+(ror(x,7)^ror(x,18)^(x>>>3))+w[i-7]+(ror(y,17)^ror(y,19)^(y>>>10)))|0}
+let a=h[0],bb=h[1],cc=h[2],d=h[3],e=h[4],f=h[5],g=h[6],hh=h[7];
+for(let i=0;i<64;i++){const t1=(hh+(ror(e,6)^ror(e,11)^ror(e,25))+((e&f)^(~e&g))+K[i]+w[i])|0;const t2=((ror(a,2)^ror(a,13)^ror(a,22))+((a&bb)^(a&cc)^(bb&cc)))|0;hh=g;g=f;f=e;e=(d+t1)|0;d=cc;cc=bb;bb=a;a=(t1+t2)|0}
+h[0]=(h[0]+a)|0;h[1]=(h[1]+bb)|0;h[2]=(h[2]+cc)|0;h[3]=(h[3]+d)|0;h[4]=(h[4]+e)|0;h[5]=(h[5]+f)|0;h[6]=(h[6]+g)|0;h[7]=(h[7]+hh)|0}
+return h.map(x=>(x>>>0).toString(16).padStart(8,'0')).join('')}})();
+
+/* ============ マスタデータ（すべて架空のサンプル） ============ */
+const ROLES={employee:'一般社員',itadmin:'IT端末管理者',auditor:'監査担当'};
+const DEPTS={
+ 'tokyo-koji':{name:'東京支店／工事部',scopes:['all','sekou']},
+ 'kyushu-eigyo':{name:'九州支店／営業部',scopes:['all','eigyo']},
+ 'keiri':{name:'管理本部／経理部',scopes:['all','kanri','keiri']},
+ 'dx':{name:'管理本部／DX推進部',scopes:['all','kanri','it']},
+ 'risk':{name:'管理本部／リスク統括部',scopes:['all','kanri','audit']}
+};
+const USERS={
+ u1:{id:'u1',name:'山田 太郎',dept:'tokyo-koji',role:'employee',device:'MRK-NB-1024'},
+ u2:{id:'u2',name:'佐藤 花子',dept:'kyushu-eigyo',role:'employee',device:'MRK-NB-2048'},
+ u3:{id:'u3',name:'鈴木 一郎',dept:'keiri',role:'employee',device:'MRK-DT-0311'},
+ u4:{id:'u4',name:'田中 誠',dept:'dx',role:'itadmin',device:'MRK-NB-0001'},
+ u5:{id:'u5',name:'高橋 恵',dept:'risk',role:'auditor',device:'MRK-NB-0002'}
+};
+const uname=id=>USERS[id]?USERS[id].name:(id==='system'?'システム':id==='agent'?'PCエージェント':id);
+const TIPS={
+ u1:['「印刷ができません」→ 本人のエラージョブ取消（L3）','「Teamsの音が出ない」→ 出力先の切替（L3・元に戻せる）','「工事写真のファイル名を揃えたい」→ コピー方式で整理（L2）','「人事異動の手続」→ 権限外の資料は表示されない'],
+ u2:['「VPNにつながらない」→ L4：IT管理者の承認が必要','「印刷ができません」→ スプーラ停止（L4）','「共有フォルダが開けない」→ 権限なし → 本人同意で担当者へ','その後、田中（IT管理者）に切り替えて承認キューを確認'],
+ u3:['「PCが遅い・容量不足」→ 一時ファイル隔離（L3）→「元に戻す」も試せる','「支払締め日」→ 経理部限定の資料が表示される','📎 サンプル「人事評価一覧」→ 極秘区分はAIで扱わない'],
+ u4:['承認キューで L4 申請を承認／却下','自分の端末の「印刷ができません」→ 自己承認は拒否される（職務分離）','チケット対応 → FAQ候補 → ナレッジで公開'],
+ u5:['監査ログの検証（ハッシュチェーン）と改ざん検知デモ','受け入れ試験を実行して合格条件を確認','全チケットの閲覧（操作は不可）']
+};
+const SCOPE_LABEL={all:'全社',sekou:'施工部門',eigyo:'営業部門',kanri:'管理本部',keiri:'経理部限定',jinji:'人事部限定',it:'IT管理者限定',audit:'監査・リスク限定'};
+const KB=[
+ {id:'KB-001',title:'プリンターで印刷できないときの確認手順',scope:'all',owner:'DX推進部',updated:'2026-09-01',tags:['印刷','プリンター','プリンタ','複合機'],body:'①用紙・トナー・エラー表示を確認。②印刷キューに本人のエラージョブが残っていないか確認し、残っていれば取り消して再印刷。③スプーラ停止など端末側の問題はIT端末管理者が対応します。（サンプル）'},
+ {id:'KB-002',title:'VPN接続トラブルの一次切り分け',scope:'all',owner:'DX推進部',updated:'2026-08-20',tags:['VPN','リモート','接続'],body:'①インターネット接続を確認。②VPNクライアントの版数を確認。③仮想アダプタが無効になっている場合は設定変更が必要なため、IT管理者の承認を得て有効化します。認証エラーはID管理者へ。（サンプル）'},
+ {id:'KB-003',title:'Teamsの音が出ない・マイクが使えないとき',scope:'all',owner:'DX推進部',updated:'2026-09-12',tags:['Teams','音','音声','マイク','スピーカー','ヘッドセット'],body:'PC既定の出力先がモニター（HDMI）になっていると音が聞こえません。既定の出力デバイスをヘッドセットに切り替え、Teamsのデバイス設定も確認してください。（サンプル）'},
+ {id:'KB-004',title:'経費精算の提出手順と必要書類',scope:'all',owner:'経理部',updated:'2026-07-01',tags:['経費','精算','領収書'],body:'経費精算はワークフローから申請し、領収書の画像を添付します。月末締め、翌月払い。立替金額が規定を超える場合は事前申請が必要です。（サンプル）'},
+ {id:'KB-005',title:'請求書処理・支払締め日（経理部内）',scope:'keiri',owner:'経理部',updated:'2026-09-30',tags:['請求書','支払','締め','締め日','仕訳'],body:'取引先請求書は毎月20日締め、照合後に支払予定表へ登録。支払の確定は経理部の承認者が行います。（経理部限定・サンプル）'},
+ {id:'KB-006',title:'備品申請・貸与品返却の手順',scope:'all',owner:'総務部',updated:'2026-06-10',tags:['備品','貸与','返却','申請'],body:'備品はワークフローの「備品申請」から。退職・異動時の貸与品は総務部へ返却し、台帳を更新します。（サンプル）'},
+ {id:'KB-007',title:'ヒヤリハット報告の様式と提出先',scope:'all',owner:'安全管理部',updated:'2026-08-01',tags:['ヒヤリハット','安全','報告','様式','安全報告'],body:'所定様式に「いつ・どこで・何が・どうなりそうだったか」を記入し、作業所長経由で安全管理部へ提出。AIは記入漏れの確認のみ行い、危険作業の可否は判断しません。（サンプル）'},
+ {id:'KB-008',title:'工事写真の整理・命名ルール',scope:'sekou',owner:'施工本部',updated:'2026-09-05',tags:['工事写真','写真','命名','ファイル名'],body:'ファイル名は「撮影日_現場_工種_連番」。元データは改変せず、整理済みフォルダへコピーして管理します。（施工部門向け・サンプル）'},
+ {id:'KB-009',title:'提案書の社内承認フロー',scope:'eigyo',owner:'営業本部',updated:'2026-08-15',tags:['提案書','提案','承認','見積'],body:'提案書は営業部長→営業企画部の確認を経て提出。見積を含む場合は原価部門の確認が必要です。（営業部門向け・サンプル）'},
+ {id:'KB-010',title:'人事異動時の手続チェックリスト',scope:'jinji',owner:'人事部',updated:'2026-09-20',tags:['人事','異動','手続','入社'],body:'異動発令後の社会保険・給与・アカウント権限変更の手順。（人事部限定・サンプル）'},
+ {id:'KB-011',title:'情報セキュリティ事故の初動対応',scope:'all',owner:'リスク統括部',updated:'2026-01-19',tags:['セキュリティ','事故','不審','ウイルス','感染','紛失'],body:'これ以上操作しない／社内手順に従いネットワークから切り離す／電源は切らない／すぐにリスク統括部へ電話連絡。事故の記録と再発防止は担当部門が行います。（サンプル）'},
+ {id:'KB-012',title:'生成AI利用ガイドライン（要約）',scope:'all',owner:'DX推進部',updated:'2026-05-01',tags:['生成AI','AI','ガイドライン','Copilot'],body:'承認済みのAIのみ利用。機密情報は入力区分ルールに従う。AIの出力は必ず人が確認し、コードは検証してから使う。（サンプル）'},
+ {id:'KB-013',title:'共有フォルダのアクセス申請',scope:'all',owner:'DX推進部',updated:'2026-07-22',tags:['共有フォルダ','アクセス','権限','フォルダ'],body:'アクセス権はワークフローで申請し、所属長の承認後にID管理者が付与します。AIは権限を変更しません。（サンプル）'},
+ {id:'KB-014',title:'端末管理者向け：スプーラ再起動手順',scope:'it',owner:'DX推進部',updated:'2026-09-02',tags:['スプーラ','印刷','再起動'],body:'承認キューで承認後、PCエージェント経由でサービスを再起動。失敗時は遠隔操作で確認。（IT管理者限定・サンプル）'},
+ {id:'KB-015',title:'内部監査 確認項目（情報システム）',scope:'audit',owner:'リスク統括部',updated:'2026-09-25',tags:['監査','内部統制','確認項目'],body:'企画・開発監査、運用・保守監査の確認観点。（監査・リスク限定・サンプル）'},
+ {id:'KB-016',title:'PCが遅い・容量が足りないとき',scope:'all',owner:'DX推進部',updated:'2026-08-08',tags:['遅い','重い','容量','ディスク','空き'],body:'不要な一時ファイルを整理すると改善する場合があります。本人の一時領域のみが対象で、ドキュメント・共有フォルダは対象外です。（サンプル）'},
+ {id:'KB-017',title:'ログインできない・アカウントがロックされたとき',scope:'all',owner:'DX推進部',updated:'2026-07-15',tags:['ログイン','パスワード','ロック','サインイン','MFA'],body:'パスワードは誰にも伝えないでください（AIにも入力しない）。ロック解除・再設定は本人確認のうえID管理者が行います。（サンプル）'},
+ {id:'KB-018',title:'発注申請の必要書類（購買）',scope:'all',owner:'購買部',updated:'2026-06-30',tags:['発注','購買','見積比較','業者'],body:'発注申請には見積書（原則2社以上）と比較表を添付。業者の決定は購買部と所管部署が行います。（サンプル）'},
+ {id:'KB-019',title:'現場で通信できないときの代替連絡',scope:'all',owner:'DX推進部',updated:'2026-09-10',tags:['現場','通信','オフライン','電話'],body:'AI窓口はサーバに接続できないと使えません。その場合は電話窓口（内線0000・サンプル）へ連絡してください。'}
+];
+const LVN={0:'閲覧',1:'解析',2:'新規作成',3:'軽微な修復',4:'設定変更',5:'禁止'};
+const LVA={0:'本人の閲覧権限',1:'本人＋入力データ区分ルール',2:'本人のY',3:'本人のY＋操作許可リスト',4:'本人のY＋IT管理者承認',5:'AIからの直接実行を禁止'};
+const OPS={
+ KB_READ:{name:'社内資料の検索・閲覧',level:0,impact:'閲覧権限のある資料のみ検索・表示'},
+ FILE_ANALYZE:{name:'本人が選んだファイルの解析',level:1,impact:'機密は社内モデルのみ／極秘は扱わない'},
+ FILE_CREATE:{name:'作業フォルダへ新規ファイル作成',level:2,impact:'新しいファイルを1つ作成します。元のファイルは変更しません。',rollback:'作成したファイルを削除するだけで元に戻ります',rollbackable:false,steps:['出力内容を再計算','作業フォルダに新規ファイルを作成','元ファイルが無変更であることを確認']},
+ FILE_RENAME_BATCH:{name:'工事写真の名前整理（コピー方式）',level:2,key:'files',impact:'整理済みフォルダへ命名規則どおりのコピーを作成します。元の写真は変更・削除しません。',rollback:'作成したコピーのフォルダを削除（ボタン1つ）',rollbackable:true,steps:['対象フォルダと件数を再確認','整理済みフォルダへコピーを作成','件数と元ファイル無変更を確認']},
+ PRINT_JOB_CANCEL_OWN:{name:'本人の印刷ジョブ取り消し',level:3,key:'printer',impact:'対象の印刷はやり直しになります。他の利用者のジョブには触れません。',rollback:'元の文書から再印刷（自動では戻しません）',rollbackable:false,steps:['対象ジョブが本人のものか再確認','エラージョブを取り消し','印刷キューの状態を確認']},
+ AUDIO_DEVICE_SET:{name:'既定の音声出力デバイスの切替',level:3,key:'audio',impact:'PCの音の出力先が変わります。会議中は一瞬音が途切れます。',rollback:'元のデバイスに戻せます（ボタン1つ）',rollbackable:true,steps:['接続中のデバイスを再確認','既定の出力デバイスを変更','テスト音の出力先を確認']},
+ TEMP_CLEAN_USER:{name:'本人の一時ファイル整理（隔離・7日保持）',level:3,key:'disk',impact:'本人の一時フォルダとブラウザキャッシュを隔離領域へ移動。ドキュメント・デスクトップ・共有フォルダには触れません。',rollback:'7日以内なら隔離領域から復元できます',rollbackable:true,steps:['対象が本人の一時領域だけか再確認','一時ファイルを隔離領域へ移動','空き容量を確認']},
+ SPOOLER_RESTART:{name:'印刷スプーラサービスの再起動',level:4,key:'printer',impact:'再起動中（約30秒）は印刷できません。待機中のジョブは保持されます。',rollback:'再起動のみ（失敗時は担当者へ引継ぎ）',rollbackable:false,steps:['サービス状態を再確認','スプーラサービスを再起動','印刷再開を確認']},
+ VPN_ADAPTER_ENABLE:{name:'VPN仮想アダプタの有効化',level:4,key:'vpn',impact:'ネットワーク設定を変更します。数秒間ネットワークが切り替わります。',rollback:'アダプタを無効に戻せます',rollbackable:true,steps:['アダプタ状態を再確認','VPN仮想アダプタを有効化','VPN接続テスト']},
+ SEC_DISABLE:{name:'セキュリティ機能の停止・無効化',level:5,impact:'—'},
+ SW_INSTALL:{name:'無許可ソフトウェアの導入',level:5,impact:'—'},
+ BULK_DELETE:{name:'ファイルの一括削除',level:5,impact:'—'},
+ PRIV_GRANT:{name:'管理者権限・アクセス権の付与',level:5,impact:'—（正式な申請手続へ）'}
+};
+const PST={proposed:['本人の判断待ち','warn'],pending_admin:['IT管理者の承認待ち','warn'],ready:['実行可能','ok'],executing:['実行中','info'],done:['完了','ok'],rejected:['本人が拒否（N）','mute'],admin_rejected:['管理者が却下','ng'],invalidated:['承認無効（内容変更）','ng'],failed:['失敗（変更なし）','ng'],aborted:['中断（変更なし）','ng'],rolled_back:['元に戻し済み','mute']};
+const EV={chat_query:'相談受付',kb_answer:'資料検索回答',diag_run:'端末診断（読み取りのみ）',file_analyze:'添付ファイル解析',policy_blocked:'データ区分ポリシーでブロック',dlp_masked:'機微情報をマスク',proposal_created:'修復提案を作成',user_approved:'本人承認（Y）',user_rejected:'本人拒否（N）',admin_approval_requested:'管理者承認を依頼',admin_approved:'管理者承認',admin_rejected:'管理者却下',self_approval_denied:'自己承認を拒否',hash_mismatch:'承認後の内容変更を検知',exec_denied:'実行前検証NG',exec_started:'実行開始',executed:'実行完了',exec_failed:'実行失敗（変更なし）',exec_aborted:'実行中断',rolled_back:'元に戻す',blocked_prohibited:'禁止操作をブロック',sensitive_redirect:'専用窓口へ案内（本文非保存）',incident_reported:'事故の初動案内',ticket_created:'チケット起票',ticket_updated:'チケット更新',faq_candidate:'FAQ候補登録',faq_published:'FAQ公開',faq_returned:'FAQ候補差戻し',estop_on:'緊急停止 ON',estop_off:'緊急停止 解除',resolved_by_ai:'AI対応で解決',persona_switch:'利用者切替（デモ）',data_reset:'データ初期化',chain_verified:'監査ログ検証',tests_run:'受け入れ試験実行'};
+const GROUPS={'IT端末':'IT端末管理（DX推進部）','ID・アクセス権':'ID・権限管理（DX推進部）','セキュリティ事故':'リスク統括部（情報セキュリティ）','業務・規程':'担当業務部門（窓口で振り分け）','AI窓口':'DX推進部（AI窓口運用）'};
+const CLASSES=['公開','社内限定','機密','極秘'];
+const MODELS={local:'社内ローカルLLM（模擬）',external:'承認済み外部AI API（模擬）'};
+const QUICK=[
+ {l:'🖨️ 印刷ができません',t:'印刷ボタンを押してもプリンターから紙が出ません'},
+ {l:'🔒 VPNにつながらない',t:'VPNにつながらないので診断してほしい'},
+ {l:'🎧 Teamsの音が出ない',t:'Teamsの会議で相手の声が聞こえません'},
+ {l:'🐢 PCが遅い・容量不足',t:'PCの動作が遅く、容量が足りないと表示されます'},
+ {l:'📁 共有フォルダが開けない',t:'共有フォルダにアクセスできません'},
+ {l:'💴 経費精算の手順',t:'経費精算の提出手順と必要書類を教えて'},
+ {l:'📷 工事写真の名前を揃えたい',t:'工事写真のファイル名を命名ルールに揃えたい'},
+ {l:'📊 工事日報を集計（サンプル）',t:'添付の工事日報を現場別に集計して',sample:'csv'},
+ {l:'⛔ セキュリティソフトを止めたい',t:'セキュリティソフトを止めたいです'},
+ {l:'🚨 不審なメールを開いた',t:'不審なメールの添付ファイルを開いてしまいました'},
+ {l:'👥 人事異動の手続',t:'人事異動の手続を教えて'},
+ {l:'🔑 ログインできない',t:'社内システムにログインできません'}
+];
+const ORG=[
+ ['経営・全社統制','🧭 経営企画室','部門横断プロジェクトの進み具合をまとめたい','承認された報告資料から進捗表の下書き。判断は人'],
+ ['経営・全社統制','🔎 監査役','内部統制の確認事項を一覧にできますか？','権限のある監査資料のみ照合'],
+ ['経営・全社統制','📋 コンプライアンス委員会','相談・通報手続きの案内を確認したい','通報内容は一般チャットで扱わず専用窓口へ'],
+ ['安全品質環境本部','⛑️ 安全管理部','ヒヤリハット報告の様式を教えて','様式案内・記入漏れ確認。危険作業の許可はしない'],
+ ['安全品質環境本部','🌱 品質環境部','品質点検記録の様式はどこ？','記録の要約・一覧作成。判定は担当者'],
+ ['管理本部','💴 経理部','経費精算の提出手順と必要書類を教えて','記入漏れ確認。支払確定は人'],
+ ['管理本部','🧮 経理グループ','請求書の支払締め日を確認したい','経理部限定資料は権限者のみ表示'],
+ ['管理本部','📦 総務部','備品の申請と貸与品返却の手順は？','申請手順・ひな形を案内'],
+ ['管理本部','💻 DX推進部','VPNにつながらないので診断してほしい','診断→修復案→Y/N→管理者承認→結果確認'],
+ ['管理本部','🛡️ リスク統括部','不審なメールを開いてしまいました','初動案内と緊急チケット。AIは隔離操作をしない'],
+ ['管理本部','👥 人事部','人事異動の手続を教えて','人事部限定資料は他部署に表示されない'],
+ ['技術本部','📐 技術部','施工技術の手順書を探したい','権限内の資料を根拠付きで検索'],
+ ['技術本部','🧪 研究開発部','生成AI利用ガイドラインを確認したい','ガイドライン要約と出典を表示'],
+ ['施工本部','👷 工事部','添付の工事日報を現場別に集計して','添付ファイルを集計し新規ファイルを作成（L2）'],
+ ['施工本部','🛒 購買部','発注申請の必要書類は？','規程検索・比較表の下書き。業者決定は人'],
+ ['営業本部','🤝 第一営業部','提案書の社内承認フローは？','営業部門向け資料は営業部門のみ表示'],
+ ['営業本部','📈 営業推進部','PCの動作が遅いです','容量診断と承認付き整理'],
+ ['ソリューション営業本部','🗓️ プロジェクト推進部','生成AIで議事録をまとめてよい？','ガイドラインに沿った使い方を案内'],
+ ['支店','🏢 北海道支店／安全管理部','安全報告の様式を知りたい','様式案内・記入漏れ確認'],
+ ['支店','🏢 東北支店／工事部','現場PCの印刷ができません','印刷診断と承認付き修復'],
+ ['支店','🏢 東京支店／工事部','工事写真のファイル名を揃えたい','プレビュー後、コピー方式で整理'],
+ ['支店','🏢 中部支店／工事部','VPNが切れる原因を調べたい','診断と修復提案（L4）'],
+ ['支店','🏢 大阪支店／工事部','工事日報を集計したい','CSV集計・新規ファイル作成'],
+ ['支店','🏢 九州支店／工事部','共有フォルダにアクセスできません','アクセス診断と担当者引継ぎ'],
+ ['営業所','📍 横浜営業支店','Teamsの音が出ません','音声設定診断と本人承認付き修復'],
+ ['営業所','📍 北陸営業支店','共有フォルダに接続できません','権限確認と窓口案内'],
+ ['営業所','📍 北九州営業所','社内システムにログインできません','ID管理者へ引継ぎ（パスワードは扱わない）'],
+ ['営業所','📍 静岡営業所','出先でVPNが使えません','VPN診断と担当者引継ぎ'],
+ ['作業所','👷 各作業所','現場で通信できないときの連絡先は？','代替連絡手段（電話窓口）を案内'],
+ ['事業部','🚢 船舶事業部','セキュリティソフトを止めたいです','禁止操作（L5）として正式手順へ案内']
+];
+const SAMPLE_CSV='日付,現場,工種,作業員数,作業時間\n'+[['2026-10-01','長良川護岸','土工',12,8],['2026-10-01','有明橋梁','鉄筋工',8,8],['2026-10-01','能登復旧道路','舗装工',10,7],['2026-10-02','長良川護岸','型枠工',9,8],['2026-10-02','有明橋梁','鉄筋工',7,9],['2026-10-02','能登復旧道路','土工',14,8],['2026-10-03','長良川護岸','土工',11,8],['2026-10-03','有明橋梁','コンクリート工',15,6],['2026-10-03','能登復旧道路','舗装工',9,8],['2026-10-04','長良川護岸','コンクリート工',13,7],['2026-10-04','有明橋梁','型枠工',6,8],['2026-10-04','能登復旧道路','土工',12,9],['2026-10-05','長良川護岸','土工',10,8],['2026-10-05','有明橋梁','鉄筋工',8,8],['2026-10-05','能登復旧道路','舗装工',11,7]].map(r=>r.join(',')).join('\n');
+const SAMPLE_LOG=`2026-10-18 08:01:12 INFO  VPN client 7.2 start\n2026-10-18 08:01:13 WARN  Virtual adapter "MiraiVPN" state=Disabled\n2026-10-18 08:01:13 ERROR Connect failed: adapter not available (code 0x80070490)\n2026-10-18 08:01:20 INFO  Retry 1/3\n2026-10-18 08:01:21 ERROR Connect failed: adapter not available (code 0x80070490)\n2026-10-18 08:01:30 INFO  Retry 2/3\n2026-10-18 08:01:31 ERROR Connect failed: adapter not available (code 0x80070490)\n2026-10-18 08:01:40 WARN  Giving up after 3 retries`;
+
+/* ============ 状態 ============ */
+function seedDevices(){
+ const base=(id,owner,model)=>({id,owner,model,os:'Windows 11 Enterprise 24H2',agent:'v0.3（模擬）',printer:{name:'',spooler:'running',jobs:[]},vpn:{client:'社内VPN 7.2',adapter:'enabled',connected:true},audio:{default:'ヘッドセット（USB）',devices:['HDMI（モニター）','ヘッドセット（USB）','内蔵スピーカー']},disk:{totalGB:256,freeGB:96,tempGB:0.8,quarantineGB:0},share:{path:'',access:'ok'},files:{photoFolder:'D:\\作業\\工事写真\\2026-10',photos:24,renamedCopy:false}});
+ const d1=base('MRK-NB-1024','u1','ノートPC');d1.printer={name:'東京支店 3F 複合機',spooler:'running',jobs:[{doc:'見積書_第3版.pdf',owner:'u1',status:'エラー'},{doc:'工程表_10月.xlsx',owner:'other',status:'待機'}]};d1.audio.default='HDMI（モニター）';d1.disk.freeGB=58;d1.disk.tempGB=1.1;d1.share.path='\\\\fs01\\東京支店\\工事部';
+ const d2=base('MRK-NB-2048','u2','ノートPC');d2.printer={name:'九州支店 2F 複合機',spooler:'stopped',jobs:[{doc:'提案書_有明.pdf',owner:'u2',status:'待機'}]};d2.vpn.adapter='disabled';d2.vpn.connected=false;d2.share={path:'\\\\fs01\\九州支店\\工事部',access:'denied'};
+ const d3=base('MRK-DT-0311','u3','デスクトップPC');d3.printer={name:'本社 5F 複合機',spooler:'running',jobs:[]};d3.disk.freeGB=6.5;d3.disk.tempGB=14.2;d3.share.path='\\\\fs01\\本社\\経理部';
+ const d4=base('MRK-NB-0001','u4','ノートPC');d4.printer={name:'本社 4F 複合機',spooler:'stopped',jobs:[{doc:'運用手順書.docx',owner:'u4',status:'待機'}]};d4.share.path='\\\\fs01\\本社\\DX推進部';
+ const d5=base('MRK-NB-0002','u5','ノートPC');d5.printer={name:'本社 4F 複合機',spooler:'running',jobs:[]};d5.share.path='\\\\fs01\\本社\\リスク統括部';
+ return {[d1.id]:d1,[d2.id]:d2,[d3.id]:d3,[d4.id]:d4,[d5.id]:d5};
+}
+function freshState(){
+ const st={v:31,ui:{view:'chat',user:'u1',model:'local',theme:'auto',chat:null},chats:[],proposals:{},tickets:[],audit:[],devices:seedDevices(),faqCandidates:[],faqs:[],estop:false,failNext:false,counters:{prop:0,ticket:0,faq:0,fc:0},stats:{intents:{},aiResolved:0,queries:0}};
+ auditAdd(st,'system','data_reset',{note:'サンプルデータを初期化'});
+ const t=createTicket(st,{userId:'u2',category:'IT端末',priority:'通常',summary:'Teams会議で自分の声が相手に届かない',shared:{'相談内容':'Teams会議で自分の声が相手に届かない'}});
+ t.status='解決';t.resolution='Teamsのデバイス設定でマイクがWebカメラ内蔵マイクになっていたため、ヘッドセットのマイクに変更して解決。';t.history.push({at:nowISO(),by:'u4',text:'回答して解決'});
+ st.faqCandidates.push({id:'FC-'+pad(++st.counters.fc,4),ticket:t.id,title:'Teamsで自分の声が相手に届かないとき',body:t.resolution,tags:['Teams','マイク','声','届かない'],by:'u4',at:nowISO(),status:'review'});
+ auditAdd(st,'u4','faq_candidate',{ticket:t.id});
+ return st;
+}
+
+/* ============ コアエンジン（UIから独立。受け入れ試験でも使用） ============ */
+function auditAdd(st,actor,event,detail){const prev=st.audit.length?st.audit[st.audit.length-1].hash:'GENESIS';const e={seq:st.audit.length+1,ts:nowISO(),actor,event,detail:detail||{}};e.prev=prev;e.hash=sha256(prev+'|'+JSON.stringify([e.seq,e.ts,e.actor,e.event,e.detail]));st.audit.push(e);return e}
+function verifyChain(list){let prev='GENESIS';for(const e of list){const h=sha256(prev+'|'+JSON.stringify([e.seq,e.ts,e.actor,e.event,e.detail]));if(e.prev!==prev||e.hash!==h)return {ok:false,at:e.seq};prev=e.hash}return {ok:true,n:list.length}}
+function toks(q){return (q.match(/[\u30A0-\u30FFー]{2,}|[\u4E00-\u9FFF々]{2,}|[A-Za-z0-9]{2,}/g)||[]).map(x=>x.toLowerCase())}
+function kbScore(k,q){const ql=q.toLowerCase();let s=0;k.tags.forEach(t=>{if(ql.includes(t.toLowerCase()))s+=3});toks(q).forEach(t=>{if(k.title.toLowerCase().includes(t))s+=2;else if(k.body.toLowerCase().includes(t))s+=1});return s}
+function allDocs(st){return KB.concat(st.faqs)}
+function kbById(st,id){return allDocs(st).find(k=>k.id===id)}
+function canSee(userId,doc){return DEPTS[USERS[userId].dept].scopes.includes(doc.scope)}
+function kbSearch(st,userId,q){const scored=allDocs(st).map(k=>({k,s:kbScore(k,q)})).filter(x=>x.s>0).sort((a,b)=>b.s-a.s);return {hits:scored.filter(x=>canSee(userId,x.k)).slice(0,3),hidden:scored.filter(x=>!canSee(userId,x.k)).length}}
+function dataPolicy(cls,model){if(cls==='極秘')return {ok:false,msg:'「極秘」区分のファイルはAIで扱いません。所管部門の手続で処理してください。'};if(cls==='機密'&&model==='external')return {ok:false,msg:'「機密」区分は外部AIへ送信できません。社内ローカルモデルを選ぶか担当者へ相談してください。'};return {ok:true,msg:''}}
+function suggestClass(name){if(/人事評価|給与|賞与|健康診断|マイナンバー|個人番号/.test(name))return '極秘';if(/契約|見積|原価|個人|名簿|顧客/.test(name))return '機密';return '社内限定'}
+function dlpMask(t){const found=[];let s=t;
+ s=s.replace(/(パスワード|password|PW|暗証番号)\s*(?:[:：=]|は)\s*([A-Za-z0-9!-\/:-@\[-`{-~]{4,})/gi,(m,a)=>{found.push('パスワード等');return a+'：＊＊＊＊（マスク）'});
+ s=s.replace(/\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}\b/g,()=>{found.push('カード番号らしき数字');return '＊＊＊＊-＊＊＊＊-＊＊＊＊-＊＊＊＊'});
+ s=s.replace(/\b\d{4}[- ]?\d{4}[- ]?\d{4}\b/g,()=>{found.push('個人番号らしき12桁');return '＊＊＊＊-＊＊＊＊-＊＊＊＊'});
+ return {text:s,found:[...new Set(found)]}}
+function propHash(p){return sha256(JSON.stringify([p.id,p.opId,p.deviceId,p.userId,p.params]))}
+function createProposal(st,userId,opId,params,meta){
+ const op=OPS[opId];if(!op)throw new Error('許可リストに存在しない操作：'+opId);
+ if(op.level>=5){auditAdd(st,userId,'blocked_prohibited',{opId});return {blocked:true,opId}}
+ const id='OP-'+pad(++st.counters.prop,4);
+ const p={id,opId,userId,deviceId:USERS[userId].device,params:params||{},meta:meta||{},status:'proposed',created:nowISO(),userDecision:null,adminDecision:null,approvedHash:null,chatId:null};
+ p.hash=propHash(p);st.proposals[id]=p;
+ auditAdd(st,userId,'proposal_created',{prop:id,opId,level:op.level,hash:p.hash.slice(0,12)});
+ return p}
+function userDecision(st,id,dec){const p=st.proposals[id];if(!p||p.status!=='proposed')return p;
+ if(dec==='Y'){const h=propHash(p);p.userDecision={by:p.userId,at:nowISO(),hash:h};p.approvedHash=h;p.status=OPS[p.opId].level>=4?'pending_admin':'ready';auditAdd(st,p.userId,'user_approved',{prop:id,hash:h.slice(0,12)});if(p.status==='pending_admin')auditAdd(st,'system','admin_approval_requested',{prop:id})}
+ else{p.userDecision={by:p.userId,at:nowISO(),dec:'N'};p.status='rejected';auditAdd(st,p.userId,'user_rejected',{prop:id})}
+ return p}
+function adminDecision(st,id,adminId,dec,comment){const p=st.proposals[id];const a=USERS[adminId];
+ if(!p||p.status!=='pending_admin')return {ok:false,msg:'承認待ちの申請ではありません'};
+ if(!a||a.role!=='itadmin')return {ok:false,msg:'IT端末管理者のみ判断できます'};
+ if(adminId===p.userId){auditAdd(st,adminId,'self_approval_denied',{prop:id});return {ok:false,msg:'自分の申請は承認できません（職務分離）。別のIT管理者が判断します。'}}
+ if(propHash(p)!==p.approvedHash){p.status='invalidated';auditAdd(st,'system','hash_mismatch',{prop:id});return {ok:false,msg:'本人承認後に内容が変わったため、承認を取り直してください'}}
+ if(dec==='approve'){p.adminDecision={by:adminId,at:nowISO(),comment:comment||'',hash:p.approvedHash};p.status='ready';auditAdd(st,adminId,'admin_approved',{prop:id,comment:comment||''})}
+ else{p.adminDecision={by:adminId,at:nowISO(),dec:'reject',comment:comment||''};p.status='admin_rejected';auditAdd(st,adminId,'admin_rejected',{prop:id,comment:comment||''})}
+ return {ok:true}}
+function serverVerify(st,p){const op=OPS[p.opId];const c=[];
+ c.push(['操作IDが許可リストに登録済み',!!op&&op.level<5]);
+ c.push(['緊急停止が解除されている',!st.estop]);
+ c.push(['本人承認（Y）が記録済み',!!(p.userDecision&&p.userDecision.hash)]);
+ c.push(['承認時から操作内容が変わっていない',!!p.approvedHash&&p.approvedHash===propHash(p)]);
+ c.push(['対象端末＝依頼者に割り当てられた端末',!!USERS[p.userId]&&USERS[p.userId].device===p.deviceId]);
+ if(op&&op.level>=4)c.push(['IT管理者の承認済み（自己承認でない）',!!(p.adminDecision&&p.adminDecision.hash===p.approvedHash&&p.adminDecision.by!==p.userId)]);
+ c.push(['申請の状態が実行可能',p.status==='ready'||p.status==='executing']);
+ return {ok:c.every(x=>x[1]),checks:c}}
+function applyOp(st,p){const v=serverVerify(st,p);
+ if(!v.ok){auditAdd(st,'system','exec_denied',{prop:p.id,failed:v.checks.filter(c=>!c[1]).map(c=>c[0])});return {ok:false,msg:'サーバ側の実行前検証で不合格のため、実行しませんでした。端末は変更していません。',checks:v.checks}}
+ const op=OPS[p.opId],d=st.devices[p.deviceId];
+ if(st.failNext){st.failNext=false;p.status='failed';auditAdd(st,'agent','exec_failed',{prop:p.id,reason:'模擬障害'});return {ok:false,msg:'PCエージェントが想定外の応答を返したため中断しました（模擬障害）。端末には変更を加えていません。',checks:v.checks}}
+ if(op.key)p.snapshot=clone(d[op.key]);
+ let verify=[],file=null;
+ switch(p.opId){
+  case 'PRINT_JOB_CANCEL_OWN':d.printer.jobs=d.printer.jobs.filter(j=>!(j.owner===p.userId&&j.status==='エラー'));verify=[['本人のエラージョブ',d.printer.jobs.some(j=>j.owner===p.userId&&j.status==='エラー')?'残存':'0件'],['他の利用者のジョブ','変更なし（'+d.printer.jobs.filter(j=>j.owner!==p.userId).length+'件保持）']];break;
+  case 'SPOOLER_RESTART':d.printer.spooler='running';verify=[['スプーラサービス','実行中'],['待機中のジョブ',d.printer.jobs.length+'件（保持）']];break;
+  case 'AUDIO_DEVICE_SET':d.audio.default=p.params.device;verify=[['既定の出力デバイス',d.audio.default],['テスト音','選択したデバイスで再生（模擬）']];break;
+  case 'TEMP_CLEAN_USER':{const mv=Math.max(0,+(d.disk.tempGB-0.2).toFixed(1));d.disk.quarantineGB=+(d.disk.quarantineGB+mv).toFixed(1);d.disk.freeGB=+(d.disk.freeGB+mv).toFixed(1);d.disk.tempGB=0.2;verify=[['隔離した容量',mv+' GB（7日保持）'],['空き容量',d.disk.freeGB+' GB'],['ドキュメント・共有フォルダ','変更なし']];break}
+  case 'VPN_ADAPTER_ENABLE':d.vpn.adapter='enabled';d.vpn.connected=true;verify=[['VPN仮想アダプタ','有効'],['接続テスト','社内ポータルへ到達（模擬）']];break;
+  case 'FILE_RENAME_BATCH':d.files.renamedCopy=true;verify=[['作成したコピー',p.params.count+'件 → '+p.params.dest],['元の写真','変更なし']];break;
+  case 'FILE_CREATE':file={name:p.params.filename,content:p.params.content};verify=[['新規ファイル',p.params.filename],['元の添付ファイル','変更なし']];break;
+ }
+ p.status='done';p.doneAt=nowISO();p.result={verify,file};
+ auditAdd(st,'agent','executed',{prop:p.id,opId:p.opId,device:p.deviceId});
+ return {ok:true,verify,file,checks:v.checks}}
+function rollbackOp(st,id,actor){const p=st.proposals[id];if(!p)return {ok:false};const op=OPS[p.opId];
+ if(p.status!=='done'||!op.rollbackable||!op.key)return {ok:false,msg:'元に戻せる状態ではありません'};
+ if(actor!==p.userId&&USERS[actor].role!=='itadmin')return {ok:false,msg:'依頼者本人またはIT管理者のみ'};
+ st.devices[p.deviceId][op.key]=clone(p.snapshot);p.status='rolled_back';auditAdd(st,actor,'rolled_back',{prop:id});return {ok:true}}
+function createTicket(st,o){const n=++st.counters.ticket;const t={id:'TKT-2026-'+pad(n,4),userId:o.userId,dept:USERS[o.userId].dept,category:o.category||'AI窓口',priority:o.priority||'通常',group:GROUPS[o.category]||GROUPS['AI窓口'],status:'受付',summary:o.summary||'',shared:o.shared||{},propId:o.propId||null,created:nowISO(),history:[{at:nowISO(),by:'system',text:'AI窓口から引継ぎ（本人同意済みの範囲のみ共有）'}],resolution:''};st.tickets.unshift(t);auditAdd(st,o.userId,'ticket_created',{ticket:t.id,category:t.category,priority:t.priority});return t}
+
+/* ============ 受け入れ試験（構想資料 09「合格の条件」に対応） ============ */
+function testEngine(){
+ const st=freshState();const R=[];const D=id=>st.devices[id];const J=o=>JSON.stringify(o);
+ const T=(name,ref,fn)=>{try{const r=fn();R.push({name,ref,ok:!!(r&&r.ok),note:(r&&r.note)||''})}catch(e){R.push({name,ref,ok:false,note:'例外：'+e.message})}};
+ T('権限のない資料を表示しない','09-合格条件1',()=>{const r=kbSearch(st,'u1','人事異動の手続を教えて');return {ok:!r.hits.some(h=>h.k.id==='KB-010')&&r.hidden>0,note:'表示 '+r.hits.length+'件／権限外のため非表示 '+r.hidden+'件（題名も出さない）'}});
+ let p1;
+ T('承認前に変更しない','09-合格条件2',()=>{const b=J(D('MRK-NB-1024').audio);p1=createProposal(st,'u1','AUDIO_DEVICE_SET',{device:'ヘッドセット（USB）'});const r=applyOp(st,p1);return {ok:!r.ok&&J(D('MRK-NB-1024').audio)===b,note:'未承認の実行要求 → 実行前検証NG'}});
+ T('Nを押したら変更しない','09-合格条件3',()=>{const b=J(D('MRK-NB-1024').audio);userDecision(st,p1.id,'N');const r=applyOp(st,p1);return {ok:!r.ok&&p1.status==='rejected'&&J(D('MRK-NB-1024').audio)===b,note:'状態：'+PST[p1.status][0]}});
+ T('操作ログが残る','09-合格条件4',()=>({ok:st.audit.some(e=>e.event==='proposal_created'&&e.detail.prop===p1.id)&&st.audit.some(e=>e.event==='user_rejected'&&e.detail.prop===p1.id)&&st.audit.some(e=>e.event==='exec_denied'&&e.detail.prop===p1.id),note:'提案・拒否・実行拒否の3件を確認'}));
+ T('元に戻す仕組みが機能する','09-合格条件5',()=>{const b=J(D('MRK-NB-1024').audio);const p=createProposal(st,'u1','AUDIO_DEVICE_SET',{device:'ヘッドセット（USB）'});userDecision(st,p.id,'Y');const r=applyOp(st,p);const changed=D('MRK-NB-1024').audio.default==='ヘッドセット（USB）';rollbackOp(st,p.id,'u1');return {ok:r.ok&&changed&&J(D('MRK-NB-1024').audio)===b,note:'変更 → 元に戻す → 変更前と一致'}});
+ T('異常時は変更せず担当者へ渡せる','09-合格条件6',()=>{const b=J(D('MRK-DT-0311').disk);const p=createProposal(st,'u3','TEMP_CLEAN_USER',{});userDecision(st,p.id,'Y');st.failNext=true;const r=applyOp(st,p);const t=createTicket(st,{userId:'u3',category:'IT端末',summary:'自動修復が失敗',propId:p.id});return {ok:!r.ok&&p.status==='failed'&&J(D('MRK-DT-0311').disk)===b&&!!st.tickets.find(x=>x.id===t.id),note:'失敗 → 変更なし → '+t.id+' を起票'}});
+ T('承認後に内容が変わったら実行しない','07-承認の取り直し',()=>{const p=createProposal(st,'u1','AUDIO_DEVICE_SET',{device:'ヘッドセット（USB）'});userDecision(st,p.id,'Y');p.params.device='内蔵スピーカー';const r=applyOp(st,p);return {ok:!r.ok,note:'承認ハッシュ不一致を検知'}});
+ T('設定変更（L4）は管理者承認なしに実行しない','07-権限表',()=>{const p=createProposal(st,'u2','VPN_ADAPTER_ENABLE',{});userDecision(st,p.id,'Y');const a=serverVerify(st,p).ok;adminDecision(st,p.id,'u4','approve','確認済み');const b=serverVerify(st,p).ok;return {ok:!a&&b,note:'本人Yのみ：NG → 管理者承認後：OK'}});
+ T('自己承認を禁止（職務分離）','07-権限表',()=>{const p=createProposal(st,'u4','SPOOLER_RESTART',{});userDecision(st,p.id,'Y');const r=adminDecision(st,p.id,'u4','approve');return {ok:!r.ok&&p.status==='pending_admin',note:r.msg||''}});
+ T('禁止操作はAIから実行できない','07-権限表 L5',()=>{const r=createProposal(st,'u1','SEC_DISABLE',{});return {ok:r.blocked===true&&st.audit.some(e=>e.event==='blocked_prohibited'),note:'提案自体を作らずブロック・記録'}});
+ T('許可リストにない操作は作れない','07-操作許可リスト',()=>{let thrown=false;try{createProposal(st,'u1','FORMAT_DISK',{})}catch(e){thrown=true}return {ok:thrown,note:'未登録の操作IDは拒否'}});
+ T('緊急停止中は実行しない','07-いつでも止める',()=>{const b=J(D('MRK-DT-0311').disk);const p=createProposal(st,'u3','TEMP_CLEAN_USER',{});userDecision(st,p.id,'Y');st.estop=true;const r=applyOp(st,p);st.estop=false;return {ok:!r.ok&&J(D('MRK-DT-0311').disk)===b,note:'緊急停止ON → 実行前検証NG'}});
+ T('機密・極秘データの送信を制御','07-データ区分',()=>({ok:!dataPolicy('機密','external').ok&&dataPolicy('機密','local').ok&&!dataPolicy('極秘','local').ok&&dataPolicy('社内限定','external').ok,note:'機密→外部不可／極秘→AI不可'}));
+ T('パスワード等をマスクして保存','07-守るルール',()=>{const r=dlpMask('パスワードは Abc12345! です');return {ok:!r.text.includes('Abc12345'),note:r.text}});
+ T('監査ログの改ざんを検知','07-記録が残る',()=>{const ok1=verifyChain(st.audit).ok;const c=clone(st.audit);c[2].detail={tampered:true};const r=verifyChain(c);return {ok:ok1&&!r.ok,note:'正常 '+st.audit.length+'件を検証／改ざん版は #'+r.at+' で検知'}});
+ return R}
+
+/* ============ 保存・読込 ============ */
+const KEY='mirai-owui-cowork-v31-sample';
+let S;const UI={pending:[],typing:false,stick:true,lastTests:null,auditFilter:'',ticketFilter:''};
+function load(){try{const raw=localStorage.getItem(KEY);if(raw){const o=JSON.parse(raw);if(o&&o.v===31){S=o}}}catch(e){}
+ if(!S)S=freshState();
+ S.chats.forEach(c=>c.messages.forEach(m=>{if(m.kind==='diag')m.shown=m.steps.length;if(m.kind==='exec'&&m.state==='running'){m.state='aborted';const p=S.proposals[m.propId];if(p&&p.status==='executing'){p.status='aborted';auditAdd(S,'system','exec_aborted',{prop:p.id,reason:'画面の再読み込み'})}}}))}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+
+/* ============ チャット補助 ============ */
+const me=()=>USERS[S.ui.user];
+function newChat(){const c={id:uid(),userId:S.ui.user,title:'新しい相談',created:nowISO(),messages:[{id:uid(),kind:'welcome',at:nowISO()}]};S.chats.unshift(c);S.ui.chat=c.id;save();return c}
+function activeChat(){return S.chats.find(c=>c.id===S.ui.chat&&c.userId===S.ui.user)||null}
+function ensureChat(){let c=activeChat();if(!c){c=S.chats.find(x=>x.userId===S.ui.user);if(c)S.ui.chat=c.id;else c=newChat()}return c}
+function addMsg(chat,m){m.id=m.id||uid();m.at=nowISO();chat.messages.push(m);return m}
+function ai(chat,html,opt){return addMsg(chat,Object.assign({kind:'ai',html,model:MODELS[S.ui.model]},opt||{}))}
+function findMsg(id){for(const c of S.chats){const m=c.messages.find(x=>x.id===id);if(m)return [c,m]}return [null,null]}
+function diag(chat,title,steps){const m=addMsg(chat,{kind:'diag',title,steps,shown:0,device:me().device});auditAdd(S,me().id,'diag_run',{title,device:me().device});animateDiag(m);return m}
+function animateDiag(m){const step=()=>{m.shown++;refresh();if(m.shown<m.steps.length)setTimeout(step,420);else save()};setTimeout(step,300)}
+function prop(chat,opId,params,meta,after){const p=createProposal(S,me().id,opId,params,meta);p.chatId=chat.id;addMsg(chat,{kind:'proposal',propId:p.id,after});return p}
+function escBtn(cat,pri,label){return `<button class="btn sm" data-act="escalate" data-cat="${esc(cat)}" data-pri="${esc(pri||'通常')}">🙋 ${esc(label||'担当者に相談する')}</button>`}
+function consentCard(chat,category,priority,after,propId){const rev=[...chat.messages].reverse();const dg=rev.find(m=>m.kind==='diag');const um=rev.find(m=>m.kind==='user');const u=USERS[chat.userId];
+ return addMsg(chat,{kind:'consent',after,category,priority:priority||'通常',propId:propId||null,state:'pending',sel:{diag:true,device:true,atts:false},ctx:{summary:um?um.text:chat.title,diag:dg?dg.steps.map(s=>s[0]+'：'+s[1]):[],device:u.device+'／'+S.devices[u.device].os,atts:um&&um.atts?um.atts.map(a=>a.name):[]}})}
+
+/* ============ 意図判定と応答（ルールベースの模擬AI） ============ */
+function detectIntent(t,atts){const has=r=>r.test(t);
+ if(has(/内部通報|通報したい|ハラスメント|パワハラ|セクハラ|内部告発|不正を(見|知)|コンプライアンス相談/))return 'whistle';
+ if(has(/(セキュリティ|ウイルス対策|ウィルス対策|Defender|EDR|ファイアウォール|ファイヤーウォール)[^。]{0,8}(止め|停止|無効|切|オフ|外)|無許可|フリーソフト[^。]{0,6}(入れ|インストール)|(一括|全部|すべて|全て)[^。]{0,4}削除|管理者権限[^。]{0,6}(ください|ほしい|欲しい|付与|もらえ)/i))return 'prohibited';
+ if(has(/不審な?メール|ウイルス|ウィルス|マルウェア|感染|ランサム|乗っ取|情報漏え?い|紛失|盗難|フィッシング/))return 'incident';
+ if(has(/パスワード|ログインでき|ログイン出来|サインインでき|ロックされ|アカウント[^。]{0,4}(ロック|停止)|多要素|MFA/i))return 'login';
+ if(has(/印刷|プリンタ|プリント|複合機/))return 'print';
+ if(has(/vpn|ブイピーエヌ|リモート接続/i))return 'vpn';
+ if(has(/teams|音が出|音声|マイク|スピーカー|ヘッドセット|聞こえ/i))return 'audio';
+ if(has(/遅い|重い|容量|空き|ディスク|ストレージ/))return 'slow';
+ if(has(/共有フォルダ|共有ドライブ|共有ファイル|ファイルサーバ|アクセス権|アクセスでき/))return 'share';
+ if(has(/写真[^。]{0,12}(名前|ファイル名|整理|リネーム|揃え|そろえ)|リネーム/))return 'photo';
+ if(atts.some(a=>a.kind==='csv'))return 'csv';
+ if(atts.some(a=>a.kind==='text'))return 'log';
+ if(atts.some(a=>a.kind==='image'||a.kind==='doc'||a.kind==='binary'))return 'otherfile';
+ if(has(/集計|グラフ|excel|エクセル|csv/i))return 'csvneed';
+ if(has(/^(ありがとう|助かり|了解|OK|ok)/))return 'thanks';
+ return 'kb'}
+const H={
+ whistle(chat,t,a,u){auditAdd(S,u.id,'sensitive_redirect',{});addMsg(chat,{kind:'block',tone:'warn',title:'🔐 専用窓口へのご案内',html:`<p>通報・ハラスメント等の相談は、<b>このAI窓口では内容を扱いません</b>。入力された本文はこの窓口に保存せず、AIにも渡していません。</p><p>社内規程に定める <b>コンプライアンス委員会の相談・通報窓口</b>（連絡先はサンプルのため省略）をご利用ください。相談者の保護や秘密保持の扱いは、窓口の規程に従います。</p>`})},
+ prohibited(chat,t,a,u){let op='SEC_DISABLE';if(/インストール|入れ|無許可|フリーソフト/.test(t))op='SW_INSTALL';else if(/削除/.test(t))op='BULK_DELETE';else if(/管理者権限/.test(t))op='PRIV_GRANT';createProposal(S,u.id,op,{});
+  addMsg(chat,{kind:'block',tone:'ng',title:'⛔ この操作はAIからは実行できません（L5：禁止）',html:`<p>「${esc(OPS[op].name)}」は、AIからの直接実行を禁止している操作です。Yを押しても実行されません。</p><p>業務上どうしても必要な場合は、<b>正式なIT管理手順（申請・審査・承認）</b>で対応します。理由を添えて担当者へ相談できます。</p><div class="btns">${escBtn('IT端末','通常','理由を添えて担当者に相談')}</div>`})},
+ incident(chat,t,a,u){auditAdd(S,u.id,'incident_reported',{});addMsg(chat,{kind:'block',tone:'ng',title:'🚨 情報セキュリティ事故の可能性があります（初動案内）',html:`<ol><li>添付ファイルやリンクをこれ以上開かない。パスワード等を入力しない。</li><li>社内手順に従い、ネットワークから切り離す（有線LANを抜く／Wi‑Fiをオフ）。</li><li><b>電源は切らない</b>（調査に必要な情報が消えるおそれがあります）。</li><li>すぐに <b>リスク統括部（情報セキュリティ）</b> へ電話連絡：内線 0000（サンプル）。</li></ol><p class="small muted">AIは端末の隔離・削除などの操作を行いません。判断と対応は担当者が行います。出典：<span class="src" data-act="kbOpen" data-id="KB-011">KB-011</span></p>`});consentCard(chat,'セキュリティ事故','緊急')},
+ login(chat,t,a,u){ai(chat,`<p>ログインできないときの確認事項です。</p><ul><li>Caps Lock・入力モード（全角/半角）を確認する</li><li>多要素認証のアプリ・電話が手元にあるか確認する</li><li>何度も失敗するとロックされるため、続けて試さない</li></ul><p><b>AIはパスワードの確認・再設定・ロック解除を行いません</b>（なりすまし防止のため）。パスワードはこの画面に入力しないでください。解除は本人確認のうえID管理者が行います。</p><div class="btns">${escBtn('ID・アクセス権','通常','ID管理者に引き継ぐ')}</div>`,{conf:'高',src:['KB-017']})},
+ print(chat,t,a,u,d){const own=d.printer.jobs.filter(j=>j.owner===u.id&&j.status==='エラー');
+  const m=diag(chat,'印刷トラブルの診断（読み取りのみ）',[['PCエージェント接続','オンライン（'+d.id+'）','ok'],['既定のプリンター',d.printer.name,'ok'],['印刷スプーラサービス',d.printer.spooler==='running'?'実行中':'停止','running'===d.printer.spooler?'ok':'ng'],['印刷キュー',d.printer.jobs.length+'件（本人のエラー '+own.length+'件）',own.length?'warn':'ok']]);
+  if(d.printer.spooler!=='running'){ai(chat,`<p><b>原因候補：</b>印刷を管理するサービス（スプーラ）が停止しています。</p><p>サービスの再起動は端末設定に関わるため、<b>本人の承認（Y）に加えてIT管理者の承認</b>が必要です（L4）。</p>`,{after:m.id,conf:'高',src:['KB-001']});prop(chat,'SPOOLER_RESTART',{service:'Spooler'},{target:'この端末（'+d.id+'）の印刷スプーラサービス'},m.id)}
+  else if(own.length){ai(chat,`<p><b>原因候補：</b>あなたが送信した「${esc(own.map(j=>j.doc).join('、'))}」がエラーで止まり、後続の印刷が詰まっています。</p>`,{after:m.id,conf:'高',src:['KB-001']});prop(chat,'PRINT_JOB_CANCEL_OWN',{jobs:own.map(j=>j.doc)},{target:'本人のエラージョブ：'+own.map(j=>j.doc).join('、')+'（他の利用者のジョブは対象外）'},m.id)}
+  else ai(chat,`<p>端末側（スプーラ・キュー）に問題は見つかりませんでした。用紙切れ・トナー・複合機本体のエラー表示を確認してください。</p><div class="btns">${escBtn('IT端末')}</div>`,{after:m.id,conf:'中',src:['KB-001']})},
+ vpn(chat,t,a,u,d){const m=diag(chat,'VPN接続の診断（読み取りのみ）',[['インターネット接続','到達可能','ok'],['VPNクライアント',d.vpn.client,'ok'],['VPN仮想アダプタ',d.vpn.adapter==='enabled'?'有効':'無効',d.vpn.adapter==='enabled'?'ok':'ng'],['VPN接続状態',d.vpn.connected?'接続中':'未接続',d.vpn.connected?'ok':'ng']]);
+  if(d.vpn.adapter!=='enabled'){ai(chat,`<p><b>原因候補：</b>VPN用の仮想アダプタが無効になっています。</p><p>ネットワーク設定の変更にあたるため、<b>本人のYに加えてIT管理者の承認</b>が必要です（L4）。</p>`,{after:m.id,conf:'高',src:['KB-002']});prop(chat,'VPN_ADAPTER_ENABLE',{adapter:'MiraiVPN'},{target:'この端末（'+d.id+'）のVPN仮想アダプタ「MiraiVPN」'},m.id)}
+  else if(!d.vpn.connected){ai(chat,`<p>アダプタは有効ですが接続できていません。認証の問題の可能性があるため、ID管理者へ引き継ぐのが確実です。</p><div class="btns">${escBtn('ID・アクセス権')}</div>`,{after:m.id,conf:'中',src:['KB-002']})}
+  else ai(chat,`<p>現在VPNは接続中で、端末側の問題は見つかりませんでした。現場の通信が不安定な場合は代替連絡手段もご確認ください。</p><div class="btns">${escBtn('IT端末')}</div>`,{after:m.id,conf:'中',src:['KB-002','KB-019']})},
+ audio(chat,t,a,u,d){const m=diag(chat,'音声デバイスの診断（読み取りのみ）',[['Teams','起動中','ok'],['既定の出力デバイス',d.audio.default,/HDMI/.test(d.audio.default)?'warn':'ok'],['接続中のデバイス',d.audio.devices.join('／'),'ok'],['Teamsのスピーカー設定','「既定のデバイス」に従う','ok']]);
+  if(/HDMI/.test(d.audio.default)&&d.audio.devices.includes('ヘッドセット（USB）')){ai(chat,`<p><b>原因候補：</b>PCの音の出力先が <b>${esc(d.audio.default)}</b> になっており、ヘッドセットから音が出ていません。</p>`,{after:m.id,conf:'高',src:['KB-003']});prop(chat,'AUDIO_DEVICE_SET',{device:'ヘッドセット（USB）',from:d.audio.default},{target:'既定の出力：'+d.audio.default+' → ヘッドセット（USB）'},m.id)}
+  else ai(chat,`<p>出力先は「${esc(d.audio.default)}」で正常です。ヘッドセットの音量・ミュート、Teamsのデバイス設定を確認してください。</p><div class="btns">${escBtn('IT端末')}</div>`,{after:m.id,conf:'中',src:['KB-003']})},
+ slow(chat,t,a,u,d){const m=diag(chat,'動作・容量の診断（読み取りのみ）',[['PCエージェント接続','オンライン（'+d.id+'）','ok'],['CPU使用率（直近5分）','23%','ok'],['ディスク空き容量',d.disk.freeGB+' GB ／ '+d.disk.totalGB+' GB',d.disk.freeGB<15?'ng':'ok'],['本人の一時ファイル',d.disk.tempGB+' GB',d.disk.tempGB>2?'warn':'ok']]);
+  if(d.disk.tempGB>2){ai(chat,`<p><b>原因候補：</b>空き容量が少なく、本人の一時ファイルが <b>${d.disk.tempGB} GB</b> あります。</p><p>対象は <code>%TEMP%（本人）</code> と <code>ブラウザのキャッシュ（本人）</code> のみです。削除ではなく隔離領域へ移動し、7日間は元に戻せます。</p>`,{after:m.id,conf:'中',src:['KB-016']});prop(chat,'TEMP_CLEAN_USER',{sizeGB:d.disk.tempGB,folders:['%TEMP%（本人）','ブラウザのキャッシュ（本人）']},{target:'本人の一時フォルダ・ブラウザキャッシュ（'+d.disk.tempGB+' GB）'},m.id)}
+  else ai(chat,`<p>CPU・容量に大きな問題は見つかりませんでした。特定のアプリだけが遅い場合は、担当者が詳しく確認します。</p><div class="btns">${escBtn('IT端末')}</div>`,{after:m.id,conf:'中',src:['KB-016']})},
+ share(chat,t,a,u,d){const m=diag(chat,'共有フォルダ接続の診断（読み取りのみ）',[['ネットワーク','社内LAN／VPN 到達可能','ok'],['ファイルサーバ fs01','応答あり','ok'],['対象フォルダ',d.share.path,'ok'],['アクセス権',d.share.access==='ok'?'あり':'なし（拒否）',d.share.access==='ok'?'ok':'ng']]);
+  if(d.share.access!=='ok'){ai(chat,`<p><b>結果：</b>このフォルダへのアクセス権がありません。</p><p>アクセス権の付与は <b>所属長の承認とID管理者の作業</b>が必要で、AIは権限を変更しません。以下で担当者へ引き継げます（共有する情報はあなたが選べます）。</p>`,{after:m.id,conf:'高',src:['KB-013']});consentCard(chat,'ID・アクセス権','通常',m.id)}
+  else ai(chat,`<p>接続・権限とも正常でした。一度サインアウトして再度サインインするか、フォルダのパスが正しいかを確認してください。</p><div class="btns">${escBtn('IT端末')}</div>`,{after:m.id,conf:'中',src:['KB-013']})},
+ photo(chat,t,a,u,d){const m=diag(chat,'工事写真フォルダの確認（読み取りのみ）',[['対象フォルダ（本人の作業フォルダ）',d.files.photoFolder,'ok'],['写真の件数',d.files.photos+'件','ok'],['撮影日情報（EXIF）','24件すべて取得可','ok'],['命名ルール','撮影日_現場_工種_連番（KB-008）','ok']]);
+  const ex=[['IMG_0412.JPG','20261001_長良川護岸_土工_001.jpg'],['IMG_0413.JPG','20261001_長良川護岸_土工_002.jpg'],['DSC_1188.JPG','20261002_長良川護岸_型枠工_001.jpg'],['写真 (3).jpg','20261003_長良川護岸_土工_001.jpg'],['IMG_0420.JPG','20261004_長良川護岸_コンクリート工_001.jpg']];
+  ai(chat,`<p>変更後の名前のプレビューです（先頭5件・模擬）。<b>元の写真は変更せず</b>、整理済みフォルダにコピーを作ります。</p><div class="tblw"><table style="min-width:420px"><tr><th>現在の名前</th><th>整理後の名前</th></tr>${ex.map(r=>`<tr><td>${esc(r[0])}</td><td>${esc(r[1])}</td></tr>`).join('')}</table></div>${d.files.renamedCopy?'<p class="small muted">※ この端末では既に整理済みコピーがあります（再作成の場合は上書きせず別名）。</p>':''}`,{after:m.id,conf:'高',src:canSee(u.id,KB[7])?['KB-008']:[]});
+  prop(chat,'FILE_RENAME_BATCH',{folder:d.files.photoFolder,count:d.files.photos,rule:'撮影日_現場_工種_連番',dest:d.files.photoFolder+'\\整理済み'},{target:d.files.photoFolder+' の写真 '+d.files.photos+'件 → 整理済みフォルダへコピー'},m.id)},
+ csv(chat,t,a,u){const f=a.find(x=>x.kind==='csv');const st=csvStats(f.text||'',f.ext==='tsv'?'\t':',');
+  if(!st){ai(chat,'<p>CSVの内容を読み取れませんでした（見出し行とデータ行が必要です）。</p>');return}
+  const n0=st.numCols[0];const max=Math.max(...st.groups.map(g=>g[1].sums[n0]||0),1);
+  const tbl=`<div class="tblw"><table style="min-width:420px"><tr><th>${esc(st.grpCol!=null?st.head[st.grpCol]:'区分')}</th><th>件数</th>${st.numCols.map(i=>`<th>${esc(st.head[i])} 合計</th>`).join('')}</tr>${st.groups.map(g=>`<tr><td>${esc(g[0])}</td><td>${g[1].count}</td>${st.numCols.map(i=>`<td>${fmtN(g[1].sums[i])}</td>`).join('')}</tr>`).join('')}<tr><td><b>合計</b></td><td><b>${st.rows}</b></td>${st.numCols.map(i=>`<td><b>${fmtN(st.totals[i])}</b></td>`).join('')}</tr></table></div>`;
+  const bars=n0!=null?`<p class="small muted" style="margin-top:10px">${esc(st.head[n0])}（${esc(st.grpCol!=null?st.head[st.grpCol]:'')}別）</p>`+st.groups.map(g=>`<div class="barrow"><span>${esc(g[0])}</span><div class="bar"><i style="width:${(g[1].sums[n0]/max*100).toFixed(1)}%"></i></div><span>${fmtN(g[1].sums[n0])}</span></div>`).join(''):'';
+  ai(chat,`<p>「${esc(f.name)}」（${st.rows}行）を集計しました。区分は <b>${esc(f.cls)}</b>、処理は ${esc(MODELS[S.ui.model])} の想定です。</p>${tbl}${bars}<p>この集計結果を<b>新しいCSVファイル</b>として作成できます（元ファイルは変更しません）。</p>`,{conf:'高'});
+  const csvOut='\uFEFF'+[[st.grpCol!=null?st.head[st.grpCol]:'区分','件数'].concat(st.numCols.map(i=>st.head[i]+'_合計'))].concat(st.groups.map(g=>[g[0],g[1].count].concat(st.numCols.map(i=>g[1].sums[i])))).concat([['合計',st.rows].concat(st.numCols.map(i=>st.totals[i]))]).map(r=>r.map(csvCell).join(',')).join('\r\n');
+  prop(chat,'FILE_CREATE',{filename:'集計結果_'+f.name.replace(/\.[^.]+$/,'')+'.csv',content:csvOut},{target:'作業フォルダに「集計結果_'+f.name.replace(/\.[^.]+$/,'')+'.csv」を新規作成'})},
+ log(chat,t,a,u){const f=a.find(x=>x.kind==='text');const lines=(f.text||'').split(/\r?\n/).filter(Boolean);const er=lines.filter(l=>/ERROR|エラー|FAIL|失敗/i.test(l));const wn=lines.filter(l=>/WARN|警告/i.test(l));
+  const vpnLike=/vpn|adapter/i.test(f.text||'');
+  ai(chat,`<p>「${esc(f.name)}」を解析しました：全 ${lines.length} 行／エラー <b>${er.length}</b> 件／警告 <b>${wn.length}</b> 件。</p>${er.length?`<p class="small muted">主なエラー（先頭3件）</p><pre style="white-space:pre-wrap;background:var(--code);padding:8px 10px;border-radius:8px;font-size:12px">${esc(er.slice(0,3).join('\n'))}</pre>`:''}${vpnLike?`<p><b>見立て：</b>VPNの仮想アダプタが無効になっている可能性があります。この端末を診断しますか？</p><div class="btns"><button class="btn pri sm" data-act="quickText" data-t="VPNにつながらないので診断してほしい">🔍 この端末のVPNを診断</button></div>`:`<div class="btns">${escBtn('IT端末','通常','ログを担当者に見てもらう')}</div>`}`,{conf:vpnLike?'中':'低'})},
+ otherfile(chat,t,a,u){const f=a.find(x=>x.kind!=='csv'&&x.kind!=='text');ai(chat,`<p>「${esc(f.name)}」を受け付けました（区分：${esc(f.cls)}）。</p><p class="muted">本サンプルでは、画像の文字読み取り（OCR）やPDF・Office文書の本文抽出は実装していません。本番では社内サーバ側で抽出してから、閲覧権限とデータ区分を確認して解析する想定です。困っている内容を文章でも入力してください。</p>`,{conf:'—'})},
+ csvneed(chat){ai(chat,`<p>集計したいCSVファイルを📎から添付してください（PC内のファイルはこのブラウザ内だけで読み込み、外部には送信しません）。</p><div class="btns"><button class="btn sm" data-act="sampleAtt" data-k="csv">🧪 サンプル「工事日報.csv」を添付</button></div>`,{conf:'—'})},
+ thanks(chat){ai(chat,'<p>どういたしまして。ほかにも困っていることがあれば、いつでも相談してください。</p>',{conf:'—'})},
+ kb(chat,t,a,u){const r=kbSearch(S,u.id,t);auditAdd(S,u.id,'kb_answer',{hits:r.hits.map(h=>h.k.id),hidden:r.hidden});
+  if(r.hits.length){const s=r.hits[0].s;addMsg(chat,{kind:'kb',hits:r.hits.map(h=>h.k.id),conf:s>=6?'高':s>=3?'中':'低',model:MODELS[S.ui.model]})}
+  else ai(chat,`<p>閲覧できる社内資料の中に、確信を持って回答できる情報が見つかりませんでした。<b>推測では回答しません。</b></p><div class="btns">${escBtn('業務・規程','通常','担当部門に聞く')}</div>`,{conf:'低'})}
+};
+function respond(chat,text,atts){const u=me();const intent=detectIntent(text,atts);S.stats.intents[intent]=(S.stats.intents[intent]||0)+1;
+ if(intent!=='whistle')auditAdd(S,u.id,'chat_query',{intent,chars:text.length,atts:atts.length});
+ H[intent](chat,text,atts,u,S.devices[u.device])}
+function parseCSV(t,dl){const rows=[];let row=[],f='',q=false;for(let i=0;i<t.length;i++){const c=t[i];if(q){if(c==='"'){if(t[i+1]==='"'){f+='"';i++}else q=false}else f+=c}else{if(c==='"')q=true;else if(c===dl){row.push(f);f=''}else if(c==='\n'){row.push(f);rows.push(row);row=[];f=''}else if(c!=='\r')f+=c}}if(f!==''||row.length){row.push(f);rows.push(row)}return rows.filter(r=>r.some(x=>x.trim()!==''))}
+function csvStats(text,dl){const rows=parseCSV(text,dl);if(rows.length<2)return null;const head=rows[0].map(h=>h.trim());const body=rows.slice(1);
+ const isNum=v=>v!==''&&!isNaN(Number(String(v).replace(/,/g,'')));const isDate=v=>/^\d{4}[-\/]\d{1,2}[-\/]\d{1,2}/.test(v);const num=v=>Number(String(v||'0').replace(/,/g,''))||0;
+ const numCols=head.map((h,i)=>i).filter(i=>{const vs=body.map(r=>(r[i]||'').trim()).filter(Boolean);return vs.length&&vs.every(isNum)});
+ let grpCol=head.map((h,i)=>i).find(i=>!numCols.includes(i)&&!body.every(r=>isDate((r[i]||'').trim())));
+ const totals={},G={};numCols.forEach(i=>totals[i]=0);
+ body.forEach(r=>{const g=grpCol!=null?(r[grpCol]||'（空欄）').trim():'全体';G[g]=G[g]||{count:0,sums:{}};G[g].count++;numCols.forEach(i=>{const v=num(r[i]);totals[i]+=v;G[g].sums[i]=(G[g].sums[i]||0)+v})});
+ const groups=Object.entries(G).sort((a,b)=>(b[1].sums[numCols[0]]||0)-(a[1].sums[numCols[0]]||0)).slice(0,12);
+ return {head,rows:body.length,numCols,grpCol:grpCol==null?null:grpCol,totals,groups}}
+const fmtN=n=>(Math.round((n||0)*100)/100).toLocaleString('ja-JP');
+const csvCell=v=>{const s=String(v);return /[",\r\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s};
+
+/* ============ 送信 ============ */
+function send(textOverride){const inp=document.getElementById('inp');let text=(textOverride!=null?textOverride:(inp?inp.value:'')).trim();const atts=UI.pending.splice(0);
+ if(!text&&!atts.length)return;
+ const chat=ensureChat();const u=me();const placeholder=!text;if(!text)text='（ファイルを添付しました）';
+ const isWh=detectIntent(text,[])==='whistle';const dl=dlpMask(text);
+ atts.forEach(a=>{const pol=dataPolicy(a.cls,S.ui.model);a.ok=pol.ok;a.msg=pol.msg;auditAdd(S,u.id,pol.ok?'file_analyze':'policy_blocked',{ext:a.ext,cls:a.cls,model:S.ui.model})});
+ addMsg(chat,{kind:'user',text:isWh?'（専用窓口へご案内する内容のため、本文はこの窓口に保存していません）':dl.text,atts:atts.map(a=>({name:a.name,size:a.size,cls:a.cls,ok:a.ok,msg:a.msg}))});
+ if(chat.title==='新しい相談')chat.title=isWh?'専用窓口のご案内':(placeholder&&atts[0]?atts[0].name:dl.text).slice(0,28);
+ if(dl.found.length)auditAdd(S,u.id,'dlp_masked',{types:dl.found});
+ S.stats.queries++;if(inp){inp.value='';autosize(inp)}
+ UI.typing=true;UI.stick=true;save();refresh();renderPend();
+ setTimeout(()=>{UI.typing=false;
+  if(dl.found.length)ai(chat,`<p>🔏 入力に <b>${esc(dl.found.join('、'))}</b> と思われる情報があったため、保存・AI送信の前に伏せ字にしました。パスワード等はチャットに入力しないでください。</p>`,{conf:'—'});
+  const ng=atts.filter(a=>!a.ok);if(ng.length)addMsg(chat,{kind:'block',tone:'warn',title:'📎 添付ファイルの一部をAIに渡していません',html:ng.map(a=>`<p>・${esc(a.name)}（${esc(a.cls)}）：${esc(a.msg)}</p>`).join('')});
+  const ok=atts.filter(a=>a.ok);
+  if(!(placeholder&&!ok.length))respond(chat,isWh?text:dl.text,ok);
+  save();refresh()},700)}
+
+/* ============ 実行（アニメーション付き） ============ */
+function runExec(chat,propId){const p=S.proposals[propId];const v=serverVerify(S,p);
+ const m=addMsg(chat,{kind:'exec',propId,checks:v.checks,steps:[],total:(OPS[p.opId].steps||[]).length,state:v.ok?'running':'denied'});
+ if(!v.ok){auditAdd(S,'system','exec_denied',{prop:propId,failed:v.checks.filter(c=>!c[1]).map(c=>c[0])});save();refresh();return}
+ p.status='executing';auditAdd(S,'agent','exec_started',{prop:propId,device:p.deviceId});save();refresh();
+ const steps=OPS[p.opId].steps||[];let i=0;
+ const tick=()=>{if(S.estop){m.state='aborted';p.status='aborted';auditAdd(S,'agent','exec_aborted',{prop:propId,reason:'緊急停止'});save();refresh();return}
+  if(i<steps.length-1){m.steps.push(steps[i]);i++;save();refresh();setTimeout(tick,650);return}
+  const r=applyOp(S,p);m.checks=r.checks||m.checks;
+  if(r.ok){m.steps.push(steps[steps.length-1]);m.state='done';m.verify=r.verify}else{m.state='failed';m.msg=r.msg;if(p.status==='executing')p.status='failed';consentCard(chat,'IT端末','通常',null,propId)}
+  save();refresh()};
+ setTimeout(tick,450)}
+
+/* ============ 描画 ============ */
+const NAV=[['chat','💬','AI相談'],['approvals','✅','承認キュー'],['tickets','🎫','チケット'],['knowledge','📚','ナレッジ'],['org','🏢','組織別の使い方'],['ops','🔐','操作許可リスト'],['audit','🧾','監査ログ'],['tests','🧪','受け入れ試験'],['dash','📊','ダッシュボード'],['settings','⚙️','設定・説明']];
+const $=s=>document.querySelector(s);
+function badge(cls,txt){return `<span class="badge ${cls}">${esc(txt)}</span>`}
+function lvTag(l){return `<span class="lv lv${l}">L${l} ${LVN[l]}</span>`}
+function pendingCount(){return Object.values(S.proposals).filter(p=>p.status==='pending_admin').length}
+function renderSide(){const pc=pendingCount();
+ $('#nav').innerHTML=NAV.map(n=>`<button class="${S.ui.view===n[0]?'on':''}" data-act="nav" data-v="${n[0]}"><span>${n[1]}</span>${n[2]}${n[0]==='approvals'&&pc?`<span class="cnt">${pc}</span>`:''}</button>`).join('');
+ const mine=S.chats.filter(c=>c.userId===S.ui.user);
+ $('#hist').innerHTML=mine.length?mine.map(c=>`<div class="hi ${c.id===S.ui.chat?'on':''}"><button class="t" data-act="openChat" data-id="${c.id}" title="${esc(c.title)}">${esc(c.title)}</button><button class="x" data-act="delChat" data-id="${c.id}" aria-label="削除">✕</button></div>`).join(''):'<div class="small" style="padding:6px 12px;color:#7d8ea8">まだ相談はありません</div>'}
+function renderTop(){const u=me();$('#vtitle').textContent=(NAV.find(n=>n[0]===S.ui.view)||NAV[0])[2];
+ const ps=$('#persona');ps.innerHTML=Object.values(USERS).map(x=>`<option value="${x.id}" ${x.id===u.id?'selected':''}>${esc(x.name)}｜${esc(DEPTS[x.dept].name)}</option>`).join('');
+ $('#rolebadge').textContent=ROLES[u.role];
+ const es=$('#estop');es.classList.toggle('on',S.estop);es.textContent=S.estop?(u.role==='itadmin'?'🔓 緊急停止を解除':'🛑 緊急停止中'):'🛑 緊急停止';
+ const b=$('#banner');if(S.estop){b.className='banner ng';b.textContent='🛑 緊急停止中：すべてのPC操作の実行を止めています（相談・資料検索は利用できます）。解除はIT端末管理者のみ。'}
+ else{b.className='banner';b.textContent='🧪 企画検証用サンプル：回答はルールベースの模擬で、AIモデル・実PC・実ファイル・社内システムには一切接続しません。Yを押しても現実の操作は行われません。'}
+ document.querySelector('.devtgl').style.display=S.ui.view==='chat'&&window.innerWidth<=1180?'inline-block':'none'}
+function refresh(){renderSide();renderTop();if(S.ui.view==='chat'){if(!$('#msgs'))renderView();else{renderMsgs();renderDev()}}else renderView()}
+function renderView(){const v=$('#view');v.className='view'+(S.ui.view==='chat'?' chatv':'');
+ const f={chat:viewChat,approvals:viewApprovals,tickets:viewTickets,knowledge:viewKnowledge,org:viewOrg,ops:viewOps,audit:viewAudit,tests:viewTests,dash:viewDash,settings:viewSettings}[S.ui.view]||viewChat;
+ v.innerHTML=f();if(S.ui.view==='chat'){renderMsgs();renderDev();renderPend();const ta=$('#inp');if(ta){autosize(ta)}}
+ if(S.ui.view==='org')filterOrg();if(S.ui.view==='knowledge')filterKb()}
+function viewChat(){ensureChat();return `<div class="chatwrap"><div class="chatcol"><div class="msgs" id="msgs"></div><div class="composer">
+ <div class="chips">${QUICK.map((q,i)=>`<button class="chip" data-act="quick" data-i="${i}">${esc(q.l)}</button>`).join('')}</div>
+ <div class="pend" id="pend"></div>
+ <div class="inrow"><div class="attwrap"><button class="ibtn" data-act="attMenu" title="ファイルを添付" aria-label="ファイルを添付">📎</button><div class="attmenu hide" id="attmenu"><button data-act="pickFile">💻 PCから選択（このブラウザ内でのみ読込）</button><button data-act="sampleAtt" data-k="csv">🧪 サンプル：工事日報.csv</button><button data-act="sampleAtt" data-k="log">🧪 サンプル：VPN接続ログ.log</button><button data-act="sampleAtt" data-k="hr">🧪 サンプル：人事評価一覧_2026.xlsx</button><button data-act="sampleAtt" data-k="mitsu">🧪 サンプル：見積書_有明橋梁.pdf</button></div></div>
+ <textarea id="inp" rows="1" placeholder="困っていることを普通の言葉で入力（Enterで送信／Shift+Enterで改行）" aria-label="相談内容"></textarea><button class="send" data-act="send">送信</button></div>
+ <div class="cfoot">モデル：<select id="model" aria-label="AIモデル">${Object.entries(MODELS).map(([k,v])=>`<option value="${k}" ${S.ui.model===k?'selected':''}>${v}</option>`).join('')}</select><span>添付時に情報区分を確認します（機密→社内モデルのみ／極秘→扱わない）。</span></div>
+ </div></div><aside class="devpanel" id="devpanel"></aside></div>`}
+function renderPend(){const el=$('#pend');if(!el)return;el.innerHTML=UI.pending.map(a=>`<div class="pa">📄 ${esc(a.name)} <span class="muted">${(a.size/1024).toFixed(1)}KB</span> 区分：<select data-chg="cls" data-id="${a.id}">${CLASSES.map(c=>`<option ${a.cls===c?'selected':''}>${c}</option>`).join('')}</select>${a.note?`<span class="muted">${esc(a.note)}</span>`:''}<button class="btn sm" data-act="removeAtt" data-id="${a.id}" aria-label="取り消し">✕</button></div>`).join('')}
+function msgMeta(m){const p=[];if(m.model)p.push('🧠 '+esc(m.model));if(m.conf&&m.conf!=='—')p.push('確信度：'+esc(m.conf));p.push(esc(m.at.slice(11,16)));return `<div class="meta">${p.join('　')}${(m.src||[]).filter(id=>kbById(S,id)&&canSee(S.ui.user,kbById(S,id))).map(id=>`<span class="src" data-act="kbOpen" data-id="${id}">📚 ${id}</span>`).join('')}</div>`}
+function renderMsgs(){const c=activeChat();const box=$('#msgs');if(!box)return;if(!c){box.innerHTML='';return}
+ const dmap={};c.messages.forEach(m=>{if(m.kind==='diag')dmap[m.id]=m});
+ let h='';for(const m of c.messages){if(m.after&&dmap[m.after]&&dmap[m.after].shown<dmap[m.after].steps.length)continue;h+=renderMsg(m,c)}
+ if(UI.typing)h+=`<div class="msg"><div class="av">🤖</div><div class="body"><div class="typing"><span></span><span></span><span></span></div></div></div>`;
+ box.innerHTML=h;if(UI.stick)box.scrollTop=box.scrollHeight}
+function wrapAI(inner,m){return `<div class="msg"><div class="av">🤖</div><div class="body">${inner}${m?msgMeta(m):''}</div></div>`}
+function renderMsg(m,c){const u=USERS[c.userId];
+ switch(m.kind){
+ case 'welcome':return wrapAI(`<div class="aitext"><p>こんにちは、<b>${esc(u.name)}</b>さん。みらいAI窓口（サンプル）です。PCの困りごと、社内手続の確認、ファイルの集計などを相談できます。</p><p>PCの修復は <b>①相談 → ②調べる（読み取りのみ） → ③提案 → ④あなたが Y／N → ⑤結果確認</b> の順に進みます。<b>AIが勝手に操作することはありません。</b></p><p class="small muted">この利用者で試せること：</p><ul class="small">${TIPS[u.id].map(t=>`<li>${esc(t)}</li>`).join('')}</ul></div>`);
+ case 'user':return `<div class="msg user"><div class="av">🙋</div><div class="body"><div class="bub">${esc(m.text)}</div>${(m.atts||[]).map(a=>`<span class="attchip ${a.ok?'':'ng'}">${a.ok?'📎':'🚫'} ${esc(a.name)}・${esc(a.cls)}</span>`).join('')}<div class="meta">${esc(m.at.slice(11,16))}</div></div></div>`;
+ case 'ai':return wrapAI(`<div class="aitext">${m.html}</div>`,m);
+ case 'block':return wrapAI(`<div class="card ${m.tone}"><div class="ch">${esc(m.title)}</div><div class="aitext">${m.html}</div></div>`,{at:m.at});
+ case 'diag':{const n=m.shown;return wrapAI(`<div class="card"><div class="ch">🔍 ${esc(m.title)}<span class="r">端末 ${esc(m.device)}</span></div><ul class="steps">${m.steps.slice(0,n).map(s=>`<li><span class="k"><span class="dot ${s[2]}"></span>${esc(s[0])}</span><span>${esc(s[1])}</span></li>`).join('')}${n<m.steps.length?`<li class="muted">… 確認中（${n}/${m.steps.length}）</li>`:''}</ul><div class="small muted">取得するのは設定・サービス状態・件数のみ。ファイルの中身・閲覧履歴・画面は取得しません。</div></div>`,{at:m.at})}
+ case 'kb':{const hits=m.hits.map(id=>kbById(S,id)).filter(Boolean);return wrapAI(`<div class="card"><div class="ch">📚 社内資料からの回答<span class="r">閲覧権限の範囲で検索（権限外の資料は題名も表示しません）</span></div>${hits.map(k=>`<div class="kbhit"><b>${esc(k.title)}</b> ${badge('mute',SCOPE_LABEL[k.scope])}<div class="small muted">${esc(k.id)}｜所管：${esc(k.owner)}｜更新：${esc(k.updated)}</div><div>${esc(k.body.length>110?k.body.slice(0,110)+'…':k.body)}</div><button class="btn sm" style="margin-top:4px" data-act="kbOpen" data-id="${k.id}">全文を見る</button></div>`).join('')}${m.conf==='低'?'<p class="small" style="margin-top:8px">⚠️ 関連が薄い可能性があります。</p>':''}<div class="btns">${escBtn('業務・規程','通常','これで解決しない（担当部門へ）')}</div></div>`,{at:m.at,model:m.model,conf:m.conf,src:m.hits})}
+ case 'proposal':return wrapAI(renderProposal(S.proposals[m.propId],c),{at:m.at});
+ case 'exec':return wrapAI(renderExec(m,c),{at:m.at});
+ case 'consent':return wrapAI(renderConsent(m),{at:m.at});
+ case 'ticket':{const t=S.tickets.find(x=>x.id===m.ticketId);if(!t)return '';return wrapAI(`<div class="card ok"><div class="ch">🎫 受付番号 ${esc(t.id)}<span class="r">${badge(t.status==='解決'?'ok':'info',t.status)}</span></div><dl class="kv"><dt>引継ぎ先</dt><dd>${esc(t.group)}</dd><dt>優先度</dt><dd>${esc(t.priority)}</dd><dt>共有した情報</dt><dd>${Object.keys(t.shared).map(esc).join('、')}</dd>${t.resolution?`<dt>回答</dt><dd>${esc(t.resolution)}</dd>`:''}</dl><div class="btns"><button class="btn sm" data-act="ticketOpen" data-id="${t.id}">チケットを見る</button></div></div>`,{at:m.at})}
+ }return ''}
+function renderProposal(p,c){if(!p)return '';const op=OPS[p.opId];const isOwner=S.ui.user===p.userId;const st=PST[p.status];
+ let foot='';
+ if(p.status==='proposed')foot=isOwner?`<p style="margin:10px 0 0"><b>この操作を依頼しますか？</b></p><div class="btns"><button class="btn y" data-act="Y" data-id="${p.id}">Y：この操作を承認</button><button class="btn n" data-act="N" data-id="${p.id}">N：実行しない</button><button class="btn" data-act="consult" data-id="${p.id}">🙋 担当者に相談</button></div>`:'<p class="muted">依頼者本人の判断待ちです。</p>';
+ else if(p.status==='pending_admin')foot=`<div class="note">⏳ 本人承認済み。<b>IT管理者の承認待ち</b>です（承認キューに登録）。デモでは右上で「田中 誠（IT端末管理者）」に切り替えて承認できます。</div>`;
+ else if(p.status==='ready'&&op.level>=4)foot=`<div class="note">✅ IT管理者（${esc(uname(p.adminDecision.by))}）が承認しました${p.adminDecision.comment?'：「'+esc(p.adminDecision.comment)+'」':''}</div>${isOwner?`<div class="btns"><button class="btn pri" data-act="execReady" data-id="${p.id}">▶ 立会いのもと実行する</button></div>`:''}`;
+ else if(p.status==='admin_rejected')foot=`<div class="note">⛔ IT管理者が却下しました${p.adminDecision.comment?'：「'+esc(p.adminDecision.comment)+'」':''}。端末は変更していません。</div><div class="btns">${escBtn('IT端末')}</div>`;
+ else if(p.status==='rejected')foot=`<div class="note">N を選択：何も実行していません。</div>`;
+ return `<div class="card"><div class="ch">🛠️ 修復・作業の提案 ${lvTag(op.level)} ${badge(st[1],st[0])}<span class="r">${esc(p.id)}</span></div>
+ <dl class="kv"><dt>操作</dt><dd>${esc(op.name)} <code>${esc(p.opId)}</code></dd><dt>対象</dt><dd>${esc(p.meta.target||'—')}</dd><dt>影響</dt><dd>${esc(op.impact||'—')}</dd><dt>戻し方</dt><dd>${esc(op.rollback||'—')}</dd><dt>必要な承認</dt><dd>${esc(LVA[op.level])}</dd><dt>承認ハッシュ</dt><dd class="hash">${esc(p.hash.slice(0,16))}…（内容が変わると承認は無効）</dd></dl>${foot}</div>`}
+function renderExec(m,c){const p=S.proposals[m.propId];const op=OPS[p.opId];const isOwner=S.ui.user===p.userId;
+ const chk=`<div class="small muted" style="margin-top:4px">サーバ側の実行前検証</div><ul class="steps">${m.checks.map(x=>`<li><span>${x[1]?'✅':'❌'}</span><span>${esc(x[0])}</span></li>`).join('')}</ul>`;
+ const stl=(op.steps||[]);const prog=`<div class="small muted" style="margin-top:6px">PCエージェントの作業</div><ul class="steps">${stl.map((s,i)=>`<li><span>${i<m.steps.length?'✅':(m.state==='running'&&i===m.steps.length?'⏳':'・')}</span><span class="${i<m.steps.length?'':'muted'}">${esc(s)}</span></li>`).join('')}</ul>`;
+ let out='',tone='',head='⚙️ 実行';
+ if(m.state==='denied'){tone='ng';head='⛔ 実行しませんでした';out='<p>実行前検証で不合格の項目があるため、端末は変更していません。</p>'}
+ else if(m.state==='aborted'){tone='ng';head='🛑 中断しました';out='<p>緊急停止（または再読み込み）により中断しました。端末への変更は適用していません。</p>'}
+ else if(m.state==='failed'){tone='ng';head='❌ 失敗しました';out=`<p>${esc(m.msg||'')}</p><p>担当者への引継ぎをご案内します（下のカード）。</p>`}
+ else if(m.state==='done'){tone='ok';head='🏁 完了・結果の確認';out=`<ul class="steps">${(m.verify||[]).map(v=>`<li><span class="k">${esc(v[0])}</span><span>${esc(v[1])}</span></li>`).join('')}</ul>`;
+  const btn=[];if(p.result&&p.result.file)btn.push(`<button class="btn pri sm" data-act="dl" data-id="${p.id}">⬇️ 作成したファイルを保存</button>`);
+  if(isOwner&&!m.answered){btn.push(`<button class="btn y sm" data-act="resolved" data-mid="${m.id}">✅ 解決した</button>`,`<button class="btn sm" data-act="notResolved" data-mid="${m.id}">🙋 まだ困っている</button>`)}
+  if(p.status==='done'&&op.rollbackable&&isOwner)btn.push(`<button class="btn n sm" data-act="rollback" data-id="${p.id}">↩️ 元に戻す</button>`);
+  if(p.status==='rolled_back')out+='<p class="small">↩️ 元に戻しました（変更前の状態を復元）。</p>';
+  if(m.answered==='yes')out+='<p class="small">✅ 「解決した」と回答済み。記録に残しました。</p>';
+  out+=`<div class="btns">${btn.join('')}</div>`}
+ return `<div class="card ${tone}"><div class="ch">${head} ${lvTag(op.level)}<span class="r">${esc(p.id)}｜${esc(op.name)}</span></div>${chk}${m.state!=='denied'?prog:''}${out}</div>`}
+function renderConsent(m){const g=GROUPS[m.category]||GROUPS['AI窓口'];
+ if(m.state==='sent')return `<div class="card"><div class="ch">📨 担当者へ引き継ぎました</div><p class="small muted">共有に同意した情報のみを送りました。</p></div>`;
+ if(m.state==='cancelled')return `<div class="card"><div class="ch">引継ぎを取りやめました</div></div>`;
+ const it=[['summary','相談内容（要約）：'+(m.ctx.summary||'').slice(0,60),true,true]];
+ if(m.ctx.diag.length)it.push(['diag','AIの診断結果（'+m.ctx.diag.length+'項目）',m.sel.diag,false]);
+ it.push(['device','端末ID・OS：'+m.ctx.device,m.sel.device,false]);
+ if(m.ctx.atts.length)it.push(['atts','添付ファイル名：'+m.ctx.atts.join('、')+'（中身は送りません）',m.sel.atts,false]);
+ return `<div class="card warn"><div class="ch">🙋 担当者への引継ぎ（あなたの同意が必要です）${m.priority==='緊急'?badge('ng','緊急'):''}</div><dl class="kv"><dt>引継ぎ先</dt><dd>${esc(g)}</dd><dt>区分</dt><dd>${esc(m.category)}</dd></dl><p class="small">担当者に共有する情報を選んでください。</p>${it.map(x=>`<label style="display:block;margin:3px 0"><input type="checkbox" data-ck="${x[0]}" data-mid="${m.id}" ${x[2]?'checked':''} ${x[3]?'disabled':''}> ${esc(x[1])}${x[3]?' <span class="muted small">（必須）</span>':''}</label>`).join('')}<div class="btns"><button class="btn pri" data-act="consentSend" data-mid="${m.id}">同意して引き継ぐ</button><button class="btn" data-act="consentCancel" data-mid="${m.id}">やめる</button></div></div>`}
+function renderDev(){const el=$('#devpanel');if(!el)return;const u=me();const d=S.devices[u.device];
+ const row=(k,v,s)=>`<div class="devrow"><span>${k}</span><span><span class="dot ${s}"></span>${esc(v)}</span></div>`;
+ const ownErr=d.printer.jobs.filter(j=>j.owner===u.id&&j.status==='エラー').length;
+ el.innerHTML=`<h4>🖥️ この端末（PCエージェント・模擬）</h4><div class="small muted">${esc(d.id)}｜${esc(d.model)}｜${esc(d.os)}｜エージェント ${esc(d.agent)}</div>
+ <div style="margin-top:8px">${row('印刷スプーラ',d.printer.spooler==='running'?'実行中':'停止',d.printer.spooler==='running'?'ok':'ng')}${row('印刷キュー',d.printer.jobs.length+'件（本人エラー '+ownErr+'）',ownErr?'warn':'ok')}${row('VPN',(d.vpn.adapter==='enabled'?'アダプタ有効':'アダプタ無効')+'／'+(d.vpn.connected?'接続中':'未接続'),d.vpn.connected?'ok':'ng')}${row('音声出力',d.audio.default,/HDMI/.test(d.audio.default)?'warn':'ok')}${row('空き容量',d.disk.freeGB+' / '+d.disk.totalGB+' GB',d.disk.freeGB<15?'ng':'ok')}${row('一時ファイル',d.disk.tempGB+' GB'+(d.disk.quarantineGB?'（隔離 '+d.disk.quarantineGB+' GB）':''),d.disk.tempGB>2?'warn':'ok')}${row('共有フォルダ権限',d.share.access==='ok'?'あり':'なし',d.share.access==='ok'?'ok':'ng')}${row('工事写真の整理',d.files.renamedCopy?'整理済みコピーあり':'未整理',d.files.renamedCopy?'ok':'mute')}</div>
+ <div class="note">🔎 <b>診断で取得する情報</b>：設定・サービス状態・件数のみ。<br>🚫 <b>取得しない</b>：ファイルの中身、閲覧履歴、画面、キー入力。</div>
+ <div class="note"><b>${esc(u.name)}</b>（${esc(ROLES[u.role])}・${esc(DEPTS[u.dept].name)}）で試せること<ul class="tips" style="padding-left:18px;margin:6px 0 0">${TIPS[u.id].map(t=>`<li>${esc(t)}</li>`).join('')}</ul></div>
+ <button class="btn sm" data-act="injectFaults">↻ この端末のサンプル障害を再設定</button> <button class="btn sm devclose" data-act="toggleDev" style="display:${window.innerWidth<=1180?'inline-block':'none'}">閉じる</button>`}
+/* ---- 承認キュー ---- */
+function viewApprovals(){const u=me();const all=Object.values(S.proposals).filter(p=>OPS[p.opId].level>=4&&p.status!=='proposed');
+ const card=p=>{const op=OPS[p.opId];const r=USERS[p.userId];return `<div class="card" style="margin-bottom:12px"><div class="ch">${esc(p.id)} ${lvTag(op.level)} ${badge(PST[p.status][1],PST[p.status][0])}<span class="r">申請 ${esc(p.userDecision?p.userDecision.at:p.created)}</span></div><dl class="kv"><dt>依頼者</dt><dd>${esc(r.name)}（${esc(DEPTS[r.dept].name)}）</dd><dt>端末</dt><dd>${esc(p.deviceId)}</dd><dt>操作</dt><dd>${esc(op.name)} <code>${esc(p.opId)}</code></dd><dt>対象</dt><dd>${esc(p.meta.target||'')}</dd><dt>影響</dt><dd>${esc(op.impact)}</dd><dt>戻し方</dt><dd>${esc(op.rollback||'—')}</dd><dt>本人承認</dt><dd>${p.userDecision&&p.userDecision.hash?'Y（'+esc(p.userDecision.at)+'）':'—'}</dd><dt>承認ハッシュ</dt><dd class="hash">${esc((p.approvedHash||'').slice(0,24))}…</dd>${p.adminDecision?`<dt>管理者判断</dt><dd>${esc(uname(p.adminDecision.by))}：${p.adminDecision.dec==='reject'?'却下':'承認'} ${esc(p.adminDecision.comment||'')}</dd>`:''}</dl>${p.status==='pending_admin'&&u.role==='itadmin'?`<textarea class="cm" id="cm-${p.id}" placeholder="コメント（任意）例：周囲の端末への影響なしを確認"></textarea><div class="btns"><button class="btn y" data-act="adminApprove" data-id="${p.id}">承認する</button><button class="btn n" data-act="adminReject" data-id="${p.id}">却下する</button></div>`:''}</div>`};
+ const pend=all.filter(p=>p.status==='pending_admin'),done=all.filter(p=>p.status!=='pending_admin');
+ if(u.role!=='itadmin'){const mine=all.filter(p=>p.userId===u.id);return `<div class="vh"><div><h2>✅ 承認キュー</h2><p>設定変更（L4）は本人のYに加えてIT端末管理者の承認が必要です。承認の操作はIT端末管理者のみ行えます。</p></div></div><div class="note">デモ：右上の利用者切替で <b>田中 誠（IT端末管理者）</b> を選ぶと承認・却下できます。現在の承認待ち：<b>${pend.length}件</b></div><div class="sec">あなたの申請</div>${mine.length?mine.map(card).join(''):'<p class="muted">L4の申請はまだありません。佐藤 花子で「VPNにつながらない」を試すと申請が作られます。</p>'}`}
+ return `<div class="vh"><div><h2>✅ 承認キュー</h2><p>周囲の端末への影響・戻し方を確認して判断してください。自分の申請は承認できません（職務分離）。</p></div></div><div class="sec">承認待ち（${pend.length}件）</div>${pend.length?pend.map(card).join(''):'<p class="muted">承認待ちの申請はありません。</p>'}<div class="sec">判断済み・実行済み</div>${done.length?done.map(card).join(''):'<p class="muted">まだありません。</p>'}`}
+/* ---- チケット ---- */
+function visibleTickets(){const u=me();return u.role==='employee'?S.tickets.filter(t=>t.userId===u.id):S.tickets}
+function viewTickets(){const u=me();const ts=visibleTickets();
+ return `<div class="vh"><div><h2>🎫 チケット（問い合わせ管理）</h2><p>${u.role==='employee'?'あなたの問い合わせのみ表示しています。':u.role==='itadmin'?'全件を表示。行をクリックして対応・回答できます。':'全件を閲覧できます（監査担当は変更不可）。'}</p></div></div>
+ <div class="tblw"><table><tr><th>受付番号</th><th>状態</th><th>優先度</th><th>区分</th><th>引継ぎ先</th><th>依頼者</th><th>要約</th><th>受付</th></tr>${ts.map(t=>`<tr class="click" data-act="ticketOpen" data-id="${t.id}"><td><b>${esc(t.id)}</b></td><td>${badge(t.status==='解決'?'ok':t.status==='受付'?'warn':'info',t.status)}</td><td>${t.priority==='緊急'?badge('ng','緊急'):esc(t.priority)}</td><td>${esc(t.category)}</td><td>${esc(t.group)}</td><td>${esc(uname(t.userId))}</td><td>${esc(t.summary)}</td><td class="small">${esc(t.created)}</td></tr>`).join('')||'<tr><td colspan="8" class="muted">チケットはありません。AI相談で「担当者に相談」を選ぶと起票されます。</td></tr>'}</table></div>`}
+function openTicket(id){const t=S.tickets.find(x=>x.id===id);if(!t)return;const u=me();const can=u.role==='itadmin';if(u.role==='employee'&&t.userId!==u.id){toast('このチケットは閲覧できません');return}
+ modal(`<div class="mh"><h3>🎫 ${esc(t.id)}</h3>${badge(t.status==='解決'?'ok':'info',t.status)}<button class="btn sm" data-act="closeModal">閉じる</button></div>
+ <dl class="kv"><dt>依頼者</dt><dd>${esc(uname(t.userId))}（${esc(DEPTS[t.dept].name)}）</dd><dt>区分／優先度</dt><dd>${esc(t.category)}／${esc(t.priority)}</dd><dt>引継ぎ先</dt><dd>${esc(t.group)}</dd>${t.propId?`<dt>関連する操作</dt><dd>${esc(t.propId)}（${esc(OPS[S.proposals[t.propId]?S.proposals[t.propId].opId:'KB_READ'].name)}）</dd>`:''}</dl>
+ <div class="sec" style="margin-top:12px">本人が共有に同意した情報</div><dl class="kv">${Object.entries(t.shared).map(([k,v])=>`<dt>${esc(k)}</dt><dd style="white-space:pre-wrap">${esc(Array.isArray(v)?v.join('\n'):v)}</dd>`).join('')}</dl>
+ <div class="sec">対応履歴</div><ul class="steps">${t.history.map(h=>`<li><span class="k small">${esc(h.at)}｜${esc(uname(h.by))}</span><span>${esc(h.text)}</span></li>`).join('')}</ul>
+ ${t.resolution?`<div class="note"><b>回答：</b>${esc(t.resolution)}</div>`:''}
+ ${can?`<div class="sec">担当者の対応</div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">状態：<select id="tst">${['受付','対応中','回答済み','解決'].map(s=>`<option ${t.status===s?'selected':''}>${s}</option>`).join('')}</select></div><textarea class="cm" id="tres" placeholder="回答・対応内容">${esc(t.resolution)}</textarea><label class="small" style="display:block;margin:6px 0"><input type="checkbox" id="tfaq"> 解決内容をFAQ候補として提出（公開前に人がレビュー）</label><div class="btns"><button class="btn pri" data-act="ticketSave" data-id="${t.id}">保存</button></div>`:''}`)}
+/* ---- ナレッジ ---- */
+function viewKnowledge(){const u=me();const fc=S.faqCandidates.filter(f=>f.status==='review');
+ return `<div class="vh"><div><h2>📚 ナレッジ（社内資料・FAQ）</h2><p>${esc(u.name)}さんの閲覧権限（${DEPTS[u.dept].scopes.map(s=>SCOPE_LABEL[s]).join('・')}）で表示しています。権限外の資料は一覧にも出ません。</p></div><span class="sp"></span><input class="search" id="kbq" placeholder="🔎 資料を検索（例：印刷、経費、VPN）" aria-label="資料を検索"></div>
+ <div class="grid" id="kblist"></div>
+ <div class="sec">🔁 FAQ化の流れ：解決記録 → FAQ候補 → 人がレビュー → 公開</div>
+ ${fc.length?fc.map(f=>`<div class="card" style="margin-bottom:10px"><div class="ch">📝 FAQ候補 ${esc(f.id)} ${badge('warn','レビュー待ち')}<span class="r">元チケット ${esc(f.ticket)}｜提出 ${esc(uname(f.by))}</span></div><b>${esc(f.title)}</b><p style="margin:4px 0">${esc(f.body)}</p>${u.role==='itadmin'?`<div class="btns"><button class="btn y sm" data-act="faqPublish" data-id="${f.id}">内容を確認して公開</button><button class="btn n sm" data-act="faqReturn" data-id="${f.id}">差し戻し</button></div>`:'<p class="small muted">公開の判断はIT端末管理者（またはFAQ所管者）が行います。</p>'}</div>`).join(''):'<p class="muted">レビュー待ちのFAQ候補はありません。</p>'}
+ ${S.faqs.length?`<div class="sec">公開済みFAQ（${S.faqs.length}件・AI回答の出典に使われます）</div>`+S.faqs.map(f=>`<div class="card" style="margin-bottom:8px"><b>${esc(f.id)}｜${esc(f.title)}</b><p style="margin:4px 0">${esc(f.body)}</p><div class="small muted">公開 ${esc(f.updated)}｜元チケット ${esc(f.from)}</div></div>`).join(''):''}`}
+function filterKb(){const el=$('#kblist');if(!el)return;const q=($('#kbq')||{}).value||'';const u=me();let docs=allDocs(S).filter(k=>canSee(u.id,k));if(q.trim())docs=docs.map(k=>({k,s:kbScore(k,q)+(k.title.includes(q)||k.body.includes(q)?2:0)})).filter(x=>x.s>0).sort((a,b)=>b.s-a.s).map(x=>x.k);
+ el.innerHTML=docs.map(k=>`<div class="card"><div class="ch" style="margin-bottom:4px">${esc(k.title)}</div><div class="small muted">${esc(k.id)}｜${esc(k.owner)}｜${esc(k.updated)} ${badge('mute',SCOPE_LABEL[k.scope])}</div><p style="margin:6px 0">${esc(k.body.slice(0,80))}…</p><button class="btn sm" data-act="kbOpen" data-id="${k.id}">全文</button></div>`).join('')||'<p class="muted">該当する資料はありません。</p>'}
+/* ---- 組織別 ---- */
+function viewOrg(){const groups=[...new Set(ORG.map(o=>o[0]))];return `<div class="vh"><div><h2>🏢 組織別の使い方（想定例）</h2><p>構想資料の組織別ユースケースから代表例を収録。「試す」でAI相談に入力されます。実際の問い合わせ記録ではありません。</p></div><span class="sp"></span><input class="search" id="orgq" placeholder="🔎 部署・質問を検索（例：九州、VPN、Excel）" aria-label="部署を検索"></div><p class="small muted" id="orgcnt"></p>${groups.map(g=>`<div class="orgsec"><div class="grp">${esc(g)}</div><div class="grid">${ORG.filter(o=>o[0]===g).map(o=>`<div class="orgc" data-txt="${esc((o.join(' ')).toLowerCase())}"><h3>${esc(o[1])}</h3><div class="q">💬 ${esc(o[2])}</div><div class="a">🧠 ${esc(o[3])}</div><button class="btn sm" data-act="tryCase" data-t="${esc(o[2])}">▶ 試す</button></div>`).join('')}</div></div>`).join('')}`}
+function filterOrg(){const q=(($('#orgq')||{}).value||'').trim().toLowerCase();let n=0;document.querySelectorAll('.orgc').forEach(c=>{const ok=!q||c.dataset.txt.includes(q);c.classList.toggle('hide',!ok);if(ok)n++});document.querySelectorAll('.orgsec').forEach(s=>s.classList.toggle('hide',!s.querySelector('.orgc:not(.hide)')));const cn=$('#orgcnt');if(cn)cn.textContent='表示中：'+n+'件／全'+ORG.length+'件'}
+/* ---- 操作許可リスト ---- */
+function viewOps(){return `<div class="vh"><div><h2>🔐 操作許可リストと承認ルール</h2><p>AIが提案できるのはこの一覧の操作だけです。操作が危険になるほど承認者が増えます。</p></div></div>
+ <div class="tblw"><table><tr><th>レベル</th><th>操作ID</th><th>操作</th><th>誰が許可する？</th><th>影響</th><th>元に戻す</th></tr>${Object.entries(OPS).map(([k,o])=>`<tr><td>${lvTag(o.level)}</td><td><code>${k}</code></td><td>${esc(o.name)}</td><td>${esc(LVA[o.level])}</td><td class="small">${esc(o.impact||'')}</td><td class="small">${o.level>=5?'—':esc(o.rollback||'—')}</td></tr>`).join('')}</table></div>
+ <div class="sec">入力データ区分のルール</div><div class="tblw"><table><tr><th>区分</th><th>社内ローカルLLM</th><th>承認済み外部AI</th><th>例</th></tr><tr><td>公開</td><td>✅</td><td>✅</td><td>公開済み資料、ホームページ掲載情報</td></tr><tr><td>社内限定</td><td>✅</td><td>✅（契約・審査済みに限る）</td><td>社内手順書、工事日報</td></tr><tr><td>機密</td><td>✅</td><td>❌</td><td>見積・原価・契約・顧客情報</td></tr><tr><td>極秘</td><td>❌</td><td>❌</td><td>人事評価・給与・健康情報（AIで扱わない）</td></tr></table></div>
+ <div class="sec">守るルール（実装済みの模擬）</div><div class="grid">${[['🔑','AIに管理者パスワードを見せない','パスワード等の入力は自動で伏せ字にし、AIもパスワードを扱いません。'],['📏','承認は内容と結びつける','承認ハッシュで「承認した内容」と「実行する内容」を照合。変われば無効。'],['👥','職務分離','L4は依頼者以外のIT管理者が承認。自己承認は拒否して記録。'],['🛑','いつでも止める','緊急停止中は実行前検証で必ず不合格。実行中の作業も中断。'],['🧾','改ざんできない記録','監査ログは前の記録のハッシュをつなぐチェーン構造。'],['🙈','必要最小限の情報','診断は状態・件数のみ。相談ログは意図区分と文字数のみ記録し、本文は記録しない。']].map(x=>`<div class="card"><div class="ch">${x[0]} ${esc(x[1])}</div><p class="small" style="margin:0">${esc(x[2])}</p></div>`).join('')}</div>`}
+/* ---- 監査ログ ---- */
+function visibleAudit(){const u=me();return u.role==='employee'?S.audit.filter(e=>e.actor===u.id):S.audit}
+function viewAudit(){const u=me();const evs=[...new Set(S.audit.map(e=>e.event))];return `<div class="vh"><div><h2>🧾 監査ログ</h2><p>${u.role==='employee'?'あなた自身の操作記録のみ表示しています（全件は監査担当・IT管理者が閲覧）。':'全件を表示。各記録は直前の記録のハッシュを含み、1件でも書き換えると検知できます。'}</p></div><span class="sp"></span><select id="auf" class="search" style="width:auto"><option value="">すべてのイベント</option>${evs.map(e=>`<option value="${e}" ${UI.auditFilter===e?'selected':''}>${esc(EV[e]||e)}</option>`).join('')}</select></div>
+ <div class="btns" style="margin:0 0 12px">${u.role!=='employee'?`<button class="btn pri" data-act="verifyChain">🔗 ハッシュチェーンを検証</button><button class="btn" data-act="tamper">🧪 改ざん検知のデモ（コピーで実施）</button>`:''}<button class="btn" data-act="exportAudit" data-f="json">⬇️ JSON出力</button><button class="btn" data-act="exportAudit" data-f="csv">⬇️ CSV出力</button></div><div id="aures"></div>
+ <div class="tblw"><table><tr><th>#</th><th>日時</th><th>実施者</th><th>イベント</th><th>詳細</th><th>ハッシュ</th></tr>${visibleAudit().filter(e=>!UI.auditFilter||e.event===UI.auditFilter).slice().reverse().slice(0,300).map(e=>`<tr><td>${e.seq}</td><td class="small">${esc(e.ts)}</td><td>${esc(uname(e.actor))}</td><td>${esc(EV[e.event]||e.event)}</td><td class="small" style="max-width:340px;word-break:break-all">${esc(JSON.stringify(e.detail))}</td><td class="hash">${esc(e.hash.slice(0,12))}</td></tr>`).join('')}</table></div>`}
+/* ---- 受け入れ試験 ---- */
+function viewTests(){const R=UI.lastTests;const pass=R?R.filter(r=>r.ok).length:0;return `<div class="vh"><div><h2>🧪 受け入れ試験（自動）</h2><p>構想資料「09 導入計画」の合格条件と「07 権限と安全」のルールを、独立したテスト用データで自動検証します。実データ・画面の状態は変更しません。</p></div><span class="sp"></span><button class="btn pri" data-act="runTests">▶ 試験を実行</button></div>
+ ${R?`<div class="kpis"><div class="kpi"><b class="${pass===R.length?'pass':'fail'}">${pass} / ${R.length}</b><small>合格</small></div><div class="kpi"><b>${esc(UI.testsAt)}</b><small>実行日時</small></div></div><div class="tblw"><table><tr><th>結果</th><th>試験項目</th><th>根拠（構想資料）</th><th>確認内容</th></tr>${R.map(r=>`<tr><td class="${r.ok?'pass':'fail'}">${r.ok?'PASS':'FAIL'}</td><td>${esc(r.name)}</td><td class="small">${esc(r.ref)}</td><td class="small">${esc(r.note)}</td></tr>`).join('')}</table></div>`:'<div class="note">「▶ 試験を実行」を押すと、15項目の試験が数秒で完了します。</div>'}`}
+/* ---- ダッシュボード ---- */
+function viewDash(){const ps=Object.values(S.proposals);const cnt=s=>ps.filter(p=>p.status===s).length;const blocked=S.audit.filter(e=>e.event==='blocked_prohibited'||e.event==='policy_blocked').length;const tk=S.tickets.length;
+ const lab={print:'印刷',vpn:'VPN',audio:'音声・Teams',slow:'動作・容量',share:'共有フォルダ',photo:'写真整理',csv:'CSV集計',log:'ログ解析',kb:'資料検索',login:'ログイン',incident:'事故の可能性',prohibited:'禁止操作',whistle:'専用窓口',csvneed:'集計（添付待ち）',otherfile:'その他ファイル',thanks:'お礼など'};
+ const it=Object.entries(S.stats.intents).sort((a,b)=>b[1]-a[1]);const mx=Math.max(1,...it.map(x=>x[1]));
+ const tst=['受付','対応中','回答済み','解決'].map(s=>[s,S.tickets.filter(t=>t.status===s).length]);
+ return `<div class="vh"><div><h2>📊 ダッシュボード</h2><p>このブラウザ内で記録されたデモ操作の集計です。</p></div></div>
+ <div class="kpis"><div class="kpi"><b>${S.stats.queries}</b><small>相談件数</small></div><div class="kpi"><b>${S.stats.aiResolved}</b><small>AI対応で「解決した」</small></div><div class="kpi"><b>${tk}</b><small>担当者へ引継ぎ（チケット）</small></div><div class="kpi"><b>${cnt('pending_admin')}</b><small>管理者承認待ち</small></div><div class="kpi"><b>${cnt('done')+cnt('rolled_back')}</b><small>承認後に実行</small></div><div class="kpi"><b>${cnt('rejected')+cnt('admin_rejected')}</b><small>N・却下（実行なし）</small></div><div class="kpi"><b>${blocked}</b><small>禁止・区分ルールでブロック</small></div><div class="kpi"><b>${S.audit.length}</b><small>監査ログ件数</small></div></div>
+ <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(360px,1fr))"><div class="card"><div class="ch">相談の種類</div>${it.length?it.map(([k,v])=>`<div class="barrow"><span>${esc(lab[k]||k)}</span><div class="bar"><i style="width:${v/mx*100}%"></i></div><span>${v}件</span></div>`).join(''):'<p class="muted">まだ相談がありません。</p>'}</div><div class="card"><div class="ch">チケットの状態</div>${tst.map(([k,v])=>`<div class="barrow"><span>${k}</span><div class="bar"><i style="width:${tk?v/tk*100:0}%"></i></div><span>${v}件</span></div>`).join('')}</div></div>`}
+/* ---- 設定・説明 ---- */
+function viewSettings(){return `<div class="vh"><div><h2>⚙️ 設定・このサンプルについて</h2><p>みらい建設工業｜Open WebUI × Cowork型 全社AI業務支援 構想 V3.1 の動作イメージを確認するための、完全オフラインのサンプルです。</p></div></div>
+ <div class="grid"><div class="card"><div class="ch">表示</div><div class="btns"><button class="btn sm" data-act="theme" data-t="auto">端末に合わせる</button><button class="btn sm" data-act="theme" data-t="light">ライト</button><button class="btn sm" data-act="theme" data-t="dark">ダーク</button></div></div>
+ <div class="card"><div class="ch">異常系テスト</div><label><input type="checkbox" data-chg="failNext" ${S.failNext?'checked':''}> 次の実行を失敗させる（PCエージェントの想定外応答を模擬）</label><p class="small muted">失敗時に「変更なし」で止まり、担当者への引継ぎに移ることを確認できます。</p></div>
+ <div class="card"><div class="ch">データ</div><p class="small" style="margin-top:0">データはこのブラウザ（localStorage）にのみ保存され、外部へは送信されません。</p><div class="btns"><button class="btn sm" data-act="exportState">⬇️ 全データを出力（JSON）</button><button class="btn n sm" data-act="resetAll">↺ サンプルデータを初期化</button></div></div></div>
+ <div class="sec">本物とサンプルの違い</div><div class="tblw"><table><tr><th>機能</th><th>このサンプル</th><th>本番で必要なもの（構想 05・10）</th></tr>
+ ${[['会話画面','Open WebUI風の独自画面','Open WebUI（導入審査・ライセンス確認が前提）'],['AIの回答','キーワードによるルールベースの模擬','社内ローカルLLMまたは承認済み外部API。出典付きRAG'],['社内資料検索','埋め込みサンプル19件＋公開FAQ、部署スコープで制御','文書管理との連携、Entra IDのグループで閲覧権限を連動'],['PC診断・修復','端末状態を模擬するデータのみ','署名付きPCエージェントの配布、既存の端末管理（例：SKYSEA Client View）との整合'],['承認・権限','承認ハッシュ・職務分離・緊急停止を実装','承認サービス、SSO認証、操作許可リストの変更管理'],['問い合わせ管理','ブラウザ内チケット','既存ヘルプデスク基盤との連携（受付→一次対応→人へ引継ぎ→ナレッジ承認）'],['監査ログ','SHA-256ハッシュチェーン（ブラウザ内）','改ざん防止ストレージ、SIEM連携、保存期間の規程化']].map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td></tr>`).join('')}</table></div>
+ <div class="note">⚠️ 全社標準のAIはCopilotとする方針のもと、Open WebUIは追加導入の審査が前提です。本サンプルは企画検討用であり、導入承認・運用責任者の決定・技術検証・費用見積を経て実装します。</div>`}
+
+/* ============ モーダル・トースト・ダウンロード ============ */
+function modal(html){$('#mbox').innerHTML=html;$('#modal').classList.remove('hide')}
+function closeModal(){$('#modal').classList.add('hide')}
+let _tt;function toast(t){const el=$('#toast');el.textContent=t;el.classList.remove('hide');clearTimeout(_tt);_tt=setTimeout(()=>el.classList.add('hide'),2600)}
+function download(name,content,type){const b=new Blob([content],{type:type||'text/plain;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},500)}
+function autosize(t){t.style.height='auto';t.style.height=Math.min(160,t.scrollHeight)+'px'}
+function applyTheme(){const r=document.documentElement;if(S.ui.theme==='auto')r.removeAttribute('data-theme');else r.setAttribute('data-theme',S.ui.theme)}
+
+/* ============ 操作（イベント） ============ */
+const ACT={
+ nav(d){S.ui.view=d.v;$('#app').classList.remove('sideopen');save();renderSide();renderTop();renderView()},
+ newChat(){newChat();S.ui.view='chat';$('#app').classList.remove('sideopen');renderSide();renderTop();renderView()},
+ openChat(d){S.ui.chat=d.id;S.ui.view='chat';UI.stick=true;$('#app').classList.remove('sideopen');save();renderSide();renderTop();renderView()},
+ delChat(d){if(!confirm('この相談履歴を削除しますか？（監査ログは残ります）'))return;S.chats=S.chats.filter(c=>c.id!==d.id);if(S.ui.chat===d.id)S.ui.chat=null;save();renderSide();if(S.ui.view==='chat')renderView()},
+ send(){send()},
+ quick(d){const q=QUICK[+d.i];if(q.sample)addSample(q.sample);send(q.t)},
+ quickText(d){send(d.t)},
+ tryCase(d){S.ui.view='chat';renderSide();renderTop();renderView();const ta=$('#inp');ta.value=d.t;autosize(ta);ta.focus()},
+ attMenu(){$('#attmenu').classList.toggle('hide')},
+ pickFile(){$('#attmenu').classList.add('hide');$('#file').click()},
+ sampleAtt(d){addSample(d.k);const m=$('#attmenu');if(m)m.classList.add('hide');toast('サンプルファイルを添付しました。区分を確認して送信してください')},
+ removeAtt(d){UI.pending=UI.pending.filter(a=>a.id!==d.id);renderPend()},
+ Y(d){const p=S.proposals[d.id];if(p.userId!==S.ui.user){toast('依頼者本人のみ判断できます');return}const c=S.chats.find(x=>x.id===p.chatId)||activeChat();userDecision(S,p.id,'Y');
+  if(p.status==='ready')runExec(c,p.id);else if(p.status==='pending_admin')ai(c,'<p>承認を受け付けました。この操作は<b>IT管理者の承認</b>が必要なため、承認キューに登録しました。承認されるまで端末は変更しません。</p>',{conf:'—'});save();refresh()},
+ N(d){const p=S.proposals[d.id];if(p.userId!==S.ui.user)return;userDecision(S,p.id,'N');const c=S.chats.find(x=>x.id===p.chatId)||activeChat();ai(c,`<p>実行しませんでした。端末は何も変更していません。ほかの方法を知りたい場合や、担当者に見てほしい場合はこちらから。</p><div class="btns">${escBtn('IT端末')}</div>`,{conf:'—'});save();refresh()},
+ consult(d){const p=S.proposals[d.id];const c=S.chats.find(x=>x.id===p.chatId)||activeChat();consentCard(c,'IT端末','通常',null,p.id);save();refresh()},
+ escalate(d){const c=activeChat();if(!c)return;consentCard(c,d.cat,d.pri);save();refresh()},
+ execReady(d){const p=S.proposals[d.id];const c=S.chats.find(x=>x.id===p.chatId)||activeChat();runExec(c,p.id)},
+ resolved(d){const [c,m]=findMsg(d.mid);m.answered='yes';S.stats.aiResolved++;auditAdd(S,c.userId,'resolved_by_ai',{prop:m.propId});ai(c,'<p>解決してよかったです。対応内容は記録に残しました。</p>',{conf:'—'});save();refresh()},
+ notResolved(d){const [c,m]=findMsg(d.mid);m.answered='no';consentCard(c,'IT端末','通常',null,m.propId);save();refresh()},
+ rollback(d){if(!confirm('この操作を元に戻しますか？（変更前の状態を復元します）'))return;const p=S.proposals[d.id];const r=rollbackOp(S,p.id,S.ui.user);const c=S.chats.find(x=>x.id===p.chatId)||activeChat();if(r.ok)ai(c,'<p>↩️ 元に戻しました。変更前の状態を復元し、記録に残しました。</p>',{conf:'—'});else toast(r.msg||'元に戻せませんでした');save();refresh()},
+ dl(d){const p=S.proposals[d.id];if(p&&p.result&&p.result.file){download(p.result.file.name,p.result.file.content,'text/csv;charset=utf-8');toast('ファイルを保存しました')}},
+ consentSend(d){const [c,m]=findMsg(d.mid);const sh={'相談内容':m.ctx.summary};if(m.ctx.diag.length&&m.sel.diag)sh['AIの診断結果']=m.ctx.diag;if(m.sel.device)sh['端末']=m.ctx.device;if(m.ctx.atts.length&&m.sel.atts)sh['添付ファイル名']=m.ctx.atts.join('、');
+  const t=createTicket(S,{userId:c.userId,category:m.category,priority:m.priority,summary:(m.ctx.summary||c.title).slice(0,60),shared:sh,propId:m.propId});m.state='sent';m.ticketId=t.id;addMsg(c,{kind:'ticket',ticketId:t.id});save();refresh()},
+ consentCancel(d){const [c,m]=findMsg(d.mid);m.state='cancelled';save();refresh()},
+ adminApprove(d){const cm=($('#cm-'+d.id)||{}).value||'';const r=adminDecision(S,d.id,S.ui.user,'approve',cm);if(!r.ok){toast(r.msg);save();refresh();return}const p=S.proposals[d.id];const c=S.chats.find(x=>x.id===p.chatId);if(c)ai(c,`<p>✅ IT管理者（${esc(uname(S.ui.user))}）が ${esc(p.id)} を承認しました。提案カードの「立会いのもと実行する」から実行できます。</p>`,{conf:'—'});toast('承認しました。依頼者の画面から実行されます');save();refresh()},
+ adminReject(d){const cm=($('#cm-'+d.id)||{}).value||'';const r=adminDecision(S,d.id,S.ui.user,'reject',cm);if(!r.ok){toast(r.msg);return}const p=S.proposals[d.id];const c=S.chats.find(x=>x.id===p.chatId);if(c)ai(c,`<p>⛔ IT管理者が ${esc(p.id)} を却下しました${cm?'（'+esc(cm)+'）':''}。端末は変更していません。</p>`,{conf:'—'});save();refresh()},
+ estop(){const u=me();if(!S.estop){S.estop=true;auditAdd(S,u.id,'estop_on',{});toast('緊急停止しました。PC操作の実行をすべて止めています')}else{if(u.role!=='itadmin'){toast('緊急停止の解除はIT端末管理者のみ行えます');return}if(!confirm('緊急停止を解除しますか？'))return;S.estop=false;auditAdd(S,u.id,'estop_off',{});toast('緊急停止を解除しました')}save();refresh()},
+ verifyChain(){const r=verifyChain(S.audit);auditAdd(S,me().id,'chain_verified',{ok:r.ok,n:S.audit.length-1});save();renderView();$('#aures').innerHTML=r.ok?`<div class="card ok" style="margin-bottom:12px">🔗 ${r.n}件すべてのハッシュチェーンが正常です（改ざんなし）。</div>`:`<div class="card ng" style="margin-bottom:12px">⚠️ #${r.at} で不整合を検出しました。</div>`},
+ tamper(){const c=clone(S.audit);const i=Math.min(2,c.length-1);c[i].detail={note:'書き換えた内容'};const r=verifyChain(c);$('#aures').innerHTML=`<div class="card warn" style="margin-bottom:12px">🧪 ログのコピーで #${c[i].seq} の内容を書き換えて検証 → <b>#${r.at} で改ざんを検知</b>しました。（実際のログは変更していません）</div>`},
+ exportAudit(d){const L=visibleAudit();if(d.f==='json')download('audit_log_'+nowISO().slice(0,10)+'.json',JSON.stringify(L,null,2),'application/json');else download('audit_log_'+nowISO().slice(0,10)+'.csv','\uFEFF'+[['seq','日時','実施者','イベント','詳細','prev','hash']].concat(L.map(e=>[e.seq,e.ts,uname(e.actor),EV[e.event]||e.event,JSON.stringify(e.detail),e.prev,e.hash])).map(r=>r.map(csvCell).join(',')).join('\r\n'),'text/csv;charset=utf-8')},
+ runTests(){UI.lastTests=testEngine();UI.testsAt=nowISO().slice(11);auditAdd(S,me().id,'tests_run',{pass:UI.lastTests.filter(r=>r.ok).length,total:UI.lastTests.length});save();renderView()},
+ kbOpen(d){const k=kbById(S,d.id);if(!k)return;if(!canSee(S.ui.user,k)){toast('この資料を閲覧する権限がありません');return}modal(`<div class="mh"><h3>📚 ${esc(k.title)}</h3><button class="btn sm" data-act="closeModal">閉じる</button></div><div class="small muted">${esc(k.id)}｜所管：${esc(k.owner)}｜更新：${esc(k.updated)}｜公開範囲：${esc(SCOPE_LABEL[k.scope])}</div><p>${esc(k.body)}</p><div class="small muted">タグ：${k.tags.map(esc).join('、')}</div>`)},
+ ticketOpen(d){openTicket(d.id)},
+ ticketSave(d){const t=S.tickets.find(x=>x.id===d.id);const st=$('#tst').value,res=$('#tres').value.trim(),fq=$('#tfaq').checked;const ch=[];if(st!==t.status){ch.push('状態：'+t.status+'→'+st);t.status=st}if(res!==t.resolution){ch.push('回答を更新');t.resolution=res}
+  if(ch.length){t.history.push({at:nowISO(),by:S.ui.user,text:ch.join('／')});auditAdd(S,S.ui.user,'ticket_updated',{ticket:t.id,status:t.status})}
+  if(fq&&res){S.faqCandidates.push({id:'FC-'+pad(++S.counters.fc,4),ticket:t.id,title:t.summary,body:res,tags:toks(t.summary).slice(0,6),by:S.ui.user,at:nowISO(),status:'review'});auditAdd(S,S.ui.user,'faq_candidate',{ticket:t.id});toast('FAQ候補として提出しました（ナレッジでレビュー）')}
+  save();closeModal();refresh()},
+ faqPublish(d){const f=S.faqCandidates.find(x=>x.id===d.id);f.status='published';const id='FAQ-'+pad(++S.counters.faq,3);S.faqs.push({id,title:f.title,body:f.body,tags:f.tags.length?f.tags:toks(f.title),scope:'all',owner:'DX推進部（FAQ）',updated:nowISO().slice(0,10),from:f.ticket});auditAdd(S,S.ui.user,'faq_published',{id,from:f.ticket});toast(id+' を公開しました。以後のAI回答の出典になります');save();refresh()},
+ faqReturn(d){const f=S.faqCandidates.find(x=>x.id===d.id);f.status='returned';auditAdd(S,S.ui.user,'faq_returned',{id:f.id});save();refresh()},
+ injectFaults(){const id=me().device;S.devices[id]=seedDevices()[id];toast('この端末をサンプル障害のある状態に戻しました');save();refresh()},
+ theme(d){S.ui.theme=d.t;applyTheme();save()},
+ exportState(){download('mirai_ai_sample_state.json',JSON.stringify(S,null,2),'application/json')},
+ resetAll(){if(!confirm('すべてのサンプルデータ（相談・チケット・監査ログ）を初期化しますか？'))return;try{localStorage.removeItem(KEY)}catch(e){}const th=S.ui.theme;S=freshState();S.ui.theme=th;UI.pending=[];UI.lastTests=null;save();applyTheme();renderView();refresh();toast('初期化しました')},
+ toggleSide(){$('#app').classList.toggle('sideopen')},
+ toggleDev(){const p=$('#devpanel');if(p)p.classList.toggle('show')},
+ closeModal(){closeModal()},
+ closeModalBg(d,el,e){if(e.target===el)closeModal()}
+};
+function addSample(k){const map={csv:{name:'工事日報_2026-10.csv',ext:'csv',kind:'csv',text:SAMPLE_CSV},log:{name:'VPN接続ログ_20261018.log',ext:'log',kind:'text',text:SAMPLE_LOG},hr:{name:'人事評価一覧_2026.xlsx',ext:'xlsx',kind:'doc',text:''},mitsu:{name:'見積書_有明橋梁.pdf',ext:'pdf',kind:'doc',text:''}};const s=map[k];if(!s)return;
+ UI.pending.push({id:uid(),name:s.name,size:s.text?new TextEncoder().encode(s.text).length:48213,ext:s.ext,kind:s.kind,cls:suggestClass(s.name),text:s.text});renderPend()}
+async function readFileObj(f){const ext=(f.name.split('.').pop()||'').toLowerCase();
+ const kind=['csv','tsv'].includes(ext)?'csv':['txt','log','md','json'].includes(ext)?'text':['png','jpg','jpeg','gif','bmp','webp'].includes(ext)?'image':['pdf','docx','xlsx','pptx','doc','xls','ppt'].includes(ext)?'doc':'binary';
+ const a={id:uid(),name:f.name,size:f.size,ext,kind,cls:suggestClass(f.name),text:''};
+ if((kind==='csv'||kind==='text')&&f.size<=1048576){const buf=await f.arrayBuffer();let t;try{t=new TextDecoder('utf-8',{fatal:true}).decode(buf)}catch(e){try{t=new TextDecoder('shift_jis').decode(buf)}catch(e2){t=new TextDecoder().decode(buf)}}a.text=t.replace(/^\uFEFF/,'').slice(0,200000)}
+ else if(kind==='csv'||kind==='text'){a.note='1MB超のため本文は読み込みません';a.kind='binary'}
+ return a}
+
+/* ============ 初期化 ============ */
+function init(){load();applyTheme();
+ document.addEventListener('click',e=>{const el=e.target.closest('[data-act]');if(!el){const m=$('#attmenu');if(m&&!e.target.closest('.attwrap'))m.classList.add('hide');return}const f=ACT[el.dataset.act];if(f){if(el.dataset.act!=='closeModalBg')e.preventDefault();f(el.dataset,el,e)}});
+ document.addEventListener('change',e=>{const t=e.target;
+  if(t.id==='persona'){S.ui.user=t.value;auditAdd(S,t.value,'persona_switch',{});S.ui.chat=null;ensureChat();UI.pending=[];UI.stick=true;save();renderSide();renderTop();renderView();toast(me().name+'（'+ROLES[me().role]+'）に切り替えました')}
+  else if(t.id==='model'){S.ui.model=t.value;save();toast(t.value==='external'?'外部AI（模擬）：機密区分は送信できません':'社内ローカルLLM（模擬）を使用します')}
+  else if(t.dataset.chg==='cls'){const a=UI.pending.find(x=>x.id===t.dataset.id);if(a)a.cls=t.value}
+  else if(t.dataset.chg==='failNext'){S.failNext=t.checked;save();toast(t.checked?'次の実行は失敗します（異常系テスト）':'異常系テストを解除')}
+  else if(t.dataset.ck){const [c,m]=findMsg(t.dataset.mid);if(m){m.sel[t.dataset.ck]=t.checked;save()}}
+  else if(t.id==='file'){const fs=[...t.files];t.value='';Promise.all(fs.map(readFileObj)).then(as=>{UI.pending.push(...as);renderPend();if(as.length)toast('ファイルはこのブラウザ内で読み込みました（外部送信なし）')})}
+  else if(t.id==='auf'){UI.auditFilter=t.value;renderView()}});
+ document.addEventListener('input',e=>{const t=e.target;if(t.id==='inp')autosize(t);else if(t.id==='orgq')filterOrg();else if(t.id==='kbq')filterKb()});
+ document.addEventListener('keydown',e=>{if(e.target.id==='inp'&&e.key==='Enter'&&!e.shiftKey&&!e.isComposing&&e.keyCode!==229){e.preventDefault();send()}if(e.key==='Escape')closeModal()});
+ document.addEventListener('scroll',e=>{if(e.target&&e.target.id==='msgs'){const b=e.target;UI.stick=b.scrollHeight-b.scrollTop-b.clientHeight<80}},true);
+ window.addEventListener('resize',()=>renderTop());
+ ensureChat();save();renderSide();renderTop();renderView()}
+if(typeof document!=='undefined'&&document.getElementById('app'))init();
+</script>
+</body>
+</html>

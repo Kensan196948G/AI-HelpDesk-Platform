@@ -1,0 +1,1189 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>みらいSF 受付ステーション</title>
+<style>
+:root{
+  --bg:#f4f3ee; --surface:#ffffff; --surface2:#efede6; --ink:#1b222b; --muted:#5f6874; --line:#e1ddd2;
+  --navy:#16314f; --navy2:#0f2440; --safety:#f5b800; --safety-soft:#fff5d3; --accent:#ee7d1c;
+  --teal:#0f9d9a; --teal-soft:#dcf3f1; --ci:#4f5bd5; --ci-soft:#e8eafb;
+  --g:#1f9d55; --g-soft:#e1f4e8; --y:#e0a800; --y-soft:#fdf2d2; --r:#c9302c; --r-soft:#fbe2e1;
+  --shadow:0 1px 2px rgba(20,30,40,.05),0 10px 28px rgba(20,30,40,.08);
+  --radius:16px;
+  --font:"Hiragino Sans","Hiragino Kaku Gothic ProN","BIZ UDPGothic","Noto Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+}
+@media (prefers-color-scheme:dark){
+  :root{ --bg:#10141a; --surface:#18202a; --surface2:#212a35; --ink:#e7ecf1; --muted:#9fabb8; --line:#2c3846; --safety-soft:#35290b; --teal-soft:#0f2f2d; --ci-soft:#1e2247; --g-soft:#11301f; --y-soft:#352a0b; --r-soft:#3a1616; --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 28px rgba(0,0,0,.3); }
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--font);font-size:14.5px;line-height:1.7;-webkit-font-smoothing:antialiased}
+button,input,select,textarea{font:inherit;color:inherit}
+a{color:var(--ci);cursor:pointer}
+.ico{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;vertical-align:-4px;flex:none}
+
+/* shell */
+.shell{display:grid;grid-template-columns:84px minmax(0,1fr);min-height:100vh}
+.rail{background:linear-gradient(180deg,var(--navy),var(--navy2));color:#cfdbe8;display:flex;flex-direction:column;align-items:center;padding:14px 0;gap:6px;position:sticky;top:0;height:100vh;z-index:40}
+.rail .logo{width:46px;height:46px;border-radius:14px;background:var(--safety);color:#1b222b;display:grid;place-items:center;margin-bottom:10px;box-shadow:0 0 0 4px rgba(245,184,0,.2)}
+.rail .logo .ico{width:26px;height:26px}
+.rail button{width:68px;border:0;background:none;color:inherit;display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 2px;border-radius:12px;cursor:pointer;font-size:11px;position:relative}
+.rail button .ico{width:22px;height:22px}
+.rail button:hover{background:rgba(255,255,255,.08)}
+.rail button.on{background:rgba(245,184,0,.16);color:#fff}
+.rail button.on::before{content:"";position:absolute;left:-8px;top:12px;bottom:12px;width:4px;border-radius:0 4px 4px 0;background:var(--safety)}
+.rail .badge{position:absolute;top:2px;right:8px;min-width:18px;height:18px;border-radius:9px;background:var(--accent);color:#fff;font-size:10.5px;display:grid;place-items:center;padding:0 4px;font-weight:700}
+.rail .sp{flex:1}
+.top{display:flex;align-items:center;gap:12px;padding:12px 24px;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--surface) 88%,transparent);backdrop-filter:blur(10px);position:sticky;top:0;z-index:30}
+.top h1{margin:0;font-size:17px;display:flex;align-items:center;gap:8px}
+.top h1 small{font-size:12px;color:var(--muted);font-weight:500}
+.top .sp{flex:1}
+.offline{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:3px 10px;border-radius:999px;background:var(--g-soft);color:var(--g);font-weight:700}
+.offline i{width:8px;height:8px;border-radius:50%;background:var(--g);animation:beat 1.8s infinite}
+@keyframes beat{50%{opacity:.3}}
+.rolesw{display:flex;align-items:center;gap:8px;font-size:12.5px;white-space:nowrap}
+.rolesw select{min-width:0}
+.rolesw select{border:1px solid var(--line);border-radius:10px;padding:5px 10px;background:var(--surface)}
+.page{padding:22px 24px 60px;max-width:1280px;width:100%;margin:0 auto}
+.view{animation:vin .35s ease}
+@keyframes vin{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+.pad{padding:18px}
+.h2{display:flex;align-items:center;gap:8px;margin:0 0 12px;font-size:16px}
+.h2 .ico{color:var(--accent)}
+.muted{color:var(--muted)}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:12px;border:1px solid var(--line);background:var(--surface);cursor:pointer;white-space:nowrap;transition:transform .15s,background .2s}
+.btn:hover{background:var(--surface2)}
+.btn:active{transform:scale(.97)}
+.btn.pri{background:var(--navy);color:#fff;border-color:var(--navy)}
+.btn.pri:hover{background:#1f416a}
+.btn.go{background:var(--safety);color:#1b222b;border-color:var(--safety);font-weight:700}
+.btn.dng{color:var(--r)}
+.btn.sm{padding:5px 10px;font-size:12.5px;border-radius:10px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.sig{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;padding:2px 10px;border-radius:999px;white-space:nowrap}
+.sig i{width:10px;height:10px;border-radius:50%}
+.sig.g{background:var(--g-soft);color:var(--g)}.sig.g i{background:var(--g)}
+.sig.y{background:var(--y-soft);color:#946f00}.sig.y i{background:var(--y)}
+.sig.r{background:var(--r-soft);color:var(--r)}.sig.r i{background:var(--r)}
+@media (prefers-color-scheme:dark){.sig.y{color:#f3c64b}}
+.st{display:inline-block;font-size:12px;font-weight:700;padding:2px 10px;border-radius:8px;background:var(--surface2);white-space:nowrap}
+.st.received{background:#e6eefb;color:#2f5f9e}.st.review,.st.wait{background:var(--y-soft);color:#8a6500}
+.st.approved,.st.dev,.st.verify,.st.field{background:var(--teal-soft);color:#0d7d7a}.st.done{background:var(--g-soft);color:var(--g)}
+.st.back{background:var(--r-soft);color:var(--r)}.st.hold{background:var(--surface2);color:var(--muted)}
+@media (prefers-color-scheme:dark){.st{color:var(--ink)!important}}
+input[type=text],input[type=number],input[type=date],input[type=search],select,textarea{width:100%;border:1.5px solid var(--line);border-radius:12px;padding:9px 12px;background:var(--surface);transition:border-color .2s,box-shadow .2s}
+input:focus,select:focus,textarea:focus{outline:0;border-color:var(--teal);box-shadow:0 0 0 4px color-mix(in srgb,var(--teal) 18%,transparent)}
+textarea{resize:vertical;min-height:88px}
+label.fl{display:block;font-weight:700;font-size:13.5px;margin:14px 0 6px}
+label.fl .req{font-size:11px;color:#fff;background:var(--r);border-radius:6px;padding:0 6px;margin-left:6px;font-weight:700}
+.hint{font-size:12.5px;color:var(--muted);margin-top:4px}
+
+/* home */
+.hello{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:16px;margin-bottom:16px}
+.hero{position:relative;overflow:hidden;padding:24px;border-radius:var(--radius);color:#fff;background:linear-gradient(135deg,var(--navy) 0%,#1f4a76 100%);box-shadow:var(--shadow)}
+.hero::after{content:"";position:absolute;right:-40px;bottom:-40px;width:220px;height:220px;border-radius:50%;border:26px dashed rgba(245,184,0,.25);animation:spin 30s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.hero h2{margin:0 0 6px;font-size:22px}
+.hero p{margin:0 0 16px;color:#c9d8e8;max-width:520px}
+.hero .btn.go{font-size:15px;padding:11px 20px;position:relative;z-index:1}
+.hero .btn.go .ico{animation:nudge 1.6s ease-in-out infinite}
+@keyframes nudge{50%{transform:translateX(4px)}}
+.kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-bottom:16px}
+.kpi{padding:14px 16px}
+.kpi .n{font-size:28px;font-weight:900;line-height:1.1}
+.kpi .n small{font-size:12px;color:var(--muted);margin-left:2px;font-weight:700}
+.kpi .t{font-size:12.5px;color:var(--muted);display:flex;align-items:center;gap:6px}
+.kpi .t .ico{width:15px;height:15px;color:var(--accent)}
+.ratio{display:flex;height:14px;border-radius:999px;overflow:hidden;background:var(--surface2)}
+.ratio i{height:100%;width:0;transition:width 1.2s cubic-bezier(.2,.8,.2,1)}
+.ratio .g{background:var(--g)}.ratio .y{background:var(--y)}.ratio .r{background:var(--r)}
+.rl{display:flex;gap:14px;font-size:12px;color:var(--muted);margin-top:6px}
+.two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}
+.feed{list-style:none;margin:0;padding:0}
+.feed li{display:flex;gap:10px;padding:9px 0;border-bottom:1px dashed var(--line);font-size:13.5px;animation:vin .4s both}
+.feed li:last-child{border-bottom:0}
+.feed .av{flex:none;width:32px;height:32px;border-radius:10px;display:grid;place-items:center;background:var(--surface2);color:var(--accent);font-weight:800;font-size:12px}
+.feed small{color:var(--muted);display:block}
+.mini{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;border:1px solid var(--line);margin-bottom:8px;cursor:pointer;transition:transform .2s,border-color .2s}
+.mini:hover{transform:translateX(4px);border-color:var(--teal)}
+.mini b{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mini .no{font-family:ui-monospace,Consolas,monospace;font-size:11.5px;color:var(--muted)}
+
+/* wizard */
+.wiz{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:18px;align-items:start}
+.steps{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;margin-bottom:16px}
+.stp{border:0;background:none;cursor:pointer;text-align:center;padding:0;color:var(--muted);font-size:12px}
+.stp .bar{height:6px;border-radius:3px;background:var(--line);margin-bottom:6px;overflow:hidden}
+.stp .bar i{display:block;height:100%;width:0;background:var(--teal);transition:width .4s}
+.stp.done .bar i,.stp.on .bar i{width:100%}
+.stp.on{color:var(--ink);font-weight:800}
+.stp.on .bar i{background:var(--safety)}
+.stp b{display:block;font-size:11px;letter-spacing:.06em}
+.pane{padding:22px 24px;min-height:440px}
+.pane h3{margin:0 0 4px;font-size:20px}
+.pane .lead{margin:0 0 6px;color:var(--muted)}
+.pane.shake{animation:shake .4s}
+@keyframes shake{20%,60%{transform:translateX(-6px)}40%,80%{transform:translateX(6px)}}
+.navbtns{display:flex;justify-content:space-between;gap:8px;margin-top:22px;padding-top:16px;border-top:1px solid var(--line)}
+.err{display:none;margin-top:12px;padding:10px 14px;border-radius:12px;background:var(--r-soft);color:var(--r);font-size:13.5px}
+.err.show{display:block}
+.choices{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:10px}
+.choice{display:flex;gap:12px;align-items:flex-start;text-align:left;padding:14px;border-radius:14px;border:2px solid var(--line);background:var(--surface);cursor:pointer;transition:all .2s}
+.choice:hover{border-color:color-mix(in srgb,var(--teal) 50%,var(--line))}
+.choice.on{border-color:var(--teal);background:var(--teal-soft)}
+.choice .ib{flex:none;width:40px;height:40px;border-radius:12px;display:grid;place-items:center;background:var(--surface2);color:var(--accent)}
+.choice.on .ib{background:var(--teal);color:#fff}
+.choice b{display:block}
+.choice small{color:var(--muted);font-size:12.5px;line-height:1.5;display:block}
+.choice.sg{border-width:2.5px}
+.choice.sg.g.on{border-color:var(--g);background:var(--g-soft)}.choice.sg.y.on{border-color:var(--y);background:var(--y-soft)}.choice.sg.r.on{border-color:var(--r);background:var(--r-soft)}
+.choice.sg .dot{flex:none;width:40px;height:40px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:900}
+.choice.sg.g .dot{background:var(--g)}.choice.sg.y .dot{background:var(--y);color:#1b222b}.choice.sg.r .dot{background:var(--r)}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:999px;border:1.5px solid var(--line);background:var(--surface);cursor:pointer;font-size:13.5px;transition:all .15s}
+.chip:hover{border-color:var(--teal)}
+.chip.on{background:var(--teal);border-color:var(--teal);color:#fff}
+.chip.on::before{content:"✓"}
+.depts{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:6px;margin:10px 0}
+.depts .chip{justify-content:center;border-radius:12px;padding:6px 8px;font-size:12.5px}
+.depts .chip.on::before{content:""}
+.tools{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.tool{display:flex;gap:10px;text-align:left;padding:10px 12px;border-radius:12px;border:2px solid var(--line);background:var(--surface);cursor:pointer;transition:all .2s;animation:vin .3s both}
+.tool:hover{border-color:var(--teal)}
+.tool.on{border-color:var(--teal);background:var(--teal-soft)}
+.tool .d{flex:none;width:14px;height:14px;border-radius:50%;margin-top:4px}
+.tool .d.g{background:var(--g)}.tool .d.y{background:var(--y)}.tool .d.r{background:var(--r)}
+.tool b{display:block;font-size:13.5px}
+.tool small{color:var(--muted);font-size:12px;line-height:1.5;display:block}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}
+.crit{display:flex;flex-direction:column;gap:10px;margin-top:8px}
+.ci{display:grid;grid-template-columns:30px minmax(0,1fr) 34px;gap:8px;align-items:start;animation:vin .3s both}
+.ci .n{width:30px;height:30px;border-radius:10px;background:var(--navy);color:#fff;display:grid;place-items:center;font-weight:800;font-size:13px;margin-top:4px}
+.ci input.vague{border-color:var(--y);background:var(--y-soft)}
+.ci input.good{border-color:var(--g)}
+.lint{font-size:12.5px;margin-top:4px;min-height:0}
+.lint.vague,.lint.short{color:#9a6200}
+.lint.ok{color:var(--g)}
+.ci .rm{border:0;background:var(--surface2);border-radius:10px;width:34px;height:38px;cursor:pointer;color:var(--muted)}
+.examples{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.examples button{font-size:12.5px;padding:4px 10px;border-radius:999px;border:1px dashed var(--teal);background:var(--teal-soft);cursor:pointer;color:inherit}
+.vsbox{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0}
+.vsbox div{padding:10px 12px;border-radius:12px;font-size:13px}
+.vsbox .b{background:var(--r-soft)}.vsbox .gd{background:var(--g-soft)}
+mark.vague{background:var(--y-soft);color:inherit;border-bottom:2px solid var(--y)}
+
+/* preview */
+.pv{position:sticky;top:80px;display:flex;flex-direction:column;gap:12px}
+.pvhead{display:flex;align-items:center;gap:14px;padding:16px}
+.light{flex:none;background:#20262e;border-radius:22px;padding:10px 8px;display:flex;flex-direction:column;gap:8px}
+.light span{width:34px;height:34px;border-radius:50%;opacity:.18;transition:opacity .4s,box-shadow .4s,transform .4s}
+.light .g{background:#22b463}.light .y{background:#f5c400}.light .r{background:#e3403a}
+.light span.on{opacity:1;transform:scale(1.06)}
+.light .g.on{box-shadow:0 0 20px #22b463}.light .y.on{box-shadow:0 0 20px #f5c400}.light .r.on{box-shadow:0 0 20px #e3403a;animation:redb 1.2s infinite}
+@keyframes redb{50%{opacity:.55}}
+.pvhead b{font-size:16px}
+.reasons{list-style:none;margin:6px 0 0;padding:0;font-size:12.5px}
+.reasons li{display:flex;gap:6px;margin:2px 0;animation:vin .3s both}
+.reasons i{flex:none;width:9px;height:9px;border-radius:50%;margin-top:6px}
+.reasons i.g{background:var(--g)}.reasons i.y{background:var(--y)}.reasons i.r{background:var(--r)}
+.meas{padding:14px 16px}
+.meas .big{font-size:26px;font-weight:900;color:var(--teal)}
+.mb{display:grid;grid-template-columns:118px minmax(0,1fr) 16px;gap:6px;align-items:center;font-size:12px;margin:4px 0}
+.mb .b{height:8px;border-radius:4px;background:var(--surface2);overflow:hidden}
+.mb .b i{display:block;height:100%;border-radius:4px;background:linear-gradient(90deg,var(--teal),var(--safety));transition:width .5s}
+.order{overflow:hidden}
+.order .oh{display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--navy);color:#fff;font-weight:700;border-bottom:5px solid var(--safety);font-size:13.5px}
+.order .oh .sp{flex:1}
+.order .tg{display:inline-flex;border-radius:8px;overflow:hidden;border:1px solid rgba(255,255,255,.3)}
+.order .tg button{border:0;background:none;color:#cbd8e6;font-size:11.5px;padding:2px 8px;cursor:pointer}
+.order .tg button.on{background:var(--safety);color:#1b222b;font-weight:700}
+.order dl{margin:0;padding:6px 14px 12px;font-size:12.5px;max-height:330px;overflow:auto}
+.order dt{font-weight:800;margin-top:8px;color:var(--muted);font-size:11.5px}
+.order dd{margin:2px 0 0}
+.order dd ul{margin:0;padding-left:16px}
+pre.yaml{margin:0;padding:12px 14px;background:#0f1b29;color:#d7e3ef;font-size:11.5px;line-height:1.6;white-space:pre;overflow:auto;max-height:360px}
+
+/* board */
+.btool{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px}
+.btool .sp{flex:1}
+.board{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(220px,1fr);gap:12px;overflow-x:auto;padding-bottom:10px}
+.col{background:var(--surface2);border-radius:14px;padding:10px;min-height:300px;display:flex;flex-direction:column;gap:8px;transition:background .2s,outline .2s}
+.col.over{background:var(--teal-soft);outline:2px dashed var(--teal)}
+.col h4{margin:0 0 2px;font-size:13px;display:flex;align-items:center;gap:6px}
+.col h4 em{font-style:normal;margin-left:auto;font-size:11.5px;background:var(--surface);border-radius:999px;padding:0 8px;color:var(--muted)}
+.col.side h4{color:var(--muted)}
+.kc{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 12px;cursor:grab;box-shadow:0 1px 2px rgba(0,0,0,.05);transition:transform .2s,box-shadow .2s;border-left:5px solid var(--line);animation:vin .3s both}
+.kc:hover{transform:translateY(-2px);box-shadow:var(--shadow)}
+.kc.g{border-left-color:var(--g)}.kc.y{border-left-color:var(--y)}.kc.r{border-left-color:var(--r)}
+.kc.drag{opacity:.4}
+.kc.new{animation:glow 1.8s ease}
+@keyframes glow{0%,40%{box-shadow:0 0 0 4px var(--safety)}100%{box-shadow:none}}
+.kc .no{font-family:ui-monospace,Consolas,monospace;font-size:11px;color:var(--muted)}
+.kc b{display:block;font-size:13.5px;line-height:1.45;margin:2px 0 6px}
+.kc .meta{display:flex;flex-wrap:wrap;gap:4px;align-items:center;font-size:11.5px;color:var(--muted)}
+
+/* list */
+.fbar{display:grid;grid-template-columns:minmax(0,2fr) repeat(3,minmax(0,1fr));gap:8px;margin-bottom:12px}
+.tw{overflow-x:auto}
+table.t{width:100%;border-collapse:collapse;font-size:13.5px;min-width:760px}
+table.t th,table.t td{padding:11px 12px;border-bottom:1px solid var(--line);text-align:left}
+table.t th{background:var(--surface2);font-size:12.5px;color:var(--muted);white-space:nowrap}
+table.t tbody tr{cursor:pointer;transition:background .2s}
+table.t tbody tr:hover{background:var(--safety-soft)}
+
+/* drawer */
+.dmask{position:fixed;inset:0;background:rgba(10,20,30,.4);opacity:0;pointer-events:none;transition:opacity .3s;z-index:80}
+.dmask.show{opacity:1;pointer-events:auto}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(640px,100%);background:var(--bg);z-index:90;transform:translateX(100%);transition:transform .35s cubic-bezier(.2,.8,.2,1);display:flex;flex-direction:column;box-shadow:-10px 0 40px rgba(0,0,0,.2)}
+.drawer.show{transform:none}
+.dh{padding:16px 20px;background:var(--surface);border-bottom:1px solid var(--line)}
+.dh .r1{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.dh .no{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--muted)}
+.dh h3{margin:6px 0 10px;font-size:18px}
+.dh .x{margin-left:auto;border:0;background:var(--surface2);border-radius:10px;width:34px;height:34px;cursor:pointer}
+.dh .acts{display:flex;flex-wrap:wrap;gap:6px}
+.prog{display:flex;gap:3px;margin-top:12px}
+.prog span{flex:1;height:6px;border-radius:3px;background:var(--line)}
+.prog span.p{background:var(--teal)}
+.prog span.c{background:var(--safety);animation:beat 1.6s infinite}
+.prog.off span.c{background:var(--r)}
+.plab{display:flex;justify-content:space-between;font-size:10.5px;color:var(--muted);margin-top:3px}
+.dtabs{display:flex;gap:4px;padding:8px 20px 0;background:var(--surface);border-bottom:1px solid var(--line)}
+.dtabs button{border:0;background:none;padding:8px 12px;cursor:pointer;border-bottom:3px solid transparent;color:var(--muted)}
+.dtabs button.on{border-bottom-color:var(--safety);color:var(--ink);font-weight:700}
+.db{flex:1;overflow:auto;padding:16px 20px}
+.kv{display:grid;grid-template-columns:130px minmax(0,1fr);gap:6px 12px;font-size:13.5px}
+.kv dt{color:var(--muted);font-weight:700;font-size:12.5px}
+.kv dd{margin:0}
+.kv ul,.kv ol{margin:0;padding-left:18px}
+.box{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+.box h4{margin:0 0 8px;font-size:13.5px;display:flex;align-items:center;gap:6px}
+.box h4 .ico{color:var(--accent)}
+ul.tl{list-style:none;margin:0;padding:0 0 0 14px;border-left:2px solid var(--line)}
+ul.tl li{position:relative;padding:0 0 12px 12px;font-size:13px;animation:vin .3s both}
+ul.tl li::before{content:"";position:absolute;left:-21px;top:4px;width:12px;height:12px;border-radius:50%;background:var(--teal);border:3px solid var(--bg)}
+ul.tl small{display:block;color:var(--muted)}
+.cmt{padding:8px 0;border-bottom:1px dashed var(--line);font-size:13.5px}
+.cmt small{display:block;color:var(--muted)}
+
+/* modal, stamp, toast */
+.mmask{position:fixed;inset:0;background:rgba(10,20,30,.5);display:none;align-items:center;justify-content:center;z-index:120;padding:16px}
+.mmask.show{display:flex;animation:vin .2s}
+.modal{background:var(--surface);border-radius:18px;width:min(560px,100%);box-shadow:0 20px 60px rgba(0,0,0,.35);overflow:hidden;animation:pop .25s ease}
+@keyframes pop{from{transform:scale(.95);opacity:0}to{transform:none;opacity:1}}
+.modal h3{margin:0;padding:14px 18px;font-size:15px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px}
+.modal .mbd{padding:16px 18px;max-height:65vh;overflow:auto}
+.modal .mft{display:flex;justify-content:flex-end;gap:8px;padding:12px 18px;border-top:1px solid var(--line);background:var(--surface2)}
+.stopts{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.stopts label{display:flex;align-items:center;gap:8px;padding:7px 10px;border:1.5px solid var(--line);border-radius:10px;cursor:pointer}
+.stopts label.dis{opacity:.4;cursor:not-allowed}
+.redw{display:none;margin-top:10px;padding:10px 12px;border-radius:12px;background:var(--r-soft)}
+.redw.show{display:block}
+.stamp{position:fixed;inset:0;z-index:150;display:none;align-items:center;justify-content:center;background:rgba(10,20,30,.35)}
+.stamp.show{display:flex}
+.stamp .hanko{width:220px;height:220px;border-radius:50%;border:10px solid #d4413a;color:#d4413a;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(255,255,255,.92);font-weight:900;animation:press .7s cubic-bezier(.2,1.6,.4,1) both;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.stamp .hanko b{font-size:46px;line-height:1.1;letter-spacing:.1em}
+.stamp .hanko span{font-family:ui-monospace,Consolas,monospace;font-size:14px;border-top:3px solid #d4413a;margin-top:6px;padding-top:4px}
+.stamp .hanko small{font-size:12px;margin-top:2px}
+@keyframes press{0%{transform:scale(2.6) rotate(-30deg);opacity:0}60%{transform:scale(.92) rotate(-10deg);opacity:1}100%{transform:scale(1) rotate(-12deg)}}
+#toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:200;display:flex;flex-direction:column;gap:8px;align-items:center}
+.toast{background:var(--navy);color:#fff;padding:10px 18px;border-radius:999px;box-shadow:0 10px 30px rgba(0,0,0,.3);font-size:13.5px;animation:tin .3s ease;display:flex;gap:8px;align-items:center}
+.toast.ng{background:var(--r)}
+@keyframes tin{from{transform:translateY(16px);opacity:0}to{transform:none;opacity:1}}
+.data-row{display:flex;flex-wrap:wrap;gap:8px}
+.notice{font-size:12.5px;color:var(--muted);margin-top:24px;padding:12px 14px;border:1px dashed var(--line);border-radius:12px}
+
+@media (max-width:1100px){ .wiz{grid-template-columns:1fr} .pv{position:static} .kpis{grid-template-columns:repeat(3,minmax(0,1fr))} }
+@media (max-width:760px){
+  .shell{grid-template-columns:1fr}
+  .rail{position:fixed;top:auto;bottom:0;left:0;right:0;height:auto;flex-direction:row;justify-content:space-around;padding:4px 6px calc(4px + env(safe-area-inset-bottom))}
+  .rail .logo,.rail .sp{display:none}
+  .rail button{width:auto;flex:1;padding:6px 2px}
+  .rail button.on::before{left:20%;right:20%;top:-4px;bottom:auto;width:auto;height:3px;border-radius:0 0 3px 3px}
+  .top{padding:10px 14px;flex-wrap:wrap}
+  .top h1 small{display:none}
+  .rolesw{width:100%}
+  .page{padding:14px 14px 90px}
+  .hello,.two,.choices,.tools,.grid2,.vsbox,.stopts{grid-template-columns:1fr}
+  .kpis{grid-template-columns:1fr 1fr}
+  .steps{grid-template-columns:repeat(7,minmax(0,1fr))}
+  .stp span{display:none}
+  .pane{padding:18px 16px}
+  .fbar{grid-template-columns:1fr 1fr}
+  .kv{grid-template-columns:1fr}
+}
+@media (prefers-reduced-motion:reduce){ *,*::before,*::after{animation:none!important;transition:none!important} }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <symbol id="i-helmet" viewBox="0 0 24 24"><path d="M3 17h18"/><path d="M5 17a7 7 0 0 1 14 0"/><path d="M10 10V6h4v4"/><path d="M4 20h16"/></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-board" viewBox="0 0 24 24"><rect x="3" y="4" width="5" height="16" rx="1.5"/><rect x="10" y="4" width="5" height="11" rx="1.5"/><rect x="17" y="4" width="4" height="7" rx="1.5"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></symbol>
+  <symbol id="i-db" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M19 12H5M11 6l-6 6 6 6"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M3 13h5l2 3h4l2-3h5"/><path d="M5 5h14l2 8v6H3v-6z"/></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3l2 6 6 2-6 2-2 6-2-6-6-2 6-2z"/></symbol>
+  <symbol id="i-bug" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="13" rx="5"/><path d="M12 7V4M7 12H3M21 12h-4M7 17l-3 2M17 17l3 2M7 9L4 7M17 9l3-2"/></symbol>
+  <symbol id="i-chat" viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/><path d="M8 10h8M8 13h5"/></symbol>
+  <symbol id="i-wrench" viewBox="0 0 24 24"><path d="M14 6a4 4 0 0 0 5 5l-9 9-3-3 9-9a4 4 0 0 1-2-2z"/></symbol>
+  <symbol id="i-flag" viewBox="0 0 24 24"><path d="M5 21V4M5 4h12l-2 4 2 4H5"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-gauge" viewBox="0 0 24 24"><path d="M4 18a9 9 0 1 1 16 0"/><path d="M12 13l4-5"/><circle cx="12" cy="13" r="1.5"/></symbol>
+  <symbol id="i-doc" viewBox="0 0 24 24"><path d="M14 3H6v18h12V7z"/><path d="M14 3v4h4"/><path d="M9 12h6M9 16h6"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 4v12M6 10l6 6 6-6M4 20h16"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 20V8M6 14l6-6 6 6M4 4h16"/></symbol>
+  <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-5-5"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18v.5"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2 20c.8-3.5 3.5-5.5 7-5.5s6.2 2 7 5.5"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.8c2 .8 3.4 2.6 4 5.2"/></symbol>
+  <symbol id="i-box" viewBox="0 0 24 24"><path d="M12 2l9 5v10l-9 5-9-5V7z"/><path d="M3 7l9 5 9-5M12 12v10"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2 4-4"/></symbol>
+  <symbol id="i-stamp" viewBox="0 0 24 24"><path d="M9 3h6v5l-1 3h4a2 2 0 0 1 2 2v3H4v-3a2 2 0 0 1 2-2h4L9 8z"/><path d="M4 20h16"/></symbol>
+  <symbol id="i-print" viewBox="0 0 24 24"><path d="M6 9V3h12v6"/><rect x="3" y="9" width="18" height="8" rx="1"/><path d="M6 14h12v7H6z"/></symbol>
+</defs></svg>
+
+<div class="shell">
+  <nav class="rail" id="rail">
+    <div class="logo" title="みらいソフトウェアファクトリー"><svg class="ico"><use href="#i-helmet"/></svg></div>
+    <button data-v="home" class="on" type="button"><svg class="ico"><use href="#i-home"/></svg>ホーム</button>
+    <button data-v="new" type="button"><svg class="ico"><use href="#i-plus"/></svg>新しい依頼</button>
+    <button data-v="board" type="button"><svg class="ico"><use href="#i-board"/></svg>ボード<span class="badge" id="bdg" style="display:none"></span></button>
+    <button data-v="list" type="button"><svg class="ico"><use href="#i-list"/></svg>一覧</button>
+    <div class="sp"></div>
+    <button data-v="data" type="button"><svg class="ico"><use href="#i-db"/></svg>データ</button>
+  </nav>
+  <div>
+    <header class="top">
+      <h1><svg class="ico" style="color:var(--accent)"><use href="#i-inbox"/></svg>みらいSF 受付ステーション <small>詳細受付・オリジナルWebUI</small></h1>
+      <span class="offline" title="外部と通信しません"><i></i>完全オフライン</span>
+      <div class="sp"></div>
+      <div class="rolesw"><span class="muted">操作する人</span><select id="role" aria-label="操作する人"></select></div>
+    </header>
+    <main class="page"><div class="view" id="view"></div><div class="notice" id="notice"></div></main>
+  </div>
+</div>
+
+<div class="dmask" id="dmask"></div>
+<aside class="drawer" id="drawer" aria-label="依頼の詳細"></aside>
+<div class="mmask" id="mmask"><div class="modal" id="modal"></div></div>
+<div class="stamp" id="stamp"><div class="hanko"><small>みらいSF</small><b>受付</b><span id="stampNo"></span><small id="stampDate"></small></div></div>
+<div id="toast"></div>
+<input type="file" id="importFile" accept="application/json,.json" hidden>
+
+<script>
+const CATALOG = [
+    {id:'keiei',short:'経営企画',name:'経営企画部',icon:'i-gauge',role:'会社のかじ取り役。数字を見て、進む方向を決める',tools:[
+      ['経営ダッシュボード','受注・売上・利益・人員を1つの画面でひと目で見られる','g',1],
+      ['会議の議事録まとめ','会議の録音から、決まったことと宿題を整理する','g'],
+      ['公共事業・業界の情報あつめ','発注の見通しや業界ニュースを集めて、短くまとめる','g'],
+      ['中期計画の資料づくり','過去の数字から、計画資料のたたき台を作る','y'],
+      ['経審の点数の試算','経営事項審査の点数が、何で上がり下がりするかを試算する（申請内容は人が決める）','y'],
+      ['投資・撤退の決定','AIは判断材料を集めるまで。決めるのは経営陣','r']
+    ]},
+    {id:'eigyo',short:'営業',name:'営業部',icon:'i-handshake',role:'仕事をとってくる係。お客様と会社をつなぐ',tools:[
+      ['入札・発注情報のお知らせ','発注機関の公告を集めて、自社に合いそうな案件を知らせる','g',1],
+      ['営業台帳（お客様・案件の管理）','だれと、どの案件を、どこまで話したかを記録する','g'],
+      ['過去の実績さがし','似た工事の実績・写真・工事成績をすぐに探せる','g'],
+      ['入札参加資格・提出期限の管理','資格の更新日や書類の締切を知らせる','g'],
+      ['技術提案書のたたき台','総合評価の技術提案などの下書きを作る','y'],
+      ['入札に参加するか・価格の決定','参加の可否と入札価格は、責任者が決める','r']
+    ]},
+    {id:'sekisan',short:'積算',name:'積算部',icon:'i-calc',role:'工事の値段を計算する係',tools:[
+      ['社内単価データベースの検索','過去に使った単価や資材価格をすぐに引ける','g',1],
+      ['図面からの数量拾いの補助','図面から数量を拾う作業を手伝う（数量は技術者が確認）','y'],
+      ['過去工事との見積比べ','似た工事と比べて、大きなズレがある項目を知らせる','y'],
+      ['見積書・内訳書づくりの補助','計算結果を決まった様式の書類にまとめる','y'],
+      ['積算基準の改定チェック','基準の変わった所を整理して知らせる（読み方は人が判断）','y'],
+      ['見積金額の最終決定','いくらで出すかは、責任者が決める','r']
+    ]},
+    {id:'sekkei',short:'設計・技術',name:'設計・技術部',icon:'i-blueprint',role:'図面と技術を考える係',tools:[
+      ['図面・設計書の版の管理','どれが最新版か一目でわかる保管場所（共通データ環境）','g',1],
+      ['技術基準・仕様書の検索','基準書や過去の設計から、必要な所をすぐに探す','g'],
+      ['照査チェックリストの書きもれ確認','照査の記入もれや未確認の項目を知らせる','y'],
+      ['設計変更の協議資料のたたき台','変更の理由と比較表の下書きを作る','y'],
+      ['BIM/CIMモデルの閲覧・干渉の見える化','3Dモデルを見て、ぶつかっていそうな所に印を付ける','y'],
+      ['構造計算・設計の合否判断','安全かどうかの判断は、資格を持つ技術者が行う','r']
+    ]},
+    {id:'koji',short:'工事（現場）',name:'工事部（土木・建築の現場）',icon:'i-helmet',role:'現場で工事を進める係',tools:[
+      ['工事写真の整理・写真台帳','撮った写真を工種・測点ごとに並べ、台帳づくりを楽にする（圏外でも消えない）','g',1],
+      ['作業日報・工事日報','スマホで現場から入力。天候・人員・機械を前日から引き継ぐ','g'],
+      ['打合せ簿・協議記録のたたき台','打合せのメモから、決まった様式の記録を作る','y'],
+      ['工程表のたたき台・遅れのお知らせ','過去の工事から下書きを作り、遅れそうな所を早めに知らせる','y'],
+      ['実行予算と原価の見える化','予算と実際にかかったお金の差を、工種ごとに見る','y'],
+      ['3D点群・ドローン写真の閲覧','現場の形を3Dで見る（数量・寸法の確定は技術者）','y'],
+      ['施工計画書のたたき台','過去の計画書から下書きを作り、所長が手直しして決める','y'],
+      ['仮設・揚重計画の決定','足場やクレーンの計画を決めるのは、責任を持つ技術者','r']
+    ]},
+    {id:'anzen',short:'安全環境',name:'安全環境部',icon:'i-shield',role:'みんなを守る係。けがと環境への影響をなくす',tools:[
+      ['安全パトロール記録','パトロールでの指摘と、直したかどうかを記録する','g'],
+      ['産業廃棄物マニフェストの管理','廃棄物の伝票の出し忘れや期限を知らせる','g'],
+      ['KY・安全書類の書きもれ確認','空欄や記入もれを知らせるだけ。危険の見積もりは人','y',1],
+      ['暑さ指数（WBGT）のお知らせ','気象データから暑さ指数を現場に知らせる（休憩・中止の判断は人）','y'],
+      ['ヒヤリハットの集計・傾向','報告を集めて、多い場所・時間・作業を見える化する','y'],
+      ['多言語の安全教育資料','外国籍の仲間向けに資料を訳す（訳は必ず人が確認）','y'],
+      ['作業中止・立入禁止などの安全判断','現場の安全に関わる決定は、責任者が行う','r']
+    ]},
+    {id:'hinshitsu',short:'品質管理',name:'品質管理部',icon:'i-ruler',role:'出来ばえを確かめる係',tools:[
+      ['検査記録・試験成績の管理','コンクリート試験などの結果を工事ごとに整理する','g',1],
+      ['不具合・是正の追跡','見つかった不具合が、直ったかどうかを最後まで追う','g'],
+      ['社内検査の日程・立会い調整','検査の予定と、立ち会う人を調整する','g'],
+      ['出来形管理の帳票づくり','測った値を帳票へ転記する（判定の確認は技術者）','y'],
+      ['電子納品の形式チェック','提出データの形式やファイル名のまちがいを知らせる','y'],
+      ['検査の合否判定','合格か不合格かを決めるのは検査員','r']
+    ]},
+    {id:'kizai',short:'機材',name:'機材部（機械センター）',icon:'i-truck',role:'重機と資材の係',tools:[
+      ['重機・機材の予約と空き状況','どの機械が、いつ、どの現場で使えるかがわかる','g',1],
+      ['点検・車検・特定自主検査の期限管理','期限が近い機械を知らせ、期限切れは予約できなくする','g'],
+      ['資材ヤードの在庫管理','鋼材や仮設材がどこに何本あるかがわかる','g'],
+      ['回送（運搬）手配の調整','機械を運ぶトラックの手配を一覧で調整する','g'],
+      ['修理履歴と故障の傾向','修理の記録から、故障しやすい機械や時期を見える化する','y'],
+      ['機械を使ってよいかの最終判断','点検結果をもとに、使ってよいかは人が決める','r']
+    ]},
+    {id:'kobai',short:'購買・外注',name:'購買・外注部',icon:'i-box',role:'協力会社と材料を手配する係',tools:[
+      ['協力会社データベース','建設業許可・保険・実績・評価を1か所で管理する','g',1],
+      ['協力会社からの書類回収','安全書類（グリーンファイル）などの、出た・出ていないを見える化','g'],
+      ['見積の比較表づくり','複数社の見積を同じ形の表に並べる','y'],
+      ['注文書・契約書類の作成補助','決まった内容から、注文書の下書きを作る','y'],
+      ['出来高・支払いの確認補助','出来高と請求の金額が合っているかを照らし合わせる','y'],
+      ['発注先の決定・契約の締結','どこに頼むかと契約は、責任者が決める','r']
+    ]},
+    {id:'gijutsu',short:'技術開発・ICT',name:'技術開発・ICT推進部',icon:'i-spark',role:'新しい技術を試して、会社に広める係',tools:[
+      ['ICT施工の事例・ノウハウ検索','社内のICT施工の事例や失敗談を探せる','g',1],
+      ['新技術（NETISなど）の情報あつめ','新しい技術の情報を集めて、短くまとめる','g'],
+      ['社内の試行（PoC）の記録と効果','試した技術の結果と、効果の数字を記録する','g'],
+      ['3D・点群データの変換と共有','形式のちがう3Dデータを変換して共有しやすくする','y'],
+      ['技術論文・発表資料のたたき台','現場の成果から、発表資料の下書きを作る','y'],
+      ['新工法を採用するかの決定','現場で使うかどうかは、技術者と責任者が決める','r']
+    ]},
+    {id:'iji',short:'維持管理',name:'維持管理・アフターサービス部',icon:'i-loop',role:'引き渡したあとも見守る係',tools:[
+      ['点検記録・損傷写真の管理','点検の結果と写真を、施設・部位ごとに整理する','g',1],
+      ['補修履歴の台帳','いつ、どこを、どう直したかを残す','g'],
+      ['お客様からの連絡の受付','連絡の内容と、対応がどこまで進んだかを見える化','g'],
+      ['保証期間・定期点検のお知らせ','保証の期限や点検の時期が近いことを知らせる','g'],
+      ['損傷写真からの「要確認」候補','ひび割れなどがありそうな写真に印を付ける（判断は技術者）','y'],
+      ['健全度・補修が必要かの判定','施設の状態の評価は、資格を持つ技術者が行う','r']
+    ]},
+    {id:'somu',short:'総務・法務',name:'総務・法務部',icon:'i-doc',role:'会社の書類とルールの係',tools:[
+      ['規程・マニュアルの検索','「この場合どうする？」を社内規程からすぐに探す','g',1],
+      ['許認可の更新期限の管理','建設業許可などの更新日を知らせる','g'],
+      ['社内申請・稟議の電子化','紙の申請を desknet\'s NEO / AppSuite の電子申請にする','g'],
+      ['文書の保存期間と廃棄の管理','いつまで保存し、いつ廃棄するかを管理する','g'],
+      ['契約書の条文チェック補助','ひな形とちがう条文に印を付ける（読み方は法務担当）','y'],
+      ['契約の締結・法的な判断','契約してよいか、法律上どうかは人が判断する','r']
+    ]},
+    {id:'jinji',short:'人事・労務',name:'人事・労務部',icon:'i-users',role:'人を育て、働き方を守る係',tools:[
+      ['勤怠と時間外労働のお知らせ','残業の上限に近づいた人と上司に、早めに知らせる','g',1],
+      ['資格・免許の取得と期限の管理','だれが何の資格を持ち、いつ更新かがわかる','g'],
+      ['教育・研修の受講記録','受けた研修と、まだ受けていない研修がわかる','g'],
+      ['建設キャリアアップシステム（CCUS）の記録整理','就業の記録を集計して、確認しやすくする','g'],
+      ['求人票・研修資料のたたき台','求人や研修の資料の下書きを作る（公平な表現か人が確認）','y'],
+      ['採用・評価・配置・処分の決定','人に関わる判断はAIに決めさせない。人が責任を持って決める','r']
+    ]},
+    {id:'keiri',short:'経理・財務',name:'経理・財務部',icon:'i-yen',role:'お金の出入りの係',tools:[
+      ['工事ごとの原価集計','現場の入力から、工事ごとのお金を自動で集計する','g'],
+      ['入金・支払いの予定の見える化','いつ、いくら入って、いくら出るかがわかる','g'],
+      ['請求書の受け取りと仕訳の候補','届いた請求書を読み取り、仕訳の候補を出す（確定は経理担当）','y',1],
+      ['経費精算の書きもれチェック','領収書の不足や、ルールとちがう申請を知らせる','y'],
+      ['内部統制（J-SOX）の証跡あつめ','確認に必要な記録を集めて、そろっているか示す','y'],
+      ['支払いの承認・決算の確定','お金を払うことと、決算の数字は人が確定する','r']
+    ]},
+    {id:'it',short:'情報システム',name:'情報システム・DX部',icon:'i-monitor',role:'ITの道具をそろえ、会社の情報を守る係',tools:[
+      ['PC・アカウントの台帳','入社・退社と連動して、PCとアカウントを管理する','g',1],
+      ['現場ネットワーク・機器の状態の見える化','現場の通信機器が動いているかを一覧で見る','g'],
+      ['ヘルプデスクの受付と一次回答','desknet\'s NEO / AppSuite で受け付け、よくある質問に答える（回答内容は担当が見守る）','y'],
+      ['セキュリティ通知の整理','たくさんの警告をまとめ、急ぐものを上に出す','y'],
+      ['ソフトウェアファクトリー自体の運用','このラインの検査ルールや権限を管理する','y'],
+      ['権限の付与・セキュリティ例外の承認','だれに何の権限を渡すかは、人が承認する','r']
+    ]},
+    {id:'kansa',short:'内部監査',name:'内部監査・コンプライアンス室',icon:'i-eye',role:'ルールが守られているかを確かめる係',tools:[
+      ['法令改正のお知らせ','仕事に関係する法令の改正を集めて知らせる','g',1],
+      ['監査の指摘のフォロー','指摘された点が、直ったかどうかを追う','g'],
+      ['監査の証跡あつめ・チェックリスト','監査に必要な記録を集め、チェックリストを準備する','y'],
+      ['規程と実際のずれの候補','規程と実際の記録がちがいそうな所に印を付ける','y'],
+      ['内部通報の受付台帳','通報の受付と対応の記録（見られるのは担当者だけ、通報者を守る）','y'],
+      ['不正の認定・処分の判断','不正かどうか、どう対応するかは人が判断する','r']
+    ]},
+    {id:'koho',short:'広報・CSR',name:'広報・CSR',icon:'i-mega',role:'会社のことを社会に知ってもらう係',tools:[
+      ['現場見学会・イベントの申込受付','見学会の申込と参加者の連絡をまとめる','g',1],
+      ['写真素材の管理（了解つき）','広報用の写真を、写っている人の了解の有無と一緒に管理する','g'],
+      ['広報記事・SNS投稿のたたき台','現場の話題から記事の下書きを作る','y'],
+      ['工事のお知らせ文（近隣向け）','近隣の方へのお知らせの下書きを作る（内容は現場と確認）','y'],
+      ['環境・CSRデータの集計','CO2や廃棄物の量などを集めて報告用にまとめる','y'],
+      ['対外発表・おわびの最終決定','会社として何を発表するかは、責任者が決める','r']
+    ]}
+  ];
+
+/* ===== みらいソフトウェアファクトリー 詳細受付：共通コア（オフライン） ===== */
+const SF = (function(){
+  const COLORS = {g:{l:'青',n:'任せる'},y:{l:'黄',n:'チェック付き'},r:{l:'赤',n:'決めさせない'}};
+  const RANK = {g:0,y:1,r:2};
+  const STATUSES = [
+    {k:'received',l:'受付',flow:1},
+    {k:'review',l:'内容確認中',flow:1},
+    {k:'wait',l:'承認待ち',flow:1},
+    {k:'approved',l:'承認済み',flow:1},
+    {k:'dev',l:'実装中',flow:1},
+    {k:'verify',l:'検証中',flow:1},
+    {k:'field',l:'現場試用',flow:1},
+    {k:'done',l:'完了',flow:1},
+    {k:'back',l:'差戻し',flow:0},
+    {k:'hold',l:'見送り',flow:0}
+  ];
+  const NEXT = {received:'review',review:'wait',wait:'approved',approved:'dev',dev:'verify',verify:'field',field:'done',back:'received'};
+  const ROLES = [
+    {k:'requester',l:'依頼者',name:'山田 太郎',dept:'koji'},
+    {k:'desk',l:'受付担当（IT・DX）',name:'佐藤 花子',dept:'it'},
+    {k:'approver',l:'承認者（業務責任者）',name:'鈴木 一郎',dept:'koji'}
+  ];
+  const KINDS = ['新しい道具がほしい','いまある道具を良くしたい','不具合の報告','相談・アイデア'];
+  const USERS = ['現場の担当者','現場所長','現場事務','本社・支店の担当者','協力会社','発注者','経営層'];
+  const PLACES = ['事務所','現場（屋外）','電波の弱い現場','移動中・車内'];
+  const DATA = [
+    {k:'personal',l:'個人情報（名簿・資格・健康など）'},
+    {k:'client',l:'発注者から預かった図面・データ'},
+    {k:'location',l:'現場の位置情報'},
+    {k:'photo',l:'工事写真・検査記録の原本'},
+    {k:'money',l:'お金の情報（金額・原価・支払い）'}
+  ];
+  const PARTIES = ['社内のみ','協力会社も使う','発注者も見る'];
+  const DECIDES = [
+    {k:'g',l:'記録・整理・検索・お知らせ'},
+    {k:'y',l:'たたき台づくり・比べっこ・見落としチェック'},
+    {k:'r',l:'合否・金額・契約・人の処遇・安全などを決める'}
+  ];
+  const CONSTRAINTS = [
+    'いまのログイン方法は変えない',
+    '本物のデータを練習用の場所に持ち込まない',
+    '写真・記録の原本は加工しない',
+    '個人情報は必要な人だけが見られるようにする',
+    '電波がなくても入力が消えないようにする'
+  ];
+  const APPROVALS = [
+    'データを消す・作り直す変更',
+    'ログインや権限の変更',
+    '新しい外部サービスとの接続',
+    '協力会社・発注者に見せる範囲の変更',
+    '提出様式の変更',
+    '安全・品質の判定にかかわる変更'
+  ];
+  const FREQ = [{k:'d',l:'毎日',m:20},{k:'w',l:'毎週',m:4},{k:'m',l:'毎月',m:1},{k:'o',l:'ときどき',m:0.3}];
+  const READY = [{k:5,l:'電子データでそろっている'},{k:3,l:'一部は紙・Excel'},{k:1,l:'紙や人の頭の中'}];
+  const SPREAD = [{k:5,l:'全社で使えそう'},{k:3,l:'いくつかの部署・現場で使えそう'},{k:1,l:'自分の部署だけ'}];
+  const VAGUE = ['使いやすい','使い易い','見やすい','わかりやすい','分かりやすい','いい感じ','いいかんじ','適切','適宜','なるべく','できるだけ','早く','速く','すばやく','簡単','かんたん','便利','スムーズ','きれい','ちゃんと','しっかり','柔軟','直感的','快適','いろいろ','など'];
+
+  const pad = (n,l)=>String(n).padStart(l||2,'0');
+  function nowISO(){ return new Date().toISOString(); }
+  function fmt(iso, withTime){
+    if(!iso) return '';
+    const d = new Date(iso); if (isNaN(d)) return iso;
+    const s = d.getFullYear()+'/'+pad(d.getMonth()+1)+'/'+pad(d.getDate());
+    return withTime===false ? s : s+' '+pad(d.getHours())+':'+pad(d.getMinutes());
+  }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  function lines(t){ return String(t||'').split(/\r?\n/).map(s=>s.replace(/^\s*[-・●]\s*/,'').trim()).filter(Boolean); }
+  const statusOf = k => STATUSES.find(s=>s.k===k) || STATUSES[0];
+  const deptOf = id => CATALOG.find(d=>d.id===id);
+  function toolOf(ref){
+    if(!ref) return null;
+    const [d,i] = ref.split('|'); const dep = deptOf(d); if(!dep) return null;
+    const t = dep.tools[+i]; return t ? {dept:dep, name:t[0], desc:t[1], c:t[2]} : null;
+  }
+  const roleOf = k => ROLES.find(r=>r.k===k) || ROLES[0];
+
+  /* ---- 信号の色の判定（候補） ---- */
+  function judge(r){
+    const reasons = [];
+    let c = 'g';
+    const up = (to, why) => { if (RANK[to] > RANK[c]) c = to; reasons.push({c:to, t:why}); };
+    if (r.decides) up(r.decides, r.decides==='r' ? '「決める」仕事が入っています。AIに決めさせない範囲です' : r.decides==='y' ? 'たたき台・チェックの道具は、担当者の確認が必要です' : '記録・整理・お知らせの道具です');
+    const tool = toolOf(r.toolRef);
+    if (tool && tool.c !== 'g') up(tool.c, 'カタログ上の色が「'+COLORS[tool.c].l+'」の道具です');
+    (r.data||[]).forEach(k => { const d = DATA.find(x=>x.k===k); if (d) up('y', d.l+'を扱います'); });
+    if (r.parties && r.parties !== '社内のみ') up('y', '社外の人（'+r.parties.replace('も使う','').replace('も見る','')+'）が関わります');
+    if ((r.approvals||[]).includes('安全・品質の判定にかかわる変更')) up('y', '安全・品質の判定にかかわります');
+    if (!reasons.length) reasons.push({c:'g', t:'まだ判定材料がありません（「この道具は何をしますか」を選んでください）'});
+    return {c, reasons};
+  }
+
+  /* ---- ものさし（参考値。着手順は別途決定） ---- */
+  function measure(r){
+    const f = FREQ.find(x=>x.k===r.freq);
+    const people = Math.max(0, +r.people||0), minutes = Math.max(0, +r.minutes||0);
+    const hours = f ? Math.round(people * f.m * minutes / 60 * 10) / 10 : 0;
+    const band = (v, cuts) => { let s=1; cuts.forEach((x,i)=>{ if (v>=x) s=i+2; }); return Math.min(s,5); };
+    const j = judge(r);
+    const scores = [
+      {k:'people', l:'困っている人の多さ', v: people ? band(people,[3,10,30,100]) : 0},
+      {k:'signal', l:'青信号か', v: r.decides ? ({g:5,y:3,r:1})[j.c] : 0},
+      {k:'hours', l:'手間の減り方', v: hours ? band(hours,[5,20,50,150]) : 0},
+      {k:'ready', l:'データがそろっているか', v: +r.dataReady||0},
+      {k:'spread', l:'ほかに広げられるか', v: +r.spread||0}
+    ];
+    return {hours, scores};
+  }
+
+  /* ---- 合格の条件のチェック ---- */
+  function lint(text){
+    const t = String(text||'').trim();
+    if (!t) return {ok:false, level:'empty', words:[], tip:''};
+    if (/〇〇|△△|○○/.test(t)) return {ok:false, level:'vague', words:['〇〇'], tip:'「〇〇」「△△」の所を、自分の言葉に書きかえてください。'};
+    const words = VAGUE.filter(w => t.includes(w));
+    if (words.length) return {ok:false, level:'vague', words, tip:'「'+words.join('」「')+'」は人によって受け取り方がちがうため、検査機で合否を決められません。数字や「〜できる／〜できない」で書いてみましょう。'};
+    if (t.length < 8) return {ok:false, level:'short', words:[], tip:'もう少し具体的に書きましょう（だれが・何を・どうなれば合格か）。'};
+    return {ok:true, level:'ok', words:[], tip:'検査で確かめられる書き方です。'};
+  }
+  function markVague(text){
+    let h = esc(text);
+    VAGUE.slice().sort((a,b)=>b.length-a.length).forEach(w => { h = h.split(esc(w)).join('<mark class="vague">'+esc(w)+'</mark>'); });
+    return h;
+  }
+
+  /* ---- 権限（サンプル） ---- */
+  function canMove(role, from, to){
+    if (from === to) return false;
+    if (role === 'approver') return true;
+    if (role === 'desk') return !['approved','done'].includes(to) && from !== 'done';
+    if (role === 'requester') return (from==='back' && to==='received') || (['received','back'].includes(from) && to==='hold');
+    return false;
+  }
+  function canEdit(role, r){ return role !== 'requester' ? !['done'].includes(r.status) : ['received','back'].includes(r.status); }
+
+  /* ---- 注文書（作業指示書）YAML ---- */
+  function q(s){ return '"' + String(s==null?'':s).replace(/\\/g,'\\\\').replace(/"/g,'\\"').replace(/\r?\n/g,' ') + '"'; }
+  function list(key, arr, ind){ ind = ind||''; if(!arr || !arr.length) return ind+key+': []\n'; return ind+key+':\n' + arr.map(x=>ind+'  - '+q(x)).join('\n') + '\n'; }
+  function toYAML(r){
+    const j = judge(r), m = measure(r), d = deptOf(r.dept), tool = toolOf(r.toolRef);
+    const dataL = (r.data||[]).map(k => (DATA.find(x=>x.k===k)||{}).l).filter(Boolean);
+    const f = FREQ.find(x=>x.k===r.freq);
+    let y = '';
+    y += 'id: '+q(r.id)+'\n';
+    y += 'title: '+q(r.title)+'\n';
+    y += 'kind: '+q(r.kind)+'\n';
+    y += 'department: '+q(d ? d.name : '')+'\n';
+    y += 'catalog_tool: '+q(tool ? tool.name : 'カタログ外')+'\n';
+    y += 'requested_by: '+q(r.applicant)+'\n';
+    y += 'approver: '+q(r.approver)+'\n';
+    y += 'status: '+q(statusOf(r.status).l)+'\n';
+    y += 'signal:\n  suggested: '+q(COLORS[j.c].l)+'\n  decided: '+q(r.signalFinal ? COLORS[r.signalFinal].l : '未決定（承認者が決める）')+'\n';
+    y += '\n' + list('problem', lines(r.problem));
+    y += list('purpose', lines(r.purpose));
+    y += list('users', r.users);
+    y += list('places', r.places);
+    y += '\n' + list('scope', lines(r.scope));
+    y += list('out_of_scope', lines(r.outScope));
+    y += '\n' + list('acceptance_criteria', (r.criteria||[]).filter(Boolean));
+    y += '\n' + list('constraints', (r.constraints||[]).concat(lines(r.constraintsOther)));
+    y += list('data_handling', dataL.length ? dataL : ['特別な情報は扱わない']);
+    y += 'parties: '+q(r.parties||'社内のみ')+'\n';
+    y += list('requires_human_approval', r.approvals);
+    y += '\nmeasure:  # 参考値。着手順は別途決める\n';
+    y += '  people: '+(+r.people||0)+'\n  frequency: '+q(f?f.l:'')+'\n  minutes_per_time: '+(+r.minutes||0)+'\n  est_hours_per_month: '+m.hours+'\n';
+    y += '\nrequested_at: '+q(fmt(r.createdAt))+'\nwish_date: '+q(r.wish||'')+'\n';
+    return y;
+  }
+
+  /* ---- CSV ---- */
+  function toCSV(items){
+    const head = ['受付番号','件名','部署','依頼区分','起票者','信号（候補）','信号（決定）','状態','月あたり削減見込み(h)','受付日時','更新日時'];
+    const cell = v => '"' + String(v==null?'':v).replace(/"/g,'""') + '"';
+    const rows = items.map(r => { const j=judge(r), m=measure(r), d=deptOf(r.dept);
+      return [r.id, r.title, d?d.name:'', r.kind, r.applicant, COLORS[j.c].l, r.signalFinal?COLORS[r.signalFinal].l:'', statusOf(r.status).l, m.hours, fmt(r.createdAt), fmt(r.updatedAt)].map(cell).join(','); });
+    return '﻿' + head.map(cell).join(',') + '\r\n' + rows.join('\r\n');
+  }
+  function download(name, text, mime){
+    try {
+      const blob = new Blob([text], {type:(mime||'text/plain')+';charset=utf-8'});
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+      document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 500);
+      return true;
+    } catch(e) { return false; }
+  }
+
+  /* ---- 保存（ブラウザ内のみ。使えない環境ではメモリ保持） ---- */
+  let memory = null;
+  function load(key){
+    try { const s = localStorage.getItem(key); if (s) { const d = JSON.parse(s); if (d && Array.isArray(d.items)) return {data:d, persistent:true}; } }
+    catch(e) { return {data: memory || seed(), persistent:false}; }
+    return {data: seed(), persistent: storageOK()};
+  }
+  function storageOK(){ try { const k='__sf_t'; localStorage.setItem(k,'1'); localStorage.removeItem(k); return true; } catch(e){ return false; } }
+  function save(key, data){ memory = data; try { localStorage.setItem(key, JSON.stringify(data)); return true; } catch(e) { return false; } }
+  function nextId(data){ data.seq = (data.seq||0) + 1; return 'REQ-2026-' + pad(data.seq,4); }
+  function validImport(obj){ return obj && Array.isArray(obj.items) && obj.items.every(x => x && typeof x.id==='string' && typeof x.title==='string'); }
+
+  function blank(role){
+    const ro = roleOf(role);
+    return {id:'', createdAt:'', updatedAt:'', applicant: ro.name, dept: ro.dept, contact:'', title:'', kind:KINDS[0], toolRef:'',
+      problem:'', purpose:'', users:[], people:'', places:[], scope:'', outScope:'', criteria:['','',''], constraints:CONSTRAINTS.slice(0,2),
+      constraintsOther:'', data:[], parties:'社内のみ', approvals:[], decides:'', freq:'', minutes:'', dataReady:'', spread:'',
+      wish:'', attachments:[], approver:'鈴木 一郎', status:'received', signalFinal:'', history:[], comments:[]};
+  }
+
+  /* ---- サンプルデータ ---- */
+  function seed(){
+    const base = new Date('2026-10-01T09:00:00+09:00').getTime();
+    const at = (day, h) => new Date(base + day*86400000 + (h||0)*3600000).toISOString();
+    const H = (day, by, role, action, note, h) => ({at:at(day,h), by, role, action, note:note||''});
+    const S = [
+      {title:'工事写真の圏外保存', dept:'koji', toolRef:'koji|0', kind:'いまある道具を良くしたい', applicant:'山田 太郎', decides:'g', data:['photo'], status:'field', signalFinal:'y',
+       problem:'山の中の現場では写真が送れず、事務所に戻ってから整理し直している', purpose:'電波の弱い現場でも写真が消えずに残り、事務所での整理の手間をなくす',
+       users:['現場の担当者','現場事務','現場所長'], people:40, places:['現場（屋外）','電波の弱い現場'], scope:'圏外での一時保存\n電波が戻った時の自動送信\n送信済み・未送信の表示', outScope:'発注者システムへの直接提出\n写真の加工・編集',
+       criteria:['圏外で撮った写真がアプリを閉じても消えない','電波が戻ると自動で送られ、二重に登録されない','撮影日時・撮影場所の記録をあとから書きかえられない','ほかの現場の写真は見えない'],
+       constraints:['写真・記録の原本は加工しない','本物のデータを練習用の場所に持ち込まない','電波がなくても入力が消えないようにする'], approvals:['提出様式の変更'], freq:'d', minutes:15, dataReady:5, spread:5, d0:0},
+      {title:'重機・機材の空き状況を見たい', dept:'kizai', toolRef:'kizai|0', kind:'新しい道具がほしい', applicant:'高橋 健', decides:'g', status:'dev', signalFinal:'g',
+       problem:'どの重機が空いているか電話で確認しており、現場間で取り合いになる', purpose:'重機・機材の空き状況を、だれでもすぐに見られるようにする',
+       users:['現場所長','現場の担当者','本社・支店の担当者'], people:60, places:['事務所','現場（屋外）'], scope:'機械ごとの予約カレンダー\n予約の登録・取り消し\n点検期限切れの機械は予約できない', outScope:'回送トラックの手配\n料金の計算',
+       criteria:['同じ機械を同じ時間に二重予約できない','点検期限切れの機械は予約画面に「予約不可」と表示される','予約の変更履歴（だれが・いつ）が残る'], constraints:['いまのログイン方法は変えない'], freq:'d', minutes:10, dataReady:3, spread:5, d0:2},
+      {title:'KY記録の書きもれ確認', dept:'anzen', toolRef:'anzen|2', kind:'新しい道具がほしい', applicant:'伊藤 誠', decides:'y', data:['personal'], parties:'協力会社も使う', status:'wait',
+       problem:'KY活動記録の空欄や記入もれが、パトロールのときに見つかる', purpose:'提出前に書きもれに気づけるようにする（危険の見積もりは人が行う）',
+       users:['現場の担当者','協力会社','現場所長'], people:120, places:['現場（屋外）'], scope:'必須欄の空欄チェック\n作業内容と危険のポイントの未記入の知らせ', outScope:'危険度の自動判定\n作業可否の判断',
+       criteria:['必須欄が空のまま提出すると、空欄の項目名が表示される','記入内容の良し悪しは判定しない（空欄のみを知らせる）','協力会社は自社の記録だけが見られる'],
+       constraints:['個人情報は必要な人だけが見られるようにする'], approvals:['安全・品質の判定にかかわる変更','協力会社・発注者に見せる範囲の変更'], freq:'d', minutes:5, dataReady:3, spread:5, d0:4},
+      {title:'請求書の仕訳候補', dept:'keiri', toolRef:'keiri|2', kind:'新しい道具がほしい', applicant:'渡辺 美咲', decides:'y', data:['money'], status:'review',
+       problem:'協力会社からの請求書を手で入力しており、月末に作業が集中する', purpose:'請求書の読み取りと仕訳の候補づくりで入力時間を減らす（確定は経理担当）',
+       users:['本社・支店の担当者'], people:8, places:['事務所'], scope:'請求書PDFの読み取り\n工事番号・勘定科目の候補表示', outScope:'支払いの承認\n会計システムへの自動登録',
+       criteria:['読み取った金額と請求書の金額が一致しない場合は警告を出す','候補は経理担当が「確定」を押すまで登録されない'], constraints:['本物のデータを練習用の場所に持ち込まない'], approvals:['新しい外部サービスとの接続'], freq:'m', minutes:600, dataReady:3, spread:3, d0:6},
+      {title:'残業上限の早めのお知らせ', dept:'jinji', toolRef:'jinji|0', kind:'新しい道具がほしい', applicant:'中村 由紀', decides:'g', data:['personal'], status:'done', signalFinal:'y',
+       problem:'時間外労働の上限に近づいていることに、月末まで気づけない', purpose:'本人と上司が早めに気づき、働き方を調整できるようにする',
+       users:['現場所長','本社・支店の担当者'], people:300, places:['事務所','現場（屋外）'], scope:'月の途中での残業時間の見える化\n上限の8割を超えたら本人と上司へ知らせる', outScope:'評価や処分への利用',
+       criteria:['上限の8割を超えた日の翌朝までに本人と上司へ通知される','本人と上司以外は個人の残業時間を見られない','通知の記録が残る'], constraints:['個人情報は必要な人だけが見られるようにする'], approvals:['ログインや権限の変更'], freq:'w', minutes:10, dataReady:5, spread:5, d0:-10},
+      {title:'入札・発注情報のお知らせ', dept:'eigyo', toolRef:'eigyo|0', kind:'新しい道具がほしい', applicant:'小林 大輔', decides:'g', status:'received',
+       problem:'発注機関のサイトを毎日見て回っている', purpose:'自社に合いそうな案件だけを毎朝まとめて知らせる',
+       users:['本社・支店の担当者'], people:15, places:['事務所'], scope:'公告情報の収集\n工種・地域での絞り込み\n毎朝のお知らせ', outScope:'入札に参加するかの判断',
+       criteria:['登録した工種・地域に合う公告が、翌営業日の朝9時までに一覧で届く','元の公告ページへのリンクが付いている'], constraints:['いまのログイン方法は変えない'], approvals:['新しい外部サービスとの接続'], freq:'d', minutes:30, dataReady:5, spread:3, d0:12},
+      {title:'見積金額を自動で決めたい', dept:'sekisan', toolRef:'sekisan|5', kind:'相談・アイデア', applicant:'加藤 修', decides:'r', data:['money'], status:'back',
+       problem:'見積の作成に時間がかかる', purpose:'見積金額をAIで自動的に決めたい',
+       users:['本社・支店の担当者'], people:10, places:['事務所'], scope:'見積金額の自動決定', outScope:'',
+       criteria:['いい感じの金額が出る'], constraints:[], approvals:[], freq:'w', minutes:240, dataReady:3, spread:1, d0:8,
+       backNote:'金額の決定は赤信号（AIに決めさせない）です。「過去工事との見積比べ（黄）」に範囲を変え、合格の条件を数字で書き直して再提出してください。'},
+      {title:'協力会社書類の回収状況', dept:'kobai', toolRef:'kobai|1', kind:'新しい道具がほしい', applicant:'吉田 恵', decides:'g', parties:'協力会社も使う', data:['personal'], status:'verify', signalFinal:'y',
+       problem:'安全書類が出たかどうかを、電話とメールで確認している', purpose:'書類の提出状況を一覧で見られるようにする',
+       users:['現場事務','協力会社','現場所長'], people:80, places:['事務所','現場（屋外）'], scope:'書類ごとの提出状況の一覧\n未提出の協力会社への連絡文の下書き', outScope:'書類内容の審査',
+       criteria:['協力会社は自社の書類と提出状況だけが見られる','未提出の書類が現場ごとに件数で表示される','提出日時が自動で記録される'], constraints:['個人情報は必要な人だけが見られるようにする'], approvals:['協力会社・発注者に見せる範囲の変更'], freq:'w', minutes:60, dataReady:3, spread:5, d0:3}
+    ];
+    const order = ['received','review','wait','approved','dev','verify','field','done'];
+    const items = S.map((s,i) => {
+      const r = Object.assign(blank('requester'), s);
+      r.id = 'REQ-2026-' + pad(i+1,4);
+      r.createdAt = at(s.d0, 1); r.history = [H(s.d0,s.applicant,'依頼者','受付','依頼を登録しました',1)];
+      const upto = s.status==='back' ? 2 : s.status==='hold' ? 1 : order.indexOf(s.status);
+      for (let k=1; k<=upto && k<order.length; k++) {
+        const st = order[k], who = ['approved','done'].includes(st) ? ROLES[2] : ROLES[1];
+        r.history.push(H(s.d0 + k, who.name, who.l, '状態を「'+statusOf(st).l+'」に変更', st==='approved' ? '信号の色を「'+COLORS[r.signalFinal||judge(r).c].l+'」に決定' : '', 2));
+      }
+      if (s.status==='back') { r.history.push(H(s.d0+3, ROLES[2].name, ROLES[2].l, '状態を「差戻し」に変更', s.backNote, 3)); r.comments=[{at:at(s.d0+3,3), by:ROLES[2].name, text:s.backNote}]; }
+      if (s.status==='field') r.comments = [{at:at(s.d0+7,4), by:'山田 太郎', text:'河川敷の現場で試用中。手袋のままでも押しやすいです。'}];
+      r.updatedAt = r.history[r.history.length-1].at;
+      delete r.d0; delete r.backNote;
+      return r;
+    });
+    return {seq: items.length, items};
+  }
+
+  return {COLORS,RANK,STATUSES,NEXT,ROLES,KINDS,USERS,PLACES,DATA,PARTIES,DECIDES,CONSTRAINTS,APPROVALS,FREQ,READY,SPREAD,VAGUE,
+    nowISO,fmt,esc,lines,statusOf,deptOf,toolOf,roleOf,judge,measure,lint,markVague,canMove,canEdit,toYAML,toCSV,download,load,save,storageOK,nextId,validImport,blank,seed};
+})();
+
+(function(){
+  const KEY = 'mirai-sf-intake-original-v1';
+  const $ = (s, el) => (el||document).querySelector(s);
+  const $$ = (s, el) => Array.from((el||document).querySelectorAll(s));
+  const E = SF.esc;
+  const ico = id => '<svg class="ico"><use href="#'+id+'"/></svg>';
+  const sig = c => c ? '<span class="sig '+c+'"><i></i>'+SF.COLORS[c].l+'</span>' : '';
+  const st = k => '<span class="st '+k+'">'+E(SF.statusOf(k).l)+'</span>';
+  const reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  const loaded = SF.load(KEY);
+  const S = {data: loaded.data, persistent: loaded.persistent, role:'requester', view:'home', step:0, draft:null, editId:null, dpTab:'card', fq:'', fd:'', fs:'', fc:'', open:null, dtab:'sum', pickDept:'', fresh:null};
+  const me = () => SF.roleOf(S.role);
+  const find = id => S.data.items.find(x=>x.id===id);
+  const colorOf = r => r.signalFinal || SF.judge(r).c;
+  function persist(){ if(!SF.save(KEY, S.data) && S.persistent){ S.persistent=false; notice(); } }
+  function notice(){ $('#notice').innerHTML = ico('i-shield')+' 外部と一切通信しない完全オフラインのサンプルです。データはこのブラウザの中だけに'+(S.persistent?'保存されます。':'一時的に保持されます（このブラウザでは保存できないため、閉じる前に「データ」からJSONで書き出してください）。')+' JSON形式は AppSuite風サンプルと共通で、相互に取り込めます。'; }
+  function toast(m, ng){ const t=document.createElement('div'); t.className='toast'+(ng?' ng':''); t.innerHTML=ico(ng?'i-alert':'i-check')+'<span>'+E(m)+'</span>'; $('#toast').appendChild(t); setTimeout(()=>t.remove(), 3000); }
+
+  /* ---- shell ---- */
+  $('#role').innerHTML = SF.ROLES.map(r=>'<option value="'+r.k+'">'+E(r.name)+'（'+E(r.l)+'）</option>').join('');
+  $('#role').addEventListener('change', e => { S.role = e.target.value; toast(me().name+'として操作します'); if (S.open) renderDrawer(); render(); });
+  $('#rail').addEventListener('click', e => { const b=e.target.closest('button[data-v]'); if(!b) return; if (b.dataset.v==='new') startNew(); else go(b.dataset.v); });
+  function go(v){ S.view=v; $$('#rail button').forEach(b=>b.classList.toggle('on', b.dataset.v===v)); render(); window.scrollTo({top:0}); }
+  function render(){
+    const v=$('#view'); v.style.animation='none'; void v.offsetWidth; v.style.animation='';
+    const w = S.data.items.filter(r=>r.status==='wait').length; const b=$('#bdg'); b.textContent=w; b.style.display = w ? 'grid':'none';
+    ({home:renderHome, new:renderWizard, board:renderBoard, list:renderList, data:renderData})[S.view]();
+  }
+
+  /* ---- home ---- */
+  function renderHome(){
+    const it = S.data.items, h = new Date().getHours();
+    const greet = h<11 ? 'おはようございます' : h<17 ? 'こんにちは' : 'おつかれさまです';
+    const cnt = ks => it.filter(r=>ks.includes(r.status)).length;
+    const hours = Math.round(it.reduce((a,r)=>a+SF.measure(r).hours,0));
+    const t = {g:0,y:0,r:0}; it.forEach(r=>t[colorOf(r)]++);
+    const mine = S.role==='requester' ? it.filter(r=>r.applicant===me().name) : S.role==='approver' ? it.filter(r=>r.status==='wait') : it.filter(r=>['received','review'].includes(r.status));
+    const mineT = S.role==='requester' ? 'あなたの依頼' : S.role==='approver' ? 'あなたの承認を待っている依頼' : '確認を待っている依頼';
+    const ev = []; it.forEach(r => r.history.forEach(x => ev.push({r, x}))); ev.sort((a,b)=>a.x.at<b.x.at?1:-1);
+    $('#view').innerHTML =
+      '<div class="hello"><div class="hero"><h2>'+greet+'、'+E(me().name.split(' ')[0])+'さん</h2><p>現場や部署の「困った」「これがあったら」を、注文書（作業指示書）にして受け付けます。AIが作り、検査機と現場で確かめ、最後は人が決めます。</p><button class="btn go" id="cta" type="button">'+ico('i-plus')+'新しい依頼をはじめる'+ico('i-arrow')+'</button></div>'+
+      '<div class="card pad"><h2 class="h2">'+ico('i-flag')+'信号の色の割合</h2><div class="ratio" id="ratio"><i class="g"></i><i class="y"></i><i class="r"></i></div><div class="rl"><span>'+sig('g')+' '+t.g+'件</span><span>'+sig('y')+' '+t.y+'件</span><span>'+sig('r')+' '+t.r+'件</span></div>'+
+      '<p class="hint" style="margin-top:12px">青＝任せる／黄＝担当者のチェック付き／赤＝AIに決めさせない。最終的な色は承認者が決めます。</p></div></div>'+
+      '<div class="kpis">'+
+        kpi('受付・確認中', cnt(['received','review']), 'i-inbox','件')+kpi('承認待ち', cnt(['wait']), 'i-stamp','件')+kpi('進行中', cnt(['approved','dev','verify','field']), 'i-wrench','件')+kpi('完了', cnt(['done']), 'i-check','件')+kpi('月あたり削減見込み', hours, 'i-gauge','h')+
+      '</div>'+
+      '<div class="two"><div class="card pad"><h2 class="h2">'+ico('i-users')+E(mineT)+'</h2>'+(mine.length ? mine.slice(0,6).map(r=>'<div class="mini" data-id="'+E(r.id)+'"><span class="no">'+E(r.id)+'</span><b>'+E(r.title)+'</b>'+sig(colorOf(r))+st(r.status)+'</div>').join('') : '<p class="muted">いまはありません</p>')+'</div>'+
+      '<div class="card pad"><h2 class="h2">'+ico('i-clock')+'最近の動き</h2><ul class="feed">'+ev.slice(0,7).map((e,i)=>'<li style="animation-delay:'+(i*.05)+'s"><span class="av">'+E(e.x.by.slice(0,1))+'</span><div><b>'+E(e.x.action)+'</b>　<a data-id="'+E(e.r.id)+'">'+E(e.r.title)+'</a><small>'+E(SF.fmt(e.x.at))+'　'+E(e.x.by)+'</small></div></li>').join('')+'</ul></div></div>';
+    $('#cta').addEventListener('click', startNew);
+    $$('#view [data-id]').forEach(a=>a.addEventListener('click',()=>openDrawer(a.dataset.id)));
+    const rb = $$('#ratio i'), n = Math.max(1,it.length);
+    setTimeout(()=>{ rb[0].style.width=(t.g/n*100)+'%'; rb[1].style.width=(t.y/n*100)+'%'; rb[2].style.width=(t.r/n*100)+'%'; }, reduce?0:120);
+    $$('[data-count]').forEach(el => { const target=+el.dataset.count; if(reduce){el.textContent=target;return;} let s0=null; const f=t2=>{ if(!s0) s0=t2; const p=Math.min((t2-s0)/900,1); el.textContent=Math.round(target*(1-Math.pow(1-p,3))); if(p<1) requestAnimationFrame(f); }; requestAnimationFrame(f); });
+  }
+  const kpi = (l,n,i,u) => '<div class="card kpi"><div class="t">'+ico(i)+E(l)+'</div><div class="n"><span data-count="'+n+'">0</span><small>'+u+'</small></div></div>';
+
+  /* ---- wizard ---- */
+  const STEPS = [
+    {t:'はじめに', h:'どんな依頼ですか？', d:'近い道具がカタログにあれば選んでください。なくても大丈夫です。'},
+    {t:'だれが', h:'だれが・どこで使いますか？', d:'使う人と場所がわかると、合格の条件や信号の色が決めやすくなります。'},
+    {t:'困りごと', h:'いま困っていること・目的', d:'「いま、こうで困っている」「こうなればうれしい」をそのまま書いてください。'},
+    {t:'作るもの', h:'作るもの・今回は作らないもの', d:'「作らない」を書いておくと、作りすぎや手戻りを防げます。'},
+    {t:'合格の条件', h:'どうなれば合格？', d:'検査機で確かめられるように、数字や「〜できる／〜できない」で書きます。'},
+    {t:'データと安全', h:'この道具は何をしますか？', d:'信号の色を決める大事な質問です。「決める」仕事はAIに任せません。'},
+    {t:'確認', h:'ものさしと最終確認', d:'手間の大きさは参考値です。着手順は別途決めます。'}
+  ];
+  function startNew(){ S.draft = SF.blank(S.role); S.draft.criteria=['']; S.editId=null; S.step=0; S.pickDept=''; go('new'); }
+  function startEdit(id){ const r=find(id); S.draft = JSON.parse(JSON.stringify(r)); if(!S.draft.criteria.length) S.draft.criteria=['']; S.editId=id; S.step=0; closeDrawer(); go('new'); }
+  function renderWizard(){
+    if (!S.draft) { S.draft = SF.blank(S.role); S.draft.criteria=['']; }
+    const s = STEPS[S.step];
+    $('#view').innerHTML =
+      '<div class="steps">'+STEPS.map((x,i)=>'<button type="button" class="stp '+(i<S.step?'done':i===S.step?'on':'')+'" data-step="'+i+'"><div class="bar"><i></i></div><b>STEP '+(i+1)+'</b><span>'+E(x.t)+'</span></button>').join('')+'</div>'+
+      '<div class="wiz"><div class="card pane" id="pane"><h3>'+(S.editId?'<span class="muted" style="font-size:13px">'+E(S.editId)+' を編集中　</span>':'')+E(s.h)+'</h3><p class="lead">'+E(s.d)+'</p><div id="stepBody">'+stepHTML(S.step)+'</div>'+
+      '<div class="err" id="err"></div>'+
+      '<div class="navbtns"><button class="btn" id="prev" type="button"'+(S.step===0?' disabled':'')+'>'+ico('i-back')+'もどる</button>'+
+      (S.step<STEPS.length-1 ? '<button class="btn pri" id="next" type="button">つぎへ'+ico('i-arrow')+'</button>' : '<button class="btn go" id="submit" type="button">'+ico('i-stamp')+(S.editId?'この内容で更新する':'この内容で受け付ける')+'</button>')+'</div></div>'+
+      '<aside class="pv" id="pv"></aside></div>';
+    bindStep(); updPreview();
+    $$('.stp').forEach(b=>b.addEventListener('click',()=>{ const to=+b.dataset.step; if (to<=S.step || validUpTo(to)) { S.step=to; renderWizard(); } }));
+    $('#prev').addEventListener('click',()=>{ if(S.step>0){ S.step--; renderWizard(); } });
+    if ($('#next')) $('#next').addEventListener('click',()=>{ const e=validate(S.step); if(e.length) return showErr(e); S.step++; renderWizard(); });
+    if ($('#submit')) $('#submit').addEventListener('click', submit);
+  }
+  function validUpTo(to){ for (let i=0;i<to;i++){ const e=validate(i); if(e.length){ S.step=i; renderWizard(); showErr(e); return false; } } return true; }
+  function showErr(list){ const e=$('#err'); e.innerHTML=ico('i-alert')+' '+list.map(E).join('<br>'); e.classList.add('show'); const p=$('#pane'); p.classList.remove('shake'); void p.offsetWidth; p.classList.add('shake'); }
+  function validate(i){
+    const d=S.draft, e=[];
+    if (i===0 && !d.kind) e.push('依頼の種類を選んでください');
+    if (i===1){ if(!d.applicant.trim()) e.push('起票者を入力してください'); if(!d.users.length) e.push('使う人を1つ以上選んでください'); }
+    if (i===2){ if(!d.title.trim()) e.push('件名を入力してください'); if(!d.problem.trim()) e.push('困っていることを入力してください'); if(!d.purpose.trim()) e.push('目的を入力してください'); }
+    if (i===3 && !d.scope.trim()) e.push('作るものを1つ以上書いてください');
+    if (i===4 && !d.criteria.filter(x=>x.trim()).length) e.push('合格の条件を1つ以上書いてください');
+    if (i===5 && !d.decides) e.push('「この道具は何をしますか」を選んでください');
+    if (i===6 && !d.approver) e.push('承認者を選んでください');
+    return e;
+  }
+  const chipsM = (field, opts) => '<div class="chips">'+opts.map(o=>{ const k=o.k!==undefined?o.k:o, l=o.l||o; return '<button type="button" class="chip'+((S.draft[field]||[]).includes(k)?' on':'')+'" data-chip="'+field+'" data-v="'+E(k)+'">'+E(l)+'</button>'; }).join('')+'</div>';
+  const chipsO = (field, opts) => '<div class="chips">'+opts.map(o=>{ const k=o.k!==undefined?o.k:o, l=o.l||o; return '<button type="button" class="chip'+(String(S.draft[field])===String(k)?' on':'')+'" data-one="'+field+'" data-v="'+E(k)+'">'+E(l)+'</button>'; }).join('')+'</div>';
+  const fld = (label, req, html, hint) => '<div class="f"><label class="fl">'+label+(req?'<span class="req">必須</span>':'')+'</label>'+html+(hint?'<div class="hint">'+hint+'</div>':'')+'</div>';
+  const inp = (field, ph, type) => '<input type="'+(type||'text')+'" data-bind="'+field+'" value="'+E(S.draft[field])+'" placeholder="'+E(ph||'')+'"'+(type==='number'?' min="0"':'')+'>';
+  const ta = (field, ph) => '<textarea data-bind="'+field+'" placeholder="'+E(ph||'')+'">'+E(S.draft[field])+'</textarea>';
+  function stepHTML(i){
+    const d = S.draft;
+    if (i===0){
+      const kicons = ['i-spark','i-wrench','i-bug','i-chat'], kdesc = ['まだない道具を作ってほしい','いま使っている道具を直したい・足したい','動かない・まちがっている','まだ形になっていない思いつき'];
+      const dep = S.pickDept || (d.toolRef ? d.toolRef.split('|')[0] : '');
+      return '<div class="choices">'+SF.KINDS.map((k,j)=>'<button type="button" class="choice'+(d.kind===k?' on':'')+'" data-one="kind" data-v="'+E(k)+'"><span class="ib">'+ico(kicons[j])+'</span><span><b>'+E(k)+'</b><small>'+E(kdesc[j])+'</small></span></button>').join('')+'</div>'+
+        fld('部署別 道具カタログから選ぶ（任意）',0,'<div class="depts">'+CATALOG.map(c=>'<button type="button" class="chip'+(dep===c.id?' on':'')+'" data-pick="'+c.id+'">'+E(c.short)+'</button>').join('')+'</div>'+
+          (dep ? '<div class="tools">'+SF.deptOf(dep).tools.map((t,j)=>{ const ref=dep+'|'+j; return '<button type="button" class="tool'+(d.toolRef===ref?' on':'')+'" data-tool="'+ref+'" style="animation-delay:'+(j*.03)+'s"><span class="d '+t[2]+'"></span><span><b>'+E(t[0])+'</b><small>'+E(t[1])+'</small></span></button>'; }).join('')+'</div>'+(d.toolRef?'<div style="margin-top:8px"><button type="button" class="btn sm" data-tool="">選択を外す</button></div>':'') : '<div class="hint">部署を選ぶと、その部署の道具の候補が出ます。丸の色はカタログ上の信号の色です。</div>'));
+    }
+    if (i===1){
+      return '<div class="grid2">'+fld('起票者',1,inp('applicant','例：山田 太郎'))+fld('連絡先',0,inp('contact','例：内線 1234'))+'</div>'+
+        fld('所属部署',1,'<select data-bind="dept">'+CATALOG.map(c=>'<option value="'+c.id+'"'+(d.dept===c.id?' selected':'')+'>'+E(c.name)+'</option>').join('')+'</select>')+
+        fld('だれが使う？',1,chipsM('users', SF.USERS))+
+        '<div class="grid2">'+fld('使う人のおよその人数',0,inp('people','例：40','number'),'人')+'<div></div></div>'+
+        fld('どこで使う？',0,chipsM('places', SF.PLACES),'「電波の弱い現場」を選ぶと、圏外でも動くことが大事な条件になります');
+    }
+    if (i===2){
+      return fld('件名',1,inp('title','例：工事写真の圏外保存'),'ひとことで「何がほしいか」がわかる名前に')+
+        fld('いま困っていること',1,ta('problem','例：山の中の現場では写真が送れず、事務所に戻ってから整理し直している'))+
+        fld('なんのため？（目的）',1,ta('purpose','例：電波の弱い現場でも写真が消えずに残り、整理の手間をなくす'));
+    }
+    if (i===3){
+      return fld('作るもの',1,ta('scope','1行に1つずつ\n例：圏外での一時保存\n例：電波が戻った時の自動送信'),'1行に1項目')+
+        fld('今回は作らない',0,ta('outScope','例：写真の加工・編集'));
+    }
+    if (i===4){
+      return '<div class="vsbox"><div class="b"><b style="color:var(--r)">'+ico('i-x')+' 検査できない</b><br>「使いやすい画面にする」</div><div class="gd"><b style="color:var(--g)">'+ico('i-check')+' 検査できる</b><br>「圏外で撮った写真がアプリを閉じても消えない」</div></div>'+
+        '<div class="crit" id="crit">'+d.criteria.map((c,j)=>critRow(c,j)).join('')+'</div>'+
+        '<div style="margin-top:10px"><button type="button" class="btn sm" id="addC"'+(d.criteria.length>=8?' disabled':'')+'>'+ico('i-plus')+'条件を追加</button></div>'+
+        '<div class="hint" style="margin-top:12px">よく使う書き方（押すと追加されます）</div><div class="examples">'+
+        ['〇〇しても消えない','〇〇は自分の分だけが見られる','同じ〇〇を二重に登録できない','〇〇の翌朝9時までに通知される','〇〇の記録（だれが・いつ）が残る','〇〇は△△が「確定」を押すまで登録されない'].map(x=>'<button type="button" data-ex="'+E(x)+'">'+E(x)+'</button>').join('')+'</div>';
+    }
+    if (i===5){
+      const ddesc = {g:'まちがえてもすぐ直せる。人やお金に直接ひびかない',y:'結果は必ず担当者や技術者が見てから使う',r:'AIに決めさせない。道具は「材料集め・表示」までにする'};
+      return '<div class="choices" style="grid-template-columns:1fr">'+SF.DECIDES.map(o=>'<button type="button" class="choice sg '+o.k+(d.decides===o.k?' on':'')+'" data-one="decides" data-v="'+o.k+'"><span class="dot">'+SF.COLORS[o.k].l+'</span><span><b>'+E(o.l)+'</b><small>'+E(ddesc[o.k])+'</small></span></button>').join('')+'</div>'+
+        fld('扱う情報',0,chipsM('data', SF.DATA))+
+        fld('関わる相手',0,chipsO('parties', SF.PARTIES))+
+        fld('守ること',0,chipsM('constraints', SF.CONSTRAINTS)+'<textarea data-bind="constraintsOther" style="margin-top:8px;min-height:60px" placeholder="その他に守ること（1行に1つ）">'+E(d.constraintsOther)+'</textarea>')+
+        fld('必ず人に聞くこと',0,chipsM('approvals', SF.APPROVALS),'当てはまる変更が出たら、作業を止めて承認者に確認します');
+    }
+    if (i===6){
+      return '<div class="grid2">'+fld('その手間の頻度',0,chipsO('freq', SF.FREQ))+fld('1回あたりの手間（分）',0,inp('minutes','例：15','number'))+'</div>'+
+        fld('元になるデータ',0,chipsO('dataReady', SF.READY))+
+        fld('ほかに広げられそう？',0,chipsO('spread', SF.SPREAD))+
+        '<div class="grid2">'+fld('承認者（業務責任者）',1,'<select data-bind="approver">'+['鈴木 一郎','田中 誠司','松本 綾'].map(a=>'<option'+(d.approver===a?' selected':'')+'>'+a+'</option>').join('')+'</select>','信号の色の最終決定と承認を行う人')+fld('希望時期',0,inp('wish','','date'),'目安。着手順は別途決めます')+'</div>'+
+        fld('添付ファイル',0,'<input type="file" id="att" multiple><div class="hint" id="attL">'+attHtml()+'</div>','サンプルではファイル名と大きさだけを記録します');
+    }
+    return '';
+  }
+  const critRow = (c, j) => { const L = SF.lint(c); return '<div class="ci" data-ci="'+j+'"><span class="n">'+(j+1)+'</span><div><input type="text" data-crit="'+j+'" value="'+E(c)+'" class="'+(L.level==='vague'?'vague':L.ok?'good':'')+'" placeholder="'+(j===0?'例：圏外で撮った写真がアプリを閉じても消えない':'')+'"><div class="lint '+(L.level==='empty'?'':L.level)+'">'+(L.level==='empty'?'':(L.ok?'✓ ':'△ ')+E(L.tip))+'</div></div><button type="button" class="rm" data-rmc="'+j+'" title="削除"'+(S.draft.criteria.length<=1?' disabled':'')+'>'+ico('i-x')+'</button></div>'; };
+  const attHtml = () => (S.draft.attachments||[]).length ? S.draft.attachments.map((a,i)=>'📎 '+E(a.name)+' <small>('+Math.max(1,Math.round(a.size/1024))+' KB)</small> <a data-rma="'+i+'">削除</a>').join('<br>') : 'なし';
+  function bindStep(){
+    const body = $('#stepBody'), d = S.draft;
+    body.addEventListener('input', e => {
+      const b = e.target.dataset.bind; if (b!==undefined) { d[b] = e.target.value; updPreview(); }
+      const c = e.target.dataset.crit; if (c!==undefined) {
+        d.criteria[+c] = e.target.value; const L = SF.lint(e.target.value), box = e.target.nextElementSibling;
+        e.target.className = L.level==='vague'?'vague':L.ok?'good':''; box.className = 'lint '+(L.level==='empty'?'':L.level); box.textContent = L.level==='empty'?'':(L.ok?'✓ ':'△ ')+L.tip; updPreview();
+      }
+    });
+    body.addEventListener('change', e => { const b=e.target.dataset.bind; if (b!==undefined){ d[b]=e.target.value; updPreview(); } });
+    body.addEventListener('click', e => {
+      const t = e.target.closest('button'); if(!t) return;
+      if (t.dataset.chip){ const f=t.dataset.chip, v=t.dataset.v, a=d[f]=d[f]||[]; const k=a.indexOf(v); k<0?a.push(v):a.splice(k,1); t.classList.toggle('on'); updPreview(); }
+      else if (t.dataset.one){ const f=t.dataset.one; d[f]=t.dataset.v; $$('[data-one="'+f+'"]',body).forEach(x=>x.classList.toggle('on', x===t)); updPreview(); }
+      else if (t.dataset.pick!==undefined){ S.pickDept = S.pickDept===t.dataset.pick ? '' : t.dataset.pick; $('#stepBody').innerHTML = stepHTML(0); }
+      else if (t.dataset.tool!==undefined){ d.toolRef = t.dataset.tool; const tl = SF.toolOf(d.toolRef);
+        if (tl){ d.dept = tl.dept.id; if(!d.title.trim()) d.title = tl.name; if(!d.decides) d.decides = tl.c; toast('「'+tl.name+'」を選びました（件名・部署・信号の候補に反映）'); }
+        $('#stepBody').innerHTML = stepHTML(0); updPreview(); }
+      else if (t.id==='addC'){ d.criteria.push(''); $('#stepBody').innerHTML = stepHTML(4); const ins=$$('[data-crit]'); ins[ins.length-1].focus(); }
+      else if (t.dataset.rmc!==undefined){ d.criteria.splice(+t.dataset.rmc,1); if(!d.criteria.length) d.criteria=['']; $('#stepBody').innerHTML = stepHTML(4); updPreview(); }
+      else if (t.dataset.ex){ const empty = d.criteria.findIndex(x=>!x.trim()); if (empty>=0) d.criteria[empty]=t.dataset.ex; else if (d.criteria.length<8) d.criteria.push(t.dataset.ex); $('#stepBody').innerHTML = stepHTML(4); updPreview(); toast('「〇〇」の所を、自分の言葉に書きかえてください'); }
+    });
+    body.addEventListener('click', e => { const a=e.target.closest('[data-rma]'); if(!a) return; d.attachments.splice(+a.dataset.rma,1); $('#attL').innerHTML=attHtml(); });
+    const att = $('#att'); if (att) att.addEventListener('change', e => { Array.from(e.target.files).forEach(f=>d.attachments.push({name:f.name,size:f.size})); e.target.value=''; $('#attL').innerHTML=attHtml(); });
+  }
+  function updPreview(){
+    const d = S.draft, j = SF.judge(d), m = SF.measure(d), dep = SF.deptOf(d.dept), tl = SF.toolOf(d.toolRef);
+    const crit = d.criteria.filter(x=>x.trim());
+    const ul = a => a.length ? '<ul>'+a.map(x=>'<li>'+E(x)+'</li>').join('')+'</ul>' : '<span class="muted">（まだありません）</span>';
+    const pv = $('#pv'); if(!pv) return;
+    const card =
+      '<dl><dt>件名</dt><dd><b>'+(E(d.title)||'<span class="muted">（未入力）</span>')+'</b></dd>'+
+      '<dt>部署・起票者</dt><dd>'+E(dep?dep.name:'')+'　'+E(d.applicant)+'</dd>'+
+      '<dt>カタログ</dt><dd>'+(tl?E(tl.name)+' '+sig(tl.c):'<span class="muted">カタログ外</span>')+'</dd>'+
+      '<dt>目的</dt><dd>'+(E(d.purpose)||'<span class="muted">（未入力）</span>')+'</dd>'+
+      '<dt>使う人</dt><dd>'+ul(d.users)+'</dd>'+
+      '<dt>作るもの</dt><dd>'+ul(SF.lines(d.scope))+'</dd>'+
+      '<dt>今回は作らない</dt><dd>'+ul(SF.lines(d.outScope))+'</dd>'+
+      '<dt>合格の条件</dt><dd>'+(crit.length?'<ol style="margin:0;padding-left:18px">'+crit.map(c=>'<li>'+SF.markVague(c)+'</li>').join('')+'</ol>':'<span class="muted">（まだありません）</span>')+'</dd>'+
+      '<dt>必ず人に聞くこと</dt><dd>'+ul(d.approvals||[])+'</dd></dl>';
+    const x = Object.assign({}, d, {id: d.id || '（受付時に採番）'});
+    pv.innerHTML =
+      '<div class="card"><div class="pvhead"><div class="light"><span class="g'+(j.c==='g'?' on':'')+'"></span><span class="y'+(j.c==='y'?' on':'')+'"></span><span class="r'+(j.c==='r'?' on':'')+'"></span></div><div><div class="muted" style="font-size:12px">信号の色（判定の候補）</div><b>'+sig(j.c)+' '+E(SF.COLORS[j.c].n)+'</b><ul class="reasons">'+j.reasons.slice(0,4).map(r=>'<li><i class="'+r.c+'"></i>'+E(r.t)+'</li>').join('')+'</ul></div></div></div>'+
+      '<div class="card meas"><div class="muted" style="font-size:12px">ものさし（参考値）</div><div class="big">'+m.hours+'<small style="font-size:13px"> 時間／月</small></div>'+m.scores.map(s=>'<div class="mb"><span>'+E(s.l)+'</span><span class="b"><i style="width:'+(s.v*20)+'%"></i></span><b>'+(s.v||'－')+'</b></div>').join('')+'<div class="hint">着手順はこの点数だけでは決めません</div></div>'+
+      '<div class="card order"><div class="oh">'+ico('i-doc')+'注文書プレビュー<span class="sp"></span><span class="tg"><button type="button" data-dp="card" class="'+(S.dpTab==='card'?'on':'')+'">カード</button><button type="button" data-dp="yaml" class="'+(S.dpTab==='yaml'?'on':'')+'">YAML</button></span></div>'+
+        (S.dpTab==='card' ? card : '<pre class="yaml">'+E(SF.toYAML(x))+'</pre>')+'</div>';
+    $$('[data-dp]', pv).forEach(b=>b.addEventListener('click',()=>{ S.dpTab=b.dataset.dp; updPreview(); }));
+  }
+  function submit(){
+    for (let i=0;i<STEPS.length;i++){ const e=validate(i); if(e.length){ S.step=i; renderWizard(); showErr(e); return; } }
+    const d = S.draft, now = SF.nowISO();
+    d.criteria = d.criteria.map(x=>x.trim()).filter(Boolean);
+    if (S.editId){
+      d.updatedAt = now; d.history.push({at:now, by:me().name, role:me().l, action:'内容を編集', note:''});
+      const k = S.data.items.findIndex(x=>x.id===S.editId); S.data.items[k] = d; persist();
+      toast(d.id+' を更新しました'); const id=d.id; S.draft=null; S.editId=null; go('board'); openDrawer(id); return;
+    }
+    d.id = SF.nextId(S.data); d.createdAt = now; d.updatedAt = now; d.status = 'received';
+    d.history = [{at:now, by:d.applicant, role:me().l, action:'受付', note:'依頼を登録しました'}];
+    S.data.items.push(d); persist(); S.fresh = d.id; S.draft = null;
+    const sp = $('#stamp'); $('#stampNo').textContent = d.id; $('#stampDate').textContent = SF.fmt(now,false);
+    sp.classList.add('show'); const h = $('.hanko', sp); h.style.animation='none'; void h.offsetWidth; h.style.animation='';
+    setTimeout(()=>{ sp.classList.remove('show'); go('board'); toast('受け付けました（'+d.id+'）'); }, reduce?300:1500);
+  }
+
+  /* ---- board ---- */
+  function renderBoard(){
+    const flow = SF.STATUSES.filter(s=>s.flow), side = SF.STATUSES.filter(s=>!s.flow);
+    const items = S.data.items.filter(r => !S.fd || r.dept===S.fd);
+    const card = r => { const c=colorOf(r), d=SF.deptOf(r.dept); return '<div class="kc '+c+(S.fresh===r.id?' new':'')+'" draggable="true" data-id="'+E(r.id)+'"><span class="no">'+E(r.id)+'</span><b>'+E(r.title)+'</b><div class="meta">'+sig(c)+(r.signalFinal?'':'<span>候補</span>')+'<span>・'+E(d?d.short:'')+'</span><span>・'+SF.measure(r).hours+'h/月</span></div></div>'; };
+    const col = (s, cls) => { const a = items.filter(r=>r.status===s.k); return '<div class="col '+(cls||'')+'" data-st="'+s.k+'"><h4>'+st(s.k)+'<em>'+a.length+'</em></h4>'+a.map(card).join('')+'</div>'; };
+    $('#view').innerHTML =
+      '<div class="btool"><h2 class="h2" style="margin:0">'+ico('i-board')+'ボード</h2><span class="muted" style="font-size:12.5px">カードをドラッグして状態を変えられます（役割による制限あり）。クリックで詳細。</span><span class="sp"></span>'+
+      '<select id="bfd" style="width:auto"><option value="">すべての部署</option>'+CATALOG.map(c=>'<option value="'+c.id+'"'+(S.fd===c.id?' selected':'')+'>'+E(c.name)+'</option>').join('')+'</select>'+
+      '<button class="btn go" id="bnew" type="button">'+ico('i-plus')+'新しい依頼</button></div>'+
+      '<div class="board" id="board">'+flow.map(s=>col(s)).join('')+side.map(s=>col(s,'side')).join('')+'</div>';
+    S.fresh = null;
+    $('#bnew').addEventListener('click', startNew);
+    $('#bfd').addEventListener('change', e => { S.fd=e.target.value; renderBoard(); });
+    let dragId = null;
+    $$('.kc').forEach(k => {
+      k.addEventListener('click', () => openDrawer(k.dataset.id));
+      k.addEventListener('dragstart', e => { dragId = k.dataset.id; k.classList.add('drag'); try{ e.dataTransfer.setData('text/plain', dragId); e.dataTransfer.effectAllowed='move'; }catch(_){} });
+      k.addEventListener('dragend', () => k.classList.remove('drag'));
+    });
+    $$('.col').forEach(c => {
+      c.addEventListener('dragover', e => { e.preventDefault(); c.classList.add('over'); });
+      c.addEventListener('dragleave', () => c.classList.remove('over'));
+      c.addEventListener('drop', e => { e.preventDefault(); c.classList.remove('over'); const r = find(dragId); if(!r) return; const to = c.dataset.st; if (r.status===to) return;
+        if (!SF.canMove(S.role, r.status, to)) return toast('いまの役割（'+me().l+'）では「'+SF.statusOf(to).l+'」にできません', true);
+        openStatus(r, to); });
+    });
+  }
+
+  /* ---- list ---- */
+  function renderList(){
+    const q = S.fq.toLowerCase();
+    const a = S.data.items.filter(r => (!S.fd || r.dept===S.fd) && (!S.fs || r.status===S.fs) && (!S.fc || colorOf(r)===S.fc) && (!q || [r.id,r.title,r.applicant,r.problem,r.purpose].join(' ').toLowerCase().includes(q))).sort((x,y)=>x.id<y.id?1:-1);
+    $('#view').innerHTML =
+      '<div class="btool"><h2 class="h2" style="margin:0">'+ico('i-list')+'一覧</h2><span class="sp"></span><button class="btn sm" id="lcsv" type="button">'+ico('i-down')+'CSV</button><button class="btn sm" id="ljson" type="button">'+ico('i-down')+'JSON</button></div>'+
+      '<div class="fbar"><input type="search" id="lq" placeholder="キーワード（件名・起票者・内容）" value="'+E(S.fq)+'">'+
+      '<select id="ld"><option value="">すべての部署</option>'+CATALOG.map(c=>'<option value="'+c.id+'"'+(S.fd===c.id?' selected':'')+'>'+E(c.name)+'</option>').join('')+'</select>'+
+      '<select id="ls"><option value="">すべての状態</option>'+SF.STATUSES.map(s=>'<option value="'+s.k+'"'+(S.fs===s.k?' selected':'')+'>'+E(s.l)+'</option>').join('')+'</select>'+
+      '<select id="lc"><option value="">すべての色</option>'+['g','y','r'].map(c=>'<option value="'+c+'"'+(S.fc===c?' selected':'')+'>'+SF.COLORS[c].l+'</option>').join('')+'</select></div>'+
+      '<div class="card tw"><table class="t"><thead><tr><th>受付番号</th><th>件名</th><th>部署</th><th>起票者</th><th>信号</th><th>状態</th><th>削減見込み</th><th>更新</th></tr></thead><tbody id="ltb">'+
+      (a.length ? a.map(r=>{ const d=SF.deptOf(r.dept); return '<tr data-id="'+E(r.id)+'"><td style="font-family:ui-monospace,Consolas,monospace;white-space:nowrap">'+E(r.id)+'</td><td><b>'+E(r.title)+'</b></td><td>'+E(d?d.short:'')+'</td><td>'+E(r.applicant)+'</td><td>'+sig(colorOf(r))+'</td><td>'+st(r.status)+'</td><td>'+SF.measure(r).hours+' h/月</td><td style="white-space:nowrap">'+E(SF.fmt(r.updatedAt))+'</td></tr>'; }).join('') : '<tr><td colspan="8" class="muted" style="text-align:center;padding:30px">条件に合う依頼がありません</td></tr>')+
+      '</tbody></table></div><p class="hint">'+a.length+' 件 ／ 全 '+S.data.items.length+' 件</p>';
+    const re = () => { const p = $('#lq').selectionStart; renderList(); const x=$('#lq'); x.focus(); try{x.setSelectionRange(p,p);}catch(_){} };
+    $('#lq').addEventListener('input', e => { S.fq=e.target.value; re(); });
+    $('#ld').addEventListener('change', e => { S.fd=e.target.value; renderList(); });
+    $('#ls').addEventListener('change', e => { S.fs=e.target.value; renderList(); });
+    $('#lc').addEventListener('change', e => { S.fc=e.target.value; renderList(); });
+    $$('#ltb tr[data-id]').forEach(tr=>tr.addEventListener('click',()=>openDrawer(tr.dataset.id)));
+    $('#lcsv').addEventListener('click', () => SF.download('受付一覧_'+ymd()+'.csv', SF.toCSV(a), 'text/csv') ? toast('CSVを書き出しました') : toast('書き出せませんでした', true));
+    $('#ljson').addEventListener('click', exportJSON);
+  }
+  const ymd = () => { const d=new Date(); return d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0'); };
+  function exportJSON(){ SF.download('受付データ_'+ymd()+'.json', JSON.stringify(S.data,null,2), 'application/json') ? toast('JSONを書き出しました') : toast('書き出せませんでした', true); }
+
+  /* ---- data ---- */
+  function renderData(){
+    $('#view').innerHTML =
+      '<div class="two"><div class="card pad"><h2 class="h2">'+ico('i-db')+'データの保存</h2>'+
+        '<p>保存先：<b>'+(S.persistent?'このブラウザの保存領域（外部には送信しません）':'一時保存（閉じると消えます）')+'</b><br>件数：<b>'+S.data.items.length+'</b> 件</p>'+
+        '<div class="data-row"><button class="btn" id="dj" type="button">'+ico('i-down')+'JSONで書き出す</button><button class="btn" id="dc" type="button">'+ico('i-down')+'CSVで書き出す</button><button class="btn" id="di" type="button">'+ico('i-up')+'JSONを取り込む</button><button class="btn dng" id="dr" type="button">'+ico('i-undo')+'サンプルに戻す</button></div>'+
+        '<p class="hint">JSONは AppSuite風サンプルと同じ形式です。どちらで作ったデータも取り込めます。</p></div>'+
+      '<div class="card pad"><h2 class="h2">'+ico('i-shield')+'このサンプルの約束</h2><ul style="margin:0;padding-left:18px">'+
+        '<li>インターネットに接続せず、外部のサービスやライブラリを一切読み込みません</li>'+
+        '<li>信号の色は「候補」を自動で出しますが、<b>最終決定は承認者</b>が行います</li>'+
+        '<li>赤信号の承認には「AIに決めさせない」確認が必要です</li>'+
+        '<li>「承認済み」「完了」にできるのは承認者だけです（役割の切り替えは動作確認用）</li>'+
+        '<li>受付・相談・承認依頼の入口はここ。正式な判断は対象のPR等に記録する想定です</li></ul></div></div>';
+    $('#dj').addEventListener('click', exportJSON);
+    $('#dc').addEventListener('click', () => SF.download('受付一覧_'+ymd()+'.csv', SF.toCSV(S.data.items), 'text/csv') ? toast('CSVを書き出しました') : toast('書き出せませんでした', true));
+    $('#di').addEventListener('click', () => $('#importFile').click());
+    $('#dr').addEventListener('click', () => confirmBox('サンプルに戻す','登録した内容はすべて消え、最初のサンプルデータに戻ります。よろしいですか？','サンプルに戻す',()=>{ S.data=SF.seed(); persist(); toast('サンプルデータに戻しました'); renderData(); }));
+  }
+  $('#importFile').addEventListener('change', e => {
+    const f = e.target.files[0]; if(!f) return; const rd = new FileReader();
+    rd.onload = () => { try { const o = JSON.parse(rd.result); if (!SF.validImport(o)) throw 0;
+        confirmBox('JSONの取り込み', o.items.length+' 件のデータで、いまのデータを置き換えます。よろしいですか？', '取り込む', () => {
+          o.seq = Math.max(o.seq||0, ...o.items.map(x=>+String(x.id).split('-').pop()||0)); S.data=o; persist(); toast(o.items.length+' 件を取り込みました'); go('board'); });
+      } catch(_) { toast('このファイルは取り込めません', true); } e.target.value=''; };
+    rd.readAsText(f);
+  });
+
+  /* ---- drawer ---- */
+  function openDrawer(id){ S.open=id; S.dtab='sum'; renderDrawer(); $('#drawer').classList.add('show'); $('#dmask').classList.add('show'); }
+  function closeDrawer(){ S.open=null; $('#drawer').classList.remove('show'); $('#dmask').classList.remove('show'); }
+  $('#dmask').addEventListener('click', closeDrawer);
+  function renderDrawer(){
+    const r = find(S.open); if(!r) return closeDrawer();
+    const j = SF.judge(r), m = SF.measure(r), dep = SF.deptOf(r.dept), tl = SF.toolOf(r.toolRef);
+    const flow = SF.STATUSES.filter(s=>s.flow), ci = flow.findIndex(s=>s.k===r.status), nx = SF.NEXT[r.status];
+    const canNext = nx && SF.canMove(S.role, r.status, nx);
+    const ul = a => (a&&a.length) ? '<ul>'+a.map(x=>'<li>'+E(x)+'</li>').join('')+'</ul>' : '<span class="muted">－</span>';
+    const fq = SF.FREQ.find(x=>x.k===r.freq);
+    let body = '';
+    if (S.dtab==='sum') body =
+      '<div class="box"><h4>'+ico('i-flag')+'信号の色</h4><div>判定の候補：'+sig(j.c)+'　承認者の決定：'+(r.signalFinal?sig(r.signalFinal):'<span class="muted">未決定</span>')+'</div><ul class="reasons">'+j.reasons.map(x=>'<li><i class="'+x.c+'"></i>'+E(x.t)+'</li>').join('')+'</ul></div>'+
+      '<div class="box"><h4>'+ico('i-inbox')+'依頼の中身</h4><dl class="kv">'+
+        '<dt>起票者</dt><dd>'+E(r.applicant)+(r.contact?'（'+E(r.contact)+'）':'')+'</dd><dt>部署</dt><dd>'+E(dep?dep.name:'')+'</dd><dt>依頼区分</dt><dd>'+E(r.kind)+'</dd>'+
+        '<dt>カタログ</dt><dd>'+(tl?E(tl.name)+' '+sig(tl.c):'<span class="muted">カタログ外</span>')+'</dd>'+
+        '<dt>困っていること</dt><dd>'+E(r.problem).replace(/\n/g,'<br>')+'</dd><dt>目的</dt><dd>'+E(r.purpose).replace(/\n/g,'<br>')+'</dd>'+
+        '<dt>使う人</dt><dd>'+ul(r.users)+(r.people?'<span class="muted">約 '+E(r.people)+' 人</span>':'')+'</dd><dt>使う場所</dt><dd>'+ul(r.places)+'</dd>'+
+        '<dt>作るもの</dt><dd>'+ul(SF.lines(r.scope))+'</dd><dt>今回は作らない</dt><dd>'+ul(SF.lines(r.outScope))+'</dd>'+
+        '<dt>合格の条件</dt><dd>'+((r.criteria||[]).length?'<ol>'+r.criteria.map(c=>'<li>'+SF.markVague(c)+(SF.lint(c).ok?'':' <small style="color:#9a6200">△ 書き直しをおすすめ</small>')+'</li>').join('')+'</ol>':'－')+'</dd>'+
+        '<dt>扱う情報</dt><dd>'+ul((r.data||[]).map(k=>(SF.DATA.find(x=>x.k===k)||{}).l))+'</dd><dt>関わる相手</dt><dd>'+E(r.parties)+'</dd>'+
+        '<dt>守ること</dt><dd>'+ul((r.constraints||[]).concat(SF.lines(r.constraintsOther)))+'</dd><dt>必ず人に聞くこと</dt><dd>'+ul(r.approvals)+'</dd>'+
+        '<dt>ものさし</dt><dd><b>'+m.hours+'</b> 時間／月（'+(fq?E(fq.l):'－')+'・1回'+(r.minutes?E(r.minutes)+'分':'－')+'）</dd>'+
+        '<dt>承認者</dt><dd>'+E(r.approver)+'</dd><dt>希望時期</dt><dd>'+E(r.wish||'－')+'</dd>'+
+        '<dt>添付</dt><dd>'+((r.attachments||[]).length?r.attachments.map(a=>'📎 '+E(a.name)).join('<br>'):'<span class="muted">なし</span>')+'</dd></dl></div>';
+    if (S.dtab==='yaml') body = '<div class="box"><h4>'+ico('i-doc')+'注文書（作業指示書）</h4><p class="hint" style="margin-top:0">AIへ渡す前に、人がレビューします。</p><pre class="yaml" style="max-height:none;border-radius:10px">'+E(SF.toYAML(r))+'</pre><div class="data-row" style="margin-top:10px"><button class="btn sm" id="ycp" type="button">'+ico('i-copy')+'コピー</button><button class="btn sm" id="ydl" type="button">'+ico('i-down')+'ダウンロード</button></div></div>';
+    if (S.dtab==='log') body =
+      '<div class="box"><h4>'+ico('i-chat')+'コメント</h4>'+((r.comments||[]).length?r.comments.map(c=>'<div class="cmt"><small>'+E(SF.fmt(c.at))+'　'+E(c.by)+'</small>'+E(c.text).replace(/\n/g,'<br>')+'</div>').join(''):'<p class="muted">まだありません</p>')+
+        '<textarea id="ctx" placeholder="コメントを入力" style="margin-top:8px;min-height:70px"></textarea><div style="text-align:right;margin-top:6px"><button class="btn sm pri" id="cad" type="button">'+ico('i-chat')+'コメントする</button></div></div>'+
+      '<div class="box"><h4>'+ico('i-clock')+'変更履歴</h4><ul class="tl">'+r.history.slice().reverse().map((h,i)=>'<li style="animation-delay:'+(i*.04)+'s"><b>'+E(h.action)+'</b><small>'+E(SF.fmt(h.at))+'　'+E(h.by)+'（'+E(h.role)+'）</small>'+(h.note?'<div>'+E(h.note)+'</div>':'')+'</li>').join('')+'</ul></div>';
+    $('#drawer').innerHTML =
+      '<div class="dh"><div class="r1"><span class="no">'+E(r.id)+'</span>'+st(r.status)+sig(colorOf(r))+(r.signalFinal?'':'<span class="muted" style="font-size:12px">候補</span>')+'<button class="x" id="dx" type="button" title="閉じる">'+ico('i-x')+'</button></div>'+
+        '<h3>'+E(r.title)+'</h3><div class="acts">'+
+          (nx ? '<button class="btn sm go" id="dnext" type="button"'+(canNext?'':' disabled title="いまの役割ではできません"')+'>'+ico('i-arrow')+'「'+E(SF.statusOf(nx).l)+'」へ進める</button>' : '')+
+          '<button class="btn sm" id="dst" type="button">'+ico('i-flag')+'状態を変更</button>'+
+          '<button class="btn sm" id="ded" type="button"'+(SF.canEdit(S.role,r)?'':' disabled title="いまの役割・状態では編集できません"')+'>'+ico('i-edit')+'編集</button>'+
+          '<button class="btn sm dng" id="ddl" type="button"'+(S.role==='requester'?' disabled title="依頼者は削除できません"':'')+'>'+ico('i-trash')+'削除</button></div>'+
+        '<div class="prog'+(ci<0?' off':'')+'">'+flow.map((s,i)=>'<span class="'+(ci<0?'':i<ci?'p':i===ci?'c':'')+'"></span>').join('')+(ci<0?'<span class="c"></span>':'')+'</div><div class="plab"><span>受付</span><span>'+(ci<0?E(SF.statusOf(r.status).l):'')+'</span><span>完了</span></div></div>'+
+      '<div class="dtabs">'+[['sum','概要'],['yaml','注文書'],['log','コメント・履歴（'+((r.comments||[]).length)+'）']].map(t=>'<button type="button" data-dt="'+t[0]+'" class="'+(S.dtab===t[0]?'on':'')+'">'+t[1]+'</button>').join('')+'</div>'+
+      '<div class="db">'+body+'</div>';
+    $('#dx').addEventListener('click', closeDrawer);
+    $$('[data-dt]').forEach(b=>b.addEventListener('click',()=>{ S.dtab=b.dataset.dt; renderDrawer(); }));
+    if ($('#dnext')) $('#dnext').addEventListener('click',()=>openStatus(r, nx));
+    $('#dst').addEventListener('click',()=>openStatus(r));
+    $('#ded').addEventListener('click',()=>startEdit(r.id));
+    $('#ddl').addEventListener('click',()=>confirmBox('削除', r.id+'「'+r.title+'」を削除します。元に戻せません。','削除する',()=>{ S.data.items=S.data.items.filter(x=>x.id!==r.id); persist(); closeDrawer(); toast(r.id+' を削除しました'); render(); }));
+    if ($('#ycp')) $('#ycp').addEventListener('click',()=>{ try{ navigator.clipboard.writeText(SF.toYAML(r)).then(()=>toast('コピーしました'),()=>toast('コピーできませんでした',true)); }catch(_){ toast('コピーできませんでした',true); } });
+    if ($('#ydl')) $('#ydl').addEventListener('click',()=>SF.download(r.id+'_注文書.yaml', SF.toYAML(r), 'text/yaml') ? toast('ダウンロードしました') : toast('ダウンロードできませんでした', true));
+    if ($('#cad')) $('#cad').addEventListener('click',()=>{ const t=$('#ctx').value.trim(); if(!t) return toast('コメントを入力してください',true); const now=SF.nowISO(); r.comments=r.comments||[]; r.comments.push({at:now,by:me().name,text:t}); r.updatedAt=now; persist(); toast('コメントしました'); renderDrawer(); });
+  }
+  document.addEventListener('keydown', e => { if (e.key==='Escape'){ if ($('#mmask').classList.contains('show')) closeModal(); else if (S.open) closeDrawer(); } });
+
+  /* ---- status modal ---- */
+  function openStatus(r, preset){
+    const j = SF.judge(r);
+    modal(ico('i-flag')+'状態を変更　<span class="muted" style="font-size:12.5px">'+E(r.id)+'</span>',
+      '<p style="margin:0 0 10px">いま：'+st(r.status)+'　操作する人：<b>'+E(me().name)+'</b>（'+E(me().l)+'）</p>'+
+      '<div class="stopts">'+SF.STATUSES.map(s=>{ const ok=SF.canMove(S.role, r.status, s.k); const sel = ok && s.k===(preset||SF.NEXT[r.status]); return '<label class="'+(ok?'':'dis')+'"><input type="radio" name="ns" value="'+s.k+'"'+(ok?'':' disabled')+(sel?' checked':'')+'>'+st(s.k)+'</label>'; }).join('')+'</div>'+
+      '<p class="hint">「承認済み」「完了」にできるのは承認者だけです。</p>'+
+      '<div id="apv" style="display:none;margin-top:10px;padding:12px;border:1.5px solid var(--line);border-radius:12px"><b>信号の色を決める</b> <span class="muted" style="font-size:12.5px">（候補：'+sig(j.c)+'。迷ったら1つ上の色）</span>'+
+        '<div class="chips" style="margin-top:8px">'+['g','y','r'].map(c=>'<label class="chip" style="cursor:pointer"><input type="radio" name="fc" value="'+c+'"'+((r.signalFinal||j.c)===c?' checked':'')+' style="margin:0 4px 0 0">'+sig(c)+'</label>').join('')+'</div>'+
+        '<div class="redw" id="redw"><label><input type="checkbox" id="redok"> 赤信号の仕事は<b>AIに決めさせません</b>。道具の範囲が「材料集め・表示」までで、決定は人が行うことを確認しました。</label></div></div>'+
+      '<label class="fl">メモ<span class="muted" style="font-weight:400;font-size:12px">（差戻し・見送りは必須）</span></label><textarea id="nnote" style="min-height:70px" placeholder="例：合格の条件を数字で書き直してください"></textarea>',
+      '<button class="btn" data-x type="button">キャンセル</button><button class="btn pri" id="sok" type="button">'+ico('i-check')+'変更する</button>');
+    const upd = () => { const v=($('#modal input[name=ns]:checked')||{}).value, fc=($('#modal input[name=fc]:checked')||{}).value; $('#apv').style.display = v==='approved'?'block':'none'; $('#redw').classList.toggle('show', v==='approved' && fc==='r'); };
+    $$('#modal input[name=ns], #modal input[name=fc]').forEach(x=>x.addEventListener('change',upd)); upd();
+    $('#sok').addEventListener('click', () => {
+      const v=($('#modal input[name=ns]:checked')||{}).value, note=$('#nnote').value.trim();
+      if (!v) return toast('変更先を選んでください', true);
+      if (['back','hold'].includes(v) && !note) return toast('理由をメモに書いてください', true);
+      let extra='';
+      if (v==='approved'){ const fc=($('#modal input[name=fc]:checked')||{}).value; if(!fc) return toast('信号の色を選んでください',true); if(fc==='r' && !$('#redok').checked) return toast('赤信号の確認にチェックしてください',true); r.signalFinal=fc; extra='信号の色を「'+SF.COLORS[fc].l+'」に決定'; }
+      const now=SF.nowISO(); r.history.push({at:now, by:me().name, role:me().l, action:'状態を「'+SF.statusOf(v).l+'」に変更', note:[extra,note].filter(Boolean).join('／')});
+      if (note){ r.comments=r.comments||[]; r.comments.push({at:now,by:me().name,text:note}); }
+      r.status=v; r.updatedAt=now; persist(); closeModal(); toast(r.id+' を「'+SF.statusOf(v).l+'」にしました'); S.fresh=r.id; render(); if (S.open) renderDrawer();
+    });
+  }
+
+  /* ---- modal ---- */
+  function modal(t, b, f){ $('#modal').innerHTML='<h3>'+t+'</h3><div class="mbd">'+b+'</div><div class="mft">'+f+'</div>'; $('#mmask').classList.add('show'); $$('#modal [data-x]').forEach(x=>x.addEventListener('click',closeModal)); }
+  function closeModal(){ $('#mmask').classList.remove('show'); }
+  $('#mmask').addEventListener('click', e => { if (e.target.id==='mmask') closeModal(); });
+  function confirmBox(t, msg, ok, fn){ modal(ico('i-alert')+E(t), '<p style="margin:0">'+E(msg)+'</p>', '<button class="btn" data-x type="button">キャンセル</button><button class="btn pri" id="cfok" type="button">'+E(ok)+'</button>'); $('#cfok').addEventListener('click',()=>{ closeModal(); fn(); }); }
+
+  notice(); render();
+})();
+</script>
+</body>
+</html>

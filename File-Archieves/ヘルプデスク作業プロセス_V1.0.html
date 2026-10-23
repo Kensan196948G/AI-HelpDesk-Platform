@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ヘルプデスク作業プロセス</title>
+<style>
+/* Layout: 単一カラムの手順書。スイムレーン図 → 役割別の手順表 → 状態遷移 → 定常業務 → 自動化後の差分 */
+:root{
+  --bg:#f5f7f9; --surface:#ffffff; --sunk:#eaeff3; --fg:#17222c; --muted:#56656f;
+  --line:#d3dce3; --accent:#1d5f86; --accent-soft:#e1edf5;
+  --ok:#2c7a4b; --ok-soft:#e2f2e8; --warn:#9a5b00; --warn-soft:#fbefd9; --crit:#a3342a; --crit-soft:#f8e3e0;
+  --f-display:"Hiragino Kaku Gothic StdN","Hiragino Sans","BIZ UDPGothic","Yu Gothic UI","Meiryo",sans-serif;
+  --f-body:"BIZ UDPGothic","Hiragino Sans","Yu Gothic","Meiryo",sans-serif;
+  --f-mono:"Consolas","SFMono-Regular","Menlo",monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#11181e; --surface:#172129; --sunk:#1d2a33; --fg:#e3eaef; --muted:#9aabb7;
+  --line:#2c3b46; --accent:#7cb9e0; --accent-soft:#1c3444;
+  --ok:#7fd1a0; --ok-soft:#183427; --warn:#f0bd6a; --warn-soft:#3a2c14; --crit:#f19a8f; --crit-soft:#3d1f1c; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#11181e; --surface:#172129; --sunk:#1d2a33; --fg:#e3eaef; --muted:#9aabb7;
+  --line:#2c3b46; --accent:#7cb9e0; --accent-soft:#1c3444;
+  --ok:#7fd1a0; --ok-soft:#183427; --warn:#f0bd6a; --warn-soft:#3a2c14; --crit:#f19a8f; --crit-soft:#3d1f1c; color-scheme:dark}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15px;line-height:1.75;padding:0 16px}
+.wrap{max-width:1180px;margin:0 auto;padding-block:32px 64px;display:grid;gap:44px}
+header{display:grid;gap:10px;border-bottom:2px solid var(--fg);padding-bottom:20px}
+.eyebrow{font-family:var(--f-mono);font-size:12px;color:var(--muted);letter-spacing:.04em}
+h1{font-family:var(--f-display);font-weight:800;font-size:clamp(26px,4vw,34px);line-height:1.3;margin:0;text-wrap:balance}
+.lead{margin:0;max-width:62em;color:var(--muted)}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{font-size:12px;padding:2px 10px;border-radius:999px;background:var(--sunk);color:var(--muted)}
+nav.toc{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13.5px}
+nav.toc a{color:var(--accent);text-decoration:none;border-bottom:1px solid transparent}
+nav.toc a:hover,nav.toc a:focus-visible{border-bottom-color:var(--accent);outline:none}
+section{display:grid;gap:14px;scroll-margin-top:16px;min-width:0}
+h2{font-family:var(--f-display);font-weight:700;font-size:21px;margin:0;display:flex;align-items:baseline;gap:12px;text-wrap:balance}
+h2 .no{font-family:var(--f-mono);font-size:13px;color:var(--accent);font-weight:600}
+h3{font-family:var(--f-display);font-weight:700;font-size:16px;margin:6px 0 0}
+.note{margin:0;color:var(--muted);font-size:14px;max-width:64em}
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;min-width:760px;font-size:14px;line-height:1.6}
+th,td{text-align:left;vertical-align:top;padding:10px 14px;border-bottom:1px solid var(--line)}
+thead th{background:var(--sunk);font-family:var(--f-display);font-weight:700;font-size:13px;letter-spacing:.03em;white-space:nowrap}
+tbody tr:last-child td{border-bottom:none}
+td.k{font-weight:700;white-space:nowrap}
+td.n{font-family:var(--f-mono);color:var(--accent);font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+.pill{display:inline-block;font-size:12px;font-weight:700;padding:1px 9px;border-radius:999px;white-space:nowrap;margin:1px 2px 1px 0}
+.r-user{background:var(--sunk);color:var(--fg)}
+.r-staff{background:var(--accent-soft);color:var(--accent)}
+.r-appr{background:var(--ok-soft);color:var(--ok)}
+.r-admin{background:var(--warn-soft);color:var(--warn)}
+.r-sys{background:var(--sunk);color:var(--muted);font-weight:400}
+.p-crit{background:var(--crit-soft);color:var(--crit)}
+.p-ok{background:var(--ok-soft);color:var(--ok)}
+.p-warn{background:var(--warn-soft);color:var(--warn)}
+.p-info{background:var(--accent-soft);color:var(--accent)}
+.filter{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.filter span{font-size:13px;color:var(--muted);margin-right:4px}
+.filter button{font:inherit;font-size:13px;padding:4px 14px;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--fg);cursor:pointer}
+.filter button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--bg)}
+.filter button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+tr.dim td{opacity:.28}
+.lane-wrap{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:16px}
+.lane-wrap svg{display:block;min-width:1120px;width:100%;height:auto}
+svg text{font-family:var(--f-body);font-size:13px;fill:var(--fg)}
+svg .sub{font-size:10.5px;fill:var(--muted)}
+svg .ll{font-family:var(--f-display);font-weight:700;font-size:12.5px;fill:var(--fg)}
+svg .ls{font-size:10.5px;fill:var(--muted)}
+svg .lane{fill:var(--sunk);stroke:none}
+svg .lane2{fill:var(--bg);stroke:none}
+svg .b-user{fill:var(--surface);stroke:var(--muted)}
+svg .b-sys{fill:var(--surface);stroke:var(--line)}
+svg .b-ai{fill:var(--accent-soft);stroke:var(--accent)}
+svg .b-staff{fill:var(--accent-soft);stroke:var(--accent)}
+svg .b-appr{fill:var(--ok-soft);stroke:var(--ok)}
+svg .b-admin{fill:var(--warn-soft);stroke:var(--warn)}
+svg .b-end{fill:var(--ok-soft);stroke:var(--ok)}
+svg .ln{stroke:var(--muted);stroke-width:1.4;fill:none}
+svg .dash{stroke-dasharray:5 4}
+svg .ex{stroke:var(--crit)}
+svg .ah{fill:var(--muted)}
+svg .ahx{fill:var(--crit)}
+svg .lbl{font-family:var(--f-mono);font-size:11px;fill:var(--accent)}
+svg .lblx{font-family:var(--f-mono);font-size:11px;fill:var(--crit)}
+.states{display:grid;gap:12px}
+.track{display:flex;flex-wrap:wrap;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:12px 14px}
+.track b{font-family:var(--f-display);font-size:14px;margin-right:8px;min-width:6em}
+.st{font-size:13px;padding:3px 10px;border-radius:6px;background:var(--sunk);white-space:nowrap}
+.st.end{background:var(--ok-soft);color:var(--ok);font-weight:700}
+.st.alt{background:var(--warn-soft);color:var(--warn)}
+.arr{color:var(--muted);font-size:12px}
+.track small{flex-basis:100%;color:var(--muted);font-size:12.5px}
+footer{font-size:12.5px;color:var(--muted);border-top:1px solid var(--line);padding-top:16px}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div class="eyebrow">desknet's NEO ／ AppSuite ／ Lightblue ・ 第1段階（標準機能と手作業）基準 ・ V1.0 ・ 2026-10-13</div>
+  <h1>ヘルプデスク作業プロセス</h1>
+  <p class="lead">推奨構成（受付と記録はAppSuite、一次対応とナレッジ下書きはLightblue、引継ぎ後は担当者、ナレッジ化は人の承認）で運用したときの作業手順です。誰が、どのシステムで、何をして、どの状態にしたら次へ渡すかを工程ごとに定めます。期限は運用開始時に決めるための案です。</p>
+  <div class="chips">
+    <span class="chip">利用者</span><span class="chip">担当者：有藤／砂子</span><span class="chip">承認者：要指名（下書き作成者と別の人）</span><span class="chip">管理者：情シス</span>
+  </div>
+  <nav class="toc" aria-label="目次">
+    <a href="#lane">全体の流れ</a><a href="#steps">工程別の作業</a><a href="#branch">AIを通さない案件</a><a href="#status">状態の遷移</a><a href="#routine">定常業務</a><a href="#auto">自動化後の変化</a>
+  </nav>
+</header>
+
+<section id="lane">
+  <h2><span class="no">01</span>全体の流れ</h2>
+  <p class="note">横軸が時間の流れ、縦の帯が実施者・システムです。番号は「02 工程別の作業」と対応します。赤の経路はAIを通さず担当者へ回す案件、破線は差戻しと月次の作業です。</p>
+  <div class="lane-wrap" role="img" aria-label="利用者が問合せを登録し、AppSuiteで受付・判定する。AI対象の案件は利用者がLightblueで一次回答を試し、結果を記録する。解決ならAI解決で完了、未解決やAI対象外は担当者（有藤・砂子）が対応し、AppSuiteに解決記録を残す。ナレッジ候補はLightblueで下書きし、AppSuiteに登録して承認者が承認する。承認済みは管理者が参照データに反映し、月次でSkillsを更新して周知する。">
+    <svg viewBox="0 0 1230 440" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0 0 L10 5 L0 10 z"/></marker>
+        <marker id="ax" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ahx" d="M0 0 L10 5 L0 10 z"/></marker>
+      </defs>
+      <rect class="lane" x="4" y="10" width="1222" height="74" rx="4"/>
+      <rect class="lane2" x="4" y="88" width="1222" height="74" rx="4"/>
+      <rect class="lane" x="4" y="166" width="1222" height="74" rx="4"/>
+      <rect class="lane2" x="4" y="244" width="1222" height="74" rx="4"/>
+      <rect class="lane" x="4" y="322" width="1222" height="74" rx="4"/>
+      <text class="ll" x="14" y="44">利用者</text><text class="ls" x="14" y="62">社員</text>
+      <text class="ll" x="14" y="122">AppSuite</text><text class="ls" x="14" y="140">NEO上の台帳</text>
+      <text class="ll" x="14" y="200">Lightblue</text><text class="ls" x="14" y="218">アシスタント</text>
+      <text class="ll" x="14" y="278">担当者</text><text class="ls" x="14" y="296">有藤／砂子</text>
+      <text class="ll" x="14" y="356">承認者</text><text class="ls" x="14" y="374">管理者（情シス）</text>
+
+      <!-- boxes: w100 h46 -->
+      <rect class="b-user" x="120" y="24" width="100" height="46" rx="6"/><text x="170" y="44" text-anchor="middle">1 問合せ登録</text><text class="sub" x="170" y="61" text-anchor="middle">ポータル→受付</text>
+      <rect class="b-sys" x="230" y="102" width="100" height="46" rx="6"/><text x="280" y="122" text-anchor="middle">2 受付・判定</text><text class="sub" x="280" y="139" text-anchor="middle">採番・AI対象判定</text>
+      <rect class="b-ai" x="340" y="180" width="100" height="46" rx="6"/><text x="390" y="200" text-anchor="middle">3 一次回答</text><text class="sub" x="390" y="217" text-anchor="middle">症状のみ入力</text>
+      <rect class="b-user" x="450" y="24" width="100" height="46" rx="6"/><text x="500" y="44" text-anchor="middle">4 結果を記録</text><text class="sub" x="500" y="61" text-anchor="middle">解決／未解決</text>
+      <rect class="b-end" x="560" y="102" width="100" height="46" rx="6"/><text x="610" y="122" text-anchor="middle">5 AI解決で完了</text><text class="sub" x="610" y="139" text-anchor="middle">担当者が日次確認</text>
+      <rect class="b-staff" x="560" y="258" width="100" height="46" rx="6"/><text x="610" y="278" text-anchor="middle">6 割当・対応</text><text class="sub" x="610" y="295" text-anchor="middle">通知を受けて着手</text>
+      <rect class="b-sys" x="670" y="102" width="100" height="46" rx="6"/><text x="720" y="122" text-anchor="middle">7 解決記録</text><text class="sub" x="720" y="139" text-anchor="middle">確認後クローズ</text>
+      <rect class="b-ai" x="780" y="180" width="100" height="46" rx="6"/><text x="830" y="200" text-anchor="middle">8 下書き作成</text><text class="sub" x="830" y="217" text-anchor="middle">個人情報を除く</text>
+      <rect class="b-sys" x="890" y="102" width="100" height="46" rx="6"/><text x="940" y="122" text-anchor="middle">9 下書き登録</text><text class="sub" x="940" y="139" text-anchor="middle">状態：レビュー中</text>
+      <rect class="b-appr" x="1000" y="336" width="100" height="46" rx="6"/><text x="1050" y="356" text-anchor="middle">10 承認</text><text class="sub" x="1050" y="373" text-anchor="middle">差戻しは8へ</text>
+      <rect class="b-admin" x="1110" y="180" width="100" height="46" rx="6"/><text x="1160" y="200" text-anchor="middle">11 参照反映</text><text class="sub" x="1160" y="217" text-anchor="middle">承認分を配置・週次</text>
+      <rect class="b-admin" x="1110" y="336" width="100" height="46" rx="6"/><text x="1160" y="356" text-anchor="middle">12 Skills・周知</text><text class="sub" x="1160" y="373" text-anchor="middle">月次レビュー</text>
+
+      <!-- arrows -->
+      <path class="ln" marker-end="url(#a)" d="M220 47 H225 V125 H228"/>
+      <path class="ln" marker-end="url(#a)" d="M330 125 H335 V203 H338"/>
+      <path class="ln" marker-end="url(#a)" d="M440 203 H445 V47 H448"/>
+      <path class="ln" marker-end="url(#a)" d="M550 40 H555 V125 H558"/><text class="lbl" x="562" y="96">解決</text>
+      <path class="ln" marker-end="url(#a)" d="M500 70 V270 H558"/><text class="lbl" x="506" y="252">未解決</text>
+      <path class="ln ex" marker-end="url(#ax)" d="M280 148 V294 H558"/><text class="lblx" x="286" y="286">AI対象外（セキュリティ等）</text>
+      <path class="ln" marker-end="url(#a)" d="M660 281 H665 V125 H668"/>
+      <path class="ln" marker-end="url(#a)" d="M770 125 H775 V203 H778"/><text class="lbl" x="781" y="174">候補のみ</text>
+      <path class="ln" marker-end="url(#a)" d="M880 203 H885 V125 H888"/>
+      <path class="ln" marker-end="url(#a)" d="M990 125 H995 V359 H998"/>
+      <path class="ln" marker-end="url(#a)" d="M1100 359 H1105 V203 H1108"/>
+      <path class="ln dash" marker-end="url(#a)" d="M1050 382 V392 H830 V228"/><text class="lbl" x="880" y="389">差戻し</text>
+      <path class="ln dash" marker-end="url(#a)" d="M1160 226 V334"/><text class="lbl" x="1166" y="284">月次</text>
+
+      <!-- legend -->
+      <g transform="translate(120,416)">
+        <rect class="b-ai" x="0" y="-10" width="18" height="13" rx="3"/><text class="sub" x="24" y="1">AIの作業</text>
+        <rect class="b-staff" x="100" y="-10" width="18" height="13" rx="3"/><text class="sub" x="124" y="1">担当者の作業</text>
+        <rect class="b-appr" x="220" y="-10" width="18" height="13" rx="3"/><text class="sub" x="244" y="1">承認</text>
+        <rect class="b-admin" x="290" y="-10" width="18" height="13" rx="3"/><text class="sub" x="314" y="1">管理者の作業</text>
+        <path class="ln ex" d="M410 -4 H440"/><text class="sub" x="446" y="1">AIを通さない経路</text>
+        <path class="ln dash" d="M570 -4 H600"/><text class="sub" x="606" y="1">差戻し・月次</text>
+      </g>
+    </svg>
+  </div>
+</section>
+
+<section id="steps">
+  <h2><span class="no">02</span>工程別の作業</h2>
+  <div class="filter" role="group" aria-label="実施者で絞り込み">
+    <span>実施者で絞り込み</span>
+    <button type="button" id="f-all" data-role="all" aria-pressed="true">全員</button>
+    <button type="button" id="f-user" data-role="user" aria-pressed="false">利用者</button>
+    <button type="button" id="f-staff" data-role="staff" aria-pressed="false">担当者</button>
+    <button type="button" id="f-appr" data-role="appr" aria-pressed="false">承認者</button>
+    <button type="button" id="f-admin" data-role="admin" aria-pressed="false">管理者</button>
+  </div>
+  <div class="tbl"><table id="steptable">
+    <thead><tr><th>No</th><th>工程</th><th>実施者</th><th>システム</th><th>作業内容</th><th>記録・次へ渡す条件</th><th>期限（案）</th></tr></thead>
+    <tbody>
+      <tr data-roles="user"><td class="n">1</td><td class="k">問合せ登録</td><td><span class="pill r-user">利用者</span></td><td>NEOポータル → AppSuite受付フォーム</td><td>問合せ種別・製品・症状・エラー内容・資産番号を選択または入力する。パスワードや管理用アカウントの情報は書かない</td><td>必須項目を入力して登録</td><td>—</td></tr>
+      <tr data-roles="staff"><td class="n">2</td><td class="k">受付・判定</td><td><span class="pill r-sys">AppSuite（自動）</span><span class="pill r-staff">担当者</span></td><td>AppSuite</td><td>自動採番と登録通知。種別がAI対象外（03参照）なら担当者へ回す。それ以外は利用者へLightblue一次対応アシスタントの案内を表示・通知する</td><td>状態を「AI確認中」または「担当者対応中」にする</td><td>即時</td></tr>
+      <tr data-roles="user"><td class="n">3</td><td class="k">一次回答を試す</td><td><span class="pill r-user">利用者</span></td><td>Lightblue 一次対応アシスタント</td><td>症状・製品・エラー内容だけを入力し、回答の手順を試す。氏名・連絡先・パスワードは入力しない</td><td>—</td><td>受付当日中</td></tr>
+      <tr data-roles="user staff"><td class="n">4</td><td class="k">結果を記録</td><td><span class="pill r-user">利用者</span></td><td>AppSuite</td><td>受付データで「AI解決」か「未解決」を選ぶ。役立った回答に出典のナレッジIDがあれば記録する。未選択のまま期限を過ぎた案件は、担当者が日次の滞留確認で拾う</td><td>状態を「AI解決」または「担当者対応中」にする</td><td>受付から1営業日</td></tr>
+      <tr data-roles="staff"><td class="n">5</td><td class="k">AI解決で完了</td><td><span class="pill r-staff">担当者</span></td><td>AppSuite</td><td>「AI解決」の案件を日次で確認する。回答が誤っていた・古かった場合は元のナレッジを修正対象にする</td><td>対応結果「AI解決」で完了</td><td>翌営業日</td></tr>
+      <tr data-roles="staff"><td class="n">6</td><td class="k">割当・対応</td><td><span class="pill r-staff">有藤／砂子</span></td><td>AppSuite・NEO通知</td><td>通知を受けて担当者欄に自分を割り当てる。リモート対応・訪問・ベンダー連絡を行う。セキュリティ事象はセキュリティ事象アプリに起票して初動を優先する</td><td>状態「担当者対応中」。利用者の作業待ちは「利用者確認待ち」</td><td>初回連絡は当日中</td></tr>
+      <tr data-roles="staff user"><td class="n">7</td><td class="k">解決記録</td><td><span class="pill r-staff">担当者</span><span class="pill r-user">利用者</span></td><td>AppSuite</td><td>原因カテゴリ・原因の確度・対応結果・手順を入力し、利用者に解決を確認する。再発パターンなら問題管理に紐づける。ナレッジ候補か判定する</td><td>必須項目を入力してクローズ。ナレッジ候補は「候補」に</td><td>解決後1営業日</td></tr>
+      <tr data-roles="staff"><td class="n">8</td><td class="k">下書き作成</td><td><span class="pill r-staff">担当者</span></td><td>Lightblue 下書きアシスタント</td><td>解決記録から氏名・資産番号・アカウント名・サーバパスを除いた内容を渡し、決まった見出し（症状／原因／手順／対象者）で下書きさせる。内容を人が確認する</td><td>—</td><td>候補判定から1週間</td></tr>
+      <tr data-roles="staff"><td class="n">9</td><td class="k">下書き登録</td><td><span class="pill r-staff">担当者</span></td><td>AppSuite ナレッジ</td><td>下書きを登録し、関連案件ID・製品・原因カテゴリ・対象者のタグを付ける</td><td>状態を「レビュー中」にする</td><td>8と同日</td></tr>
+      <tr data-roles="appr"><td class="n">10</td><td class="k">承認</td><td><span class="pill r-appr">承認者</span></td><td>AppSuite（またはNEOワークフロー）</td><td>手順の正確さ・再現性、個人情報や認証情報が残っていないか、公開範囲を確認して承認または差戻しする</td><td>状態「承認」、承認者・承認日を記録。差戻しは理由を書いて8へ</td><td>レビュー開始から1週間</td></tr>
+      <tr data-roles="admin"><td class="n">11</td><td class="k">参照データへ反映</td><td><span class="pill r-admin">管理者</span></td><td>AppSuite → 参照データの保管先</td><td>承認済みナレッジを1ナレッジ1ファイルで出力し、Lightblueが参照する保管先に置く。廃止分は削除する。利用者向けの内容はNEOポータルのFAQにも載せる</td><td>状態「反映済み」、反映日を記録</td><td>週次</td></tr>
+      <tr data-roles="admin"><td class="n">12</td><td class="k">Skills更新・周知</td><td><span class="pill r-admin">管理者</span></td><td>Lightblue 管理画面・NEOインフォメーション</td><td>月次レビューの結果から、一次対応の手順・判断ルール（AI対象外の条件など）を更新する。多発している事象はインフォメーションで周知する</td><td>更新内容と日付を履歴に残す</td><td>月次</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="branch">
+  <h2><span class="no">03</span>AIを通さず担当者へ回す案件</h2>
+  <p class="note">受付フォームの種別で判定し、工程2から直接6へ進めます。生成AI利用ガイドライン第6条の入力禁止情報（個人情報・認証情報・脆弱性やマルウェアの情報）に触れやすい案件と、AIでは解決できない案件です。</p>
+  <div class="tbl"><table>
+    <thead><tr><th>種別</th><th>担当者の初動</th><th>理由</th></tr></thead>
+    <tbody>
+      <tr><td class="k"><span class="pill p-crit">セキュリティ事象</span></td><td>端末をネットワークから切り離すよう案内し、セキュリティ事象アプリに起票</td><td>初動の速さが必要。脆弱性・マルウェアの情報はAIに入力しない</td></tr>
+      <tr><td class="k"><span class="pill p-crit">アカウントロック・パスワード</span></td><td>本人確認のうえ管理用アカウントで解除</td><td>認証情報の入力を誘発する。利用者側では解決できない</td></tr>
+      <tr><td class="k"><span class="pill p-warn">ハード故障・起動不可</span></td><td>代替機の手配、メーカー修理の手配</td><td>利用者の操作では解決しない</td></tr>
+      <tr><td class="k"><span class="pill p-warn">拠点・全社に影響する障害</span></td><td>影響範囲の確認とNEOインフォメーションでの周知</td><td>個別回答より復旧と周知が優先</td></tr>
+      <tr><td class="k"><span class="pill p-info">権限付与・各種申請</span></td><td>NEOワークフローの申請を案内</td><td>承認が必要なため</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="status">
+  <h2><span class="no">04</span>状態の遷移</h2>
+  <div class="states">
+    <div class="track"><b>問合せ</b>
+      <span class="st">受付</span><span class="arr">→</span><span class="st">AI確認中</span><span class="arr">→</span><span class="st end">AI解決（完了）</span>
+      <small>AI確認中で未解決になった場合、またはAI対象外の場合は、下の流れに移ります。</small>
+    </div>
+    <div class="track"><b>　</b>
+      <span class="st">担当者対応中</span><span class="arr">⇄</span><span class="st alt">利用者確認待ち</span><span class="arr">→</span><span class="st end">完了</span><span class="arr">／</span><span class="st alt">未解決クローズ</span>
+      <small>未解決クローズは、原因不明のまま利用者の了承を得て閉じる場合に使います。問題管理に紐づけて再発を追います。</small>
+    </div>
+    <div class="track"><b>ナレッジ</b>
+      <span class="st">候補</span><span class="arr">→</span><span class="st">下書き</span><span class="arr">→</span><span class="st">レビュー中</span><span class="arr">→</span><span class="st">承認</span><span class="arr">→</span><span class="st end">反映済み</span><span class="arr">→</span><span class="st alt">廃止</span>
+      <small>差戻しはレビュー中から下書きへ戻します。廃止したナレッジは参照データからも削除します。状態「承認」への変更は承認者だけができるよう権限を設定します。</small>
+    </div>
+  </div>
+</section>
+
+<section id="routine">
+  <h2><span class="no">05</span>定常業務</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>頻度</th><th>実施者</th><th>作業</th></tr></thead>
+    <tbody>
+      <tr><td class="k">毎日（朝・夕）</td><td><span class="pill r-staff">担当者</span></td><td>AI確認中のまま期限を過ぎた案件、担当者未割当の案件、利用者確認待ちが長い案件を確認する。前日のAI解決案件の内容を確認する</td></tr>
+      <tr><td class="k">毎週</td><td><span class="pill r-admin">管理者</span><span class="pill r-appr">承認者</span></td><td>承認済みナレッジを参照データへ反映し、廃止分を削除する。レビュー中のまま止まっているナレッジを確認する</td></tr>
+      <tr><td class="k">毎月</td><td><span class="pill r-admin">管理者</span><span class="pill r-staff">担当者</span></td><td>受付件数、AI解決率、引継ぎまでの時間、平均解決日数、ナレッジの承認件数と差戻し率を集計する。AIの誤回答の事例を確認し、ナレッジとSkillsを直す。資産マスタを再取り込みする</td></tr>
+      <tr><td class="k">四半期</td><td><span class="pill r-admin">管理者</span></td><td>問題管理の恒久対策の進捗を確認する。AI対象外の条件と期限（案）を見直す</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="auto">
+  <h2><span class="no">06</span>自動化した場合に変わる工程</h2>
+  <p class="note">第2・3段階で中継処理を入れた場合です。人の作業が減る工程と、残る工程を示します。承認（工程10）は自動化しません。</p>
+  <div class="tbl"><table>
+    <thead><tr><th>工程</th><th>第1段階（本書）</th><th>自動化後</th><th>前提</th></tr></thead>
+    <tbody>
+      <tr><td class="k">3・4 一次回答と結果記録</td><td>利用者がLightblueで試し、結果を自分で記録</td><td>受付内容のうち症状だけをLightblueへ送り、回答を受付データに書き戻す。利用者は「解決／未解決」を選ぶだけ</td><td><span class="pill p-warn">Lightblue APIを確認</span></td></tr>
+      <tr><td class="k">4 滞留の拾い上げ</td><td>担当者が日次で確認</td><td>期限を過ぎた案件を自動で担当者へ通知</td><td><span class="pill p-info">AppSuite APIを確認</span></td></tr>
+      <tr><td class="k">8 下書き作成</td><td>担当者が個人情報を除いて依頼</td><td>「候補」になった案件から、決まった項目だけを送って下書きを自動生成。担当者は内容確認から始める</td><td><span class="pill p-warn">Lightblue APIを確認</span></td></tr>
+      <tr><td class="k">11 参照データへ反映</td><td>管理者が週次で手作業</td><td>承認済みの出力と廃止分の削除を定期実行</td><td><span class="pill p-info">AppSuite APIを確認</span></td></tr>
+      <tr><td class="k">12 Skills更新</td><td>管理者が月次で更新</td><td>変わらず人が更新（外部から更新できるかは未確認）</td><td><span class="pill p-crit">仕様を確認</span></td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<footer>本書は「AppSuite ヘルプデスク整理ガイド」のシステム構成（desknet's NEO・AppSuite・Lightblue）にもとづく作業手順案です。Lightblueの連携仕様と承認者の指名は未確定です。</footer>
+</div>
+<script>
+(function(){
+  var btns = document.querySelectorAll('.filter button');
+  var rows = document.querySelectorAll('#steptable tbody tr');
+  function apply(role){
+    btns.forEach(function(b){ b.setAttribute('aria-pressed', String(b.dataset.role === role)); });
+    rows.forEach(function(r){
+      var roles = (r.dataset.roles || '').split(' ');
+      r.classList.toggle('dim', role !== 'all' && roles.indexOf(role) === -1);
+    });
+  }
+  btns.forEach(function(b){ b.addEventListener('click', function(){ apply(b.dataset.role); }); });
+})();
+</script>
+</body>
+</html>

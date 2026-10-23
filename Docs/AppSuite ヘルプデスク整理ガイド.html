@@ -1,0 +1,526 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>AppSuite ヘルプデスク整理ガイド</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&family=Zen+Kaku+Gothic+New:wght@500;700;900&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: 単一カラムの運用ガイド。左に固定目次（広い画面のみ）、本文は表中心。 */
+:root{
+  --bg:#f5f7f9; --surface:#ffffff; --sunk:#eaeff3; --fg:#17222c; --muted:#56656f;
+  --line:#d3dce3; --accent:#1d5f86; --accent-soft:#e1edf5;
+  --ok:#2c7a4b; --ok-soft:#e2f2e8; --warn:#9a5b00; --warn-soft:#fbefd9; --crit:#a3342a; --crit-soft:#f8e3e0;
+  --f-display:"Zen Kaku Gothic New","Hiragino Sans","Yu Gothic",sans-serif;
+  --f-body:"BIZ UDPGothic","Hiragino Sans","Yu Gothic",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#11181e; --surface:#172129; --sunk:#1d2a33; --fg:#e3eaef; --muted:#9aabb7;
+  --line:#2c3b46; --accent:#7cb9e0; --accent-soft:#1c3444;
+  --ok:#7fd1a0; --ok-soft:#183427; --warn:#f0bd6a; --warn-soft:#3a2c14; --crit:#f19a8f; --crit-soft:#3d1f1c; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#11181e; --surface:#172129; --sunk:#1d2a33; --fg:#e3eaef; --muted:#9aabb7;
+  --line:#2c3b46; --accent:#7cb9e0; --accent-soft:#1c3444;
+  --ok:#7fd1a0; --ok-soft:#183427; --warn:#f0bd6a; --warn-soft:#3a2c14; --crit:#f19a8f; --crit-soft:#3d1f1c; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15px;line-height:1.75;padding:0 16px}
+.wrap{max-width:1180px;margin:0 auto;padding-block:32px 64px;display:grid;grid-template-columns:200px minmax(0,1fr);gap:40px}
+nav.toc{position:sticky;top:calc(env(safe-area-inset-top,0px) + 24px);align-self:start;font-size:13px}
+nav.toc p{font-family:var(--f-display);font-weight:700;letter-spacing:.08em;color:var(--muted);margin:0 0 8px;font-size:12px}
+nav.toc ol{list-style:none;margin:0;padding:0;display:grid;gap:2px;counter-reset:t}
+nav.toc a{display:block;padding:5px 10px;border-radius:6px;color:var(--fg);text-decoration:none;border-left:2px solid transparent}
+nav.toc a:hover,nav.toc a:focus-visible{background:var(--sunk);border-left-color:var(--accent);outline:none}
+main{min-width:0;display:grid;gap:44px}
+header.top{display:grid;gap:10px;border-bottom:2px solid var(--fg);padding-bottom:20px}
+.eyebrow{font-family:var(--f-mono);font-size:12px;color:var(--muted);letter-spacing:.04em}
+h1{font-family:var(--f-display);font-weight:900;font-size:clamp(26px,4vw,36px);line-height:1.3;margin:0;text-wrap:balance}
+.lead{margin:0;max-width:62em;color:var(--muted)}
+.meta{display:flex;flex-wrap:wrap;gap:8px}
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:2px 10px;border-radius:999px;background:var(--sunk);color:var(--muted);white-space:nowrap}
+section{display:grid;gap:14px;scroll-margin-top:20px}
+h2{font-family:var(--f-display);font-weight:700;font-size:21px;margin:0;display:flex;align-items:baseline;gap:12px;text-wrap:balance}
+h2 .no{font-family:var(--f-mono);font-size:13px;color:var(--accent);font-weight:600}
+.note{margin:0;color:var(--muted);font-size:14px;max-width:62em}
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;min-width:720px;font-size:14px;line-height:1.6}
+th,td{text-align:left;vertical-align:top;padding:10px 14px;border-bottom:1px solid var(--line)}
+thead th{background:var(--sunk);font-family:var(--f-display);font-weight:700;font-size:13px;letter-spacing:.04em;white-space:nowrap;position:sticky;top:0}
+tbody tr:last-child td{border-bottom:none}
+tbody tr:hover td{background:color-mix(in srgb,var(--accent-soft) 45%,transparent)}
+td.k{font-weight:700;white-space:nowrap}
+.id{font-family:var(--f-mono);font-size:12.5px;font-variant-numeric:tabular-nums;color:var(--accent)}
+code{font-family:var(--f-mono);font-size:12.5px;background:var(--sunk);padding:1px 6px;border-radius:4px}
+.pill{display:inline-block;font-size:12px;font-weight:700;padding:1px 9px;border-radius:999px;white-space:nowrap}
+.p-ok{background:var(--ok-soft);color:var(--ok)}
+.p-warn{background:var(--warn-soft);color:var(--warn)}
+.p-crit{background:var(--crit-soft);color:var(--crit)}
+.p-info{background:var(--accent-soft);color:var(--accent)}
+.principles{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;counter-reset:p}
+.principles li{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:14px 16px;display:grid;gap:4px;counter-increment:p;align-content:start}
+.principles li::before{content:"原則 " counter(p);font-family:var(--f-mono);font-size:11.5px;color:var(--accent);letter-spacing:.04em}
+.principles b{font-family:var(--f-display);font-size:15px}
+.principles span{font-size:13.5px;color:var(--muted)}
+.flow{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:18px}
+.flow svg{display:block;min-width:720px;width:100%;height:auto}
+.flow text{font-family:var(--f-body);font-size:13px;fill:var(--fg)}
+.flow .sub{font-size:11px;fill:var(--muted)}
+.flow .box{fill:var(--sunk);stroke:var(--line)}
+.flow .core{fill:var(--accent-soft);stroke:var(--accent)}
+.flow .sec{fill:var(--crit-soft);stroke:var(--crit)}
+.flow .ln{stroke:var(--muted);stroke-width:1.4;fill:none}
+.flow .dash{stroke-dasharray:5 4}
+.flow .lbl{font-family:var(--f-mono);font-size:11px;fill:var(--accent)}
+.flow .lane{fill:none;stroke:var(--line);stroke-dasharray:4 4}
+.flow .lh{font-family:var(--f-display);font-weight:700;font-size:14px;fill:var(--accent)}
+.flow .ah{fill:var(--muted)}
+.flow .ng{font-size:11.5px;fill:var(--crit)}
+h3{font-family:var(--f-display);font-weight:700;font-size:16px;margin:10px 0 0}
+.verdict{display:grid;gap:4px;background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--ok);border-radius:8px;padding:14px 18px}
+.verdict b{font-family:var(--f-display);font-size:17px}
+.verdict span{font-size:14px;color:var(--muted);max-width:62em}
+.legend{display:flex;flex-wrap:wrap;gap:8px}
+.flow .ll{font-family:var(--f-display);font-weight:700;font-size:12px;fill:var(--muted)}
+.flow .v-ok{fill:var(--ok-soft);stroke:var(--ok)}
+.flow .v-op{fill:var(--accent-soft);stroke:var(--accent)}
+.flow .v-chk{fill:var(--warn-soft);stroke:var(--warn)}
+.flow .v-unk{fill:var(--crit-soft);stroke:var(--crit)}
+footer{font-size:12.5px;color:var(--muted);border-top:1px solid var(--line);padding-top:16px}
+a{color:var(--accent)}
+@media (max-width:860px){.wrap{grid-template-columns:minmax(0,1fr)}nav.toc{position:static}nav.toc ol{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+html{scroll-behavior:smooth}
+</style>
+
+<div class="wrap">
+<nav class="toc" aria-label="目次">
+  <p>目次</p>
+  <ol>
+    <li><a href="#principles">5つの原則</a></li>
+    <li><a href="#issues">既存データの課題</a></li>
+    <li><a href="#apps">システム構成</a></li>
+    <li><a href="#fields">項目設計</a></li>
+    <li><a href="#migration">既存記録の移行手順</a></li>
+    <li><a href="#patterns">再発パターン</a></li>
+    <li><a href="#privacy">個人情報・認証情報</a></li>
+    <li><a href="#ops">運用ルール</a></li>
+    <li><a href="#flow">フロー実現性</a></li>
+    <li><a href="#arch">システム構成図</a></li>
+  </ol>
+</nav>
+
+<main>
+<header class="top">
+  <div class="eyebrow">desknet's NEO AppSuite ／ ヘルプデスク統合版 修正案へのレビュー ／ 2026-10-13</div>
+  <h1>AppSuite ヘルプデスク結果の整理ベストプラクティス</h1>
+  <p class="lead">本ページは、ヘルプページ全件を確認したうえで追加すべき点を表にまとめたものです。</p>
+  <div class="meta">
+    <span class="chip">関連規格：ISO/IEC 20000・ISO/IEC 27001</span>
+    <span class="chip">氏名は記載せず問合せIDで参照</span>
+  </div>
+</header>
+
+<section id="principles">
+  <h2><span class="no">00</span>追加すべき5つの原則</h2>
+  <ul class="principles">
+    <li><b>原文と正規化値を分ける</b><span>移行元の文章は読み取り専用で保持し、集計用の値はマスタから選ぶ別列に持つ。</span></li>
+    <li><b>分類軸を混ぜない</b><span>機器・サービス・影響範囲を独立した項目にする。</span></li>
+    <li><b>移行データ専用の状態値</b><span>216件を「未確認」で埋めず、移行分と新規分を区別する。</span></li>
+    <li><b>問題管理の層を置く</b><span>個別対応と、再発原因・恒久対策を分けて管理する。</span></li>
+    <li><b>自由記述を棚卸しする</b><span>本文に残る氏名・管理用アカウント名・サーバパスを確認する。</span></li>
+  </ul>
+</section>
+
+<section id="issues">
+  <h2><span class="no">01</span>添付データから見えた課題</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>課題</th><th>重要度</th><th>該当例</th><th>対策</th></tr></thead>
+    <tbody>
+      <tr><td class="k">オートフィルによる誤記</td><td><span class="pill p-warn">中</span></td><td><span class="id">HD-0047〜0061</span>「M366」「Microsoft367／368」</td><td>製品名はマスタから選択。表記ゆれ辞書で正規化</td></tr>
+      <tr><td class="k">誤変換・誤字</td><td><span class="pill p-warn">中</span></td><td>「excellent」（Excel）、「Exchenge」、「静雄岡営業所」</td><td>同上。拠点・部署は組織マスタから選択</td></tr>
+      <tr><td class="k">資産番号列に別情報が混入</td><td><span class="pill p-crit">高</span></td><td><span class="id">0108</span>「全社的な影響」／<span class="id">0121</span>「2025シリーズ」／<span class="id">0208</span>サーバ名／<span class="id">0157</span>「…他」</td><td>影響範囲・対象サーバ・関連資産（複数）を別項目にする</td></tr>
+      <tr><td class="k">資産番号の桁不正</td><td><span class="pill p-warn">中</span></td><td><span class="id">HD-0149</span>（9桁。他は10桁）</td><td>形式チェック <code>^\d{9}M$</code> と資産マスタとの突合</td></tr>
+      <tr><td class="k">完了日があるのに未解決</td><td><span class="pill p-crit">高</span></td><td><span class="id">HD-0067</span>（未解決・作業予定）、<span class="id">HD-0131</span>（解決予定）</td><td>「完了日」と「対応結果」を分け、結果に「未解決クローズ」を設ける</td></tr>
+      <tr><td class="k">日付の不整合・欠落</td><td><span class="pill p-warn">中</span></td><td><span class="id">0133</span>が<span class="id">0132</span>より前の日付、<span class="id">0135・0136</span>は発生日なし</td><td>移行時に検証フラグを付け、人が確認</td></tr>
+      <tr><td class="k">1件に複数の事象</td><td><span class="pill p-info">低</span></td><td><span class="id">HD-0011</span>（受信不可＋再設定エラー）</td><td>新規は1件1事象とし、関連案件IDでつなぐ</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="apps">
+  <h2><span class="no">02</span>推奨するシステム構成（desknet's NEO・AppSuite・Lightblue）</h2>
+  <p class="note">desknet's NEO を利用者との接点、AppSuite を記録と承認の台帳、Lightblue を承認済みナレッジの検索・回答に使い分けます。Lightblue に渡すのは、承認済みナレッジと、一次対応に必要な問合せ項目（症状・製品・エラー内容）だけです。氏名・連絡先・認証情報は渡しません。</p>
+  <div class="flow" role="img" aria-label="AppSuiteの問合せ台帳に受け付けた問合せをLightblueが一次対応し、未解決なら担当者へ戻す。問題管理を経て承認したナレッジは、NEOのポータルで周知し、Lightblueの参照データにする。">
+    <svg viewBox="0 0 900 350" xmlns="http://www.w3.org/2000/svg">
+      <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0 0 L10 5 L0 10 z"/></marker></defs>
+      <rect class="lane" x="20" y="14" width="250" height="326" rx="8"/>
+      <rect class="lane" x="300" y="14" width="300" height="326" rx="8"/>
+      <rect class="lane" x="630" y="14" width="250" height="326" rx="8"/>
+      <text class="lh" x="145" y="38" text-anchor="middle">desknet's NEO（接点）</text>
+      <text class="lh" x="450" y="38" text-anchor="middle">AppSuite（台帳・承認）</text>
+      <text class="lh" x="755" y="38" text-anchor="middle">Lightblue（検索・回答）</text>
+
+      <rect class="core" x="40" y="80" width="210" height="56" rx="6"/><text x="145" y="104" text-anchor="middle">受付フォーム／ワークフロー</text><text class="sub" x="145" y="123" text-anchor="middle">AppSuite受付への入口・各種申請</text>
+      <rect class="box" x="40" y="262" width="210" height="56" rx="6"/><text x="145" y="286" text-anchor="middle">インフォメーション／ポータル</text><text class="sub" x="145" y="305" text-anchor="middle">FAQ・障害周知</text>
+
+      <rect class="box" x="320" y="80" width="260" height="40" rx="6"/><text x="450" y="105" text-anchor="middle">マスタ（組織・製品・資産）</text>
+      <rect class="core" x="320" y="136" width="260" height="46" rx="6"/><text x="450" y="157" text-anchor="middle" font-weight="700">問合せ台帳</text><text class="sub" x="450" y="174" text-anchor="middle">1件1事象・詳細は情シス限定</text>
+      <rect class="box" x="320" y="200" width="125" height="46" rx="6"/><text x="382" y="221" text-anchor="middle">問題管理</text><text class="sub" x="382" y="238" text-anchor="middle">再発原因・恒久対策</text>
+      <rect class="sec" x="455" y="200" width="125" height="46" rx="6"/><text x="517" y="221" text-anchor="middle">セキュリティ事象</text><text class="sub" x="517" y="238" text-anchor="middle">偽警告・不審メール</text>
+      <rect class="box" x="320" y="266" width="260" height="48" rx="6"/><text x="450" y="287" text-anchor="middle">ナレッジ</text><text class="sub" x="450" y="304" text-anchor="middle">下書き → レビュー → 承認 → 廃止（人が承認）</text>
+
+      <rect class="core" x="650" y="80" width="210" height="56" rx="6"/><text x="755" y="104" text-anchor="middle">社内AIアシスタント</text><text class="sub" x="755" y="123" text-anchor="middle">一次対応・事例検索</text>
+      <rect class="box" x="650" y="262" width="210" height="56" rx="6"/><text x="755" y="286" text-anchor="middle">参照データ</text><text class="sub" x="755" y="305" text-anchor="middle">承認済みナレッジのみ</text>
+
+      <path class="ln" marker-end="url(#ah)" d="M250 108 H285 V159 H318"/>
+      <path class="ln" marker-end="url(#ah)" d="M450 120 V134"/>
+      <path class="ln" marker-end="url(#ah)" d="M382 182 V198"/>
+      <path class="ln dash" marker-end="url(#ah)" d="M517 182 V198"/>
+      <path class="ln" marker-end="url(#ah)" d="M382 246 V264"/>
+      <path class="ln" marker-end="url(#ah)" d="M320 290 H252"/>
+      <path class="ln" marker-end="url(#ah)" d="M580 290 H648"/>
+      <path class="ln" marker-end="url(#ah)" d="M755 262 V138"/>
+      <path class="ln" marker-end="url(#ah)" d="M580 152 H612 V100 H648"/>
+      <path class="ln dash" marker-end="url(#ah)" d="M650 122 H624 V170 H582"/>
+      <text class="lbl" x="615" y="70" text-anchor="middle">一次対応</text>
+      <text class="lbl" x="615" y="196" text-anchor="middle">未解決</text>
+      <text class="lbl" x="285" y="282" text-anchor="middle">周知</text>
+      <text class="lbl" x="614" y="282" text-anchor="middle">出力</text>
+      <text class="ng" x="755" y="333" text-anchor="middle">氏名・連絡先・認証情報は連携しない</text>
+    </svg>
+  </div>
+  <div class="tbl"><table>
+    <thead><tr><th>製品</th><th>担う役割</th><th>置くもの</th><th>置かないもの・注意</th></tr></thead>
+    <tbody>
+      <tr><td class="k">desknet's NEO</td><td>利用者との接点。受付・申請・周知</td><td>受付フォームへの入口、ワークフロー（情報機器申請・アカウント申請など承認が要るサービス要求）、インフォメーションでのFAQ・障害周知</td><td>案件の記録はAppSuiteに一本化し、ワークフロー側と二重管理しない</td></tr>
+      <tr><td class="k">AppSuite</td><td>記録と承認の台帳</td><td>問合せ台帳、問題管理、セキュリティ事象、マスタ、ナレッジ（原稿と承認状態）</td><td>問合せ台帳とセキュリティ事象の詳細は情シス限定の閲覧権限にする</td></tr>
+      <tr><td class="k">Lightblue</td><td>受付後の一次対応と、承認済みナレッジの検索・回答</td><td>承認済みナレッジを参照するAIアシスタント。業務別のチャットボット（例：利用者向けPCトラブル窓口、担当者向け事例検索）</td><td>問合せ者の氏名・連絡先・認証情報、セキュリティ事象は渡さない（生成AI利用ガイドライン第6条）。参照元は承認済みナレッジに限る</td></tr>
+    </tbody>
+  </table></div>
+  <div class="tbl"><table>
+    <thead><tr><th>Lightblue連携のルール</th><th>内容</th></tr></thead>
+    <tbody>
+      <tr><td class="k">参照対象</td><td>AppSuiteのナレッジで「承認」状態のものだけ。下書き・廃止は含めない</td></tr>
+      <tr><td class="k">データの形</td><td>1ナレッジ1件。見出し（症状／原因／手順／対象者）をそろえ、製品・原因カテゴリ・対象者をタグとして付ける</td></tr>
+      <tr><td class="k">連携方法</td><td>AppSuiteから承認済みナレッジを出力し、Lightblueが参照できる保管先に置く。接続できる保管先や自動連携の可否は契約環境で確認</td></tr>
+      <tr><td class="k">更新と廃止</td><td>承認・廃止のたびに参照データへ反映し、廃止したナレッジは参照データからも削除する</td></tr>
+      <tr><td class="k">回答の出典</td><td>回答には根拠にしたナレッジIDを示す運用にし、誤りがあれば元のナレッジを直す</td></tr>
+      <tr><td class="k">解決しない場合</td><td>AIで解決しない問合せは、AppSuite上で担当者（有藤／砂子）へ引き継ぐ</td></tr>
+      <tr><td class="k">社内規程との整合</td><td>生成AI利用ガイドラインの入力禁止情報・利用範囲に合わせて、参照対象とチャットボットの公開範囲を決める</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="fields">
+  <h2><span class="no">03</span>問合せ台帳の項目設計（修正案への追加・変更）</h2>
+  <p class="note">選択肢はラジオボタン・ドロップダウンで固定し、入力時点で表記ゆれが発生しないようにします。部品名はAppSuiteのバージョンにより異なる場合があります。</p>
+  <div class="tbl"><table>
+    <thead><tr><th>項目</th><th>部品・形式</th><th>選択肢・ルール</th></tr></thead>
+    <tbody>
+      <tr><td class="k">問合せ種別</td><td>選択肢</td><td>障害／サービス要求／質問・操作方法／セキュリティ報告。<span class="id">HD-0212</span>（使い方）や<span class="id">HD-0207</span>（アカウント追加）は障害ではない</td></tr>
+      <tr><td class="k">対象区分</td><td>選択肢</td><td>PC／モバイル／NAS／サーバ／会議室機器／クラウドサービス</td></tr>
+      <tr><td class="k">製品・サービス</td><td>マスタ参照</td><td>Microsoft 365、Outlook、FortiClient、DirectCloud、desknet's NEO など</td></tr>
+      <tr><td class="k">影響範囲</td><td>選択肢</td><td>個人／部署／拠点／全社</td></tr>
+      <tr><td class="k">関連資産</td><td>資産マスタ参照（複数可）</td><td>自由入力は禁止</td></tr>
+      <tr><td class="k">優先度</td><td>自動計算</td><td>影響度 × 緊急度から算出</td></tr>
+      <tr><td class="k">原因カテゴリ</td><td>選択肢</td><td>設定／更新起因／認証・ライセンス／ネットワーク／ハード／利用者操作／仕様・対象外／不明</td></tr>
+      <tr><td class="k">原因の確度</td><td>選択肢</td><td>確定／推定／不明／移行元記載のみ</td></tr>
+      <tr><td class="k">対応結果</td><td>選択肢</td><td>恒久解決／回避策で解決／仕様説明で終了／ベンダーへエスカレーション／未解決クローズ</td></tr>
+      <tr><td class="k">関連問題ID</td><td>問題管理台帳への関連付け</td><td>再発パターンに紐づける</td></tr>
+      <tr><td class="k">ナレッジ候補</td><td>選択肢＋承認済みKnowledge ID</td><td>未判定／候補／対象外。候補はAppSuiteのナレッジアプリへ起票し、人が承認する</td></tr>
+      <tr><td class="k">移行元原文</td><td>複数行文字列（読み取り専用）</td><td>編集しない。移行分のみ</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="migration">
+  <h2><span class="no">04</span>既存記録の移行手順</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>順序</th><th>作業</th><th>内容</th><th>成果物</th></tr></thead>
+    <tbody>
+      <tr><td class="id">1</td><td class="k">原文を凍結</td><td>元PDF・Excelをそのまま保管し、AppSuiteには「移行元原文」として取り込む</td><td>—</td></tr>
+      <tr><td class="id">2</td><td class="k">辞書で正規化</td><td>製品名・拠点名・部署名の対応表を作り、正規化値を別列に入れる</td><td>表記ゆれ辞書</td></tr>
+      <tr><td class="id">3</td><td class="k">機械的に検証</td><td>資産番号の形式、日付の前後関係、空欄、資産番号列の混入値を抽出し「要確認」フラグを付ける</td><td>検証結果一覧</td></tr>
+      <tr><td class="id">4</td><td class="k">移行用状態値を設定</td><td>下表のルールで設定し、新規案件と区別する</td><td>取込用CSV</td></tr>
+      <tr><td class="id">5</td><td class="k">件数の多い順に整備</td><td>再発パターンに該当する案件から、原因と結果を優先して整える</td><td>問題管理台帳の初期登録</td></tr>
+    </tbody>
+  </table></div>
+  <div class="tbl"><table>
+    <thead><tr><th>移行元の状態</th><th>対応状況</th><th>担当者</th><th>原因の確度</th></tr></thead>
+    <tbody>
+      <tr><td>完了日あり・解決の記載あり</td><td><span class="pill p-ok">完了（移行）</span></td><td>移行データ（不明）</td><td>移行元記載のみ</td></tr>
+      <tr><td>完了日あり・未解決や予定の記載</td><td><span class="pill p-warn">要確認</span></td><td>移行データ（不明）</td><td>移行元記載のみ</td></tr>
+      <tr><td>完了日なし</td><td><span class="pill p-warn">要確認</span></td><td>移行データ（不明）</td><td>移行元記載のみ</td></tr>
+      <tr><td>原因・対応が空欄</td><td><span class="pill p-crit">要確認（記録欠落）</span></td><td>移行データ（不明）</td><td>不明</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="patterns">
+  <h2><span class="no">05</span>再発パターン → 問題管理・ナレッジ化の候補</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>パターン</th><th>件数</th><th>該当ID（抜粋）</th><th>問題管理での論点</th><th>扱い</th></tr></thead>
+    <tbody>
+      <tr><td class="k">M365サインイン・フェデレーション・HENNGE認証ループ</td><td class="id">20</td><td class="id">0044〜0057, 0061, 0062, 0120, 0169, 0180, 0200</td><td>資格情報・トークン残存への恒久対策、手順の標準化</td><td><span class="pill p-info">問題管理</span></td></tr>
+      <tr><td class="k">SMB1.0・NAS接続</td><td class="id">13</td><td class="id">0082〜0088, 0102, 0123, 0133, 0181, 0182, 0215</td><td>SMB1.0許容のリスク評価、現場NASの標準設定</td><td><span class="pill p-info">問題管理</span></td></tr>
+      <tr><td class="k">Office2016更新後の起動不可 → M365入替</td><td class="id">12</td><td class="id">0073〜0078, 0095〜0098, 0104, 0105</td><td>残存Office2016端末の棚卸し（既知の誤りとして登録）</td><td><span class="pill p-info">問題管理</span></td></tr>
+      <tr><td class="k">クラウドストレージの同期・権限</td><td class="id">11</td><td class="id">0065, 0066, 0094, 0117, 0118, 0142, 0152, 0172, 0183, 0184, 0205</td><td>製品別に手順を分ける</td><td><span class="pill p-ok">ナレッジ</span></td></tr>
+      <tr><td class="k">FortiClient VPN</td><td class="id">7</td><td class="id">0107, 0116, 0141, 0145, 0147, 0173, 0193</td><td>配布・設定・権限の標準化</td><td><span class="pill p-info">問題管理</span></td></tr>
+      <tr><td class="k">ローカルアカウントのロック</td><td class="id">7</td><td class="id">0090, 0109, 0110, 0149, 0160, 0197, 0198</td><td>予備管理アカウントのパスワード管理（Windows LAPS等の検討）</td><td><span class="pill p-info">問題管理</span></td></tr>
+      <tr><td class="k">偽の警告ポップアップ</td><td class="id">7</td><td class="id">0150, 0176, 0188, 0194, 0199, 0203, 0206</td><td>ヘルプデスクではなくセキュリティ事象として記録（ISO 27001 インシデント管理）</td><td><span class="pill p-crit">セキュリティ事象</span></td></tr>
+      <tr><td class="k">desknet's NEO のPDF表示・キャッシュ</td><td class="id">5</td><td class="id">0063, 0091, 0143, 0144, 0165</td><td>利用者向けFAQ化</td><td><span class="pill p-ok">ナレッジ</span></td></tr>
+      <tr><td class="k">起動時ディスクチェック・ブート障害</td><td class="id">4</td><td class="id">0161, 0210, 0211, 0214</td><td>2026年10月に集中。同一原因の可能性を確認</td><td><span class="pill p-warn">要観察</span></td></tr>
+    </tbody>
+  </table></div>
+  <p class="note">件数は上記に列挙したIDの数で、添付PDFの記載から目視で分類したものです。重複や境界事例があるため、正規化後に再集計してください。</p>
+</section>
+
+<section id="privacy">
+  <h2><span class="no">06</span>個人情報・認証情報の扱い</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>残存している情報</th><th>該当ID</th><th>リスク</th><th>対策</th></tr></thead>
+    <tbody>
+      <tr><td class="k">管理用・ローカルアカウント名とパスワード状況</td><td class="id">0090, 0149, 0160, 0197</td><td>攻撃者に有用な情報になる</td><td>公開ナレッジでは「所定の管理用アカウントで」と記載。詳細は閲覧限定の手順書へ</td></tr>
+      <tr><td class="k">内部サーバのパス</td><td class="id">0108, 0162</td><td>内部構成の露出</td><td>ナレッジ化時に一般化する</td></tr>
+      <tr><td class="k">問合せ者（新規分）</td><td>—</td><td>イニシャルの重複・誤り</td><td>ユーザー選択部品で記録し、表示側で必要に応じて伏せる</td></tr>
+      <tr><td class="k">問合せ者（移行分）</td><td>移行分の全件</td><td>暫定イニシャルの誤り</td><td>「名簿照合済み／未照合」の状態を付与</td></tr>
+      <tr><td class="k">保存期間</td><td>—</td><td>不要な個人情報の長期保持</td><td>保存期間を規程化し、期限後は個人に関する項目を削除または匿名化</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="ops">
+  <h2><span class="no">07</span>運用ルール</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>区分</th><th>ルール</th><th>頻度・タイミング</th></tr></thead>
+    <tbody>
+      <tr><td class="k">クローズ条件</td><td>対応結果・原因の確度・解決確認者・確認日を必須入力</td><td>クローズ時</td></tr>
+      <tr><td class="k">入力テンプレート</td><td>原因・対応欄を「事象／原因／対応／結果／再発防止」の見出し付きにする（既存の<code>&lt;原因&gt;</code>記法を正式化）</td><td>入力時</td></tr>
+      <tr><td class="k">振り分け</td><td>偽警告・不審メール・感染疑いはセキュリティ事象へ。問合せ台帳には参照IDのみ</td><td>受付時</td></tr>
+      <tr><td class="k">月次レビュー</td><td>分類別・拠点別件数、平均解決日数、再発率、ナレッジ化率、滞留案件</td><td>毎月</td></tr>
+      <tr><td class="k">問題管理レビュー</td><td>恒久対策の進捗と、問題に紐づく問合せ件数の推移</td><td>四半期</td></tr>
+      <tr><td class="k">ナレッジ配信</td><td>承認・廃止をdesknet's NEOのポータルとLightblueの参照データへ反映。廃止したナレッジは参照データからも削除</td><td>承認・廃止のたび（または週次）</td></tr>
+      <tr><td class="k">AI回答の品質確認</td><td>Lightblueの回答で誤りや古い手順が見つかったら、元のナレッジを修正・廃止する</td><td>月次レビューで確認</td></tr>
+      <tr><td class="k">マスタ保守</td><td>資産マスタの再取込、組織改編時の部署マスタ更新</td><td>月次／組織変更時</td></tr>
+      <tr><td class="k">KPIの扱い</td><td>正規化完了までは移行分のKPIを参考値とする</td><td>移行期間中</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="flow">
+  <h2><span class="no">08</span>運用フローの実現性確認</h2>
+  <p class="note">対象フロー：受付（AppSuite）→ Lightblueで一次対応 → 未解決なら担当者（有藤／砂子）へ引継ぎ → 解決記録 → ナレッジ下書き → 人の承認 → DB保存 → Lightblueの参照データ・Skillsへ反映。判定は2026年10月13日時点の公開情報と社内規程にもとづきます。</p>
+  <div class="verdict">
+    <b>結論：条件付きで実現可能</b>
+    <span>①③④⑥⑦はAppSuiteの標準機能と設定で実現できます。⑤⑧は手作業を併用すればすぐに運用でき、自動化には中継処理が必要です。②⑨はLightblue側の連携仕様を確認するまで、自動化の可否が決まりません。</span>
+  </div>
+  <div class="legend">
+    <span class="pill p-ok">可（標準機能・設定）</span>
+    <span class="pill p-info">可（手作業を併用）</span>
+    <span class="pill p-warn">要確認（連携仕様）</span>
+    <span class="pill p-crit">公開情報で確認できず</span>
+  </div>
+  <div class="flow" role="img" aria-label="①受付（AppSuite）から②一次対応（Lightblue）、③引継ぎ（担当者）、④解決記録（AppSuite）、⑤下書き（Lightblue）、⑥承認（承認者）、⑦DB保存（AppSuite）、⑧参照データ反映、⑨Skills反映（Lightblue）の順に進む。">
+    <svg viewBox="0 0 1040 280" xmlns="http://www.w3.org/2000/svg" style="min-width:1000px">
+      <defs><marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0 0 L10 5 L0 10 z"/></marker></defs>
+      <rect class="lane" x="4" y="16" width="1032" height="80" rx="6"/>
+      <rect class="lane" x="4" y="104" width="1032" height="80" rx="6"/>
+      <rect class="lane" x="4" y="192" width="1032" height="80" rx="6"/>
+      <text class="ll" x="14" y="60">Lightblue</text>
+      <text class="ll" x="14" y="148">AppSuite</text>
+      <text class="ll" x="14" y="228">担当者</text><text class="ll" x="14" y="245">承認者</text>
+
+      <rect class="v-ok" x="100" y="118" width="92" height="42" rx="6"/><text x="146" y="136" text-anchor="middle">① 受付</text><text class="sub" x="146" y="152" text-anchor="middle">フォーム・採番</text>
+      <rect class="v-chk" x="204" y="30" width="92" height="42" rx="6"/><text x="250" y="48" text-anchor="middle">② 一次対応</text><text class="sub" x="250" y="64" text-anchor="middle">症状のみ渡す</text>
+      <rect class="v-ok" x="308" y="206" width="92" height="42" rx="6"/><text x="354" y="224" text-anchor="middle">③ 引継ぎ</text><text class="sub" x="354" y="240" text-anchor="middle">有藤／砂子</text>
+      <rect class="v-ok" x="412" y="118" width="92" height="42" rx="6"/><text x="458" y="136" text-anchor="middle">④ 解決記録</text><text class="sub" x="458" y="152" text-anchor="middle">必須項目で締める</text>
+      <rect class="v-op" x="516" y="30" width="92" height="42" rx="6"/><text x="562" y="48" text-anchor="middle">⑤ 下書き</text><text class="sub" x="562" y="64" text-anchor="middle">専用アシスタント</text>
+      <rect class="v-ok" x="620" y="206" width="92" height="42" rx="6"/><text x="666" y="224" text-anchor="middle">⑥ 承認</text><text class="sub" x="666" y="240" text-anchor="middle">作成者と別の人</text>
+      <rect class="v-ok" x="724" y="118" width="92" height="42" rx="6"/><text x="770" y="136" text-anchor="middle">⑦ DB保存</text><text class="sub" x="770" y="152" text-anchor="middle">ナレッジアプリ</text>
+      <rect class="v-op" x="828" y="30" width="92" height="42" rx="6"/><text x="874" y="48" text-anchor="middle">⑧ 参照データ</text><text class="sub" x="874" y="64" text-anchor="middle">承認分を出力</text>
+      <rect class="v-unk" x="932" y="30" width="92" height="42" rx="6"/><text x="978" y="48" text-anchor="middle">⑨ Skills反映</text><text class="sub" x="978" y="64" text-anchor="middle">仕様を確認</text>
+
+      <path class="ln" marker-end="url(#ah2)" d="M192 139 H198 V51 H202"/>
+      <path class="ln" marker-end="url(#ah2)" d="M296 51 H302 V227 H306"/>
+      <path class="ln" marker-end="url(#ah2)" d="M400 227 H406 V139 H410"/>
+      <path class="ln" marker-end="url(#ah2)" d="M504 139 H510 V51 H514"/>
+      <path class="ln" marker-end="url(#ah2)" d="M608 51 H614 V227 H618"/>
+      <path class="ln" marker-end="url(#ah2)" d="M712 227 H718 V139 H722"/>
+      <path class="ln" marker-end="url(#ah2)" d="M816 139 H822 V51 H826"/>
+      <path class="ln" marker-end="url(#ah2)" d="M920 51 H930"/>
+      <text class="lbl" x="310" y="178">未解決</text>
+      <text class="sub" x="250" y="88" text-anchor="middle">解決時は「AI解決」で完了</text>
+    </svg>
+  </div>
+
+  <div class="tbl"><table>
+    <thead><tr><th>手順</th><th>担い手</th><th>判定</th><th>いま実現できる方法</th><th>自動化する場合</th></tr></thead>
+    <tbody>
+      <tr><td class="k">① 受付</td><td>AppSuite</td><td><span class="pill p-ok">可</span></td><td>受付フォーム、自動採番、登録時の通知。セキュリティ事象・アカウントロック等は種別でAIを通さず担当者へ回す</td><td>—</td></tr>
+      <tr><td class="k">② 一次対応</td><td>Lightblue</td><td><span class="pill p-warn">要確認</span></td><td>受付後の通知でLightblueの専用アシスタントを案内し、利用者が症状を入力して試す。結果を「AI解決／未解決」で受付データに記録</td><td>中継処理がAppSuite APIで新規データを取得し、症状だけをLightblueへ送り、回答を書き戻す。Lightblue側に外部から質問を受け付けるAPIがあるか要確認</td></tr>
+      <tr><td class="k">③ 引継ぎ</td><td>AppSuite／有藤・砂子</td><td><span class="pill p-ok">可</span></td><td>「未解決」選択で状態を「担当者対応中」にし、担当者欄（ユーザー選択）に割り当てて通知。割当ルール（拠点別・当番制）と不在時の代替を決める</td><td>未解決のまま一定時間が経った案件を中継処理が拾って通知。Lightblueから直接起票する場合は、エージェントの外部API呼び出し可否を確認</td></tr>
+      <tr><td class="k">④ 解決記録</td><td>AppSuite</td><td><span class="pill p-ok">可</span></td><td>対応結果・原因の確度・解決確認者・確認日を必須にしてクローズ</td><td>—</td></tr>
+      <tr><td class="k">⑤ ナレッジ下書き</td><td>Lightblue</td><td><span class="pill p-info">手作業併用</span></td><td>担当者が解決記録から氏名・資産番号・アカウント名を除いた範囲を「ナレッジ下書き」アシスタントに渡し、決まった見出しで下書き。AppSuiteのナレッジアプリへ「下書き」で登録</td><td>完了かつナレッジ候補の案件を中継処理が取得し、下書きを生成して登録。Lightblue APIの確認が前提</td></tr>
+      <tr><td class="k">⑥ 人の承認</td><td>承認者</td><td><span class="pill p-ok">可</span></td><td>ナレッジの状態を「承認」に変えられるのを承認者だけにする（アクセス権）か、desknet's NEOのワークフローで承認。下書き作成者と承認者を分ける</td><td>—</td></tr>
+      <tr><td class="k">⑦ DB保存</td><td>AppSuite</td><td><span class="pill p-ok">可</span></td><td>ナレッジアプリに承認日・承認者・版を記録</td><td>—</td></tr>
+      <tr><td class="k">⑧ 参照データへ反映</td><td>AppSuite → Lightblue</td><td><span class="pill p-info">手作業併用</span></td><td>承認済みナレッジを出力し、Lightblueが連携する保管先（BoxやSharePoint等）に置く。廃止したナレッジは削除</td><td>AppSuite APIで承認済みを定期取得し、1ナレッジ1ファイルで保管先へ配置する処理を定期実行</td></tr>
+      <tr><td class="k">⑨ Skillsへ反映</td><td>Lightblue</td><td><span class="pill p-crit">確認できず</span></td><td>公開資料では「Skills」という機能名と更新方法を確認できない。公開資料にある専用アシスタント（業務特化アシスタント）の指示文の更新に当たると想定し、管理画面から人が更新する</td><td>Skillsを外部から更新するAPIの有無を確認。個々のナレッジは⑧の参照データに置き、Skillsには手順と判断ルールだけを置けば、ナレッジ承認のたびにSkillsを直す必要はない</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>AIの一次対応から外し、受付後すぐ担当者へ回す案件</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>種別</th><th>理由</th><th>過去の例</th></tr></thead>
+    <tbody>
+      <tr><td class="k">セキュリティ事象（偽警告・不審メール・感染疑い）</td><td>初動の速さが必要。生成AI利用ガイドライン第6条（6）の入力禁止情報に当たり得る</td><td class="id">0164, 0206</td></tr>
+      <tr><td class="k">アカウントロック・パスワード関連</td><td>認証情報の入力を誘発する（第6条（5））。管理用アカウントでの作業が必要</td><td class="id">0090, 0160, 0198</td></tr>
+      <tr><td class="k">ハード故障・起動不可</td><td>利用者の操作では解決しない</td><td class="id">0101, 0161</td></tr>
+      <tr><td class="k">拠点・全社に影響する障害</td><td>個別回答より周知と復旧が優先</td><td class="id">0108</td></tr>
+      <tr><td class="k">権限付与・各種申請</td><td>承認が必要なのでワークフローで処理</td><td class="id">0205</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>生成AI利用ガイドライン（2026年5月1日制定）との整合</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>条文</th><th>内容</th><th>このフローでの対応</th></tr></thead>
+    <tbody>
+      <tr><td class="k">第4条</td><td>業務で使える生成AIは会社が認めたものに限る。全社標準はCopilotで、他ツールは2026年7月中旬以降に順次展開予定（7月1日付方針）</td><td>Lightblueが承認済みツールであることと、利用者向けの一次対応に使える展開範囲かを確認</td></tr>
+      <tr><td class="k">第5条</td><td>会社管理の端末・アカウントに限る</td><td>一次対応の案内先は会社アカウントでのみ使える専用アシスタントにする</td></tr>
+      <tr><td class="k">第6条（1）</td><td>個人情報は原則入力しない</td><td>受付フォームで「AIに渡す項目（症状・製品・エラー内容）」と「渡さない項目（氏名・連絡先）」を分ける</td></tr>
+      <tr><td class="k">第6条（5）（6）</td><td>認証情報、脆弱性・マルウェアに関する情報は原則入力しない</td><td>受付画面に注意書きを置き、該当種別はAIを通さない</td></tr>
+      <tr><td class="k">第7条</td><td>判断・行動の主体は人</td><td>AI回答には「AIによる回答」と表示し、ナレッジ化は人の承認を必須にする</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>導入前に確認する事項</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>確認先</th><th>確認事項</th><th>影響する手順</th></tr></thead>
+    <tbody>
+      <tr><td class="k" rowspan="6">Lightblue</td><td>外部システムから質問を送り、回答を受け取るAPIがあるか</td><td>② ⑤</td></tr>
+      <tr><td>エージェントから外部API（AppSuite）を呼び出して登録・更新できるか。その際の承認ステップ</td><td>② ③</td></tr>
+      <tr><td>「Skills」の正式な機能名、作成・更新の方法（管理画面のみかAPIも可か）、反映までの時間</td><td>⑨</td></tr>
+      <tr><td>参照データとして連携できる保管先、同期の間隔、削除の反映</td><td>⑧</td></tr>
+      <tr><td>回答に参照したナレッジ（出典）を表示できるか</td><td>② ⑧</td></tr>
+      <tr><td>会話ログを取得できるか（AI解決件数の集計）、部門別の利用権限</td><td>② 月次レビュー</td></tr>
+      <tr><td class="k" rowspan="2">desknet's NEO／AppSuite</td><td>自社のバージョン・契約でAppSuite APIを使えるか、認証方式</td><td>② ③ ⑤ ⑧</td></tr>
+      <tr><td>データの追加・更新を検知する方法（定期取得になるか）</td><td>② ③ ⑤</td></tr>
+      <tr><td class="k" rowspan="3">社内</td><td>Lightblueの業務利用承認（第4条）と展開範囲</td><td>全体</td></tr>
+      <tr><td>中継処理の置き場所（Power Automate、PowerShellの定期実行、iPaaSなど）と必要なライセンス</td><td>② ③ ⑤ ⑧</td></tr>
+      <tr><td>有藤／砂子への割当ルール、不在時の代替、承認者の指名</td><td>③ ⑥</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>段階的な導入</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>段階</th><th>内容</th><th>前提</th></tr></thead>
+    <tbody>
+      <tr><td class="k">第1段階：手作業でつなぐ</td><td>①③④⑥⑦をAppSuiteで設定。②は利用者がLightblueを試し結果を記録、⑤は担当者がLightblueで下書き、⑧は承認済みを手作業で出力、⑨は月次で人が更新。AI解決／未解決を記録し、AI一次解決率を月次で集計</td><td>Lightblueの業務利用承認</td></tr>
+      <tr><td class="k">第2段階：出力と通知を自動化</td><td>⑧の参照データ出力と、③の滞留通知を中継処理で定期実行</td><td>AppSuite APIの利用可否</td></tr>
+      <tr><td class="k">第3段階：AI連携を自動化</td><td>②の一次回答の自動書き戻し、⑤の下書き自動生成、⑨の自動更新</td><td>Lightblue側のAPI・Skills更新方法の確認</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="arch">
+  <h2><span class="no">09</span>実際のシステム構成</h2>
+  <p class="note">08の運用フローを、実際に使う製品と連携の単位で描いた構成図です。図中の丸数字は08の手順番号に対応します。実線は第1段階（標準機能と手作業）でつなぐ経路、破線は第2・3段階で自動化する経路です。</p>
+  <div class="flow" role="img" aria-label="利用者はdesknet's NEOのポータルからAppSuiteの問合せ台帳に受け付け、Lightblueの一次対応アシスタントを試す。未解決は通知で担当者（有藤・砂子）へ引き継ぐ。AppSuiteには問合せ台帳、セキュリティ事象、問題管理、ナレッジ、マスタ、APIがある。中継処理はAppSuite APIを通じて一次対応、下書き生成、滞留監視、承認済みナレッジの出力を行う。出力したナレッジは保管先を経てLightblueの参照データになる。資産マスタはPC資産管理から取り込む。">
+    <svg viewBox="0 0 1100 670" xmlns="http://www.w3.org/2000/svg" style="min-width:1000px">
+      <defs><marker id="ah3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0 0 L10 5 L0 10 z"/></marker></defs>
+      <g transform="translate(0,26)">
+        <!-- 人 -->
+        <rect class="box" x="40" y="20" width="170" height="60" rx="6"/><text x="125" y="45" text-anchor="middle" font-weight="700">担当者</text><text class="sub" x="125" y="64" text-anchor="middle">有藤／砂子</text>
+        <rect class="box" x="230" y="20" width="170" height="60" rx="6"/><text x="315" y="45" text-anchor="middle" font-weight="700">承認者</text><text class="sub" x="315" y="64" text-anchor="middle">下書き作成者と別の人</text>
+        <rect class="box" x="480" y="20" width="240" height="60" rx="6"/><text x="600" y="45" text-anchor="middle" font-weight="700">利用者（社員）</text><text class="sub" x="600" y="64" text-anchor="middle">会社端末・会社アカウント</text>
+
+        <!-- desknet's NEO -->
+        <rect class="lane" x="20" y="120" width="600" height="350" rx="8"/>
+        <text class="lh" x="36" y="142">desknet's NEO</text>
+        <rect class="box" x="40" y="152" width="170" height="42" rx="6"/><text x="125" y="169" text-anchor="middle">通知</text><text class="sub" x="125" y="186" text-anchor="middle">引継ぎ・滞留の通知</text>
+        <rect class="box" x="225" y="152" width="170" height="42" rx="6"/><text x="310" y="169" text-anchor="middle">ワークフロー</text><text class="sub" x="310" y="186" text-anchor="middle">各種申請・ナレッジ承認</text>
+        <rect class="box" x="410" y="152" width="190" height="42" rx="6"/><text x="505" y="169" text-anchor="middle">ポータル</text><text class="sub" x="505" y="186" text-anchor="middle">受付の入口・FAQ・障害周知</text>
+
+        <!-- AppSuite -->
+        <rect class="lane" x="35" y="208" width="570" height="252" rx="8"/>
+        <text class="lh" x="50" y="230">AppSuite</text>
+        <rect class="sec" x="55" y="240" width="250" height="56" rx="6"/><text x="180" y="263" text-anchor="middle">セキュリティ事象</text><text class="sub" x="180" y="282" text-anchor="middle">偽警告・不審メール等（AIを通さない）</text>
+        <rect class="core" x="325" y="240" width="260" height="56" rx="6"/><text x="455" y="263" text-anchor="middle" font-weight="700">① 受付 → 問合せ台帳</text><text class="sub" x="455" y="282" text-anchor="middle">③ 担当者割当・④ 解決記録</text>
+        <rect class="box" x="55" y="312" width="250" height="48" rx="6"/><text x="180" y="331" text-anchor="middle">ナレッジ</text><text class="sub" x="180" y="349" text-anchor="middle">⑤ 下書き → ⑥ 承認 → ⑦ 保存・廃止</text>
+        <rect class="box" x="325" y="312" width="260" height="48" rx="6"/><text x="455" y="331" text-anchor="middle">問題管理</text><text class="sub" x="455" y="349" text-anchor="middle">再発原因・恒久対策</text>
+        <rect class="box" x="55" y="376" width="250" height="44" rx="6"/><text x="180" y="394" text-anchor="middle">マスタ</text><text class="sub" x="180" y="411" text-anchor="middle">組織・製品・資産</text>
+        <rect class="box" x="325" y="376" width="260" height="44" rx="6"/><text x="455" y="394" text-anchor="middle">AppSuite API</text><text class="sub" x="455" y="411" text-anchor="middle">データの取得・追加・更新・検索</text>
+        <text class="sub" x="55" y="446">問合せ台帳・セキュリティ事象の詳細は情シス限定の閲覧権限</text>
+
+        <!-- 中継処理 -->
+        <rect class="lane" x="650" y="120" width="170" height="350" rx="8"/>
+        <text class="lh" x="664" y="142">中継処理</text>
+        <text class="sub" x="664" y="160">第2・3段階（要選定）</text>
+        <rect class="box" x="660" y="175" width="150" height="50" rx="6"/><text x="735" y="196" text-anchor="middle">② 新規受付の取得</text><text class="sub" x="735" y="214" text-anchor="middle">症状のみ送信・回答書戻し</text>
+        <rect class="box" x="660" y="240" width="150" height="50" rx="6"/><text x="735" y="261" text-anchor="middle">⑤ 下書き生成依頼</text><text class="sub" x="735" y="279" text-anchor="middle">完了＋ナレッジ候補</text>
+        <rect class="box" x="660" y="305" width="150" height="50" rx="6"/><text x="735" y="326" text-anchor="middle">③ 滞留監視</text><text class="sub" x="735" y="344" text-anchor="middle">未解決の放置を通知</text>
+        <rect class="box" x="660" y="370" width="150" height="50" rx="6"/><text x="735" y="391" text-anchor="middle">⑧ 承認済みを出力</text><text class="sub" x="735" y="409" text-anchor="middle">1ナレッジ1ファイル</text>
+
+        <!-- Lightblue -->
+        <rect class="lane" x="850" y="120" width="230" height="350" rx="8"/>
+        <text class="lh" x="864" y="142">Lightblue</text>
+        <text class="sub" x="864" y="160">業務利用の承認が前提</text>
+        <rect class="core" x="865" y="175" width="200" height="50" rx="6"/><text x="965" y="196" text-anchor="middle">一次対応アシスタント</text><text class="sub" x="965" y="214" text-anchor="middle">② 症状のみ受け取り回答</text>
+        <rect class="core" x="865" y="240" width="200" height="50" rx="6"/><text x="965" y="261" text-anchor="middle">下書きアシスタント</text><text class="sub" x="965" y="279" text-anchor="middle">⑤ 個人情報を除いた記録から</text>
+        <rect class="v-unk" x="865" y="305" width="200" height="50" rx="6"/><text x="965" y="326" text-anchor="middle">⑨ Skills</text><text class="sub" x="965" y="344" text-anchor="middle">手順・判断ルール（更新方法要確認）</text>
+        <rect class="box" x="865" y="370" width="200" height="50" rx="6"/><text x="965" y="391" text-anchor="middle">参照データ（RAG）</text><text class="sub" x="965" y="409" text-anchor="middle">承認済みナレッジのみ</text>
+        <text class="sub" x="864" y="446">氏名・連絡先・認証情報は渡さない</text>
+
+        <!-- 下段 -->
+        <rect class="box" x="40" y="505" width="340" height="56" rx="6"/><text x="210" y="528" text-anchor="middle">PC資産管理</text><text class="sub" x="210" y="547" text-anchor="middle">AD・Entra ID・SKYSEAをPowerShellで統合</text>
+        <rect class="v-chk" x="660" y="505" width="420" height="56" rx="6"/><text x="870" y="528" text-anchor="middle">参照データの保管先</text><text class="sub" x="870" y="547" text-anchor="middle">Box／SharePoint等（要確認）・第1段階は手作業で配置</text>
+
+        <!-- 実線：第1段階 -->
+        <path class="ln" marker-end="url(#ah3)" d="M560 80 V150"/><text class="lbl" x="566" y="118">① 受付</text>
+        <path class="ln" marker-end="url(#ah3)" d="M505 194 V238"/>
+        <path class="ln" marker-end="url(#ah3)" d="M720 50 H1010 V173"/><text class="lbl" x="865" y="44" text-anchor="middle">② 一次対応（症状のみ）</text>
+        <path class="ln" marker-end="url(#ah3)" d="M125 152 V82"/><text class="lbl" x="131" y="118">③ 引継ぎ</text>
+        <path class="ln" marker-end="url(#ah3)" d="M310 152 V82"/><text class="lbl" x="316" y="118">⑥ 承認</text>
+        <path class="ln" marker-end="url(#ah3)" d="M125 20 V6 H1090 V265 H1067"/><text class="lbl" x="600" y="0" text-anchor="middle">⑤ 担当者が個人情報を除いて下書きを依頼（第1段階）</text>
+        <path class="ln" marker-end="url(#ah3)" d="M325 268 H307"/>
+        <path class="ln" marker-end="url(#ah3)" d="M455 296 V310"/>
+        <path class="ln" marker-end="url(#ah3)" d="M325 336 H307"/>
+        <path class="ln" marker-end="url(#ah3)" d="M210 505 V422"/><text class="lbl" x="216" y="486">CSV取込（定期）</text>
+        <path class="ln" marker-end="url(#ah3)" d="M965 505 V422"/><text class="lbl" x="971" y="486">取り込み</text>
+
+        <!-- 破線：第2・3段階 -->
+        <path class="ln dash" marker-start="url(#ah3)" marker-end="url(#ah3)" d="M587 398 H648"/><text class="lbl" x="617" y="390" text-anchor="middle">API</text>
+        <path class="ln dash" marker-end="url(#ah3)" d="M810 200 H863"/>
+        <path class="ln dash" marker-end="url(#ah3)" d="M810 265 H863"/>
+        <path class="ln dash" marker-end="url(#ah3)" d="M735 420 V503"/>
+
+        <!-- 凡例 -->
+        <g transform="translate(40,600)">
+          <path class="ln" d="M0 10 H40"/><text class="sub" x="48" y="14">第1段階（標準機能・手作業）</text>
+          <path class="ln dash" d="M230 10 H270"/><text class="sub" x="278" y="14">第2・3段階（自動化）</text>
+          <rect class="v-unk" x="430" y="2" width="22" height="16" rx="3"/><text class="sub" x="460" y="14">公開情報で確認できず</text>
+          <rect class="v-chk" x="600" y="2" width="22" height="16" rx="3"/><text class="sub" x="630" y="14">要確認</text>
+          <rect class="sec" x="700" y="2" width="22" height="16" rx="3"/><text class="sub" x="730" y="14">AIを通さない</text>
+        </g>
+      </g>
+    </svg>
+  </div>
+
+  <div class="tbl"><table>
+    <thead><tr><th>構成要素</th><th>役割</th><th>状態</th><th>導入段階</th></tr></thead>
+    <tbody>
+      <tr><td class="k">desknet's NEO（ポータル・通知・ワークフロー）</td><td>受付の入口、FAQ・障害周知、引継ぎ通知、承認</td><td><span class="pill p-ok">既存</span></td><td>第1段階</td></tr>
+      <tr><td class="k">AppSuite（問合せ台帳・セキュリティ事象・問題管理・ナレッジ・マスタ）</td><td>記録と承認の台帳</td><td><span class="pill p-info">既存基盤に新規アプリ</span></td><td>第1段階</td></tr>
+      <tr><td class="k">AppSuite API</td><td>中継処理からのデータ取得・更新</td><td><span class="pill p-warn">利用可否・認証方式を確認</span></td><td>第2段階</td></tr>
+      <tr><td class="k">PC資産管理（AD・Entra ID・SKYSEA）</td><td>資産マスタの元データ</td><td><span class="pill p-ok">既存</span>（CSV取込を追加）</td><td>第1段階</td></tr>
+      <tr><td class="k">中継処理</td><td>受付の取得・回答書き戻し、下書き生成依頼、滞留監視、承認済みナレッジの出力。候補はPower Automate、PowerShellの定期実行、iPaaS</td><td><span class="pill p-warn">新規・方式を選定</span></td><td>第2・3段階</td></tr>
+      <tr><td class="k">Lightblue 一次対応アシスタント</td><td>症状・製品・エラー内容から一次回答</td><td><span class="pill p-info">新規設定</span></td><td>第1段階（手動案内）→ 第3段階（自動）</td></tr>
+      <tr><td class="k">Lightblue 下書きアシスタント</td><td>解決記録からナレッジ下書きを作成</td><td><span class="pill p-info">新規設定</span></td><td>第1段階（担当者が依頼）→ 第3段階（自動）</td></tr>
+      <tr><td class="k">Lightblue Skills</td><td>対応手順と判断ルール</td><td><span class="pill p-crit">機能名・更新方法を確認</span></td><td>第1段階（人が更新）</td></tr>
+      <tr><td class="k">参照データの保管先</td><td>承認済みナレッジをLightblueに読ませる置き場</td><td><span class="pill p-warn">連携できる保管先を確認</span></td><td>第1段階（手作業）→ 第2段階（定期出力）</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<footer>出典：ヘルプデスク統合版 修正案（2026/10/13）。本ページでは個人名を記載せず、問合せIDで参照しています。</footer>
+</main>
+</div>
+
+</body></html>

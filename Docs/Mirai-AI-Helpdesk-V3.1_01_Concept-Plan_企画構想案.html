@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<title>みらいAI窓口×ヘルプデスク V3.1 企画構想案</title>
+<!-- Mirai-AI-Helpdesk-V3.1_01_Concept-Plan_企画構想案.html ／ 対象アプリ：Mirai_AIHelpdesk_Cowork_StepWizard_V3.1_PCinfo_Offline.html ／ 2026年10月20日 ／ DX推進部 -->
+<style>
+
+:root{
+  --bg:#f5f7fa; --surface:#ffffff; --surface2:#eef2f6; --ink:#14202e; --muted:#5a6878; --line:#dce3eb;
+  --navy:#0f2a44; --navy2:#173a5c; --on-navy:#ffffff;
+  --accent:#d9731a; --accent-soft:#fff1e2;
+  --ai:#0f8a87; --ai-soft:#e0f4f3;
+  --human:#c64a30; --human-soft:#fbe8e3;
+  --ci:#4f5bd5; --ci-soft:#e9ebfb;
+  --g:#1f8a4c; --g-soft:#e3f5ea; --y:#a87308; --y-soft:#fdf3dc; --r:#c53030; --r-soft:#fbe4e4;
+  --shadow:0 1px 2px rgba(15,42,68,.06),0 8px 24px rgba(15,42,68,.07);
+  --radius:14px;
+  --font:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:ui-monospace,"SFMono-Regular","Cascadia Code",Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0e1621; --surface:#152130; --surface2:#1b2a3c; --ink:#e6edf5; --muted:#9fb0c3; --line:#2a3b50;
+    --navy:#0b1f33; --navy2:#16324f; --on-navy:#ffffff;
+    --accent:#f5a04f; --accent-soft:#3a2a17;
+    --ai:#4fd1cc; --ai-soft:#123534;
+    --human:#f08a72; --human-soft:#3b2019;
+    --ci:#9aa3f5; --ci-soft:#232a52;
+    --g:#5fd394; --g-soft:#173527; --y:#f0c050; --y-soft:#3a2f12; --r:#f08080; --r-soft:#3d1c1c;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.25);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0e1621; --surface:#152130; --surface2:#1b2a3c; --ink:#e6edf5; --muted:#9fb0c3; --line:#2a3b50;
+  --navy:#0b1f33; --navy2:#16324f; --on-navy:#ffffff;
+  --accent:#f5a04f; --accent-soft:#3a2a17;
+  --ai:#4fd1cc; --ai-soft:#123534;
+  --human:#f08a72; --human-soft:#3b2019;
+  --ci:#9aa3f5; --ci-soft:#232a52;
+  --g:#5fd394; --g-soft:#173527; --y:#f0c050; --y-soft:#3a2f12; --r:#f08080; --r-soft:#3d1c1c;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.25);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:15.5px;line-height:1.85;letter-spacing:.01em}
+a{color:var(--ci)}
+code,kbd{font-family:var(--mono);font-size:.9em;background:var(--surface2);border:1px solid var(--line);border-radius:6px;padding:0 .35em}
+.topbar{position:sticky;top:0;z-index:20;background:var(--navy);color:var(--on-navy);display:flex;align-items:center;gap:12px;padding:10px 20px;box-shadow:0 2px 10px rgba(0,0,0,.15)}
+.topbar .brand{font-weight:700;letter-spacing:.04em;white-space:nowrap}
+.topbar .brand small{font-weight:400;opacity:.75;margin-left:8px}
+.topbar .sp{flex:1}
+.topbar a.sw,.topbar button{color:var(--on-navy);background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.22);border-radius:999px;padding:5px 12px;font:inherit;font-size:13px;cursor:pointer;text-decoration:none;white-space:nowrap}
+.topbar a.sw:hover,.topbar button:hover{background:rgba(255,255,255,.2)}
+.hero{background:linear-gradient(135deg,var(--navy) 0%,var(--navy2) 100%);color:var(--on-navy);padding:48px 20px 40px}
+.hero .in{max-width:1180px;margin:0 auto}
+.hero .kicker{display:inline-block;font-size:12.5px;letter-spacing:.12em;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25);border-radius:999px;padding:3px 12px}
+.hero h1{font-size:clamp(26px,4.4vw,40px);line-height:1.3;margin:14px 0 8px}
+.hero p{margin:0;max-width:820px;opacity:.92}
+.hero .meta{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:18px;font-size:13.5px;opacity:.9}
+.layout{max-width:1180px;margin:0 auto;padding:28px 20px 80px;display:grid;grid-template-columns:250px minmax(0,1fr);gap:32px}
+.toc{position:sticky;top:64px;align-self:start;max-height:calc(100vh - 84px);overflow:auto;font-size:13.5px;padding-right:4px}
+.toc b{display:block;font-size:12px;color:var(--muted);letter-spacing:.1em;margin:0 0 6px}
+.toc ol{list-style:none;margin:0;padding:0}
+.toc a{display:block;padding:5px 10px;border-radius:8px;color:var(--ink);text-decoration:none;border-left:3px solid transparent}
+.toc a:hover{background:var(--surface2)}
+.toc a.on{background:var(--accent-soft);border-left-color:var(--accent);font-weight:700}
+.toc-m{display:none}
+main{min-width:0}
+section.sec{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:28px 30px;margin:0 0 24px;scroll-margin-top:72px}
+section.sec>h2{display:flex;align-items:center;gap:12px;font-size:22px;line-height:1.4;margin:0 0 6px}
+section.sec>h2 .no{flex:none;display:grid;place-items:center;width:36px;height:36px;border-radius:10px;background:var(--navy);color:var(--on-navy);font-size:15px}
+section.sec>.sub{color:var(--muted);margin:0 0 18px}
+h3{font-size:17.5px;margin:26px 0 10px;padding-left:10px;border-left:4px solid var(--accent);line-height:1.5}
+h4{font-size:15.5px;margin:18px 0 6px}
+p{margin:0 0 12px}
+ul,ol{margin:0 0 12px;padding-left:1.4em}
+li{margin:2px 0}
+.easy{background:var(--ai-soft);border:1px solid color-mix(in srgb,var(--ai) 35%,transparent);border-radius:12px;padding:14px 16px 12px 16px;margin:12px 0 16px}
+.easy::before{content:"やさしく言うと";display:inline-block;font-size:12px;font-weight:700;color:var(--surface);background:var(--ai);border-radius:999px;padding:1px 10px;margin-bottom:6px}
+.note{background:var(--surface2);border:1px solid var(--line);border-radius:12px;padding:12px 16px;margin:12px 0}
+.warn{background:var(--r-soft);border:1px solid color-mix(in srgb,var(--r) 35%,transparent);border-radius:12px;padding:12px 16px;margin:12px 0}
+.prop{background:var(--y-soft);border:1px dashed color-mix(in srgb,var(--y) 60%,transparent);border-radius:12px;padding:12px 16px;margin:12px 0}
+.prop::before{content:"本書で補った提案";display:inline-block;font-size:12px;font-weight:700;color:var(--y);border:1px solid var(--y);border-radius:999px;padding:0 10px;margin-bottom:4px}
+.tw{overflow-x:auto;margin:10px 0 16px;border:1px solid var(--line);border-radius:12px}
+table{border-collapse:collapse;width:100%;font-size:14px;line-height:1.65}
+th,td{border-bottom:1px solid var(--line);padding:9px 12px;text-align:left;vertical-align:top}
+thead th{background:var(--surface2);font-size:13px;color:var(--muted);white-space:nowrap;position:sticky;top:0}
+tbody tr:last-child td{border-bottom:none}
+tbody tr:hover td{background:color-mix(in srgb,var(--surface2) 50%,transparent)}
+tr.grp td{background:var(--surface2)}
+td.id,th.id{font-family:var(--mono);white-space:nowrap;font-size:13px}
+td.nw{white-space:nowrap}
+.b{display:inline-block;font-size:12px;font-weight:700;border-radius:999px;padding:1px 9px;white-space:nowrap;border:1px solid}
+.b.must{color:var(--human);border-color:var(--human);background:var(--human-soft)}
+.b.should{color:var(--ci);border-color:var(--ci);background:var(--ci-soft)}
+.b.could{color:var(--muted);border-color:var(--line);background:var(--surface2)}
+.src{display:inline-block;font-family:var(--mono);font-size:11.5px;color:var(--muted);border:1px solid var(--line);border-radius:6px;padding:0 5px;margin:1px 2px 1px 0;white-space:nowrap}
+.src.p{color:var(--y);border-color:var(--y)}
+.sig{display:inline-flex;align-items:center;gap:5px;font-weight:700;font-size:13px;border-radius:999px;padding:1px 10px;white-space:nowrap}
+.sig::before{content:"";width:10px;height:10px;border-radius:50%;background:currentColor}
+.sig.g{color:var(--g);background:var(--g-soft)} .sig.y{color:var(--y);background:var(--y-soft)} .sig.r{color:var(--r);background:var(--r-soft)}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin:12px 0 16px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.card h4{margin:0 0 6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.card p{margin:0;font-size:14px;color:var(--muted)}
+.card.ai{border-top:4px solid var(--ai)} .card.ci{border-top:4px solid var(--ci)} .card.hu{border-top:4px solid var(--human)} .card.ac{border-top:4px solid var(--accent)}
+.card.g{border-top:4px solid var(--g)} .card.y{border-top:4px solid var(--y)} .card.r{border-top:4px solid var(--r)}
+.who{font-size:12px;font-weight:700;border-radius:6px;padding:0 7px;white-space:nowrap}
+.who.ai{background:var(--ai-soft);color:var(--ai)} .who.ci{background:var(--ci-soft);color:var(--ci)} .who.hu{background:var(--human-soft);color:var(--human)}
+.steps{counter-reset:s;list-style:none;padding:0;margin:12px 0 16px;display:grid;gap:8px}
+.steps>li{counter-increment:s;display:grid;grid-template-columns:34px 1fr;gap:12px;align-items:start;background:var(--surface2);border-radius:10px;padding:10px 12px}
+.steps>li::before{content:counter(s);display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:var(--navy);color:var(--on-navy);font-weight:700;font-size:14px}
+.steps>li b{display:block}
+figure{margin:14px 0 18px}
+.figwrap{overflow-x:auto}
+figure svg{width:100%;min-width:640px;height:auto;display:block}
+figcaption{font-size:13px;color:var(--muted);margin-top:6px;text-align:center}
+dl.gl{display:grid;grid-template-columns:minmax(120px,190px) 1fr;gap:0;margin:8px 0;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+dl.gl dt,dl.gl dd{margin:0;padding:9px 12px;border-bottom:1px solid var(--line)}
+dl.gl dt{font-weight:700;background:var(--surface2)}
+.filter{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0}
+.filter input{flex:1 1 220px;min-width:0;font:inherit;font-size:14px;padding:7px 12px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--ink)}
+.filter button{font:inherit;font-size:13px;padding:5px 12px;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer}
+.filter button.on{background:var(--navy);color:var(--on-navy);border-color:var(--navy)}
+.sign{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.sign div{border:1px solid var(--line);border-radius:12px;padding:10px 12px;min-height:110px}
+.sign small{color:var(--muted)}
+footer.ft{max-width:1180px;margin:0 auto;padding:0 20px 40px;color:var(--muted);font-size:13px}
+.totop{position:fixed;right:16px;bottom:16px;width:44px;height:44px;border-radius:50%;border:none;background:var(--navy);color:var(--on-navy);font-size:18px;cursor:pointer;box-shadow:var(--shadow);opacity:0;pointer-events:none;transition:opacity .2s}
+.totop.show{opacity:1;pointer-events:auto}
+svg .t{fill:var(--ink);font-family:var(--font)} svg .tm{fill:var(--muted);font-family:var(--font)}
+svg .bx{fill:var(--surface);stroke:var(--line)} svg .bx2{fill:var(--surface2);stroke:var(--line)}
+svg .ai{fill:var(--ai-soft);stroke:var(--ai)} svg .ci{fill:var(--ci-soft);stroke:var(--ci)} svg .hu{fill:var(--human-soft);stroke:var(--human)} svg .ac{fill:var(--accent-soft);stroke:var(--accent)}
+svg .ln{stroke:var(--muted);fill:none} svg .ar{fill:var(--muted)}
+@media (max-width:900px){
+  .layout{grid-template-columns:minmax(0,1fr);padding:18px 16px 60px;gap:0}
+  .toc{display:none}
+  .toc-m{display:block;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:8px 14px;margin:0 0 16px}
+  .toc-m summary{cursor:pointer;font-weight:700}
+  .toc-m ol{margin:8px 0;padding-left:1.4em;font-size:14px}
+  section.sec{padding:20px 16px}
+  .hero{padding:32px 16px 28px}
+  .topbar{padding:8px 16px}
+  .topbar .brand small{display:none}
+  .sign{grid-template-columns:1fr}
+  dl.gl{grid-template-columns:1fr}
+  dl.gl dt{border-bottom:none}
+}
+@media (max-width:520px){ .topbar .hide-s{display:none} body{font-size:15px} }
+@media print{
+  .topbar,.toc,.toc-m,.totop,.filter{display:none!important}
+  body{background:#fff;font-size:11pt}
+  .layout{display:block;padding:0}
+  section.sec{box-shadow:none;border:none;padding:0;margin:0 0 18px;break-inside:auto}
+  section.sec>h2{break-after:avoid}
+  .hero{background:#fff;color:#000;padding:0 0 12px;border-bottom:2px solid #000}
+  .tw,.figwrap{overflow:visible;border:none}
+  figure svg{min-width:0}
+  thead th{position:static}
+}
+
+/* ===== V3.1 文書セットの追加部品 ===== */
+.docnav{display:flex;gap:6px;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+.topbar a.sw.on{background:var(--accent);border-color:var(--accent);color:#1b1300;font-weight:700}
+.hero h1 small{display:block;font-size:.5em;font-weight:500;opacity:.85;margin-top:6px;letter-spacing:.02em}
+.strip{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;margin:14px 0 18px}
+.strip div{position:relative;background:var(--surface2);border:1px solid var(--line);border-top:5px solid var(--line);border-radius:10px;padding:8px 9px 8px;font-size:13px;line-height:1.5}
+.strip div b{display:block;font-size:11px;letter-spacing:.08em;color:var(--muted)}
+.strip div.u{border-top-color:var(--ci)} .strip div.a{border-top-color:var(--ai)} .strip div.h{border-top-color:var(--human)} .strip div.s{border-top-color:var(--g)}
+.strip div small{display:block;color:var(--muted);font-size:11.5px;margin-top:2px}
+.legend{display:flex;flex-wrap:wrap;gap:12px;font-size:12.5px;color:var(--muted);margin:-8px 0 12px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:-1px}
+.two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;margin:12px 0}
+.three{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:12px 0}
+.box{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.box h4{margin:0 0 6px}
+.box.g{border-top:4px solid var(--g)} .box.y{border-top:4px solid var(--y)} .box.r{border-top:4px solid var(--r)} .box.ai{border-top:4px solid var(--ai)} .box.hu{border-top:4px solid var(--human)} .box.ci{border-top:4px solid var(--ci)}
+.box ul{margin:4px 0 0}
+.tag{display:inline-block;font-size:11.5px;border-radius:6px;padding:0 7px;background:var(--surface2);border:1px solid var(--line);color:var(--muted);white-space:nowrap;margin:1px 2px 1px 0}
+.tag.v31{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);font-weight:700}
+.chk{list-style:none;padding:0;margin:8px 0 14px}
+.chk li{position:relative;padding:5px 0 5px 26px;border-bottom:1px dashed var(--line)}
+.chk li::before{content:"✓";position:absolute;left:4px;top:5px;color:var(--g);font-weight:800}
+.chk.no li::before{content:"✕";color:var(--r)}
+.kv{display:grid;grid-template-columns:minmax(110px,170px) 1fr;gap:4px 14px;margin:8px 0 14px;font-size:14px}
+.kv dt{color:var(--muted)} .kv dd{margin:0}
+.big{font-size:18px;line-height:1.7;font-weight:700;margin:6px 0 12px}
+.mock{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--bg);margin:10px 0 16px}
+.mock .bar{background:var(--navy);color:#fff;font-size:12px;padding:6px 12px;display:flex;gap:10px;align-items:center}
+.mock .bar i{width:9px;height:9px;border-radius:50%;background:#f5b800;display:inline-block}
+.mock .bd{padding:12px;font-size:13px}
+.mock .stp{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:10px}
+.mock .stp span{height:6px;border-radius:3px;background:var(--line)}
+.mock .stp span.d{background:var(--ai)} .mock .stp span.o{background:#f5b800}
+.mock .row{display:grid;grid-template-columns:minmax(0,1fr) 34%;gap:10px}
+.mock .pane,.mock .side{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px}
+.mock .light{display:flex;gap:6px;margin-bottom:6px}
+.mock .light b{width:16px;height:16px;border-radius:50%;opacity:.2;display:inline-block}
+.mock .light .g{background:#22b463}.mock .light .y{background:#f5c400}.mock .light .r{background:#e3403a}.mock .light b.on{opacity:1}
+.ill{display:flex;gap:12px;align-items:flex-start;background:var(--surface2);border-radius:12px;padding:12px 14px;margin:10px 0}
+.ill .em{flex:none;font-size:28px;line-height:1}
+.qa dt{font-weight:700;margin-top:10px}.qa dt::before{content:"Q. ";color:var(--accent)}
+.qa dd{margin:2px 0 8px 0}.qa dd::before{content:"A. ";color:var(--ai);font-weight:700}
+.cat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px;margin:12px 0}
+.dept{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 16px;box-shadow:var(--shadow)}
+.dept h4{margin:0;display:flex;align-items:center;gap:8px;font-size:15.5px}
+.dept .role{font-size:12.5px;color:var(--muted);margin:2px 0 8px}
+.dept ul{list-style:none;margin:0;padding:0}
+.dept li{display:grid;grid-template-columns:auto 1fr;gap:4px 8px;padding:7px 0;border-top:1px dashed var(--line);font-size:13.5px;line-height:1.6}
+.dept li .sig{margin-top:2px}
+.dept li .d{grid-column:2;color:var(--muted);font-size:12.5px}
+.dept li .pc{grid-column:2;font-size:12px;color:var(--ai)}
+.dept li .pc::before{content:"PC基本情報：";font-weight:700}
+.dept .ratio{display:flex;height:8px;border-radius:999px;overflow:hidden;background:var(--surface2);margin:2px 0 8px}
+.dept .ratio i{display:block;height:100%}
+.counts{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin:14px 0}
+.counts div{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.counts b{display:block;font-size:24px;line-height:1.2}
+.counts small{color:var(--muted)}
+.hide-c{display:none!important}
+@media (max-width:900px){.strip{grid-template-columns:repeat(2,minmax(0,1fr))}.two,.three{grid-template-columns:1fr}.counts{grid-template-columns:repeat(2,minmax(0,1fr))}.mock .row{grid-template-columns:1fr}.kv{grid-template-columns:1fr}}
+@media print{.docnav{display:none}.dept{box-shadow:none;break-inside:avoid}}
+.topbar{min-width:0}
+.docnav{min-width:0;flex:0 1 auto}
+.hero .meta span{overflow-wrap:anywhere;min-width:0}
+@media (max-width:520px){.topbar .brand{display:none}.docnav{flex:1 1 auto}}
+.ft p{overflow-wrap:anywhere}
+
+</style>
+</head>
+<body>
+<div class="topbar">
+  <span class="brand">みらいAI窓口 × ヘルプデスク V3.1<small>企画構想案（第1版・ドラフト）</small></span>
+  <span class="sp"></span>
+  <nav class="docnav" aria-label="文書の切り替え"><a class="sw on" href="Mirai-AI-Helpdesk-V3.1_01_Concept-Plan_企画構想案.html" aria-current=page>01 構想</a><a class="sw" href="Mirai-AI-Helpdesk-V3.1_02_Requirements_要件定義書.html">02 要件</a><a class="sw hide-s" href="Mirai-AI-Helpdesk-V3.1_03_Detailed-Specification_詳細仕様書.html">03 仕様</a><a class="sw hide-s" href="Mirai-AI-Helpdesk-V3.1_04_Easy-Guide_やさしい解説版.html">04 解説</a><a class="sw hide-s" href="Mirai-AI-Helpdesk-V3.1_05_Department-Catalog_部署別活用カタログ.html">05 部署別</a></nav>
+  <button type="button" id="themeBtn" aria-label="表示の明るさを切り替え">表示切替</button>
+  <button type="button" onclick="window.print()" class="hide-s">印刷</button>
+</div>
+<header class="hero">
+  <div class="in">
+    <span class="kicker">CONCEPT PLAN</span>
+    <h1>みらいAI窓口 × ヘルプデスク V3.1<br>企画構想案<small>1つの入口で、早く・安全に・次の人のために</small></h1>
+    <p>社内の「困った」を受けるAI窓口とヘルプデスクを、1本の流れにまとめる構想です。完全オフラインの試作V3.1で<b>業務の流れが成り立つこと</b>を確かめました。本書では、目指す姿、実現できるかの見立て、本番の構成の選び方、そして<b>段階的な導入（Phase 0〜4）</b>を示します。</p>
+    <div class="meta"><span>文書番号：AIHD-V31-01</span><span>版：1.0（ドラフト）</span><span>作成日：2026年10月20日</span><span>起案：DX推進部</span><span>対象：Mirai_AIHelpdesk_Cowork_StepWizard_V3.1_PCinfo_Offline.html</span></div>
+  </div>
+</header>
+<div class="layout">
+<nav class="toc" aria-label="目次">
+  <b>目次</b>
+  <ol id="tocList">
+    <li><a href="#s0">0. この文書の位置づけ</a></li>
+    <li><a href="#s1">1. 構想の到達点</a></li>
+    <li><a href="#s2">2. 実現性の評価</a></li>
+    <li><a href="#s3">3. 本番構成の選び方</a></li>
+    <li><a href="#s4">4. V3.1の見どころ：PC基本情報の事前取得 V3.1</a></li>
+    <li><a href="#s5">5. 実践の原則</a></li>
+    <li><a href="#s6">6. 段階導入（Phase 0〜4）</a></li>
+    <li><a href="#s7">7. 進める体制</a></li>
+    <li><a href="#s8">8. 効果の見込み方</a></li>
+    <li><a href="#s9">9. 提言と次の一手</a></li>
+  </ol>
+</nav>
+<main>
+<details class="toc-m"><summary>目次を開く</summary><ol><li><a href="#s0">この文書の位置づけ</a></li><li><a href="#s1">構想の到達点</a></li><li><a href="#s2">実現性の評価</a></li><li><a href="#s3">本番構成の選び方</a></li><li><a href="#s4">V3.1の見どころ：PC基本情報の事前取得 V3.1</a></li><li><a href="#s5">実践の原則</a></li><li><a href="#s6">段階導入（Phase 0〜4）</a></li><li><a href="#s7">進める体制</a></li><li><a href="#s8">効果の見込み方</a></li><li><a href="#s9">提言と次の一手</a></li></ol></details>
+
+<section class="sec" id="s0">
+  <h2><span class="no">0</span>この文書の位置づけ</h2>
+  <p class="sub">5つの文書のうち、「なぜ・どこを目指すのか」と「どう段階的に進めるのか」を受け持ちます。</p>
+  <ul>
+    <li>背景・困りごと・目的と成功の考え方の詳しい整理は<a href="Mirai-AI-Helpdesk-V3.1_02_Requirements_要件定義書.html">要件定義書</a>（1章・2章）にあり、本書では繰り返しません。文書の体系と旧資料からの整理も要件定義書の0章にまとめています。</li>
+    <li>本書が正本となるのは、<b>実現性の評価、本番構成の選び方、実践の原則、段階導入（Phase 0〜4）、体制、次の一手</b>です。</li>
+  </ul>
+  <h3>改訂履歴</h3>
+  <div class="tw"><table><thead><tr><th>版</th><th>日付</th><th>内容</th><th>作成</th></tr></thead><tbody>
+    <tr><td>1.0</td><td>2026-10-20</td><td>初版ドラフト。旧「みらいソフトウェアファクトリー 企画構想案」の章立て（到達点・実現性・推奨構成・実践原則・段階導入）を引き継ぎ、試作V3.1に合わせて内容を作りなおした</td><td>DX推進部</td></tr>
+  </tbody></table></div>
+</section>
+
+<section class="sec" id="s1">
+  <h2><span class="no">1</span>構想の到達点</h2>
+  <p class="big">社員は1つの入口から相談し、AIが一次対応し、AIで直らなければ情報ごと人へ渡り、解決したやり方は次の人のためのナレッジになる。</p>
+  <div class="two">
+    <div class="box ai"><h4>AI・機械が担うこと</h4><ul>
+      <li>相談の受付と、手順の案内・社内資料の検索（出典つき）</li>
+      <li>PC基本情報の事前取得（読み取りのみ）と、気になる点の示し方 <span class="tag v31">V3.1</span></li>
+      <li>許可リストの範囲の修復（本人のYのあと）と、実行前の検証</li>
+      <li>引継ぎメモ・ナレッジ下書きのまとめ、個人情報を隠す処理</li>
+      <li>外部AIへの中継（隠す・止める・根拠を添える・点検・記録）</li>
+    </ul></div>
+    <div class="box hu"><h4>人が決めること</h4><ul>
+      <li>PCを変えてよいか（本人）、設定を変えてよいか（IT端末管理者）</li>
+      <li>セキュリティ事故かどうか、どう対処するか</li>
+      <li>アカウント・権限の扱い（本人確認と所属長の承認）</li>
+      <li>ナレッジにしてよいか、AIへの指示書・使うAIの採用（承認者）</li>
+      <li>通報・相談の扱い、人の評価・処遇（AIは関わらない）</li>
+    </ul></div>
+  </div>
+  <div class="easy"><p><b>ねらいは「AIで人を減らす」ことではありません。</b>くり返しの質問と聞き直しをAIと事前取得で減らし、担当者が本当に人の判断が必要な相談に時間を使えるようにすることです。</p></div>
+</section>
+
+<section class="sec" id="s2">
+  <h2><span class="no">2</span>実現性の評価</h2>
+  <p class="sub">試作V3.1（完全オフライン）で確かめたことと、本番に向けて残る課題を分けて評価しました。</p>
+  <div class="tw"><table>
+    <thead><tr><th>観点</th><th>評価</th><th>試作で確かめたこと</th><th>本番に向けて残る課題</th></tr></thead>
+    <tbody>
+      <tr><td>業務の流れ</td><td><span class="sig g">見通しあり</span></td><td>STEP 1〜7で、相談から引継ぎ・解決記録・ナレッジ化・完了まで1件が通る。次にやる人が常に示される</td><td>実際の相談件数・種類での使い勝手</td></tr>
+      <tr><td>PC基本情報の事前取得 <span class="tag v31">V3.1</span></td><td><span class="sig g">見通しあり</span></td><td>入力中に31項目を集め、相談に関係する順に示し、引継ぎで共有できる。取らない情報が含まれないことを試験で確認</td><td>PCエージェントの製品選定、既存の端末管理ツールとの整合、社内規程上の同意</td></tr>
+      <tr><td>端末操作の安全</td><td><span class="sig g">見通しあり</span></td><td>許可リスト、本人のY、L4の管理者承認、承認ハッシュ、緊急停止、元に戻す、が受け入れ試験19項目で動く</td><td>判定をサーバ側に移すこと（試作はブラウザ内だけで判定）</td></tr>
+      <tr><td>外部AIの使い方</td><td><span class="sig y">条件つき</span></td><td>運び役の門番・根拠・点検・日記、費用の上限、試験に合格したAIだけを使う流れ</td><td>導入審査（全社標準はCopilot）、データの国外保存・契約条件、実際の回答品質</td></tr>
+      <tr><td>社内システムとの連携</td><td><span class="sig y">条件つき</span></td><td>受付番号（TKT）と問い合わせ（INC）の往復、結果の自動反映（試作内）</td><td>desknet's NEO AppSuite・Entra ID・監査ログ保存先との実接続</td></tr>
+      <tr><td>現場での使いやすさ</td><td><span class="sig y">条件つき</span></td><td>スマートフォン幅の表示、代行受付、電波の問題の切り分け（接続の種類・VPN）</td><td>作業船・山間部など通信が弱い所での実地確認</td></tr>
+      <tr><td>人と組織の受け入れ</td><td><span class="sig y">条件つき</span></td><td>「見張りではない」設計（取得しない情報、本人の選択、件数だけの記録）</td><td>社員への説明と同意、労働組合・関係部署との確認、相談しやすさの実測</td></tr>
+    </tbody>
+  </table></div>
+  <p>総合すると、<b>業務の流れと安全装置は試作で成り立つことが確かめられ、残る課題は「本番の製品・接続」と「人と組織の合意」</b>です。どちらも段階導入（6章）のPhase 0〜1で解消する計画とします。</p>
+</section>
+
+<section class="sec" id="s3">
+  <h2><span class="no">3</span>本番構成の選び方</h2>
+  <p class="sub">3つの案を比べ、案Bを推奨します。機器の配置と通信の流れは<a href="Mirai-AI-Helpdesk-V3.1_03_Detailed-Specification_詳細仕様書.html">詳細仕様書</a>の1章にあります。</p>
+  <div class="tw"><table>
+    <thead><tr><th>くらべる所</th><th>案A：今のヘルプデスク＋Copilotだけ</th><th>案B：AI窓口＋既存ヘルプデスク連携（推奨）</th><th>案C：クラウドのITSM製品に全面移行</th></tr></thead>
+    <tbody>
+      <tr><td>入口</td><td>メール・電話・Teamsがばらばら</td><td>ステップ受付1つ（電話は代行受付）</td><td>製品のポータル</td></tr>
+      <tr><td>PC基本情報の事前取得</td><td>なし（毎回聞き出す）</td><td>あり（読み取りのみ・本人が共有を選ぶ）</td><td>製品の端末管理機能しだい</td></tr>
+      <tr><td>AIの答えの根拠</td><td>Copilotの一般的な答え</td><td>承認済みナレッジと社内資料（出典つき）</td><td>製品のナレッジ機能しだい</td></tr>
+      <tr><td>安全装置（信号・許可リスト・承認）</td><td>人の運用に頼る</td><td>仕組みとして組み込む</td><td>製品の設定で一部対応</td></tr>
+      <tr><td>今の台帳・手順の活用</td><td>そのまま</td><td>desknet's NEO AppSuiteをそのまま使う</td><td>移行が必要</td></tr>
+      <tr><td>費用と手間</td><td>小さい</td><td>中（段階的に増やせる）</td><td>大（ライセンス・移行）</td></tr>
+      <tr><td>評価</td><td>聞き直しと属人化が残る</td><td><b>効果と統制の両立。小さく始めて広げられる</b></td><td>効果は大きいが、移行の負担と製品依存が大きい</td></tr>
+    </tbody>
+  </table></div>
+  <h3>3-1. 案Bの構成のかたまり</h3>
+  <figure><div class="figwrap"><svg viewBox="0 0 960 250" role="img" aria-label="案Bの4つの層">
+    <rect class="ci" x="10" y="20" width="220" height="210" rx="12"/><text class="t" x="120" y="48" text-anchor="middle" font-weight="700" font-size="14">① 相談する層</text>
+    <text class="tm" x="120" y="80" text-anchor="middle" font-size="12">ステップ受付（STEP 1〜7）</text><text class="tm" x="120" y="102" text-anchor="middle" font-size="12">チャット相談</text><text class="tm" x="120" y="124" text-anchor="middle" font-size="12">電話・メールの代行受付</text><text class="tm" x="120" y="156" text-anchor="middle" font-size="12">PCエージェント</text><text class="tm" x="120" y="176" text-anchor="middle" font-size="11">（読み取り／承認済みの実行）</text>
+    <rect class="ai" x="250" y="20" width="220" height="210" rx="12"/><text class="t" x="360" y="48" text-anchor="middle" font-weight="700" font-size="14">② AIの層</text>
+    <text class="tm" x="360" y="80" text-anchor="middle" font-size="12">AI一次対応（社内のAI）</text><text class="tm" x="360" y="102" text-anchor="middle" font-size="12">運び役 → 承認済みの外部AI</text><text class="tm" x="360" y="124" text-anchor="middle" font-size="12">ナレッジの本棚（根拠）</text><text class="tm" x="360" y="156" text-anchor="middle" font-size="12">AIへの指示書・試験</text>
+    <rect class="hu" x="490" y="20" width="220" height="210" rx="12"/><text class="t" x="600" y="48" text-anchor="middle" font-weight="700" font-size="14">③ 人の層</text>
+    <text class="tm" x="600" y="80" text-anchor="middle" font-size="12">ヘルプデスク（AppSuite INC）</text><text class="tm" x="600" y="102" text-anchor="middle" font-size="12">L4の承認（IT端末管理者）</text><text class="tm" x="600" y="124" text-anchor="middle" font-size="12">ナレッジ・指示書の承認</text><text class="tm" x="600" y="156" text-anchor="middle" font-size="12">専用窓口（通報・相談）</text>
+    <rect class="bx" x="730" y="20" width="220" height="210" rx="12"/><text class="t" x="840" y="48" text-anchor="middle" font-weight="700" font-size="14">④ 記録と統制の層</text>
+    <text class="tm" x="840" y="80" text-anchor="middle" font-size="12">Entra ID（だれか）</text><text class="tm" x="840" y="102" text-anchor="middle" font-size="12">監査ログ（改ざん検知）</text><text class="tm" x="840" y="124" text-anchor="middle" font-size="12">SIEMへの集約</text><text class="tm" x="840" y="156" text-anchor="middle" font-size="12">機器・サービス台帳</text>
+    <path class="ln" d="M230 125 H250 M470 125 H490 M710 125 H730" stroke-width="2.5"/>
+  </svg></div><figcaption>図3-1　案Bの4つの層。①〜③のすべての動きが④に記録される</figcaption></figure>
+  <h3>3-2. 選ぶときの前提</h3>
+  <ul>
+    <li>全社標準のAIはCopilotとし、AI窓口の追加や外部AIの利用は、社内の「生成AIに関する方針」と「生成AI利用ガイドライン」（2026年5月1日制定）にもとづく導入審査を前提にします。</li>
+    <li>まずは社内のAIと承認済みナレッジだけで始め、外部AIは運び役の確認モード（担当者が回答案を見る）から使います。</li>
+    <li>PCエージェントは、既存の端末管理ツールと役割が重ならないように選びます（候補の比較は要件定義書の未決事項Q-01〜Q-04）。</li>
+  </ul>
+</section>
+
+<section class="sec" id="s4">
+  <h2><span class="no">4</span>V3.1の見どころ：PC基本情報の事前取得 <span class="tag v31">V3.1</span></h2>
+  <p class="sub">V3.1で新しく加わり、効果が大きいと見込む仕組みです。項目と判定の決め方は詳細仕様書の4章が正本です。</p>
+  <div class="three">
+    <div class="box g"><h4>聞き直しが減る</h4><p>「PCの番号は？」「VPNは？」「再起動は？」を毎回聞かずにすみます。担当者は引継ぎの時点で、気になる点が分かっています。</p></div>
+    <div class="box ai"><h4>AIの最初の一手が当たる</h4><p>相談の言葉と項目を照らし合わせ、関係しそうな点（★）から確かめます。印刷・VPN・音声・容量・共有フォルダはとくに効果が出やすい相談です。</p></div>
+    <div class="box ci"><h4>待ち時間を使う</h4><p>相談を書いている約3秒の間に集めるので、相談する人を待たせません。</p></div>
+  </div>
+  <h3>4-1. 「見張り」にしないための設計の約束</h3>
+  <ol>
+    <li><b>目的を限る</b>：本人の相談に答えるためだけに使い、評価・勤怠・行動の追跡には使わない</li>
+    <li><b>最小限にする</b>：PCの状態だけを取り、ファイルの中身・閲覧履歴・画面・キー入力・メール本文・個人のフォルダの一覧は取らない</li>
+    <li><b>本人が選ぶ</b>：取得するか、担当者に渡すかを本人が選べる。手続きの相談では最初から取らない</li>
+    <li><b>見られる人を限る</b>：本人と、共有された担当者だけ。外部AIへは識別につながる値を伏せる</li>
+    <li><b>記録は事実だけ</b>：監査ログには取得したことと件数だけを残し、値は残さない</li>
+  </ol>
+  <p>この約束は、プライバシーの尊重と、働く人が安心して相談できることを守るためのものです。本番では個人情報の取り扱いに関する社内規程に照らし、社員への説明と同意の方法をPhase 0で確定させます。</p>
+</section>
+
+<section class="sec" id="s5">
+  <h2><span class="no">5</span>実践の原則</h2>
+  <p class="sub">旧構想の「AIが作業し、機械が確かめ、人が決める」を、問い合わせ対応に当てはめた8つの原則です。</p>
+  <ol class="steps">
+    <li><div><b>根拠のない答えをしない</b>承認済みナレッジと閲覧できる社内資料だけを根拠にし、出典を示す。根拠がなければ人へ渡す</div></li>
+    <li><div><b>読むことと変えることを分ける</b>診断・事前取得は読み取りだけ。変えるのは許可リストの操作を、承認のあとにだけ</div></li>
+    <li><div><b>強い操作ほど確認を増やす</b>L0〜L5の段階で、本人のY、管理者の承認、AIからは不可、を使い分ける</div></li>
+    <li><div><b>申請する人と承認する人を分ける</b>端末操作・ナレッジ・指示書のどれも、自分の申請は自分で承認しない</div></li>
+    <li><div><b>いつでも止められ、戻せる</b>だれでも緊急停止でき、元に戻せる操作から始める</div></li>
+    <li><div><b>渡す情報は本人が決める</b>引継ぎで何を渡すかを本人が選び、同じことを聞き直さない</div></li>
+    <li><div><b>社外に出すものを門番が守る</b>隠す・止める・命令文を資料として扱う・答えを点検する、を運び役に任せる</div></li>
+    <li><div><b>すべて記録し、改ざんを見抜く</b>だれが・いつ・何をしたかを残し、あとから検証できるようにする</div></li>
+  </ol>
+</section>
+
+<section class="sec" id="s6">
+  <h2><span class="no">6</span>段階導入（Phase 0〜4）</h2>
+  <p class="sub">いきなり全社に広げず、効果と安全を確かめながら広げます。各Phaseの期間と目標値は、Phase 0の終わりに実績の見通しをもとに決めます。</p>
+  <div class="tw"><table>
+    <thead><tr><th>段階</th><th>目的</th><th>対象・使う機能</th><th>次へ進む合図（終了条件）</th></tr></thead>
+    <tbody>
+      <tr><td><b>Phase 0</b><br>決まりを作る</td><td>本番で守るルールを、人が同じ手順で再現できる形にする</td><td>信号ルール、操作許可リスト、門番のルール、AIへの指示書の初版、PC基本情報の項目と同意の取り方、試作V3.1での業務の流れの確認</td><td>ルールが文書になり、関係部署（情報システム・人事・法務・労務）の確認が取れている。PCエージェントとAIの候補が決まっている</td></tr>
+      <tr><td><b>Phase 1</b><br>1部署で試す</td><td>小さく使い、答えの質と使い勝手を測る</td><td>DX推進部の中だけ。読み取りと青信号の相談、運び役は確認モード</td><td>回答案の採用率が目標に達し、まちがった答えの報告がない。受け入れ試験に合格</td></tr>
+      <tr><td><b>Phase 2</b><br>管理部門へ</td><td>引継ぎの往復と修復で、聞き直しが減るかを確かめる</td><td>本社の管理部門。L3の修復、ヘルプデスク（INC）との連携、ナレッジ化</td><td>引継ぎ後の聞き直しと解決までの時間が減っている。ナレッジの承認が回っている</td></tr>
+      <tr><td><b>Phase 3</b><br>支店・現場へ</td><td>通信が弱い所や現場の使い方でも成り立つかを確かめる</td><td>支店・作業所・作業船。L4の承認、代行受付、電波の問題の切り分け</td><td>現場で「使える」と確認できた。L4の承認待ちが業務を止めていない</td></tr>
+      <tr><td><b>Phase 4</b><br>育てる</td><td>品質と費用を測りながら改善を続ける</td><td>直接回答モード、ナレッジの見直し、指標の定期報告、AIの切り替えの試験</td><td>（継続）指標が維持・改善され、監査で指摘がない</td></tr>
+    </tbody>
+  </table></div>
+  <div class="note">どのPhaseでも、前のPhaseの指標（要件定義書13章）と受け入れ試験を確認してから次へ進みます。うまくいかないときは、前のPhaseに戻ってよいことにします。</div>
+</section>
+
+<section class="sec" id="s7">
+  <h2><span class="no">7</span>進める体制</h2>
+  <div class="tw"><table>
+    <thead><tr><th>役割</th><th>担い手（案）</th><th>受け持つこと</th></tr></thead>
+    <tbody>
+      <tr><td>推進責任者</td><td>DX推進部長</td><td>Phaseの開始・終了の判断、予算、関係部署との調整</td></tr>
+      <tr><td>ワーキンググループ</td><td>DX推進部、ヘルプデスク担当、各部署の代表（本社・支店・現場・船舶）</td><td>ルールと画面の確認、試しの実施と意見の取りまとめ</td></tr>
+      <tr><td>ナレッジ・指示書の承認者</td><td>各分野の責任者</td><td>ナレッジ・AIへの指示書・使うAIの採用</td></tr>
+      <tr><td>確認する部署</td><td>人事・労務、法務、情報セキュリティ</td><td>PC基本情報の同意と目的外利用の禁止、通報窓口との連携、外部AIの契約</td></tr>
+      <tr><td>監査</td><td>内部監査</td><td>記録の検証、受け入れ試験の立ち会い</td></tr>
+    </tbody>
+  </table></div>
+  <h3>7-1. 次に決めること</h3>
+  <ul>
+    <li>PCエージェント・社内AI・外部AIの候補（要件定義書 Q-01〜Q-04）</li>
+    <li>PC基本情報の同意の取り方と、社員への説明のしかた</li>
+    <li>Phase 1の対象者・期間・目標値</li>
+    <li>試作V3.1から本番に引き継ぐ部分と作り直す部分</li>
+  </ul>
+</section>
+
+<section class="sec" id="s8">
+  <h2><span class="no">8</span>効果の見込み方</h2>
+  <p class="sub">数字の目標は、Phase 1の実績を見てから決めます。ここでは「何で効果を見るか」の考え方だけを示します。</p>
+  <div class="two">
+    <div class="box g"><h4>相談する人にとって</h4><ul><li>AIで解決した割合と、解決までの時間</li><li>同じことを聞き直された回数</li><li>「相談しやすくなった」という声（アンケート）</li></ul></div>
+    <div class="box hu"><h4>担当者・会社にとって</h4><ul><li>くり返しの問い合わせの減り方と、ナレッジが役に立った率</li><li>事前取得の気になる点が原因だった割合</li><li>1件あたりの外部AI費用、ルールが守られている度合い</li></ul></div>
+  </div>
+  <p>指標の一覧と見るポイントは要件定義書の13章にあります。統制の枠組み（ISO/IEC 27001・20000-1、J-SOX）との対応も要件定義書の8章を参照してください。</p>
+</section>
+
+<section class="sec" id="s9">
+  <h2><span class="no">9</span>提言と次の一手</h2>
+  <ol class="steps">
+    <li><div><b>案Bで進めることを決める</b>今のヘルプデスクを活かし、AI窓口を前に置く構成を基本方針とする</div></li>
+    <li><div><b>Phase 0を始める</b>試作V3.1をワーキンググループで実際に触り、ルール・画面・PC基本情報の項目を確認する</div></li>
+    <li><div><b>人と組織の合意を先に取る</b>PC基本情報の目的と取らない情報を、関係部署と社員に説明し、同意の方法を決める</div></li>
+    <li><div><b>Phase 1の準備</b>DX推進部内での試しの対象・期間・目標値と、承認済みナレッジの初期登録を決める</div></li>
+  </ol>
+  <div class="prop">試作V3.1は完全オフラインで、データもAIの答えも作り物です。安心して触って意見を出してもらえるよう、ワーキンググループの全員に配布することを提案します。</div>
+</section>
+
+</main>
+</div>
+<footer class="ft">
+  <p>みらいAI窓口 × ヘルプデスク V3.1 企画構想案（第1版・ドラフト）｜DX推進部｜2026年10月20日</p>
+  <p>本資料は、完全オフラインの試作アプリ「Mirai_AIHelpdesk_Cowork_StepWizard_V3.1_PCinfo_Offline.html」の内容にもとづきます。試作のAIの答え・PC基本情報の値・人物・部署は検討用の例です。採用するときは、実際の組織・業務・関係法令・社内規程・契約に照らして確定してください。製品の機能・制約は変わることがあるため、採用時に最新の公式情報を確認してください。</p>
+</footer>
+<button type="button" class="totop" id="totop" aria-label="ページの先頭へ">↑</button>
+<script>
+
+(function(){
+  var root=document.documentElement, KEY='mirai-aihd-v31-doc-theme';
+  try{ var t=localStorage.getItem(KEY); if(t==='light'||t==='dark') root.setAttribute('data-theme',t); }catch(e){}
+  document.getElementById('themeBtn').addEventListener('click',function(){
+    var cur=root.getAttribute('data-theme') || (window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');
+    var nx=cur==='dark'?'light':'dark'; root.setAttribute('data-theme',nx);
+    try{ localStorage.setItem(KEY,nx); }catch(e){}
+  });
+  var links=[].slice.call(document.querySelectorAll('#tocList a'));
+  var map={}; links.forEach(function(a){ map[a.getAttribute('href').slice(1)]=a; });
+  if('IntersectionObserver' in window){
+    var io=new IntersectionObserver(function(es){ es.forEach(function(e){ if(e.isIntersecting){ links.forEach(function(a){a.classList.remove('on');}); var a=map[e.target.id]; if(a) a.classList.add('on'); } }); },{rootMargin:'-20% 0px -70% 0px'});
+    document.querySelectorAll('section.sec').forEach(function(s){ io.observe(s); });
+  }
+  var tt=document.getElementById('totop');
+  window.addEventListener('scroll',function(){ tt.classList.toggle('show', window.scrollY>600); },{passive:true});
+  tt.addEventListener('click',function(){ window.scrollTo({top:0}); });
+  document.querySelectorAll('.filter').forEach(function(f){
+    var tb=document.getElementById(f.getAttribute('data-for')); if(!tb) return;
+    var inp=f.querySelector('input'), pr='';
+    function run(){
+      var q=inp.value.trim().toLowerCase();
+      var rows=[].slice.call(tb.querySelectorAll('tbody tr')), lastGrp=null, grpHas=false;
+      function closeGrp(){ if(lastGrp) lastGrp.style.display=grpHas?'':'none'; }
+      rows.forEach(function(r){
+        if(r.classList.contains('grp')){ closeGrp(); lastGrp=r; grpHas=false; return; }
+        var bd=r.querySelector('.b,.sig');
+        var ok=(!q||r.textContent.toLowerCase().indexOf(q)>=0)&&(!pr||(bd&&bd.textContent===pr));
+        r.style.display=ok?'':'none'; if(ok) grpHas=true;
+      });
+      closeGrp();
+    }
+    inp.addEventListener('input',run);
+    f.querySelectorAll('button').forEach(function(b){ b.addEventListener('click',function(){ pr=b.getAttribute('data-p'); f.querySelectorAll('button').forEach(function(x){x.classList.toggle('on',x===b);}); run(); }); });
+  });
+})();
+
+
+</script>
+</body>
+</html>

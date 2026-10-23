@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<title>みらいAI窓口×ヘルプデスク V3.1 やさしい解説版</title>
+<!-- Mirai-AI-Helpdesk-V3.1_04_Easy-Guide_やさしい解説版.html ／ 対象アプリ：Mirai_AIHelpdesk_Cowork_StepWizard_V3.1_PCinfo_Offline.html ／ 2026年10月20日 ／ DX推進部 -->
+<style>
+
+:root{
+  --bg:#f5f7fa; --surface:#ffffff; --surface2:#eef2f6; --ink:#14202e; --muted:#5a6878; --line:#dce3eb;
+  --navy:#0f2a44; --navy2:#173a5c; --on-navy:#ffffff;
+  --accent:#d9731a; --accent-soft:#fff1e2;
+  --ai:#0f8a87; --ai-soft:#e0f4f3;
+  --human:#c64a30; --human-soft:#fbe8e3;
+  --ci:#4f5bd5; --ci-soft:#e9ebfb;
+  --g:#1f8a4c; --g-soft:#e3f5ea; --y:#a87308; --y-soft:#fdf3dc; --r:#c53030; --r-soft:#fbe4e4;
+  --shadow:0 1px 2px rgba(15,42,68,.06),0 8px 24px rgba(15,42,68,.07);
+  --radius:14px;
+  --font:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --mono:ui-monospace,"SFMono-Regular","Cascadia Code",Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0e1621; --surface:#152130; --surface2:#1b2a3c; --ink:#e6edf5; --muted:#9fb0c3; --line:#2a3b50;
+    --navy:#0b1f33; --navy2:#16324f; --on-navy:#ffffff;
+    --accent:#f5a04f; --accent-soft:#3a2a17;
+    --ai:#4fd1cc; --ai-soft:#123534;
+    --human:#f08a72; --human-soft:#3b2019;
+    --ci:#9aa3f5; --ci-soft:#232a52;
+    --g:#5fd394; --g-soft:#173527; --y:#f0c050; --y-soft:#3a2f12; --r:#f08080; --r-soft:#3d1c1c;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.25);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0e1621; --surface:#152130; --surface2:#1b2a3c; --ink:#e6edf5; --muted:#9fb0c3; --line:#2a3b50;
+  --navy:#0b1f33; --navy2:#16324f; --on-navy:#ffffff;
+  --accent:#f5a04f; --accent-soft:#3a2a17;
+  --ai:#4fd1cc; --ai-soft:#123534;
+  --human:#f08a72; --human-soft:#3b2019;
+  --ci:#9aa3f5; --ci-soft:#232a52;
+  --g:#5fd394; --g-soft:#173527; --y:#f0c050; --y-soft:#3a2f12; --r:#f08080; --r-soft:#3d1c1c;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.25);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:15.5px;line-height:1.85;letter-spacing:.01em}
+a{color:var(--ci)}
+code,kbd{font-family:var(--mono);font-size:.9em;background:var(--surface2);border:1px solid var(--line);border-radius:6px;padding:0 .35em}
+.topbar{position:sticky;top:0;z-index:20;background:var(--navy);color:var(--on-navy);display:flex;align-items:center;gap:12px;padding:10px 20px;box-shadow:0 2px 10px rgba(0,0,0,.15)}
+.topbar .brand{font-weight:700;letter-spacing:.04em;white-space:nowrap}
+.topbar .brand small{font-weight:400;opacity:.75;margin-left:8px}
+.topbar .sp{flex:1}
+.topbar a.sw,.topbar button{color:var(--on-navy);background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.22);border-radius:999px;padding:5px 12px;font:inherit;font-size:13px;cursor:pointer;text-decoration:none;white-space:nowrap}
+.topbar a.sw:hover,.topbar button:hover{background:rgba(255,255,255,.2)}
+.hero{background:linear-gradient(135deg,var(--navy) 0%,var(--navy2) 100%);color:var(--on-navy);padding:48px 20px 40px}
+.hero .in{max-width:1180px;margin:0 auto}
+.hero .kicker{display:inline-block;font-size:12.5px;letter-spacing:.12em;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25);border-radius:999px;padding:3px 12px}
+.hero h1{font-size:clamp(26px,4.4vw,40px);line-height:1.3;margin:14px 0 8px}
+.hero p{margin:0;max-width:820px;opacity:.92}
+.hero .meta{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:18px;font-size:13.5px;opacity:.9}
+.layout{max-width:1180px;margin:0 auto;padding:28px 20px 80px;display:grid;grid-template-columns:250px minmax(0,1fr);gap:32px}
+.toc{position:sticky;top:64px;align-self:start;max-height:calc(100vh - 84px);overflow:auto;font-size:13.5px;padding-right:4px}
+.toc b{display:block;font-size:12px;color:var(--muted);letter-spacing:.1em;margin:0 0 6px}
+.toc ol{list-style:none;margin:0;padding:0}
+.toc a{display:block;padding:5px 10px;border-radius:8px;color:var(--ink);text-decoration:none;border-left:3px solid transparent}
+.toc a:hover{background:var(--surface2)}
+.toc a.on{background:var(--accent-soft);border-left-color:var(--accent);font-weight:700}
+.toc-m{display:none}
+main{min-width:0}
+section.sec{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:28px 30px;margin:0 0 24px;scroll-margin-top:72px}
+section.sec>h2{display:flex;align-items:center;gap:12px;font-size:22px;line-height:1.4;margin:0 0 6px}
+section.sec>h2 .no{flex:none;display:grid;place-items:center;width:36px;height:36px;border-radius:10px;background:var(--navy);color:var(--on-navy);font-size:15px}
+section.sec>.sub{color:var(--muted);margin:0 0 18px}
+h3{font-size:17.5px;margin:26px 0 10px;padding-left:10px;border-left:4px solid var(--accent);line-height:1.5}
+h4{font-size:15.5px;margin:18px 0 6px}
+p{margin:0 0 12px}
+ul,ol{margin:0 0 12px;padding-left:1.4em}
+li{margin:2px 0}
+.easy{background:var(--ai-soft);border:1px solid color-mix(in srgb,var(--ai) 35%,transparent);border-radius:12px;padding:14px 16px 12px 16px;margin:12px 0 16px}
+.easy::before{content:"やさしく言うと";display:inline-block;font-size:12px;font-weight:700;color:var(--surface);background:var(--ai);border-radius:999px;padding:1px 10px;margin-bottom:6px}
+.note{background:var(--surface2);border:1px solid var(--line);border-radius:12px;padding:12px 16px;margin:12px 0}
+.warn{background:var(--r-soft);border:1px solid color-mix(in srgb,var(--r) 35%,transparent);border-radius:12px;padding:12px 16px;margin:12px 0}
+.prop{background:var(--y-soft);border:1px dashed color-mix(in srgb,var(--y) 60%,transparent);border-radius:12px;padding:12px 16px;margin:12px 0}
+.prop::before{content:"本書で補った提案";display:inline-block;font-size:12px;font-weight:700;color:var(--y);border:1px solid var(--y);border-radius:999px;padding:0 10px;margin-bottom:4px}
+.tw{overflow-x:auto;margin:10px 0 16px;border:1px solid var(--line);border-radius:12px}
+table{border-collapse:collapse;width:100%;font-size:14px;line-height:1.65}
+th,td{border-bottom:1px solid var(--line);padding:9px 12px;text-align:left;vertical-align:top}
+thead th{background:var(--surface2);font-size:13px;color:var(--muted);white-space:nowrap;position:sticky;top:0}
+tbody tr:last-child td{border-bottom:none}
+tbody tr:hover td{background:color-mix(in srgb,var(--surface2) 50%,transparent)}
+tr.grp td{background:var(--surface2)}
+td.id,th.id{font-family:var(--mono);white-space:nowrap;font-size:13px}
+td.nw{white-space:nowrap}
+.b{display:inline-block;font-size:12px;font-weight:700;border-radius:999px;padding:1px 9px;white-space:nowrap;border:1px solid}
+.b.must{color:var(--human);border-color:var(--human);background:var(--human-soft)}
+.b.should{color:var(--ci);border-color:var(--ci);background:var(--ci-soft)}
+.b.could{color:var(--muted);border-color:var(--line);background:var(--surface2)}
+.src{display:inline-block;font-family:var(--mono);font-size:11.5px;color:var(--muted);border:1px solid var(--line);border-radius:6px;padding:0 5px;margin:1px 2px 1px 0;white-space:nowrap}
+.src.p{color:var(--y);border-color:var(--y)}
+.sig{display:inline-flex;align-items:center;gap:5px;font-weight:700;font-size:13px;border-radius:999px;padding:1px 10px;white-space:nowrap}
+.sig::before{content:"";width:10px;height:10px;border-radius:50%;background:currentColor}
+.sig.g{color:var(--g);background:var(--g-soft)} .sig.y{color:var(--y);background:var(--y-soft)} .sig.r{color:var(--r);background:var(--r-soft)}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin:12px 0 16px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.card h4{margin:0 0 6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.card p{margin:0;font-size:14px;color:var(--muted)}
+.card.ai{border-top:4px solid var(--ai)} .card.ci{border-top:4px solid var(--ci)} .card.hu{border-top:4px solid var(--human)} .card.ac{border-top:4px solid var(--accent)}
+.card.g{border-top:4px solid var(--g)} .card.y{border-top:4px solid var(--y)} .card.r{border-top:4px solid var(--r)}
+.who{font-size:12px;font-weight:700;border-radius:6px;padding:0 7px;white-space:nowrap}
+.who.ai{background:var(--ai-soft);color:var(--ai)} .who.ci{background:var(--ci-soft);color:var(--ci)} .who.hu{background:var(--human-soft);color:var(--human)}
+.steps{counter-reset:s;list-style:none;padding:0;margin:12px 0 16px;display:grid;gap:8px}
+.steps>li{counter-increment:s;display:grid;grid-template-columns:34px 1fr;gap:12px;align-items:start;background:var(--surface2);border-radius:10px;padding:10px 12px}
+.steps>li::before{content:counter(s);display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:var(--navy);color:var(--on-navy);font-weight:700;font-size:14px}
+.steps>li b{display:block}
+figure{margin:14px 0 18px}
+.figwrap{overflow-x:auto}
+figure svg{width:100%;min-width:640px;height:auto;display:block}
+figcaption{font-size:13px;color:var(--muted);margin-top:6px;text-align:center}
+dl.gl{display:grid;grid-template-columns:minmax(120px,190px) 1fr;gap:0;margin:8px 0;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+dl.gl dt,dl.gl dd{margin:0;padding:9px 12px;border-bottom:1px solid var(--line)}
+dl.gl dt{font-weight:700;background:var(--surface2)}
+.filter{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0}
+.filter input{flex:1 1 220px;min-width:0;font:inherit;font-size:14px;padding:7px 12px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--ink)}
+.filter button{font:inherit;font-size:13px;padding:5px 12px;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer}
+.filter button.on{background:var(--navy);color:var(--on-navy);border-color:var(--navy)}
+.sign{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.sign div{border:1px solid var(--line);border-radius:12px;padding:10px 12px;min-height:110px}
+.sign small{color:var(--muted)}
+footer.ft{max-width:1180px;margin:0 auto;padding:0 20px 40px;color:var(--muted);font-size:13px}
+.totop{position:fixed;right:16px;bottom:16px;width:44px;height:44px;border-radius:50%;border:none;background:var(--navy);color:var(--on-navy);font-size:18px;cursor:pointer;box-shadow:var(--shadow);opacity:0;pointer-events:none;transition:opacity .2s}
+.totop.show{opacity:1;pointer-events:auto}
+svg .t{fill:var(--ink);font-family:var(--font)} svg .tm{fill:var(--muted);font-family:var(--font)}
+svg .bx{fill:var(--surface);stroke:var(--line)} svg .bx2{fill:var(--surface2);stroke:var(--line)}
+svg .ai{fill:var(--ai-soft);stroke:var(--ai)} svg .ci{fill:var(--ci-soft);stroke:var(--ci)} svg .hu{fill:var(--human-soft);stroke:var(--human)} svg .ac{fill:var(--accent-soft);stroke:var(--accent)}
+svg .ln{stroke:var(--muted);fill:none} svg .ar{fill:var(--muted)}
+@media (max-width:900px){
+  .layout{grid-template-columns:minmax(0,1fr);padding:18px 16px 60px;gap:0}
+  .toc{display:none}
+  .toc-m{display:block;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:8px 14px;margin:0 0 16px}
+  .toc-m summary{cursor:pointer;font-weight:700}
+  .toc-m ol{margin:8px 0;padding-left:1.4em;font-size:14px}
+  section.sec{padding:20px 16px}
+  .hero{padding:32px 16px 28px}
+  .topbar{padding:8px 16px}
+  .topbar .brand small{display:none}
+  .sign{grid-template-columns:1fr}
+  dl.gl{grid-template-columns:1fr}
+  dl.gl dt{border-bottom:none}
+}
+@media (max-width:520px){ .topbar .hide-s{display:none} body{font-size:15px} }
+@media print{
+  .topbar,.toc,.toc-m,.totop,.filter{display:none!important}
+  body{background:#fff;font-size:11pt}
+  .layout{display:block;padding:0}
+  section.sec{box-shadow:none;border:none;padding:0;margin:0 0 18px;break-inside:auto}
+  section.sec>h2{break-after:avoid}
+  .hero{background:#fff;color:#000;padding:0 0 12px;border-bottom:2px solid #000}
+  .tw,.figwrap{overflow:visible;border:none}
+  figure svg{min-width:0}
+  thead th{position:static}
+}
+
+/* ===== V3.1 文書セットの追加部品 ===== */
+.docnav{display:flex;gap:6px;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+.topbar a.sw.on{background:var(--accent);border-color:var(--accent);color:#1b1300;font-weight:700}
+.hero h1 small{display:block;font-size:.5em;font-weight:500;opacity:.85;margin-top:6px;letter-spacing:.02em}
+.strip{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;margin:14px 0 18px}
+.strip div{position:relative;background:var(--surface2);border:1px solid var(--line);border-top:5px solid var(--line);border-radius:10px;padding:8px 9px 8px;font-size:13px;line-height:1.5}
+.strip div b{display:block;font-size:11px;letter-spacing:.08em;color:var(--muted)}
+.strip div.u{border-top-color:var(--ci)} .strip div.a{border-top-color:var(--ai)} .strip div.h{border-top-color:var(--human)} .strip div.s{border-top-color:var(--g)}
+.strip div small{display:block;color:var(--muted);font-size:11.5px;margin-top:2px}
+.legend{display:flex;flex-wrap:wrap;gap:12px;font-size:12.5px;color:var(--muted);margin:-8px 0 12px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:-1px}
+.two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;margin:12px 0}
+.three{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:12px 0}
+.box{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.box h4{margin:0 0 6px}
+.box.g{border-top:4px solid var(--g)} .box.y{border-top:4px solid var(--y)} .box.r{border-top:4px solid var(--r)} .box.ai{border-top:4px solid var(--ai)} .box.hu{border-top:4px solid var(--human)} .box.ci{border-top:4px solid var(--ci)}
+.box ul{margin:4px 0 0}
+.tag{display:inline-block;font-size:11.5px;border-radius:6px;padding:0 7px;background:var(--surface2);border:1px solid var(--line);color:var(--muted);white-space:nowrap;margin:1px 2px 1px 0}
+.tag.v31{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);font-weight:700}
+.chk{list-style:none;padding:0;margin:8px 0 14px}
+.chk li{position:relative;padding:5px 0 5px 26px;border-bottom:1px dashed var(--line)}
+.chk li::before{content:"✓";position:absolute;left:4px;top:5px;color:var(--g);font-weight:800}
+.chk.no li::before{content:"✕";color:var(--r)}
+.kv{display:grid;grid-template-columns:minmax(110px,170px) 1fr;gap:4px 14px;margin:8px 0 14px;font-size:14px}
+.kv dt{color:var(--muted)} .kv dd{margin:0}
+.big{font-size:18px;line-height:1.7;font-weight:700;margin:6px 0 12px}
+.mock{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--bg);margin:10px 0 16px}
+.mock .bar{background:var(--navy);color:#fff;font-size:12px;padding:6px 12px;display:flex;gap:10px;align-items:center}
+.mock .bar i{width:9px;height:9px;border-radius:50%;background:#f5b800;display:inline-block}
+.mock .bd{padding:12px;font-size:13px}
+.mock .stp{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:10px}
+.mock .stp span{height:6px;border-radius:3px;background:var(--line)}
+.mock .stp span.d{background:var(--ai)} .mock .stp span.o{background:#f5b800}
+.mock .row{display:grid;grid-template-columns:minmax(0,1fr) 34%;gap:10px}
+.mock .pane,.mock .side{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px}
+.mock .light{display:flex;gap:6px;margin-bottom:6px}
+.mock .light b{width:16px;height:16px;border-radius:50%;opacity:.2;display:inline-block}
+.mock .light .g{background:#22b463}.mock .light .y{background:#f5c400}.mock .light .r{background:#e3403a}.mock .light b.on{opacity:1}
+.ill{display:flex;gap:12px;align-items:flex-start;background:var(--surface2);border-radius:12px;padding:12px 14px;margin:10px 0}
+.ill .em{flex:none;font-size:28px;line-height:1}
+.qa dt{font-weight:700;margin-top:10px}.qa dt::before{content:"Q. ";color:var(--accent)}
+.qa dd{margin:2px 0 8px 0}.qa dd::before{content:"A. ";color:var(--ai);font-weight:700}
+.cat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px;margin:12px 0}
+.dept{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 16px;box-shadow:var(--shadow)}
+.dept h4{margin:0;display:flex;align-items:center;gap:8px;font-size:15.5px}
+.dept .role{font-size:12.5px;color:var(--muted);margin:2px 0 8px}
+.dept ul{list-style:none;margin:0;padding:0}
+.dept li{display:grid;grid-template-columns:auto 1fr;gap:4px 8px;padding:7px 0;border-top:1px dashed var(--line);font-size:13.5px;line-height:1.6}
+.dept li .sig{margin-top:2px}
+.dept li .d{grid-column:2;color:var(--muted);font-size:12.5px}
+.dept li .pc{grid-column:2;font-size:12px;color:var(--ai)}
+.dept li .pc::before{content:"PC基本情報：";font-weight:700}
+.dept .ratio{display:flex;height:8px;border-radius:999px;overflow:hidden;background:var(--surface2);margin:2px 0 8px}
+.dept .ratio i{display:block;height:100%}
+.counts{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin:14px 0}
+.counts div{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.counts b{display:block;font-size:24px;line-height:1.2}
+.counts small{color:var(--muted)}
+.hide-c{display:none!important}
+@media (max-width:900px){.strip{grid-template-columns:repeat(2,minmax(0,1fr))}.two,.three{grid-template-columns:1fr}.counts{grid-template-columns:repeat(2,minmax(0,1fr))}.mock .row{grid-template-columns:1fr}.kv{grid-template-columns:1fr}}
+@media print{.docnav{display:none}.dept{box-shadow:none;break-inside:avoid}}
+.topbar{min-width:0}
+.docnav{min-width:0;flex:0 1 auto}
+.hero .meta span{overflow-wrap:anywhere;min-width:0}
+@media (max-width:520px){.topbar .brand{display:none}.docnav{flex:1 1 auto}}
+.ft p{overflow-wrap:anywhere}
+
+</style>
+</head>
+<body>
+<div class="topbar">
+  <span class="brand">みらいAI窓口 × ヘルプデスク V3.1<small>やさしい解説版（第1版・ドラフト）</small></span>
+  <span class="sp"></span>
+  <nav class="docnav" aria-label="文書の切り替え"><a class="sw hide-s" href="Mirai-AI-Helpdesk-V3.1_01_Concept-Plan_企画構想案.html">01 構想</a><a class="sw hide-s" href="Mirai-AI-Helpdesk-V3.1_02_Requirements_要件定義書.html">02 要件</a><a class="sw" href="Mirai-AI-Helpdesk-V3.1_03_Detailed-Specification_詳細仕様書.html">03 仕様</a><a class="sw on" href="Mirai-AI-Helpdesk-V3.1_04_Easy-Guide_やさしい解説版.html" aria-current=page>04 解説</a><a class="sw" href="Mirai-AI-Helpdesk-V3.1_05_Department-Catalog_部署別活用カタログ.html">05 部署別</a></nav>
+  <button type="button" id="themeBtn" aria-label="表示の明るさを切り替え">表示切替</button>
+  <button type="button" onclick="window.print()" class="hide-s">印刷</button>
+</div>
+<header class="hero">
+  <div class="in">
+    <span class="kicker">EASY GUIDE</span>
+    <h1>みらいAI窓口 × ヘルプデスク V3.1<br>やさしい解説版<small>全社のみなさんと、現場の方へ</small></h1>
+    <p>「PCが動かない」「つながらない」「どうすればいい？」を、まずAIがいっしょに考え、むずかしいときは担当者へバトンタッチ。解決したやり方は、次に困った人のためにとっておく――。そんな<b>相談の窓口</b>のしくみを、むずかしい言葉を使わずに説明します。</p>
+    <div class="meta"><span>文書番号：AIHD-V31-04</span><span>版：1.0（ドラフト）</span><span>作成日：2026年10月20日</span><span>起案：DX推進部</span><span>対象：Mirai_AIHelpdesk_Cowork_StepWizard_V3.1_PCinfo_Offline.html</span></div>
+  </div>
+</header>
+<div class="layout">
+<nav class="toc" aria-label="目次">
+  <b>目次</b>
+  <ol id="tocList">
+    <li><a href="#s0">0. ひとことで言うと</a></li>
+    <li><a href="#s1">1. たとえるなら「病院の受付」</a></li>
+    <li><a href="#s2">2. 登場する人と役</a></li>
+    <li><a href="#s3">3. 信号の3色</a></li>
+    <li><a href="#s4">4. 相談の7つのSTEP</a></li>
+    <li><a href="#s5">5. PCのようすを先に見ておく（PC基本情報） V3.1</a></li>
+    <li><a href="#s6">6. 「はい／いいえ」の約束と、安全の約束</a></li>
+    <li><a href="#s7">7. 現場の方へ</a></li>
+    <li><a href="#s8">8. よくある質問</a></li>
+    <li><a href="#s9">9. まとめ</a></li>
+    <li><a href="#s10">10. ことばのミニ辞典</a></li>
+  </ol>
+</nav>
+<main>
+<details class="toc-m"><summary>目次を開く</summary><ol><li><a href="#s0">ひとことで言うと</a></li><li><a href="#s1">たとえるなら「病院の受付」</a></li><li><a href="#s2">登場する人と役</a></li><li><a href="#s3">信号の3色</a></li><li><a href="#s4">相談の7つのSTEP</a></li><li><a href="#s5">PCのようすを先に見ておく（PC基本情報） V3.1</a></li><li><a href="#s6">「はい／いいえ」の約束と、安全の約束</a></li><li><a href="#s7">現場の方へ</a></li><li><a href="#s8">よくある質問</a></li><li><a href="#s9">まとめ</a></li><li><a href="#s10">ことばのミニ辞典</a></li></ol></details>
+
+<section class="sec" id="s0">
+  <h2><span class="no">0</span>ひとことで言うと</h2>
+  <p class="big">困ったら、まずAI窓口へ。<br>AIで直らなければ人へ。直したやり方は、みんなのものに。</p>
+  <div class="easy">
+    <p><b>いちばん大事なこと</b>：AIは、あなたの「はい（Y）」がないと、あなたのPCを変えません。PCのようすを調べるときも、<b>見るだけ</b>です。セキュリティの事故や、人に関わる大事な判断は、AIではなく人が行います。</p>
+  </div>
+  <p class="note">この解説は、旧資料の「一般向け やさしい解説」と「建設土木版 やさしい解説」を1つにまとめたものです。現場の方向けのお話は7章にあります。くわしい決まりは<a href="Mirai-AI-Helpdesk-V3.1_02_Requirements_要件定義書.html">要件定義書</a>、部署ごとの例は<a href="Mirai-AI-Helpdesk-V3.1_05_Department-Catalog_部署別活用カタログ.html">部署別活用カタログ</a>を見てください。</p>
+</section>
+
+<section class="sec" id="s1">
+  <h2><span class="no">1</span>たとえるなら「病院の受付」</h2>
+  <p class="sub">はじめての方でも、病院にかかったときの流れを思い出すとわかりやすくなります。</p>
+  <div class="ill"><span class="em" aria-hidden="true">🏥</span><div><b>問診票（STEP 1・2）</b><br>受付で「どこが痛いですか？」と書きます。AI窓口でも、まず困りごとの種類と内容を書きます。</div></div>
+  <div class="ill"><span class="em" aria-hidden="true">🌡️</span><div><b>待っている間に体温と血圧（PC基本情報）</b><br>書いている間に、看護師さんが体温と血圧を測ってくれます。AI窓口でも、書いている間にPCのようすを<b>見るだけ</b>で測っておきます。これで、先生は最初から「熱がある」とわかります。</div></div>
+  <div class="ill"><span class="em" aria-hidden="true">👩‍⚕️</span><div><b>まず看護師さん、むずかしければ先生（STEP 3〜5）</b><br>よくあることはAIがその場で手伝います。むずかしいときは担当者（先生）へ。そのとき、問診票と測った結果をそのまま渡すので、同じことを何度も聞かれません。</div></div>
+  <div class="ill"><span class="em" aria-hidden="true">📗</span><div><b>カルテと教科書（STEP 6・7）</b><br>うまく治ったやり方は、別の先生がチェックしてから「みんなの教科書（ナレッジ）」に書き足します。次の人は、もっと早く治ります。</div></div>
+</section>
+
+<section class="sec" id="s2">
+  <h2><span class="no">2</span>登場する人と役</h2>
+  <div class="three">
+    <div class="box ci"><h4>🙋 相談する人</h4><p>全社のみなさん。困りごとを書いて、AIの答えを試し、「直った／直らない」を選びます。PCを変える提案には「はい／いいえ」で答えます。</p></div>
+    <div class="box ai"><h4>🤖 AI窓口</h4><p>いっしょに考える係。社内の資料や、チェック済みのナレッジだけを根拠に答えます。根拠がないときは、むりに答えず人へつなぎます。</p></div>
+    <div class="box hu"><h4>🧑‍💼 ヘルプデスク担当</h4><p>AIから引き継いで直す係。PCの設定を変える大きめの作業は、IT端末管理者がもう一度確かめます。</p></div>
+    <div class="box hu"><h4>✅ ナレッジ承認者</h4><p>直したやり方を「教科書」にしてよいか確かめる係。書いた人とは別の人が確かめます。</p></div>
+    <div class="box ci"><h4>🔍 監査担当</h4><p>決まりどおりに動いているか、記録を見て確かめる係です。</p></div>
+    <div class="box ai"><h4>🚚 運び役</h4><p>社外のAIにたずねるときの係。名前や番号を隠してから送り、返ってきた答えに危ないところがないか点検します。</p></div>
+  </div>
+</section>
+
+<section class="sec" id="s3">
+  <h2><span class="no">3</span>信号の3色</h2>
+  <p class="sub">相談には、信号の色がつきます。色を見れば「いまAIが手伝っているのか、人が見ているのか」がわかります。</p>
+  <div class="three">
+    <div class="box g"><h4><span class="sig g">青</span> AIがその場で</h4><p>使い方の案内、印刷・音・容量などのよくある困りごと。あなたが「はい」と言えば、AIが直すところまで手伝います。</p></div>
+    <div class="box y"><h4><span class="sig y">黄</span> 人がチェック</h4><p>AIで直らなかったとき、ログインやアクセス権など、担当者が確かめたほうがよいとき。</p></div>
+    <div class="box r"><h4><span class="sig r">赤</span> すぐ人へ</h4><p>あやしいメールを開いた、PCをなくした、など急ぎのとき。AIは決められた最初の手順だけ伝えて、すぐ担当者へつなぎます。</p></div>
+  </div>
+</section>
+
+<section class="sec" id="s4">
+  <h2><span class="no">4</span>相談の7つのSTEP</h2>
+  <p class="sub">画面の上に、いまどのSTEPにいるかが出ます。右側の「次にやる人」を見れば、だれの番かがわかります。</p>
+  <div class="mock" aria-hidden="true"><div class="bar"><i></i>新しい相談　STEP 3　AIの一次対応</div><div class="bd">
+    <div class="stp"><span class="d"></span><span class="d"></span><span class="o"></span><span></span><span></span><span></span><span></span></div>
+    <div class="row"><div class="pane"><b>AI</b>：PCのようすを確認しました。気になる点が2件あります。<br>・印刷スプーラが止まっています ★<br>・止まった印刷が1件あります ★<br><br>止まった印刷を取り消してよいですか？　<b>［はい］［いいえ］</b></div>
+    <div class="side"><div class="light"><b class="g on"></b><b class="y"></b><b class="r"></b></div><b>青</b>：AIが対応中<br><br><b>次にやる人</b><br>相談する人（あなた）</div></div>
+  </div></div>
+  <ol class="steps">
+    <li><div><b>STEP 1　はじめに</b>困りごとの種類を6つから選びます（PC・ネット／ログイン／ファイル／手続き／セキュリティ／その他）。</div></li>
+    <li><div><b>STEP 2　困りごと</b>何が起きているかを書きます。書いている間に、AIがPCのようすを見るだけで確かめておきます（約3秒）。</div></li>
+    <li><div><b>STEP 3　AIの一次対応</b>AIが答えや直し方を出します。PCを変える提案には「はい／いいえ」で答えます。直ったら「解決した」を押せばおしまい。</div></li>
+    <li><div><b>STEP 4　引継ぎ</b>直らなかったら、担当者に渡す情報をあなたが選んで「同意して引き継ぐ」。受付番号が出ます。</div></li>
+    <li><div><b>STEP 5　担当者の対応</b>担当者が引き継いだ情報を見て直します。同じことを最初から聞きなおすことはありません。</div></li>
+    <li><div><b>STEP 6　ナレッジ化</b>直したやり方を、名前や番号を隠してから、別の人がチェックして教科書にします。</div></li>
+    <li><div><b>STEP 7　完了</b>あなたの画面に「解決しました」と届きます。次に同じことで困った人は、AIがすぐ答えられます。</div></li>
+  </ol>
+</section>
+
+<section class="sec" id="s5">
+  <h2><span class="no">5</span>PCのようすを先に見ておく（PC基本情報） <span class="tag v31">V3.1</span></h2>
+  <p class="sub">V3.1で加わったしくみです。「PCの名前は？」「VPNはつながっていますか？」と何度も聞かれる手間をなくします。</p>
+  <div class="two">
+    <div class="box g"><h4>見るもの（8つのなかま・31こ）</h4><ul class="chk">
+      <li>PCの番号・機種・OS、前回の再起動からの日数</li>
+      <li>サインインのようす（多要素認証の登録など）</li>
+      <li>ネットのようす（VPN・社内につながるか・共有フォルダ）</li>
+      <li>メモリ・ディスクの空き・一時ファイルの大きさ</li>
+      <li>ウイルス対策・暗号化・更新のようす</li>
+      <li>プリンター・音の出力先・USB機器</li>
+      <li>Office・Teams・VPN・DirectCloudの版</li>
+      <li>最近のエラーの<b>件数</b></li>
+    </ul></div>
+    <div class="box r"><h4>見ないもの</h4><ul class="chk no">
+      <li>ファイルの中身</li>
+      <li>Webを見た履歴</li>
+      <li>画面に映っているもの</li>
+      <li>キーボードで打った文字</li>
+      <li>メールの本文</li>
+      <li>自分のフォルダの中の一覧</li>
+    </ul></div>
+  </div>
+  <div class="easy">
+    <p><b>見張りではありません。</b>相談したときに、相談した人のPCだけを、見るだけで確かめます。人事の評価や仕事ぶりの監視には使いません。</p>
+    <ul>
+      <li>「取得する／しない」はSTEP 2で選べます（手続きの相談では、はじめから取得しません）。</li>
+      <li>担当者に渡すかどうかは、STEP 4であなたが選べます。渡さなければ、担当者には見えません。</li>
+      <li>社外のAIにたずねるときは、IPアドレスとシリアル番号を隠します。</li>
+      <li>記録に残るのは「取得した」ということと件数だけで、中身は残しません。</li>
+    </ul>
+  </div>
+</section>
+
+<section class="sec" id="s6">
+  <h2><span class="no">6</span>「はい／いいえ」の約束と、安全の約束</h2>
+  <div class="tw"><table>
+    <thead><tr><th>AIがすること</th><th>あなたの「はい」</th><th>担当者の確認</th><th>元に戻せる？</th></tr></thead>
+    <tbody>
+      <tr><td>調べる・案内する（見るだけ）</td><td>いらない</td><td>いらない</td><td>何も変えない</td></tr>
+      <tr><td>新しいファイルを作る、写真の名前をそろえる（コピーで）</td><td>いる</td><td>いらない</td><td>戻せる</td></tr>
+      <tr><td>止まった印刷を消す、音の出力先を変える、一時ファイルを片づける</td><td>いる</td><td>いらない</td><td>戻せる（片づけは7日以内）</td></tr>
+      <tr><td>印刷のサービスを再起動、VPNを有効にする</td><td>いる</td><td><b>いる</b>（IT端末管理者）</td><td>戻せる</td></tr>
+      <tr><td>ウイルス対策を止める、勝手にソフトを入れる、まとめて消す、権限をつける</td><td colspan="3"><b>AIからはできません</b>（正式な手続きへ）</td></tr>
+    </tbody>
+  </table></div>
+  <ul class="chk">
+    <li>「はい」と言ったあとで中身が変わったら、AIは実行しません。</li>
+    <li>おかしいと思ったら、だれでも画面の上の<b>「緊急停止」</b>でAIの操作を止められます。</li>
+    <li>パスワードは書かないでください。書いても自動で隠します。AIはパスワードを扱いません。</li>
+    <li>ハラスメントの相談や内部通報は、AIは中身を残さず、専用の窓口を案内します。</li>
+    <li>AIの答えには、どの資料をもとにしたかが出ます。根拠がなければ、むりに答えません。</li>
+    <li>すべての操作は記録され、あとから書きかえられていないか確かめられます。</li>
+  </ul>
+</section>
+
+<section class="sec" id="s7">
+  <h2><span class="no">7</span>現場の方へ</h2>
+  <p class="sub">海の上の作業船、山あいや河川の現場、仮設の現場事務所からの相談も、同じ窓口で受けます。</p>
+  <div class="two">
+    <div class="box ci"><h4>📶 電波が弱いとき</h4><p>PC基本情報の「接続の種類」と「VPN」で、電波の問題かどうかを最初に切り分けます。つながる場所での再接続や、オフラインでできる手順を案内します。</p></div>
+    <div class="box ci"><h4>📷 工事写真・日報</h4><p>写真の名前をそろえるときは<b>コピー</b>で行い、元の写真は消しません。日報のCSVは集計表を新しく作るだけで、元のファイルは変えません。</p></div>
+    <div class="box hu"><h4>☎️ 電話でもだいじょうぶ</h4><p>画面を操作しにくいときは、ヘルプデスクに電話してください。担当者が代わりに相談を登録します（代行受付）。</p></div>
+    <div class="box r"><h4>⛔ AIに聞かないこと</h4><p>出航や作業中止、構造物の良し悪しなど、人の命や品質に関わる判断はAIに決めさせません。資格と責任を持つ人が決めます。</p></div>
+  </div>
+  <p>タブレットやPCをなくしたときは、<span class="sig r">赤</span> の相談です。すぐに「セキュリティの心配」を選ぶか、電話で連絡してください。</p>
+</section>
+
+<section class="sec" id="s8">
+  <h2><span class="no">8</span>よくある質問</h2>
+  <dl class="qa">
+    <dt>PCのようすを取られるのは、少しこわいです。</dt>
+    <dd>取るのは31この「ようす」だけで、ファイルの中身や閲覧履歴は取りません。STEP 2で「取得しない」も選べます。担当者に見せるかどうかも、あなたが選べます。</dd>
+    <dt>AIがかってにPCを変えることはありますか？</dt>
+    <dd>ありません。変えるときは必ず「はい／いいえ」を聞きます。「いいえ」なら何も変わりません。</dd>
+    <dt>AIの答えがまちがっていたら？</dt>
+    <dd>「解決しない → 担当者へ」を押してください。それまでのやりとりとPCのようすをそのまま渡します。</dd>
+    <dt>相談の中身は、ほかの人に見られますか？</dt>
+    <dd>見られるのは、あなたと、引き継いだ担当者などの決められた人だけです。教科書（ナレッジ）にするときは、名前や番号を隠してから別の人が確かめます。</dd>
+    <dt>社外のAIに、会社の情報が送られませんか？</dt>
+    <dd>社外のAIを使うかどうかは、担当者が設定します。送るときは「運び役」が名前・番号・IPアドレスなどを隠し、パスワードらしきものがあれば送らずに止めます。</dd>
+    <dt>ハラスメントのことを相談したいです。</dt>
+    <dd>AI窓口は中身を残さず、AIにも渡しません。専用の相談窓口を案内します。相談したことで不利になることはありません。</dd>
+    <dt>このアプリはインターネットにつながっていますか？</dt>
+    <dd>いまの試作は、インターネットに一切つながらない「完全オフライン」です。AIの答えも試しのしくみで作っています。</dd>
+  </dl>
+</section>
+
+<section class="sec" id="s9">
+  <h2><span class="no">9</span>まとめ</h2>
+  <ul class="chk">
+    <li>困ったら、まずAI窓口へ。7つのSTEPで進みます。</li>
+    <li>書いている間に、PCのようすを見るだけで確かめておきます。見張りではありません。</li>
+    <li>PCを変えるときは、必ずあなたの「はい」を聞きます。大きめの作業は担当者も確かめます。</li>
+    <li>急ぎ・大事なこと（赤）は、すぐ人へつなぎます。</li>
+    <li>直ったやり方は、別の人がチェックしてから、みんなの教科書になります。</li>
+  </ul>
+</section>
+
+<section class="sec" id="s10">
+  <h2><span class="no">10</span>ことばのミニ辞典</h2>
+  <dl class="gl">
+    <dt>AI窓口</dt><dd>相談を受けて、いっしょに考えるAIの入口。</dd>
+    <dt>PC基本情報</dt><dd>相談したときに、PCのようすを見るだけで集めた31この情報。</dd>
+    <dt>引継ぎ</dt><dd>AIで直らなかった相談を、情報ごと担当者に渡すこと。本人の同意が必要です。</dd>
+    <dt>受付番号（TKT）</dt><dd>引継ぎのときに出る番号。問い合わせ番号（INC）とつながっています。</dd>
+    <dt>ナレッジ</dt><dd>直したやり方をまとめた「みんなの教科書」。チェックした後でAIの根拠になります。</dd>
+    <dt>本棚</dt><dd>チェック済みのナレッジだけを並べた場所。AIはここから根拠を探します。</dd>
+    <dt>運び役</dt><dd>社外のAIにたずねるときに、情報を隠して送り、答えを点検する係。</dd>
+    <dt>L0〜L5</dt><dd>AIの操作の強さの段階。数字が大きいほど確認が増え、L5はAIからはできません。</dd>
+    <dt>緊急停止</dt><dd>AIの操作をすぐに止めるボタン。だれでも押せます。</dd>
+    <dt>VPN</dt><dd>社外から社内のネットワークに安全につなぐしくみ。</dd>
+    <dt>印刷スプーラ</dt><dd>印刷の順番待ちを管理するPCの中のサービス。止まると印刷できません。</dd>
+  </dl>
+</section>
+
+</main>
+</div>
+<footer class="ft">
+  <p>みらいAI窓口 × ヘルプデスク V3.1 やさしい解説版（第1版・ドラフト）｜DX推進部｜2026年10月20日</p>
+  <p>本資料は、完全オフラインの試作アプリ「Mirai_AIHelpdesk_Cowork_StepWizard_V3.1_PCinfo_Offline.html」の内容にもとづきます。試作のAIの答え・PC基本情報の値・人物・部署は検討用の例です。採用するときは、実際の組織・業務・関係法令・社内規程・契約に照らして確定してください。製品の機能・制約は変わることがあるため、採用時に最新の公式情報を確認してください。</p>
+</footer>
+<button type="button" class="totop" id="totop" aria-label="ページの先頭へ">↑</button>
+<script>
+
+(function(){
+  var root=document.documentElement, KEY='mirai-aihd-v31-doc-theme';
+  try{ var t=localStorage.getItem(KEY); if(t==='light'||t==='dark') root.setAttribute('data-theme',t); }catch(e){}
+  document.getElementById('themeBtn').addEventListener('click',function(){
+    var cur=root.getAttribute('data-theme') || (window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');
+    var nx=cur==='dark'?'light':'dark'; root.setAttribute('data-theme',nx);
+    try{ localStorage.setItem(KEY,nx); }catch(e){}
+  });
+  var links=[].slice.call(document.querySelectorAll('#tocList a'));
+  var map={}; links.forEach(function(a){ map[a.getAttribute('href').slice(1)]=a; });
+  if('IntersectionObserver' in window){
+    var io=new IntersectionObserver(function(es){ es.forEach(function(e){ if(e.isIntersecting){ links.forEach(function(a){a.classList.remove('on');}); var a=map[e.target.id]; if(a) a.classList.add('on'); } }); },{rootMargin:'-20% 0px -70% 0px'});
+    document.querySelectorAll('section.sec').forEach(function(s){ io.observe(s); });
+  }
+  var tt=document.getElementById('totop');
+  window.addEventListener('scroll',function(){ tt.classList.toggle('show', window.scrollY>600); },{passive:true});
+  tt.addEventListener('click',function(){ window.scrollTo({top:0}); });
+  document.querySelectorAll('.filter').forEach(function(f){
+    var tb=document.getElementById(f.getAttribute('data-for')); if(!tb) return;
+    var inp=f.querySelector('input'), pr='';
+    function run(){
+      var q=inp.value.trim().toLowerCase();
+      var rows=[].slice.call(tb.querySelectorAll('tbody tr')), lastGrp=null, grpHas=false;
+      function closeGrp(){ if(lastGrp) lastGrp.style.display=grpHas?'':'none'; }
+      rows.forEach(function(r){
+        if(r.classList.contains('grp')){ closeGrp(); lastGrp=r; grpHas=false; return; }
+        var bd=r.querySelector('.b,.sig');
+        var ok=(!q||r.textContent.toLowerCase().indexOf(q)>=0)&&(!pr||(bd&&bd.textContent===pr));
+        r.style.display=ok?'':'none'; if(ok) grpHas=true;
+      });
+      closeGrp();
+    }
+    inp.addEventListener('input',run);
+    f.querySelectorAll('button').forEach(function(b){ b.addEventListener('click',function(){ pr=b.getAttribute('data-p'); f.querySelectorAll('button').forEach(function(x){x.classList.toggle('on',x===b);}); run(); }); });
+  });
+})();
+
+
+</script>
+</body>
+</html>
