@@ -2754,7 +2754,7 @@ function restoreRealUser(){
 let _selfTried=false;
 function noteSelfMissing(){
  try{
-  const email=String((window.__AIHD_BOOT__&&window.__AIHD_BOOT__.email)||'').toLowerCase();
+  const email=String((window.__AIHD_BOOT__&&(window.__AIHD_BOOT__.loginEmail||window.__AIHD_BOOT__.email))||'').toLowerCase();
   if(!/@mirai-const\.co\.jp$/.test(email))return;      // 社外（デモ用）は黙って従来どおり
   if(sessionStorage.getItem('aihd.me.miss'))return;
   sessionStorage.setItem('aihd.me.miss','1');
@@ -3377,7 +3377,7 @@ function applyTheme(){const r=document.documentElement;if(S.ui.theme==='auto')r.
 const ACT={
  profile(){
   const u=me();
-  const email=(window.__AIHD_BOOT__&&window.__AIHD_BOOT__.email)||'（デモ・未ログイン）';
+  const email=(window.__AIHD_BOOT__&&(window.__AIHD_BOOT__.loginEmail||window.__AIHD_BOOT__.email))||'（デモ・未ログイン）';
   const field='border:1px solid var(--u-line);border-radius:10px;padding:8px 10px;background:var(--u-surface);color:var(--u-ink);font:inherit;width:100%';
   modal(`<div class="mh"><h3>プロフィール（ログイン情報）</h3><button class="btn sm" data-act="closeModal">閉じる</button></div>
   <div class="small muted">「${esc(greet())}、○○さん」と「相談する人」は、ここの氏名・所属から作ります。</div>

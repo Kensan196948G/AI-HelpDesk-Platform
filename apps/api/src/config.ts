@@ -58,6 +58,9 @@ const EnvSchema = z.object({
   // 「操作する人」の切替を許可するメール（カンマ区切り）。本番（cloudflare-access）では
   // 既定で本人以外に切り替えられない。デモ用アカウントだけここに列挙する。
   PERSONA_SWITCH_ALLOWLIST: z.string().default(''),
+  // 同一人物のメール別名（カンマ区切り `alias=primary`）。状態・権限は primary に正規化する。
+  EMAIL_ALIASES: z.string().default(''),
+
   // Mirai-Info の社員名簿を読むための接続先（未設定なら Unix ソケット + OS ユーザー）。
   MIRAI_INFO_DATABASE_URL: optionalText,
   // DeepSeek API（MVP / Staging のみ）

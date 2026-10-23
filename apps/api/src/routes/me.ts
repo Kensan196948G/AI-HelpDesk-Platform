@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { emailVariants } from '../auth/email-alias.js';
 import { authenticateUi } from '../auth/ui.js';
 import { badRequest } from '../errors.js';
 import { findEmployeeByEmail } from '../lib/mirai-info.js';
@@ -18,7 +19,12 @@ export async function meRoutes(app: FastifyInstance): Promise<void> {
       (error as Error & { statusCode?: number }).statusCode = 429;
       throw error;
     }
-    const employee = await findEmployeeByEmail(request.uiEmail);
+    // 別名（同一人物の別メール）でも同じ社員に解決する。
+    let employee = null;
+    for (const candidate of emailVariants(request.uiEmail)) {
+      employee = await findEmployeeByEmail(candidate);
+      if (employee) break;
+    }
     return {
       ok: true,
       employee,
