@@ -78,14 +78,20 @@
 | 監査ログの保全 | ローカル DB。SIEM 連携なし | 本番は追記専用ストレージ / SIEM |
 | Preview 未配備 | policy gate により deploy 不可 | [docs/08-deployment.md](08-deployment.md) の Blocker 参照 |
 
-## 7-1. Cloudflare Access 運用（2026-10-23 追加）
+## 7-1. Cloudflare Access 運用（2026-10-23 更新）
 
 - 本番/Preview の認証は **Cloudflare Access のみ**。アプリ内ログインは `AUTH_MODE=cloudflare-access` で無効（`/api/auth/login` 404）。
 - Access アプリ: `Mirai AI HelpDesk MVP` / `ai-helpdesk.mirai-dx-platform.com` / session 12h / One-time PIN。
-- 許可メールは Access の allow ポリシーで制限する（**現在は deny-all、`<EMAIL_1>` 確定待ち**）。
-- Node API は Access が付与する `Cf-Access-Authenticated-User-Email` を検証する。ヘッダーなし 401、`ACCESS_ALLOWED_EMAIL` 不一致 403。
+- Access の allow ポリシー（2026-10-23 適用）: `kensan1969@gmail.com`（完全一致）と `@mirai-const.co.jp`（メールドメイン）。
+- **許可リストの正本は `docs/MailAddress.txt`**。Node API は `ACCESS_ALLOWLIST_FILE`（既定 `docs/MailAddress.txt`）を読み、完全一致メールと `@domain` を照合する。
+  - ヘッダーなし 401、許可外 403。
+  - ファイルなし・空・読めない場合は **全拒否（fail-closed）** とし、ログにエラーを出す。
+  - `ACCESS_ALLOWED_EMAIL` は非推奨。後方互換のため受理するが、判定には使わない。
+  - `例：` / `e.g.` 以降の例示と `#` 以降のコメントは無視する。`k-aritoh@mirai-ocnst.co.jp` は例示の typo のため許可しない。
+  - サブドメインは許可しない（`taro@sub.mirai-const.co.jp` は 403）。
+- Access ポリシーとアプリの許可リストは**同じ内容に保つ**（二重チェック）。変更時は両方を更新し、API は再起動する（mtime 監視で自動反映もする）。
 - Origin は 127.0.0.1 のみ。Tunnel 経由でのみ公開し、DB は公開しない。
-- 残存リスク: Access ヘッダーの信頼（JWT 検証は未実装）、ローカル origin への直接アクセス、Access ポリシー未設定、DNS キャッシュ。
+- 残存リスク: Access ヘッダーの信頼（JWT 検証は未実装）、ローカル origin への直接アクセス、DNS キャッシュ。
 - 12h の自動ログオフは Access のセッション期限に依存する。
 
 ## 7-2. DeepSeek API

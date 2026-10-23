@@ -31,13 +31,13 @@ npx tsx scripts/seed.ts
 
 `ai_helpdesk_test` は専用 DB。開発 DB `ai_helpdesk_mvp` には触れない。
 
-## 3. 結果（2026-10-23 14:02 JST）
+## 3. 結果（2026-10-23 15:23 JST）
 
 | チェック | 結果 | 備考 |
 |---|---|---|
 | TypeCheck（API） | ✅ 成功 | `tsc --noEmit` |
-| Lint / Format | ✅ 成功 | Biome。warning 9（non-null assertion 等）、error 0 |
-| Unit test | ✅ 30 件成功 | PII / signal / audit / PC / AI / password / Worker / Access |
+| Lint / Format | ✅ 成功 | Biome。warning 19（non-null assertion 等）、error 0 |
+| Unit test | ✅ 48 件成功 | PII / signal / audit / PC / AI / password / Worker / Access / 許可リスト |
 | Integration test | ✅ 11 件成功 | 主要 3 Flow、セキュリティ、権限、UI 配信、state、AI |
 | API Build | ✅ 成功 | `apps/api/dist` を生成 |
 | Dependency audit（runtime） | ✅ 0 vulnerabilities | `npm audit --omit=dev --audit-level=high` |
@@ -45,14 +45,15 @@ npx tsx scripts/seed.ts
 | Backup / Restore | ✅ 成功 | PG16 `pg_dump` → 新規 DB へ plain 復元 |
 | UI 配信 | ✅ 200 | 元 HTML のタイトル・主要画面・約 500KB |
 | Access 認証 | ✅ | ヘッダーなし 401 / 許可 200 / 不一致 403 / 本番 login 404 |
+| Access 許可リスト | ✅ | `docs/MailAddress.txt` から 2 件（完全一致 1 / ドメイン 1）。例示 typo は拒否、欠落・空は 403（fail-closed） |
 | 公開 URL | ✅ | 302 → Cloudflare Access OTP ログイン画面 |
 | DeepSeek 実回答 | ✅ | `provider: deepseek` / `model: deepseek-chat` / 331文字 / KB-2026-0001 |
 | UI ウィザード STEP 1〜3 | ✅ | 種類選択 → 内容 → AI一次対応。ページエラー 0 |
 | E2E（UI） | ⏸ 一部 | UI 配信・状態・H.kb を Playwright で確認。全 STEP の E2E は未実施 |
 
 ```
-Test Files  11 passed (11)
-Tests       41 passed (41)
+Test Files  13 passed (13)
+Tests       59 passed (59)
 ```
 
 ## 4. Integration test が見ているもの

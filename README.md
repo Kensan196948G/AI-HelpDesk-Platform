@@ -7,7 +7,7 @@
 - **公開 URL**: https://ai-helpdesk.mirai-dx-platform.com （**Cloudflare Access** の OTP ログイン）
 - **AI**: 自由記述の回答に **DeepSeek API**。診断・修復・セキュリティ初動は元の決定ルール
 - **DB**: Local PostgreSQL 16（`ai_helpdesk_preview` / `ai_helpdesk_mvp`）
-- **認証**: Cloudflare Access のみ（One-time PIN / 12h / `<EMAIL_1>@mirai-const.co.jp>`）
+- **認証**: Cloudflare Access のみ（One-time PIN / 12h / `kensan1969@gmail.com` と `@mirai-const.co.jp`）
 
 ## 状態（2026-10-23）
 
@@ -18,9 +18,9 @@
 | WebUI（既存プロトタイプ） | **配信中**（レイアウト変更なし。状態/AI のみブリッジ） |
 | Local PostgreSQL | Migration / Seed / Read・Write / Backup-Restore 検証済み |
 | API | Fastify。認証（local / Cloudflare Access）、案件、引継ぎ、解決、ナレッジ、監査、状態保存、AI |
-| Tests | **41 tests 成功**（Unit / API integration / Worker / UI / Access） |
+| Tests | **59 tests 成功**（Unit / API integration / Worker / UI / Access / 許可リスト） |
 | Cloudflare Preview | **公開中**（Tunnel + Access。OTP ログイン画面を確認） |
-| Access 許可メール | **未設定**（`<EMAIL_1>` の確定待ち。現在は deny-all） |
+| Access 許可メール | **設定済み**（`docs/MailAddress.txt` + Cloudflare allow ポリシー） |
 | DeepSeek API キー | **設定済み・実回答確認済み**（`provider: deepseek` / `deepseek-chat`） |
 | CI | **Blocker**（policy gate が `.github/workflows/` を拒否） |
 
@@ -50,6 +50,15 @@ Local PostgreSQL  ai_helpdesk_preview
 - Cloudflare Worker / Pages は、DSH の self-evolution policy gate が `wrangler` 配備を DEPLOY（critical）として拒否するため使用していません。
 - Tunnel + Access は policy gate で拒否されず、既存 HTML をそのまま配信できるため採用しました。
 
+## アクセス制御
+
+許可リストの正本は **[docs/MailAddress.txt](docs/MailAddress.txt)** です。
+
+- 完全一致メール（例: `kensan1969@gmail.com`）と `@domain`（例: `@mirai-const.co.jp`）を 1 行 1 件で書く。
+- `#` 以降のコメント、`例：` / `e.g.` 以降の例示は無視する（例示用の typo メールを誤って許可しないため）。
+- アプリは `ACCESS_ALLOWLIST_FILE`（既定 `docs/MailAddress.txt`）を読み、Cloudflare Access のヘッダーと照合する。**ファイルが無い・空の場合は全拒否（fail-closed）**。
+- **Cloudflare Access の allow ポリシーと同じ内容に保つ**（二重チェック）。変更時は両方を更新して API を再起動する。
+
 ## ローカル起動
 
 ```bash
@@ -68,7 +77,7 @@ npm run dev:api
 
 ```bash
 npm run build
-AUTH_MODE=cloudflare-access ACCESS_ALLOWED_EMAIL=user@mirai-const.co.jp \
+AUTH_MODE=cloudflare-access ACCESS_ALLOWLIST_FILE=docs/MailAddress.txt \
   DATABASE_URL=... SESSION_SECRET=... npm run start:api
 ```
 
@@ -77,13 +86,13 @@ AUTH_MODE=cloudflare-access ACCESS_ALLOWED_EMAIL=user@mirai-const.co.jp \
 ```bash
 npm run typecheck   # API + worker
 npm run lint
-npm test            # 41 tests（PostgreSQL テスト DB）
+npm test            # 59 tests（PostgreSQL テスト DB）
 npm run build
 bash scripts/scan-secrets.sh
 npm audit --omit=dev --audit-level=high
 ```
 
-実測: TypeCheck ✅ / Lint ✅ / 41 tests ✅ / Build ✅ / Secret scan ✅ / npm audit 0 vulnerabilities。
+実測: TypeCheck ✅ / Lint ✅ / 59 tests ✅ / Build ✅ / Secret scan ✅ / npm audit 0 vulnerabilities。
 
 ## ドキュメント
 
@@ -98,7 +107,7 @@ npm audit --omit=dev --audit-level=high
 
 ## 既知の制約・要ユーザー対応
 
-- **Access 許可メールが未設定**。`<EMAIL_1>@mirai-const.co.jp` の実際のローカル部を確定し、allow ポリシーを追加する必要があります。現在は deny-all。
+- **Access の OTP 実ログインは未確認**。許可リスト（`docs/MailAddress.txt`）と Cloudflare allow ポリシーは設定済みですが、許可メールの受信箱に届く OTP でのログイン確認が必要です。
 - DeepSeek API キーは `~/.config/ai-helpdesk/api.conf`（0600）に設定済み。自由記述の回答は `deepseek-chat` で生成され、承認済みナレッジを根拠にします。
 - **CI 未設定**。`.github/workflows/` は policy gate で拒否されます。人間による追加、または policy 例外が必要です。
 - ローカル DNS（192.168.245.11）が新ホストを NXDOMAIN キャッシュ中です。1.1.1.1 では解決済み。TTL 経過後に再確認してください。

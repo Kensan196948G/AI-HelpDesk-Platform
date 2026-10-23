@@ -111,7 +111,7 @@
 | POST | `/api/ai/answer` | Access 認証 | 承認済みナレッジ + DeepSeek（未設定時フォールバック） |
 
 - `AUTH_MODE=cloudflare-access` では `/api/auth/login` は登録されない（404）。
-- Access のヘッダー `Cf-Access-Authenticated-User-Email` を検証。`ACCESS_ALLOWED_EMAIL` と完全一致。
+- Access のヘッダー `Cf-Access-Authenticated-User-Email` を、`docs/MailAddress.txt`（`ACCESS_ALLOWLIST_FILE`）の許可リストと照合する。完全一致メールと `@domain` を許可し、ヘッダーなし 401、許可外 403、許可リストなし・空は全拒否（fail-closed）。
 - ローカル開発/テストのみ `AUTH_MODE=local`（`DEV_AUTH_EMAIL`）。
 
 ## 7. セキュリティ上の前提

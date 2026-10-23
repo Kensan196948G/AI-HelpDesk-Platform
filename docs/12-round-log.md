@@ -37,18 +37,31 @@
 - 41 tests 成功。Access ログイン画面・公開 URL 302 を確認。
 - 残: Access 許可メール、DeepSeek API キー、全 STEP E2E、CI。
 
+## Round 5 — アクセス制御のファイル化（2026-10-23）
+
+- ユーザー提供の `docs/MailAddress.txt` を許可リストの正本にした。
+  - `kensan1969@gmail.com`（完全一致）/ `@mirai-const.co.jp`（ドメイン）。
+  - `例：` 以降の例示（`k-aritoh@mirai-ocnst.co.jp` の typo）は許可しない。
+- Cloudflare Access アプリ `Mirai AI HelpDesk MVP` に allow ポリシーを適用（`kensan1969@gmail.com` / `@mirai-const.co.jp`）。
+- Node API 側も同じ許可リストを照合（`ACCESS_ALLOWLIST_FILE`）。ファイルなし・空は全拒否（fail-closed）。
+  `ACCESS_ALLOWED_EMAIL` は非推奨化。
+- `AUTH_MODE=cloudflare-access` では `/api/health` 以外の全リクエストで許可リストを照合。
+- **59 tests 成功**（許可リスト解析 11 / Access 認証 8 を含む）。
+- 残: OTP の実ログイン確認、全 STEP E2E、CI。
+
 ## 現在の Evidence
 
 | 項目 | 結果 |
 |---|---|
-| Tests | 36 passed（9 files） |
+| Tests | 59 passed（13 files） |
 | TypeCheck | 成功 |
-| Lint | 成功（warning 9 / error 0） |
+| Lint | 成功（warning 19 / error 0） |
 | Build | 成功 |
 | Secret scan | 検出なし |
 | npm audit（runtime） | 0 vulnerabilities |
 | DB | migrate / seed / 再実行 / Read-Write / Backup-Restore |
 | API | 主要 3 Flow、セキュリティ、権限、監査 |
+| Access | allow ポリシー適用済み + アプリ許可リスト照合（fail-closed） |
 | PR | #1 OPEN（mergeable、Required Checks なし） |
 | OpenDesign | artifact v3 / linter P0 0 |
 

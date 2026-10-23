@@ -38,6 +38,9 @@ const EnvSchema = z.object({
   // 認証: local（開発/テスト）または cloudflare-access（本番/Preview）
   AUTH_MODE: z.enum(['local', 'cloudflare-access']).default('local'),
   DEV_AUTH_EMAIL: z.string().email().default('dev@example.com'),
+  // アクセス許可リストの正本（完全一致メール / @domain）。repo ルート相対。
+  ACCESS_ALLOWLIST_FILE: z.string().trim().min(1).default('docs/MailAddress.txt'),
+  // 非推奨: 単一メール指定。許可リストは ACCESS_ALLOWLIST_FILE に統一した。
   ACCESS_ALLOWED_EMAIL: z.string().email().optional(),
   // DeepSeek API（MVP / Staging のみ）
   DEEPSEEK_API_KEY: z.string().min(1).optional(),
@@ -52,13 +55,14 @@ if (!parsed.success) {
   process.exit(1);
 }
 
-if (
-  parsed.data.AUTH_MODE === 'cloudflare-access' &&
-  !parsed.data.ACCESS_ALLOWED_EMAIL &&
-  parsed.data.NODE_ENV === 'production'
-) {
+if (parsed.data.ACCESS_ALLOWED_EMAIL) {
   console.warn(
-    '[config] ACCESS_ALLOWED_EMAIL が未設定です。Cloudflare Access のポリシーで許可メールを制限してください。',
+    '[config] ACCESS_ALLOWED_EMAIL は非推奨です。許可リストは ACCESS_ALLOWLIST_FILE（既定: docs/MailAddress.txt）が正本です。',
+  );
+}
+if (parsed.data.AUTH_MODE === 'cloudflare-access') {
+  console.info(
+    `[config] アクセス許可リスト: ${parsed.data.ACCESS_ALLOWLIST_FILE}（Cloudflare Access の allow ポリシーと同じ内容にすること）`,
   );
 }
 if (!parsed.data.DEEPSEEK_API_KEY) {

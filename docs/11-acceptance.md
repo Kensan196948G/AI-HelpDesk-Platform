@@ -20,13 +20,13 @@
 | 12 | DB 主要 Read / Write 確認 | ✅ | 案件・引継ぎ・解決・ナレッジ・監査 |
 | 13 | Type Check 成功 | ✅ | `npm run typecheck` |
 | 14 | Lint 成功 | ✅ | `npm run lint`（error 0） |
-| 15 | 主要 Test 成功 | ✅ | 41 tests（unit/auth/worker + integration/UI） |
+| 15 | 主要 Test 成功 | ✅ | 59 tests（unit/auth/worker + integration/UI + 許可リスト） |
 | 16 | Build 成功 | ✅ | API build 成功。UI は既存 HTML を配信 |
-| 17 | Critical / High の既知問題なし | ⏸ | 既知の Critical なし。Access ポリシー / OTP 実ログイン / 全 STEP E2E が未 |
+| 17 | Critical / High の既知問題なし | ⏸ | 既知の Critical なし。Access ポリシーは設定済み。OTP 実ログイン / 全 STEP E2E が未 |
 | 18 | Cloudflare Preview Deployment 成功 | ✅ | Tunnel + Access で公開。公開 URL は 302 → Access OTP 画面（[08](08-deployment.md) §0） |
-| 19 | Preview 主要画面確認 | ⏸ | 許可メール未設定（deny-all）のため Access ログイン不可。ローカル origin はヘッダー付きで確認済み |
-| 20 | Preview API 確認 | ⏸ | ローカル origin で `/api/state` / `/api/ai/answer` 200。公開 URL は Access ポリシー待ち |
-| 21 | Preview DB 接続確認 | ⏸ | ローカル origin から `prototype_states` の Read/Write を確認。公開 URL は Access ポリシー待ち |
+| 19 | Preview 主要画面確認 | ⏸ | Access allow ポリシー（`kensan1969@gmail.com` / `@mirai-const.co.jp`）設定済み。OTP 実ログインはユーザー確認待ち。ローカル origin はヘッダー付きで確認済み |
+| 20 | Preview API 確認 | ⏸ | ローカル origin で `/api/state` / `/api/ai/answer` 200。公開 URL からの確認は OTP ログイン後 |
+| 21 | Preview DB 接続確認 | ⏸ | ローカル origin から `prototype_states` の Read/Write を確認。公開 URL からの確認は OTP ログイン後 |
 | 22 | README 更新 | ✅ | 状態・構成・起動手順を更新 |
 | 23 | Setup Documentation 更新 | ✅ | README / 04-database / 08-deployment |
 | 24 | Requirements 更新 | ✅ | docs/01-mvp-scope.md（MVP 範囲・対象外・受入） |
@@ -47,7 +47,7 @@
 2. **Cloudflare Preview / CI の Blocker**。DSH の self-evolution policy gate が
    `.github/workflows/`・`wrangler.*`・`wrangler deploy` を DEPLOY（critical）として拒否。
    ユーザーによる policy 例外／人間による配備が必要。
-3. 現状: UI と Preview は配信済み。残るのは **Access 許可メール（OTP 実ログイン）**、**DeepSeek API キー**、**UI の全 STEP E2E**、**CI**。
+3. 現状: UI と Preview は配信済みで、Cloudflare Access の allow ポリシーとアプリ許可リスト（`docs/MailAddress.txt`）も設定済み。残るのは **OTP の実ログイン確認**、**UI の全 STEP E2E**、**CI**。
 
 ## 完了判定
 

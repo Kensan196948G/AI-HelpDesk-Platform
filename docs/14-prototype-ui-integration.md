@@ -10,6 +10,10 @@
 4. ログイン認証は **Cloudflare Access のアプリケーション制御のみ**。
 5. 許可は `<EMAIL_1>@mirai-const.co.jp>` のみ。**ワンタイムパスワード**、**12時間**で自動ログオフ。
 
+> 追記（2026-10-23）: 許可対象は [MailAddress.txt](MailAddress.txt) の通り
+> `kensan1969@gmail.com`（完全一致）と `@mirai-const.co.jp`（ドメイン）に確定した。
+> Cloudflare Access の allow ポリシーと、アプリ側の許可リスト（`ACCESS_ALLOWLIST_FILE`）の両方に適用する。
+
 この指示は、以前の OpenDesign 設計ボード（8画面の再設計）より優先する。
 `design/opendesign/` の成果物は設計検討の記録として残し、**実画面の正本は既存 HTML** とする。
 
@@ -39,11 +43,13 @@
   - セッション: **12h**
   - IdP: One-time PIN のみ（`bb570f49-b0c4-4ffb-a460-0d48686f2b62`）
   - 自動リダイレクト: 有効
-  - ポリシー: **未作成（deny-all）**。許可メールの確定後に「そのメールだけ allow」を追加する。
+  - ポリシー: **作成済み（2026-10-23）**。`kensan1969@gmail.com` と `@mirai-const.co.jp` を allow
 - アプリ内のパスワードログインは **本番モードでは登録しない**（`AUTH_MODE=cloudflare-access` のとき `/api/auth/login` は 404）。
 - サーバーは Cloudflare Access が付与する `Cf-Access-Authenticated-User-Email` を検証する。
-  - `ACCESS_ALLOWED_EMAIL` が設定されていれば完全一致のみ許可。
-  - ヘッダーがないリクエストは 401。
+  - 許可リストの正本は `docs/MailAddress.txt`（`ACCESS_ALLOWLIST_FILE`）。完全一致メールと `@domain` を照合する。
+  - ヘッダーがないリクエストは 401。許可外メールは 403。
+  - 許可リストが無い・空・読めない場合は **全拒否（fail-closed）**。
+  - Access の allow ポリシーと同じ内容に保つ（二重チェック）。
 - ローカル開発・テストのみ `AUTH_MODE=local` と `DEV_AUTH_EMAIL` を使う。
 - 12時間の自動ログオフは Access のセッション期限で実現する。アプリ独自のセッション Cookie は持たない。
 
@@ -96,15 +102,17 @@
 | 状態保存 | `PUT /api/state/cowork` 200 / `GET /api/state` で取得 |
 | UI からの状態同期 | cowork は DB に保存。helpdesk は操作後に同期（初期状態はタイミング依存） |
 | Access なし | `GET /` 401 |
-| 許可ヘッダー | `GET /` 200 |
-| 不一致メール | 403 |
+| 許可メール（完全一致 / `@domain`） | `GET /` 200（`kensan1969@gmail.com` / `taro@mirai-const.co.jp`） |
+| 許可外・例示 typo・サブドメイン | 403（`other@gmail.com` / `k-aritoh@mirai-ocnst.co.jp` / `taro@sub.mirai-const.co.jp`） |
+| 許可リスト欠落・空 | 403（fail-closed、自動テストで確認） |
+| Cloudflare allow ポリシー | 1 件（ID `1a05a10a-64ed-40c4-ae28-ac5f4707c9dc`、2026-10-23 適用） |
 | 本番モードのログイン | `/api/auth/login` 404 |
 | 公開 URL | 302 → `winter-lake-f4c9.cloudflareaccess.com` の OTP ログイン画面 |
 | Access ログイン画面 | 「Log in to Mirai AI HelpDesk MVP」「Email」「Send login code」を確認 |
 | UI の AI 呼び出し | `H.kb` → `/api/ai/answer` 200 → **DeepSeek 実回答**（331文字 / 根拠 KB-2026-0001） |
 | UI ウィザード STEP 1〜3 | 種類選択 → 内容入力 → AI一次対応まで実操作。ページエラー 0 |
 | DeepSeek モデル | `provider: deepseek` / `model: deepseek-chat` / 確信度 高 |
-| 自動テスト | 41 tests 成功（UI/Access/state/AI を含む） |
+| 自動テスト | **59 tests 成功**（UI/Access/許可リスト/state/AI を含む） |
 
 証跡: `docs/evidence/access-login.png` / `docs/evidence/preview-home-local-access-header.png` / `docs/evidence/preview-wizard-step3.png` / `docs/evidence/preview-deepseek-answer.png`
 
@@ -112,7 +120,7 @@
 
 | # | 項目 | 必要なもの |
 |---|---|---|
-| 1 | Access の許可メール | `<EMAIL_1>` の実際のローカル部（例: `taro`）。確定後に allow ポリシーを追加する |
+| 1 | Access の許可メール | **設定済み**（2026-10-23）。`docs/MailAddress.txt` + Cloudflare allow ポリシー（`kensan1969@gmail.com` / `@mirai-const.co.jp`） |
 | 2 | DeepSeek API キー | **設定済み・検証済み**（残対応なし） |
 | 3 | 12h / OTP の実ログイン | 許可メールの受信箱に届く OTP コード。ユーザーによるログイン確認が必要 |
 | 4 | CI | `.github/workflows` は policy gate で拒否。人間による追加、または policy 例外 |

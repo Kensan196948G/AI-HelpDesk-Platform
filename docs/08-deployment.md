@@ -9,7 +9,7 @@
 |---|---|
 | 公開 URL | https://ai-helpdesk.mirai-dx-platform.com （Access ログインへ 302） |
 | Access アプリ | `Mirai AI HelpDesk MVP` / `44de6fdd-d2c3-4c2b-8e8b-3be092dc1eae` / 12h / OTP |
-| Access ポリシー | **未作成（deny-all）**。許可メール確定後に「そのメールだけ allow」を追加 |
+| Access ポリシー | **allow 1 件（2026-10-23）**: `kensan1969@gmail.com`（完全一致）/ `@mirai-const.co.jp`（メールドメイン） / ID `1a05a10a-64ed-40c4-ae28-ac5f4707c9dc` |
 | Tunnel | `ai-helpdesk` / `96d0214e-8236-4bce-8dd0-75233d1e716f` |
 | Tunnel config | `~/.cloudflared/ai-helpdesk-config.yml` |
 | API service | `ai-helpdesk-api.service`（Node 22 / 127.0.0.1:18950） |
@@ -19,10 +19,13 @@
 
 - `AUTH_MODE=cloudflare-access`。アプリ内ログインは無効（`/api/auth/login` は 404）。
 - API は `Cf-Access-Authenticated-User-Email` を検証。ヘッダーなし 401、許可外 403。
+  許可リストの正本は `docs/MailAddress.txt`（`ACCESS_ALLOWLIST_FILE`）。ファイルなし・空は全拒否（fail-closed）。
 - 12h の自動ログオフは Access のセッション期限で実現。
 - DeepSeek API キーは `~/.config/ai-helpdesk/api.conf`（0600）に置く。未設定時はフォールバック。
-- 実測: 公開 URL は 302 → `winter-lake-f4c9.cloudflareaccess.com` の OTP 画面。
-  ローカル origin は ヘッダーなし 401 / 許可ヘッダー 200 / 不一致 403。
+- 実測（2026-10-23 15:25 JST）: 公開 URL は 302 → `winter-lake-f4c9.cloudflareaccess.com` の OTP 画面。
+  ローカル origin は ヘッダーなし 401 / 許可（`kensan1969@gmail.com`・`@mirai-const.co.jp`）200 /
+  許可外・例示 typo・サブドメイン 403 / 許可リスト欠落・空 403（自動テスト）/ `/api/health` 200。
+  起動ログに `アクセス許可リストを読み込みました（emails=1, domains=1）` を確認。
 - 注意: `cloudflared tunnel route dns <name>` はデフォルト config の tunnel を選ぶことがあった。
   DNS は UUID 指定 + `--overwrite-dns` で修正した。既存の `ai-design` 等には変更なし。
 - 注意: ローカル DNS 192.168.245.11 は新ホストを NXDOMAIN キャッシュ中。1.1.1.1 では解決済み。

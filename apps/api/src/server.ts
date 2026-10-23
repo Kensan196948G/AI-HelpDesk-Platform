@@ -2,6 +2,8 @@ import { timingSafeEqual } from 'node:crypto';
 import cookie from '@fastify/cookie';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { ZodError } from 'zod';
+import { allowlistSize, getAllowlist } from './auth/allowlist.js';
+import { requireCloudflareAccess } from './auth/ui.js';
 import { config } from './config.js';
 import { ApiError, forbidden } from './errors.js';
 import { auditRoutes } from './routes/audit.js';
@@ -43,6 +45,25 @@ export async function buildServer(options?: { logger?: boolean }): Promise<Fasti
 
   await app.register(cookie);
 
+  if (config.AUTH_MODE === 'cloudflare-access') {
+    const allowlist = getAllowlist();
+    if (allowlistSize(allowlist) === 0) {
+      app.log.error(
+        { file: config.ACCESS_ALLOWLIST_FILE },
+        'アクセス許可リストが空です。Cloudflare Access 済みでも全リクエストを 403 にします（fail-closed）。',
+      );
+    } else {
+      app.log.info(
+        {
+          file: config.ACCESS_ALLOWLIST_FILE,
+          emails: allowlist.emails.size,
+          domains: allowlist.domains.size,
+        },
+        'アクセス許可リストを読み込みました。',
+      );
+    }
+  }
+
   app.addHook('onRequest', async (request, reply) => {
     reply.header('X-Content-Type-Options', 'nosniff');
     reply.header('Referrer-Policy', 'no-referrer');
@@ -59,6 +80,12 @@ export async function buildServer(options?: { logger?: boolean }): Promise<Fasti
       ) {
         throw new ApiError(401, 'PROXY_REQUIRED', 'API への直接アクセスは許可されていません。');
       }
+    }
+
+    // Cloudflare Access の allow ポリシーに加え、アプリ側でも許可リストを照合する。
+    // 外形監視用の /api/health だけは認証なしで通す。
+    if (config.AUTH_MODE === 'cloudflare-access' && !request.url.startsWith('/api/health')) {
+      await requireCloudflareAccess(request);
     }
 
     if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method)) {
