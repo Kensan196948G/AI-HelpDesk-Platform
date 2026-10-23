@@ -140,6 +140,13 @@
 - 仕様: [19-device-command-execution.md](19-device-command-execution.md)。
 - 未実施: Windows 実機での実行（PowerShell スクリプトを対象PCで実行して確認）。
 
+## Round 17 — AI検証 Phase 3（時間をおいた再実行・負荷）（2026-10-23）
+
+- 時間をおいた再実行: 16 ケース × 1 回 = **16/16 PASS**、p50 1,880ms / p95 2,555ms。
+- 負荷: 10 同時（別メール）で **200 × 10**、p50 2,223ms / p95 2,364ms、全回 `deepseek`。
+- モデル比較は未実施（`deepseek-flash` のみ設定・別モデル未承認）。
+- 証跡: [evidence/ai-verify/20261023-phase3](evidence/ai-verify/20261023-phase3/)。
+
 ## 現在の Evidence
 
 | 項目 | 結果 |
