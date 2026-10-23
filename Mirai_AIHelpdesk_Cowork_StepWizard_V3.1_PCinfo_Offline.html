@@ -3601,7 +3601,7 @@ function pcSnapshot(st,userId){
  const ip=`10.${20+h%180}.${1+(h>>>3)%60}.${10+(h>>>5)%200}`,sn='SN'+String(h).slice(0,8);
  const it=(grp,k,v,lv,note,tag)=>({grp,k,v:String(v),lv:lv||'ok',note:note||'',tag:tag||''});
  const items=[
-  it('端末','資産番号',d.id),it('端末','機種',d.model+'（2024年度 標準機）'),it('端末','シリアル番号',sn,'ok','外部AIへは伏せて渡します'),
+  it('端末','コンピュータ名',d.id),it('端末','機種',d.model+'（2024年度 標準機）'),it('端末','シリアル番号',sn,'ok','外部AIへは伏せて渡します'),
   it('端末','OS',d.os+'（ビルド 26100.'+(2000+h%800)+'）'),
   it('端末','前回の再起動から',days+'日',days>=14?'warn':'ok',days>=14?'長い間再起動していません（再起動で直ることがあります）':'','遅い|重い|動作|固ま|更新'),
   it('端末','PCエージェント',d.agent+'（署名あり・読み取りのみ）'),
@@ -3645,7 +3645,7 @@ function pcForAI(snap,model){
 function pcLines(c){
  const s=c&&c.pc&&c.pc.state==='done'?c.pc.snap:null;if(!s)return [];
  const f=pcFlags(s,c.subject+' '+c.body).map(i=>`【気になる点】${i.k}：${i.v}${i.note?'（'+i.note+'）':''}`);
- const keys=['資産番号','OS','前回の再起動から','接続の種類','IPアドレス','VPN','ディスクの空き','Windows Update','印刷スプーラ','音声の出力先'];
+ const keys=['コンピュータ名','OS','前回の再起動から','接続の種類','IPアドレス','VPN','ディスクの空き','Windows Update','印刷スプーラ','音声の出力先'];
  const base=s.items.filter(i=>keys.includes(i.k)&&i.lv==='ok').map(i=>`${i.k}：${i.v}`);
  return [`取得日時：${s.at}（読み取りのみ・${s.items.length}項目）`].concat(f,base);
 }
