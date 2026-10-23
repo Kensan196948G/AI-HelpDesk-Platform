@@ -18,5 +18,7 @@ declare module 'fastify' {
     authUser?: AuthUser;
     sessionTokenHash?: string;
     uiEmail?: string;
+    // ログインに使われた生のメール（別名の正規化前）。表示用。
+    loginEmail?: string;
   }
 }

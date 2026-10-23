@@ -93,6 +93,7 @@ async function loadState(email: string): Promise<{
 
 function renderPrototype(boot: {
   email: string;
+  loginEmail?: string;
   cowork: Record<string, unknown> | null;
   helpdesk: Record<string, unknown> | null;
 }): string {
@@ -136,7 +137,7 @@ function renderPrototype(boot: {
 export async function prototypeRoutes(app: FastifyInstance): Promise<void> {
   app.get('/', { preHandler: authenticateUi }, async (request, reply) => {
     if (!request.uiEmail) throw badRequest('UI の認証情報がありません。');
-    const boot = await loadState(request.uiEmail);
+    const boot = { ...(await loadState(request.uiEmail)), loginEmail: request.loginEmail };
     reply
       .type('text/html; charset=utf-8')
       .header('Content-Security-Policy', CSP)
@@ -146,7 +147,7 @@ export async function prototypeRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/index.html', { preHandler: authenticateUi }, async (request, reply) => {
     if (!request.uiEmail) throw badRequest('UI の認証情報がありません。');
-    const boot = await loadState(request.uiEmail);
+    const boot = { ...(await loadState(request.uiEmail)), loginEmail: request.loginEmail };
     reply
       .type('text/html; charset=utf-8')
       .header('Content-Security-Policy', CSP)

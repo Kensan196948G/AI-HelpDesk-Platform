@@ -1,4 +1,5 @@
 import { config } from '../config.js';
+import { canonicalEmail } from './email-alias.js';
 
 /**
  * 「操作する人」の切替モード。
@@ -16,7 +17,8 @@ export function personaSwitchMode(
 
 export function personaSwitchAllowed(email: string | null | undefined): boolean {
   if (!email) return false;
-  const target = email.trim().toLowerCase();
+  // 別名でも同じ扱いになるよう、正規化したメールで許可リストと照合する。
+  const target = canonicalEmail(email);
   return config.PERSONA_SWITCH_ALLOWLIST.split(',')
     .map((value) => value.trim().toLowerCase())
     .filter(Boolean)

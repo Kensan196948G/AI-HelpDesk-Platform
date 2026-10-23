@@ -3,6 +3,7 @@ import { config } from '../config.js';
 import { forbidden, unauthorized } from '../errors.js';
 import { AccessJwtError, verifyAccessJwt } from './access-jwt.js';
 import { getAllowlist, isEmailAllowed } from './allowlist.js';
+import { canonicalEmail } from './email-alias.js';
 
 let reportedJwtSuccess = false;
 
@@ -74,7 +75,11 @@ export async function requireCloudflareAccess(request: FastifyRequest): Promise<
 export async function authenticateUi(request: FastifyRequest): Promise<void> {
   if (config.AUTH_MODE === 'cloudflare-access') {
     await requireCloudflareAccess(request);
+    // 同一人物の複数メールを 1 つの状態・権限に正規化する（表示用に元のメールも残す）。
+    request.loginEmail = request.uiEmail;
+    request.uiEmail = canonicalEmail(request.uiEmail);
     return;
   }
-  request.uiEmail = config.DEV_AUTH_EMAIL.toLowerCase();
+  request.loginEmail = config.DEV_AUTH_EMAIL.toLowerCase();
+  request.uiEmail = canonicalEmail(request.loginEmail);
 }

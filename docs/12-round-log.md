@@ -199,6 +199,13 @@
 - 実測（headless Chromium・`cf-access-authenticated-user-email` 付き）: self モードで選択肢 5 件すべて本人、他人への強制切替は不変、検索は他人0件・本人5件、ロール切替は可能、挨拶は実名。**141 tests passed**。
 - 仕様: [07-security.md](07-security.md)。
 
+## Round 23 — 同一人物の複数メールを 1 人として扱う（2026-10-23）
+
+- Cloudflare Access で同じ人が Gmail と会社アドレスの 2 つでログインしているため、`EMAIL_ALIASES`（`alias=primary`）で認証後に primary へ正規化する。
+- 状態（`prototype_states`）・「操作する人」の切替権限・`/api/me` の名簿照合が 1 人分に揃う。画面のプロフィールはログインに使ったメール（`loginEmail`）を表示する。
+- 実測: 2 つのメールで同じ `boot.email`（正規化後）、`switchMode=any`、`loginEmail` はそれぞれ。**148 tests passed**。
+- 仕様: [07-security.md](07-security.md)。
+
 ## 現在の Evidence
 
 | 項目 | 結果 |
