@@ -12,6 +12,7 @@ import { caseRoutes } from './routes/cases.js';
 import { dashboardRoutes } from './routes/dashboard.js';
 import { deskRoutes } from './routes/desk.js';
 import { deviceRoutes } from './routes/device.js';
+import { employeeRoutes } from './routes/employees.js';
 import { healthRoutes } from './routes/health.js';
 import { knowledgeRoutes } from './routes/knowledge.js';
 import { prototypeRoutes } from './routes/prototype.js';
@@ -185,6 +186,7 @@ export async function buildServer(options?: { logger?: boolean }): Promise<Fasti
   await app.register(caseRoutes, { prefix: '/api' });
   await app.register(deskRoutes, { prefix: '/api' });
   await app.register(deviceRoutes, { prefix: '/api' });
+  await app.register(employeeRoutes, { prefix: '/api' });
   await app.register(knowledgeRoutes, { prefix: '/api' });
   await app.register(auditRoutes, { prefix: '/api' });
   await app.register(dashboardRoutes, { prefix: '/api' });

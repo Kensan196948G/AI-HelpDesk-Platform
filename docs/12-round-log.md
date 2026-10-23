@@ -147,6 +147,15 @@
 - モデル比較は未実施（`deepseek-flash` のみ設定・別モデル未承認）。
 - 証跡: [evidence/ai-verify/20261023-phase3](evidence/ai-verify/20261023-phase3/)。
 
+## Round 18 — 社員名簿のプルダウン（2026-10-23）
+
+- Mirai-Info `employee_directory`（445名 / DX推進部5名）を読み取り専用DB（Unixソケット + `default_transaction_read_only=on`）で参照し、10分メモリキャッシュで配信。
+- `GET /api/employees?scope=staff|all` を追加（画面認証・60回/分・メール非返却）。
+- 画面: 引継ぎの「担当（指名）」と代行受付の「依頼者」をプルダウン化。値は**社員番号（MK…）**、表示は「本部 / 部署 / 氏名」。
+- ヘルプデスク（INC）へは氏名（assigneeLabel）を渡し、チケットには社員番号も保持。
+- 検証: staff 5 / all 445、指名プルダウンの選択、代行受付の SELECT 表示。**132 tests passed**。
+- 仕様: [20-employee-directory.md](20-employee-directory.md)。
+
 ## 現在の Evidence
 
 | 項目 | 結果 |

@@ -55,6 +55,8 @@ const EnvSchema = z.object({
   ACCESS_AUD: optionalText,
   // 非推奨: 単一メール指定。許可リストは ACCESS_ALLOWLIST_FILE に統一した。
   ACCESS_ALLOWED_EMAIL: z.string().email().optional(),
+  // Mirai-Info の社員名簿を読むための接続先（未設定なら Unix ソケット + OS ユーザー）。
+  MIRAI_INFO_DATABASE_URL: optionalText,
   // DeepSeek API（MVP / Staging のみ）
   DEEPSEEK_API_KEY: z.string().min(1).optional(),
   DEEPSEEK_MODEL: z.string().default('deepseek-flash'),
