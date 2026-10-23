@@ -5,6 +5,7 @@ import { buildDeviceAiContext } from '../domain/device.js';
 import { redactPII } from '../domain/pii.js';
 import { loadClientInventory } from '../lib/device-inventory.js';
 import { findApprovedKnowledge } from '../lib/knowledge-search.js';
+import { loadPrototypeKnowledge } from '../lib/prototype-knowledge.js';
 
 export interface AiSource {
   id: string;
@@ -114,7 +115,14 @@ export async function answerWithDeepSeek(
 ): Promise<AiAnswer> {
   const redacted = redactPII(input);
   const intent = detectIntent('', redacted.text);
-  const knowledge = await findApprovedKnowledge(sql, redacted.text, intent.keywords);
+  // 画面で承認・公開したナレッジ（本人の helpdesk 状態）も根拠に含める。
+  const prototypeKnowledge = email ? await loadPrototypeKnowledge(sql, email).catch(() => []) : [];
+  const knowledge = await findApprovedKnowledge(
+    sql,
+    redacted.text,
+    intent.keywords,
+    prototypeKnowledge,
+  );
   const sources = toSources(knowledge);
   const inventory = email
     ? await loadClientInventory(email, browserDeviceId).catch(() => null)

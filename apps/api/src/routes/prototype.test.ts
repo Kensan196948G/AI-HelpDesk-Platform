@@ -60,4 +60,38 @@ describe('prototype UI integration', () => {
     expect(body.sources.length).toBeGreaterThan(0);
     expect(body.sources[0].kbNo).toMatch(/^KB-/);
   });
+
+  it('画面で承認したナレッジ（helpdesk 状態の active KB）を AI 回答の根拠に使う', async () => {
+    const kbNo = `KB-T${Date.now().toString(36)}`;
+    const put = await app.inject({
+      method: 'PUT',
+      url: '/api/state/helpdesk',
+      payload: {
+        data: {
+          kb: [
+            {
+              id: kbNo,
+              title: '測量ソフトのライセンス認証が切れたときの対処',
+              symptom: '測量ソフトの起動時にライセンス認証エラーが出る。',
+              cause: 'ライセンスサーバーとの通信が途絶えている。',
+              steps: ['VPN に接続しているか確認する', 'ライセンスの再認証を実行する'],
+              keywords: ['測量ソフト', 'ライセンス認証'],
+              status: 'active',
+            },
+          ],
+        },
+      },
+    });
+    expect(put.statusCode, put.body).toBe(200);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/ai/answer',
+      payload: { text: '測量ソフトでライセンス認証のエラーが出ます' },
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    const body = response.json();
+    expect(body.sources.map((source: { kbNo: string }) => source.kbNo)).toContain(kbNo);
+    expect(body.answer).toContain(kbNo);
+  });
 });
