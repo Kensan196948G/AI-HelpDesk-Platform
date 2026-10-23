@@ -87,7 +87,14 @@
 - 設定: `~/.config/ai-helpdesk/device-agent.json`（0600）。発行: `scripts/issue-device-token.ts`。
 - AI へ渡す PC コンテキストからは IP・シリアル・資産番号・メールアドレスを除外する。
 
-### 2-5. データ
+### 2-5. ログイン情報と「相談する人」
+
+- ログインは Cloudflare Access（メール）。氏名・所属はプロフィールとして保持し、ホームの挨拶と「相談する人」の両方で同じ値を使う。
+- ヘッダーの「プロフィール」で氏名（入力）・所属（組織マスタ `DEPTS` から選択）を変更できる。ログイン（メール）は表示のみ。
+- 相談する人は自由入力にしない。PC基本情報・端末・監査がログインユーザーに紐づくため、別人を入力できると情報が取り違わる。代理受付は社員マスタから選択する。
+- 本番は EntraID の登録社員名・所属を既定値とし、社員マスタ（組織コード）を正本にする。
+
+### 2-6. データ
 
 - 既存プロトタイプの 2 つの状態（`mirai-wizard-v31-cowork` / `mirai-wizard-v31-helpdesk`）を、ユーザー（Access メール）単位で PostgreSQL に保存する。
 - テーブル: `prototype_states (user_email, name, data jsonb, updated_at)`（migration 002）。

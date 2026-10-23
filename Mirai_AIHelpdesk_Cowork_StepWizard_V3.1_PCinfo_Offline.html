@@ -755,7 +755,7 @@ html:root:not(.x) :is(#hd,#hdPortal,.hdz){--bg:var(--u-bg);--panel:var(--u-surfa
   <header id="uxTop"><h1><svg class="ico"><use href="#i-inbox"/></svg>みらいAI窓口 × ヘルプデスク <small>ステップ受付・PC基本情報の事前取得 V3.1</small></h1><span class="u-off"><i></i><span>完全オフライン</span></span><span class="sp"></span>
    <button class="u-pill ux-off" id="uxStgP" data-act="wTool" data-v="h.settings" title="外部AIの動かし方（押すと設定を開く）"></button>
    <button class="u-estop" id="uxEstop" data-act="estop"></button>
-   <label class="u-who">操作する人<select id="uxWho" aria-label="操作する人"></select></label><span class="u-role" id="uxRole"></span></header>
+   <label class="u-who">操作する人<select id="uxWho" aria-label="操作する人"></select></label><span class="u-role" id="uxRole"></span><button class="u-pill" data-act="profile" title="ログイン情報・氏名・所属">プロフィール</button></header>
   <div id="uxBanner" class="ux-off" role="alert"></div>
   <div id="uxCrumb" class="ux-off"></div>
   <div class="ux-content">
@@ -3073,6 +3073,36 @@ function applyTheme(){const r=document.documentElement;if(S.ui.theme==='auto')r.
 
 /* ============ 操作（イベント） ============ */
 const ACT={
+ profile(){
+  const u=me();
+  const email=(window.__AIHD_BOOT__&&window.__AIHD_BOOT__.email)||'（デモ・未ログイン）';
+  const field='border:1px solid var(--u-line);border-radius:10px;padding:8px 10px;background:var(--u-surface);color:var(--u-ink);font:inherit;width:100%';
+  modal(`<div class="mh"><h3>プロフィール（ログイン情報）</h3><button class="btn sm" data-act="closeModal">閉じる</button></div>
+  <div class="small muted">「${esc(greet())}、○○さん」と「相談する人」は、ここの氏名・所属から作ります。</div>
+  <div style="display:grid;gap:12px;margin-top:12px;min-width:320px">
+   <label style="display:grid;gap:6px;font-size:12.5px;color:var(--u-muted)">ログイン（変更できません）
+    <input value="${esc(email)}" readonly style="${field};background:var(--u-surface2);color:var(--u-muted)">
+   </label>
+   <label style="display:grid;gap:6px;font-size:12.5px;color:var(--u-muted)">氏名
+    <input id="pfName" value="${esc(u.name)}" placeholder="例：山田 太郎" style="${field}">
+   </label>
+   <label style="display:grid;gap:6px;font-size:12.5px;color:var(--u-muted)">所属（組織マスタから選択）
+    <select id="pfDept" style="${field}">${Object.entries(DEPTS).map(([k,d])=>`<option value="${k}" ${k===u.dept?'selected':''}>${esc(d.name)}</option>`).join('')}</select>
+   </label>
+  </div>
+  <div class="u-note" style="margin-top:12px">所属は自由入力にせず、マスタから選びます（表記ゆれ・誤登録を防ぐため）。異動・兼務は管理者が更新する想定です。本番は EntraID の登録社員名を既定値にします。</div>
+  <div class="btns" style="margin-top:12px"><button class="btn" data-act="profileSave">保存する</button></div>`)
+ },
+ profileSave(){
+  const name=$('#pfName').value.trim().replace(/\s+/g,' ');
+  const dept=$('#pfDept').value;
+  if(!name){toast('氏名を入力してください');return}
+  if(!DEPTS[dept]){toast('所属を選んでください');return}
+  S.profiles=S.profiles||{};
+  S.profiles[S.ui.user]={name,dept};
+  USERS[S.ui.user].name=name;USERS[S.ui.user].dept=dept;
+  save();if(window.__AIHD_SYNC_DEBUG__)window.__AIHD_SYNC_DEBUG__.sync(true);closeModal();refresh();toast('プロフィールを更新しました');
+ },
  nav(d){if(!canView(d.v)){toast('この画面は今の役割では開けません');return}if(d.v.startsWith('h.')&&window.App){App.closeDrawer();App.closeModal()}S.ui.view=d.v;$('#app').classList.remove('sideopen');save();renderSide();renderTop();renderView();const sc=d.v.startsWith('h.')?document.getElementById('hd'):$('#view');if(sc)sc.scrollTop=0},
  fold(d){S.ui.fold=S.ui.fold||{};S.ui.fold[d.g]=!S.ui.fold[d.g];save();renderSide()},
  hdExport(){if(window.App)App.exportJSON()},
@@ -3387,7 +3417,7 @@ function paneHtml(c,L,r){
  case 1:return `<h3>どんな相談ですか？</h3><p class="lead">近いものを選んでください。迷ったら「その他・相談」で大丈夫です。</p>
   ${!owner?`<div class="u-note y">この案件は ${esc(uname(c.userId))} さんの相談です。内容の入力は本人が行います。</div>`:''}
   <div class="w-choices">${KINDS.map(k=>`<button class="w-choice ${k.red?'red':''} ${c.kind===k.k?'on':''}" data-act="wKind" data-k="${k.k}" ${sent||!owner?'disabled':''}><span class="ib">${ICO(k.ico)}</span><span><b>${esc(k.t)}</b><small>${esc(k.d)}</small></span></button>`).join('')}</div>
-  <label class="u-fl">相談する人</label><div class="u-note">${esc(uname(c.userId))}（${esc(DEPTS[USERS[c.userId].dept].name)}）　<span class="u-muted u-small">右上の「操作する人」で切り替えます</span></div>
+  <label class="u-fl">相談する人</label><div class="u-note">${esc(uname(c.userId))}（${esc(DEPTS[USERS[c.userId].dept].name)}）　<span class="u-muted u-small">ログイン中の本人です。氏名・所属は右上の「プロフィール」で確認できます。</span></div>
   ${navHtml(c,false,`<button class="u-btn pri" data-act="wStep" data-s="2" ${c.kind?'':'disabled'}>つぎへ ${ICO('i-arrow')}</button>`)}`;
  case 2:{
   const dl=dlpMask(c.body||'');
@@ -3713,7 +3743,10 @@ function viewPcinfo(){
  </table></div>`}
 
 /* ============ 初期化 ============ */
-function init(){load();applyTheme();
+/* プロフィール（氏名・所属）を USERS に反映する。
+   状態はログイン（Access メール）ごとに保存されるため、同じ人が別の端末で開いても同じ表示になる。 */
+function applyProfiles(){if(!S||!S.profiles)return;for(const [id,p] of Object.entries(S.profiles)){const u=USERS[id];if(!u||!p)continue;if(p.name)u.name=p.name;if(p.dept&&DEPTS[p.dept])u.dept=p.dept}}
+function init(){load();applyProfiles();applyTheme();
  document.addEventListener('click',e=>{const el=e.target.closest('[data-act]');if(!el){const m=$('#attmenu');if(m&&!e.target.closest('.attwrap'))m.classList.add('hide');return}const f=ACT[el.dataset.act];if(f){if(el.dataset.act!=='closeModalBg')e.preventDefault();f(el.dataset,el,e)}});
  document.addEventListener('change',e=>{const t=e.target;
   if(t.id==='persona'){S.ui.user=t.value;syncHdActor();if(!canView(S.ui.view))S.ui.view=homeView();auditAdd(S,t.value,'persona_switch',{});S.ui.chat=null;ensureChat();UI.pending=[];UI.stick=true;save();renderSide();renderTop();renderView();toast(me().name+'（'+ROLES[me().role]+'）に切り替えました')}
