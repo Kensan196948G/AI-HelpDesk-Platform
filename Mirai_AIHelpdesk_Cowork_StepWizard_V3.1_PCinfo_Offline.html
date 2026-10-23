@@ -56,6 +56,16 @@ body{background:var(--u-bg)}
 @keyframes u-beat{50%{opacity:.3}}
 .u-who{display:flex;align-items:center;gap:8px;font-size:12.5px;white-space:nowrap}
 .u-who select{border:1px solid var(--u-line);border-radius:10px;padding:5px 10px;background:var(--u-surface);color:var(--u-ink);font:inherit;max-width:270px}
+/* 「操作する人」の横の検索（インクリメンタル補完） */
+.u-find{position:relative;display:inline-flex;align-items:center}
+.u-find input{border:1px solid var(--u-line);border-radius:999px;padding:5px 12px;background:var(--u-surface);color:var(--u-ink);font:inherit;font-size:12.5px;width:170px;outline:none}
+.u-find input:focus{border-color:var(--u-acc);box-shadow:0 0 0 2px var(--u-accsoft)}
+.u-find input::-webkit-search-cancel-button{display:none}
+.u-find-list{position:absolute;top:calc(100% + 6px);right:0;z-index:60;min-width:300px;max-height:330px;overflow:auto;background:var(--u-surface);border:1px solid var(--u-line);border-radius:12px;box-shadow:0 12px 32px rgba(16,24,40,.18);padding:4px}
+.u-find-item{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:6px 8px;border-radius:8px;cursor:pointer;font-size:12.5px;color:var(--u-ink)}
+.u-find-item[aria-selected="true"]{background:var(--u-accsoft)}
+.u-find-item .r{font-size:10.5px;color:var(--u-acc);border:1px solid var(--u-line);border-radius:999px;padding:0 6px;white-space:nowrap}
+.u-find-empty{padding:8px;font-size:12px;color:var(--u-muted)}
 .u-role{font-size:11.5px;font-weight:800;border-radius:999px;padding:1px 9px;background:var(--u-accsoft);color:var(--u-acc);white-space:nowrap}
 .u-pill{font-size:11.5px;border-radius:999px;padding:2px 10px;border:1px solid var(--u-line);background:var(--u-surface2);color:var(--u-muted);cursor:pointer;white-space:nowrap;max-width:230px;overflow:hidden;text-overflow:ellipsis;font:inherit;font-size:11.5px}
 .u-pill.ng{background:var(--u-r-soft);color:var(--u-r);border-color:transparent}
@@ -755,7 +765,7 @@ html:root:not(.x) :is(#hd,#hdPortal,.hdz){--bg:var(--u-bg);--panel:var(--u-surfa
   <header id="uxTop"><h1><svg class="ico"><use href="#i-inbox"/></svg>みらいAI窓口 × ヘルプデスク <small>ステップ受付・PC基本情報の事前取得 V3.1</small></h1><span class="u-off"><i></i><span>完全オフライン</span></span><span class="sp"></span>
    <button class="u-pill ux-off" id="uxStgP" data-act="wTool" data-v="h.settings" title="外部AIの動かし方（押すと設定を開く）"></button>
    <button class="u-estop" id="uxEstop" data-act="estop"></button>
-   <label class="u-who">操作する人<select id="uxWho" aria-label="操作する人"></select></label><span class="u-role" id="uxRole"></span><button class="u-pill" data-act="profile" title="ログイン情報・氏名・所属">プロフィール</button></header>
+   <label class="u-who">操作する人<select id="uxWho" aria-label="操作する人"></select></label><div class="u-find"><input id="uxFind" type="search" autocomplete="off" placeholder="🔍 社員を検索" aria-label="社員を検索（氏名・社員番号・部署）" role="combobox" aria-expanded="false" aria-controls="uxFindList" aria-autocomplete="list"><div id="uxFindList" class="u-find-list" role="listbox" aria-label="検索候補" hidden></div></div><span class="u-role" id="uxRole"></span><button class="u-pill" data-act="profile" title="ログイン情報・氏名・所属">プロフィール</button></header>
   <div id="uxBanner" class="ux-off" role="alert"></div>
   <div id="uxCrumb" class="ux-off"></div>
   <div class="ux-content">
@@ -2582,6 +2592,17 @@ function ensureRealDevice(userId){
  S.devices[d.id]=d;
 }
 function personaValueOf(u){return u&&u.real&&u.employeeNo?EMP_PREFIX+u.role+':'+u.employeeNo:(u?u.id:'')}
+/* ロールごとの選択肢（プルダウンと検索で共用）。 */
+function personaGroups(){
+ const dir=realDir();
+ if(!dir){
+  return PGROUPS.map(g=>({label:g[0],role:(USERS[g[1][0]]||{}).role||'employee',items:g[1].map(id=>{const x=USERS[id]||{};return {value:id,text:x.name+'（'+(x.title||(DEPTS[x.dept]&&DEPTS[x.dept].name)||'')+'）',role:x.role,name:x.name,empNo:''}})}));
+ }
+ return REAL_GROUPS.map(([label,role,pick])=>{
+  const list=pick==='staff'?realStaff():dir.all;
+  return {label,role,items:list.map(e=>({value:EMP_PREFIX+role+':'+e.employeeNo,text:realLabelOf(e),role,name:e.name,empNo:e.employeeNo,org:shortOrgOf(e).join(' ')}))};
+ }).filter(g=>g.items.length);
+}
 let _personaCache={sig:'',html:''};
 function personaOptionsHtml(){
  const u=(typeof S!=='undefined'&&S&&USERS[S.ui.user])||null;
@@ -2589,19 +2610,89 @@ function personaOptionsHtml(){
  const sig=[S&&S.ui?S.ui.user:'',u&&u.role,dir?dir.all.length:0,dir?dir.staff.length:0,window.__AIHD_DIR_VERSION__||0].join('|');
  if(_personaCache.sig===sig)return _personaCache.html;
  const cur=personaValueOf(u);
- let groups;
- if(dir){
-  groups=REAL_GROUPS.map(([label,role,pick])=>{
-   const list=pick==='staff'?realStaff():dir.all;
-   return {label,items:list.map(e=>({value:EMP_PREFIX+role+':'+e.employeeNo,text:realLabelOf(e)}))};
-  }).filter(g=>g.items.length);
- }else{
-  groups=PGROUPS.map(g=>({label:g[0],items:g[1].map(id=>({value:id,text:USERS[id].name+'（'+(USERS[id].title||DEPTS[USERS[id].dept].name)+'）'}))}));
- }
+ const groups=personaGroups();
   const html=groups.map(g=>`<optgroup label="${esc(g.label)}">`+g.items.map(o=>`<option value="${esc(o.value)}"${o.value===cur?' selected':''}>${esc(o.text)}</option>`).join('')+'</optgroup>').join('')
    +((u&&!groups.some(g=>g.items.some(o=>o.value===cur)))?`<optgroup label="（現在の選択）"><option value="${esc(cur)}" selected>${esc(u.name)}（${esc(u.title||(DEPTS[u.dept]&&DEPTS[u.dept].name)||ROLES[u.role])}）</option></optgroup>`:'');
  _personaCache={sig,html};
  return html;
+}
+/* ============ 「操作する人」の検索（補完つき） ============
+   氏名・社員番号・部署・ロール名で絞り込む。候補はロール単位（DX推進部の人は4ロール分）。
+   選ぶとプルダウンと同じ経路（applyPersonaValue）で切り替える。 */
+let _findCache={sig:'',items:[]};
+function uxFindIndex(){
+ const dir=realDir();
+ const sig=[dir?dir.all.length:0,dir?dir.staff.length:0,window.__AIHD_DIR_VERSION__||0].join('|');
+ if(_findCache.sig===sig)return _findCache.items;
+ const items=[];
+ for(const g of personaGroups()){
+  for(const it of g.items){
+   const roleLabel=ROLES[it.role]||g.label||'';
+   const hay=[it.name||'',it.empNo||'',it.org||'',it.text||'',g.label||'',roleLabel].join(' ').toLowerCase();
+   items.push(Object.assign({},it,{roleLabel,hay}));
+  }
+ }
+ _findCache={sig,items};
+ return items;
+}
+function uxFindMatches(q){
+ const toks=String(q||'').toLowerCase().trim().split(/\s+/).filter(Boolean);
+ if(!toks.length)return [];
+ return uxFindIndex().filter((it)=>toks.every((t)=>it.hay.includes(t))).slice(0,20);
+}
+function uxFindClose(){
+ const list=$('#uxFindList'),inp=$('#uxFind');
+ if(list){list.hidden=true;list.innerHTML=''}
+ if(inp)inp.setAttribute('aria-expanded','false');
+ UI.findItems=null;UI.findSel=0;
+}
+function uxFindRender(){
+ const inp=$('#uxFind'),list=$('#uxFindList');
+ if(!inp||!list)return;
+ const q=inp.value.trim();
+ if(!q){uxFindClose();return}
+ const items=uxFindMatches(q);
+ UI.findItems=items;UI.findSel=0;
+ list.hidden=false;
+ inp.setAttribute('aria-expanded','true');
+ if(!items.length){list.innerHTML='<div class="u-find-empty">該当する社員はいません</div>';return}
+ list.innerHTML=items.map((it,i)=>`<div class="u-find-item" role="option" data-find="${i}" data-value="${esc(it.value)}" aria-selected="${i===0}"><span>${esc(it.text)}</span>${it.role!=='employee'?`<span class="r">${esc(it.roleLabel)}</span>`:''}</div>`).join('');
+}
+function uxFindMark(next){
+ const list=$('#uxFindList');
+ const items=UI.findItems||[];
+ if(!list||!items.length)return;
+ UI.findSel=(next+items.length)%items.length;
+ [...list.querySelectorAll('.u-find-item')].forEach((el,i)=>el.setAttribute('aria-selected',String(i===UI.findSel)));
+ const el=list.querySelector('.u-find-item[aria-selected="true"]');
+ if(el&&el.scrollIntoView)el.scrollIntoView({block:'nearest'});
+}
+function uxFindPick(value){
+ const inp=$('#uxFind');
+ if(inp)inp.value='';
+ uxFindClose();
+ if(value)uxSwitch(value);
+}
+function uxFindBind(){
+ const inp=$('#uxFind');
+ if(!inp||inp.dataset.bound)return;
+ inp.dataset.bound='1';
+ inp.addEventListener('input',uxFindRender);
+ inp.addEventListener('focus',()=>{if(inp.value.trim())uxFindRender()});
+ inp.addEventListener('keydown',(e)=>{
+  const items=UI.findItems||[];
+  if(e.key==='ArrowDown'){e.preventDefault();uxFindMark((UI.findSel||0)+1)}
+  else if(e.key==='ArrowUp'){e.preventDefault();uxFindMark((UI.findSel||0)-1)}
+  else if(e.key==='Enter'){e.preventDefault();const it=items[UI.findSel||0];if(it)uxFindPick(it.value)}
+  else if(e.key==='Escape'){e.preventDefault();uxFindClose()}
+ });
+ inp.addEventListener('blur',()=>setTimeout(()=>{const l=$('#uxFindList');if(l)l.hidden=true;inp.setAttribute('aria-expanded','false')},150));
+ document.addEventListener('mousedown',(e)=>{
+  const el=e.target.closest&&e.target.closest('[data-find]');
+  if(!el)return;
+  e.preventDefault();
+  uxFindPick(el.dataset.value);
+ });
 }
 function applyPersonaValue(v){
  const m=/^emp:([a-z]+):([A-Za-z0-9_-]+)$/.exec(String(v||''));
@@ -3906,7 +3997,7 @@ function viewPcinfo(){
 /* プロフィール（氏名・所属）を USERS に反映する。
    状態はログイン（Access メール）ごとに保存されるため、同じ人が別の端末で開いても同じ表示になる。 */
 function applyProfiles(){if(!S||!S.profiles)return;for(const [id,p] of Object.entries(S.profiles)){const u=USERS[id];if(!u||!p)continue;if(p.name)u.name=p.name;if(p.dept&&DEPTS[p.dept])u.dept=p.dept}}
-function init(){load();applyProfiles();restoreRealUser();applyTheme();
+function init(){load();applyProfiles();restoreRealUser();applyTheme();uxFindBind();
  document.addEventListener('click',e=>{const el=e.target.closest('[data-act]');if(!el){const m=$('#attmenu');if(m&&!e.target.closest('.attwrap'))m.classList.add('hide');return}const f=ACT[el.dataset.act];if(f){if(el.dataset.act!=='closeModalBg')e.preventDefault();f(el.dataset,el,e)}});
  document.addEventListener('change',e=>{const t=e.target;
   if(t.id==='persona'){const next=applyPersonaValue(t.value);if(!next){toast('選択した社員を名簿から取得できませんでした','bad');renderTop();renderView();return}S.ui.user=next;syncHdActor();if(!canView(S.ui.view))S.ui.view=homeView();auditAdd(S,next,'persona_switch',{});S.ui.chat=null;ensureChat();UI.pending=[];UI.stick=true;save();renderSide();renderTop();renderView();toast(me().name+'（'+ROLES[me().role]+'）に切り替えました')}
