@@ -88,6 +88,8 @@ node scripts/endpoint-agent.mjs --config ~/.config/ai-helpdesk/device-agent-wind
 
 #### Windows: Node不要のバックグラウンド収集（推奨）
 
+> **以下は Windows の PowerShell で実行してください。** Linux サーバーの bash では `powershell` / `Start-ScheduledTask` が無いため動きません。Linux は Node 版（上記）を使います。
+
 常駐エージェントは不要です。**ログオン時 + 60分ごと**に PowerShell の CLI を1回実行するタスクを登録します。
 
 ```powershell

@@ -113,6 +113,8 @@ node scripts/endpoint-agent.mjs --config %USERPROFILE%\.config\ai-helpdesk\devic
 
 ### Windows: ログオン時 + 定期実行（Node不要）
 
+> **実行場所: Windows クライアントの PowerShell。** Linux サーバーの bash では動かない。Linux は Node 版 `endpoint-agent.mjs` を使う。
+
 ```powershell
 # 登録（初回のみ）
 powershell -ExecutionPolicy Bypass -File .\scripts\windows\install-collector-task.ps1 `

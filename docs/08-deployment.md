@@ -73,6 +73,8 @@
 
 #### Windows: Node不要のバックグラウンド収集（PowerShell + タスクスケジューラ）
 
+> **実行場所: Windows クライアントの PowerShell。** Linux サーバーの bash では `powershell` / `Start-ScheduledTask` が存在しないため実行できない。Linux は Node 版を使う。
+
 常駐エージェントではなく、ログオン時 + 60分ごとに CLI を1回実行する方式。
 
 ```powershell
