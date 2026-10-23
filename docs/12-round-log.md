@@ -100,6 +100,15 @@
 - 実測（headless）: 連鎖→再起動Y→完了、N→指名（田中→鈴木）→TKT/INCの担当一致、15回到達→提案せず引継ぎ。
 - 未実施: 実端末（Windowsエージェント）でのコマンド実行。現状は模擬。
 
+## Round 12 — AI（DeepSeek）検証テスト Phase 0/1（2026-10-23）
+
+- 最新 main を build / restart し、`deepseek-flash` で **16 ケース × 3 回 = 48 回**を実測。
+- 結果: **48/48 PASS**、p50 2,028ms / p95 2,722ms、provider は全回 `deepseek`、回答長 max 604 字。
+- 追加: 400（空・4,001字）/ 401 / 400（不正JSON）、レート制限 **20×200 + 5×429**、同一入力の反復一致。
+- 検出: **F1** 根拠なしの相談で `sources` に無関係 KB が残る（AI-09）。**F2** 1 件が 604 字。
+- 結果: [17-ai-verification-results.md](17-ai-verification-results.md) / 証跡: [evidence/ai-verify/20261023](evidence/ai-verify/20261023/)。
+- 未実施: タイムアウト fallback、PC情報/KB本文への注入、停止中KBの除外（実データを書き換えないため）。
+
 ## 現在の Evidence
 
 | 項目 | 結果 |
