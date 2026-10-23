@@ -41,6 +41,8 @@
 
 ## 未完了の理由
 
+詳細な Blocker 報告: [13-blocked-report.md](13-blocked-report.md)
+
 1. **WebUI の Y/N 承認待ち**（ユーザー回答が必要）。承認後に S1〜S8・状態・E2E を実装する。
 2. **Cloudflare Preview / CI の Blocker**。DSH の self-evolution policy gate が
    `.github/workflows/`・`wrangler.*`・`wrangler deploy` を DEPLOY（critical）として拒否。

@@ -96,6 +96,8 @@ npm audit --omit=dev --audit-level=high
 - [運用・復旧](docs/09-operations.md)
 - [Backlog](docs/10-backlog.md)
 - [完了条件の照合（32 項目）](docs/11-acceptance.md)
+- [Round Log](docs/12-round-log.md)
+- [Blocker 報告](docs/13-blocked-report.md)
 - [UI 設計（OpenDesign）](design/opendesign/DESIGN.md) / [設計ボード](design/opendesign/design-board.html)
 - 要件の原文: `Docs/Mirai-AI-Helpdesk-V3.1_*.html`
 
