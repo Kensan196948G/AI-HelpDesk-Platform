@@ -45,11 +45,13 @@ curl -fsS https://ai-helpdesk-api.mirai-dx-platform.com/api/health
 
 ```bash
 # 取得（毎日 or 配備前）
-pg_dump "$DATABASE_URL" --format=custom --file="$HOME/aihd-backup-$(date +%Y%m%d).dump"
+# PG16 サーバーでは PG16 の pg_dump を使う（17 の dump は transaction_timeout で失敗）
+/usr/lib/postgresql/16/bin/pg_dump "$DATABASE_URL" --format=plain \
+  --no-owner --no-privileges --file="$HOME/aihd-backup-$(date +%Y%m%d).sql"
 
 # 復元（新しい DB に対してのみ）
 createdb -h 127.0.0.1 -p 5435 aihd_restore
-pg_restore --dbname=postgresql://.../aihd_restore "$HOME/aihd-backup-YYYYMMDD.dump"
+psql "postgresql://.../aihd_restore" -v ON_ERROR_STOP=1 -f "$HOME/aihd-backup-YYYYMMDD.sql"
 ```
 
 - 既存 DB への上書き復元はしない。

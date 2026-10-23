@@ -86,6 +86,14 @@ pg_restore --dbname=postgresql://.../aihd_restore /tmp/aihd-*.dump
 - 破壊的操作（DROP DATABASE / DROP TABLE / TRUNCATE / 大量 DELETE）は、ユーザー承認なしに実行しない。
 - テストデータの削除は、対象を明示した小さな DELETE に限定する。
 
+### 5-1. 復元実測（2026-10-23）
+
+- PG16 サーバーに対して `pg_dump` 17 の custom / plain 形式は
+  `transaction_timeout` 非対応で失敗した。**`/usr/lib/postgresql/16/bin/pg_dump` を使用する**。
+- plain 形式で dump → 新規 DB `aihd_restore_verify_*` へ `psql -f` で復元 → 件数一致を確認。
+  - users 6 / cases 7 / knowledge 5 / tickets 5 / audit 32
+- 既存 DB への上書き復元は行っていない。
+
 ## 6. 検証済み
 
 | 項目 | 結果 |
@@ -94,4 +102,4 @@ pg_restore --dbname=postgresql://.../aihd_restore /tmp/aihd-*.dump
 | migrate 再実行 | `skip` で成功（冪等） |
 | seed 再実行 | 成功（重複なし） |
 | 主要 Read/Write | 案件作成、引継ぎ、解決、ナレッジ承認、監査検証を API integration test で確認 |
-| 監査チェーン | 27 件で `ok: true`（手動 API 検証） |
+| 監査チェーン | 27 件時点で `ok: true`（手動 API 検証。その後 32 件へ増加） |

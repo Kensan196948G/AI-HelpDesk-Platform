@@ -42,6 +42,7 @@ npx tsx scripts/seed.ts
 | API Build | ✅ 成功 | `apps/api/dist` を生成 |
 | Dependency audit（runtime） | ✅ 0 vulnerabilities | `npm audit --omit=dev --audit-level=high` |
 | Secret pattern scan | ✅ 検出なし | `scripts/scan-secrets.sh`（CI 用） |
+| Backup / Restore | ✅ 成功 | PG16 `pg_dump` → 新規 DB へ plain 復元。users 6 / cases 7 / knowledge 5 |
 | E2E（UI） | ⏸ 未実施 | WebUI の Y/N 承認待ち |
 
 ```
