@@ -3090,7 +3090,7 @@ const ACT={
     <select id="pfDept" style="${field}">${Object.entries(DEPTS).map(([k,d])=>`<option value="${k}" ${k===u.dept?'selected':''}>${esc(d.name)}</option>`).join('')}</select>
    </label>
   </div>
-  <div class="u-note" style="margin-top:12px">所属は自由入力にせず、マスタから選びます（表記ゆれ・誤登録を防ぐため）。異動・兼務は管理者が更新する想定です。本番は EntraID の登録社員名を既定値にします。</div>
+  <div class="u-note" style="margin-top:12px">所属は自由入力にせず、マスタから選びます（表記ゆれ・誤登録を防ぐため）。異動・兼務は管理者が更新する想定です。ログインは Cloudflare Access（メール）のままで、氏名・所属はこのプロフィールを正として扱います。</div>
   <div class="btns" style="margin-top:12px"><button class="btn" data-act="profileSave">保存する</button></div>`)
  },
  profileSave(){
