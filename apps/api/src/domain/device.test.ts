@@ -121,6 +121,16 @@ describe('device domain', () => {
     expect(snapshot.items.some((item) => item.k === '資産番号')).toBe(false);
   });
 
+  it('未導入・未検出（不明）の項目を「気になる点」に数えない', () => {
+    const snapshot = buildPrototypeDeviceSnapshot(BROWSER);
+    const concerns = snapshot.items.filter((item) => item.lv !== 'ok');
+    expect(
+      concerns.filter((item) => item.v.includes('未導入') || item.v.includes('未検出')),
+    ).toEqual([]);
+    // セキュリティ系の語（ウイルス対策など）が気になる点として引継ぎ文に入らない
+    expect(concerns.some((item) => item.k === 'ウイルス対策')).toBe(false);
+  });
+
   it('案件用の PcSnapshot に変換し、気になる点を判定する', () => {
     const pc = buildCasePcSnapshot(AGENT, {
       subject: 'Teams が重い',
