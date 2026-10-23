@@ -2549,6 +2549,11 @@ const PGROUPS=[['一般社員',['u1','u2','u3']],['ヘルプデスク担当',['s
    名簿が取得できないときは、従来のデモ名簿（PGROUPS）で動かす。 */
 const REAL_GROUPS=[['一般社員','employee','all'],['ヘルプデスク担当','staff','staff'],['ナレッジ承認者','approver','staff'],['監査担当者','auditor','staff'],['IT端末管理者','itadmin','staff']];
 const EMP_PREFIX='emp:';
+/* 「操作する人」の切替可否。本番（cloudflare-access）は self＝本人以外に切り替えられない。
+   デモ用アカウントだけサーバ側で any を返す（PERSONA_SWITCH_ALLOWLIST）。 */
+const SWITCH_MODE=(window.__AIHD_BOOT__&&window.__AIHD_BOOT__.switchMode)||'any';
+let SELF_EMP_NO='';
+let PERSONA_LOCKED=false;
 const realDir=()=>{const d=window.__AIHD_EMPLOYEES__;return d&&Array.isArray(d.all)&&d.all.length?d:null};
 const realStaff=()=>{const d=realDir();return d&&Array.isArray(d.staff)?d.staff:[]};
 function realDeptOf(e){
@@ -2599,10 +2604,14 @@ function personaGroups(){
  if(!dir){
   return PGROUPS.map(g=>({label:g[0],role:(USERS[g[1][0]]||{}).role||'employee',items:g[1].map(id=>{const x=USERS[id]||{};return {value:id,text:x.name+'（'+(x.title||(DEPTS[x.dept]&&DEPTS[x.dept].name)||'')+'）',role:x.role,name:x.name,empNo:''}})}));
  }
- return REAL_GROUPS.map(([label,role,pick])=>{
+ const groups=REAL_GROUPS.map(([label,role,pick])=>{
   const list=pick==='staff'?realStaff():dir.all;
   return {label,role,items:list.map(e=>({value:EMP_PREFIX+role+':'+e.employeeNo,text:realLabelOf(e),role,name:e.name,empNo:e.employeeNo,org:shortOrgOf(e).join(' ')}))};
  }).filter(g=>g.items.length);
+ if(SWITCH_MODE!=='self')return groups;
+ /* 本番: 本人（SELF_EMP_NO）のロール違いだけを残す。本人が未確定なら空。 */
+ if(!SELF_EMP_NO)return [];
+ return groups.map(g=>Object.assign({},g,{items:g.items.filter(it=>it.empNo===SELF_EMP_NO)})).filter(g=>g.items.length);
 }
 let _personaCache={sig:'',html:''};
 function personaOptionsHtml(){
@@ -2611,6 +2620,8 @@ function personaOptionsHtml(){
  const sig=[S&&S.ui?S.ui.user:'',u&&u.role,dir?dir.all.length:0,dir?dir.staff.length:0,window.__AIHD_DIR_VERSION__||0].join('|');
  if(_personaCache.sig===sig)return _personaCache.html;
  const cur=personaValueOf(u);
+ if(PERSONA_LOCKED)return '<option>（名簿に未登録）</option>';
+ if(SWITCH_MODE==='self'&&!SELF_EMP_NO)return '<option>（本人を確認中…）</option>';
  const groups=personaGroups();
   const html=groups.map(g=>`<optgroup label="${esc(g.label)}">`+g.items.map(o=>`<option value="${esc(o.value)}"${o.value===cur?' selected':''}>${esc(o.text)}</option>`).join('')+'</optgroup>').join('')
    +((u&&!groups.some(g=>g.items.some(o=>o.value===cur)))?`<optgroup label="（現在の選択）"><option value="${esc(cur)}" selected>${esc(u.name)}（${esc(u.title||(DEPTS[u.dept]&&DEPTS[u.dept].name)||ROLES[u.role])}）</option></optgroup>`:'');
@@ -2637,6 +2648,7 @@ function uxFindIndex(){
  return items;
 }
 function uxFindMatches(q){
+ if(PERSONA_LOCKED)return [];
  const toks=String(q||'').toLowerCase().trim().split(/\s+/).filter(Boolean);
  if(!toks.length)return [];
  return uxFindIndex().filter((it)=>toks.every((t)=>it.hay.includes(t))).slice(0,20);
@@ -2695,9 +2707,16 @@ function uxFindBind(){
   uxFindPick(el.dataset.value);
  });
 }
+function applyPersonaOptions(el){
+ if(!el)return;
+ el.innerHTML=personaOptionsHtml();
+ el.disabled=PERSONA_LOCKED;
+}
 function applyPersonaValue(v){
+ if(PERSONA_LOCKED)return null;
  const m=/^emp:([a-z]+):([A-Za-z0-9_-]+)$/.exec(String(v||''));
- if(!m){S.ui.real=null;return USERS[v]?v:null}
+ if(!m){if(SWITCH_MODE==='self')return null;S.ui.real=null;return USERS[v]?v:null}
+ if(SWITCH_MODE==='self'&&SELF_EMP_NO&&m[2]!==SELF_EMP_NO)return null;
  const id=ensureRealUser(m[2],m[1]);if(!id)return null;
  S.ui.real={employeeNo:m[2],role:m[1]};
  return id;
@@ -2742,27 +2761,37 @@ function noteSelfMissing(){
   toast('社員名簿に一致する情報が見つかりませんでした。操作する人を選んでください','bad');
  }catch(e){}
 }
+function lockPersona(){
+ PERSONA_LOCKED=true;_personaCache={sig:'',html:''};
+ const inp=$('#uxFind');if(inp){inp.disabled=true;inp.placeholder='切替できません'}
+ const sel=$('#uxWho');if(sel)sel.disabled=true;
+ const rg=$('#uxRole');if(rg)rg.textContent='名簿未登録';
+ renderTop();
+}
 async function autoSelectSelf(){
  if(_selfTried)return;_selfTried=true;
  if(typeof S==='undefined'||!S||!S.ui)return;
- if(S.ui.personaChosen)return;                         // 本人が切り替えた後は上書きしない
- if(S.ui.real&&S.ui.real.employeeNo)return;            // 保存済みの選択を優先
+ const forceSelf=SWITCH_MODE==='self';                 // 本番: 本人以外へ切り替えさせない
+ if(!forceSelf&&S.ui.personaChosen)return;             // 本人が切り替えた後は上書きしない
+ if(!forceSelf&&S.ui.real&&S.ui.real.employeeNo)return;// 保存済みの選択を優先
  try{
   const r=await fetch('/api/me',{headers:{Accept:'application/json'}});
-  if(!r.ok)return;
+  if(!r.ok){if(forceSelf)lockPersona();return}
   const j=await r.json();
   const e=j&&j.employee;
-  if(!e||!e.employeeNo){noteSelfMissing();return}
-  const role=(S.ui.roles&&S.ui.roles[e.employeeNo])||'employee';
+  if(!e||!e.employeeNo){if(forceSelf)lockPersona();noteSelfMissing();return}
+  SELF_EMP_NO=e.employeeNo;
+  const same=S.ui.real&&S.ui.real.employeeNo===e.employeeNo;
+  const role=(same&&S.ui.real.role)||(S.ui.roles&&S.ui.roles[e.employeeNo])||'employee';
   const id=ensureRealUser(e.employeeNo,role,e);
-  if(!id)return;
+  if(!id){if(forceSelf)lockPersona();return}
   S.ui.user=id;
   S.ui.real={employeeNo:e.employeeNo,role};
   syncHdActor();
   if(!canView(S.ui.view))S.ui.view=homeView();
   auditAdd(S,id,'persona_switch',{auto:true});
-  S.ui.chat=null;ensureChat();save();renderSide();renderTop();renderView();
- }catch(error){/* 名簿が引けないときは従来どおり手動選択 */}
+  S.ui.chat=null;ensureChat();save();_personaCache={sig:'',html:''};renderSide();renderTop();renderView();
+ }catch(error){if(forceSelf)lockPersona()}
 }
 const uname=id=>USERS[id]?USERS[id].name:(id==='system'?'システム':id==='agent'?'PCエージェント':id);
 const TIPS={
@@ -3180,7 +3209,7 @@ function renderSide(){
  const mine=S.chats.filter(c=>c.userId===S.ui.user);
  $('#hist').innerHTML=mine.length?mine.map(c=>`<div class="hi ${c.id===S.ui.chat&&S.ui.view==='chat'?'on':''}"><button class="t" data-act="openChat" data-id="${c.id}" title="${esc(c.title)}">${esc(c.title)}</button><button class="x" data-act="delChat" data-id="${c.id}" aria-label="削除">✕</button></div>`).join(''):'<div class="small" style="padding:6px 12px;color:#7d8ea8">まだ相談はありません</div>'}
 function renderTop(){const u=me();const it=uxItem(S.ui.view);$('#vtitle').textContent=it?it[2]:'';
- const ps=$('#persona');ps.innerHTML=personaOptionsHtml();
+ const ps=$('#persona');applyPersonaOptions(ps);
  $('#rolebadge').textContent=ROLES[u.role];
  const sg=$('#uxStg');if(window.HD&&u.role!=='employee'){const s=HD.stage();sg.style.display='';sg.textContent='AI：'+s.text;sg.className='badge '+(s.fail?'ng':'info')}else sg.style.display='none';
  const es=$('#estop');es.classList.toggle('on',S.estop);es.textContent=S.estop?(u.role==='itadmin'?'🔓 緊急停止を解除':'🛑 緊急停止中'):'🛑 緊急停止';
@@ -3636,7 +3665,7 @@ function uxShell(){
  const u=me(),sc=S.ui.screen||'home',act=sc==='tool'?(S.ui.view==='settings'?'data':'tools'):sc==='wizard'?'new':sc;
  const turn=myTurn();
  $('#uxRail').innerHTML=`<div class="logo" title="みらいAI窓口">${ICO('i-helmet')}</div>`+RAIL.map(r=>`<button class="${act===r[0]?'on':''}" data-act="wRail" data-r="${r[0]}">${ICO(r[1])}${r[2]}${r[0]==='board'&&turn?`<span class="rb">${turn}</span>`:''}</button>`).join('')+`<span class="sp"></span><button class="${act==='data'?'on':''}" data-act="wRail" data-r="data">${ICO('i-db')}データ</button>`;
- const w=$('#uxWho');w.innerHTML=personaOptionsHtml();
+ const w=$('#uxWho');applyPersonaOptions(w);
  $('#uxRole').textContent=ROLES[u.role];
  const sg=$('#uxStgP');if(window.HD&&u.role!=='employee'){const s=HD.stage();sg.classList.remove('ux-off');sg.textContent='外部AI：'+s.text;sg.classList.toggle('ng',!!s.fail)}else sg.classList.add('ux-off');
  const es=$('#uxEstop');es.classList.toggle('on',S.estop);es.innerHTML=ICO('i-stop')+(S.estop?(u.role==='itadmin'?'緊急停止を解除':'緊急停止中'):'緊急停止');

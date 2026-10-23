@@ -191,6 +191,14 @@
 - 検証（headless Chromium・専用インスタンス）: 実社員メールで自動選択（一般社員・佐藤さん）、再読み込みで維持、役割切替後も維持、選択を消すと記憶した役割で再選択、不一致時の注記、gmail は注記なし、コンソールエラー0。**138 tests passed**。
 - 仕様: [20-employee-directory.md](20-employee-directory.md) §8 / [05-api.md](05-api.md) §6-1。
 
+## Round 22 — 本番では本人以外に「操作する人」を切り替えさせない（2026-10-23）
+
+- `AUTH_MODE=cloudflare-access`（本番）は `switchMode=self`。`/api/me` で本人を解決し、**本人のロール違いだけ**を選択肢にする（一般社員＋DXは4ロール）。
+- 開発・テスト（local）は `any`。デモ用アカウントだけ `PERSONA_SWITCH_ALLOWLIST`（カンマ区切り）で `any` を許可。
+- 他人への強制切替（`uxSwitch` 経由）は無効。検索も本人のみ。本人が名簿に無い場合は切替を無効化し「名簿未登録」と表示。
+- 実測（headless Chromium・`cf-access-authenticated-user-email` 付き）: self モードで選択肢 5 件すべて本人、他人への強制切替は不変、検索は他人0件・本人5件、ロール切替は可能、挨拶は実名。**141 tests passed**。
+- 仕様: [07-security.md](07-security.md)。
+
 ## 現在の Evidence
 
 | 項目 | 結果 |
