@@ -1,0 +1,1 @@
+{"ok":true,"command":{"id":"72629f37-1ce4-452e-89f2-1eafdc812cbc","op_id":"SPOOLER_RESTART","status":"done","device_id":null,"result":{"opId":"SPOOLER_RESTART","platform":"win32","mock":true,"executedAt":"2026-10-23T11:09:31.957Z"},"error":null,"created_at":"2026-10-23T11:09:31.036Z","delivered_at":"2026-10-23T11:09:31.150Z","completed_at":"2026-10-23T11:09:31.971Z"}}

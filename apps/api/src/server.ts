@@ -78,8 +78,10 @@ export async function buildServer(options?: { logger?: boolean }): Promise<Fasti
     const isHealth = request.url.startsWith('/api/health');
     // 端末エージェントは Cloudflare Access のサービスドメイン + アプリ側デバイストークンで守る。
     const isDeviceAgent = request.url.startsWith('/api/device/agent');
+    // 実端末コマンドの取得・結果報告はデバイストークンで守る（UI の登録/確認は各ルートで認証）。
+    const isDeviceCommand = request.url.startsWith('/api/device/command');
 
-    if (config.REQUIRE_PROXY_SECRET && !isHealth && !isDeviceAgent) {
+    if (config.REQUIRE_PROXY_SECRET && !isHealth && !isDeviceAgent && !isDeviceCommand) {
       const provided = request.headers['x-proxy-secret'];
       if (
         typeof provided !== 'string' ||
@@ -92,7 +94,12 @@ export async function buildServer(options?: { logger?: boolean }): Promise<Fasti
 
     // Cloudflare Access の allow ポリシーに加え、アプリ側でも許可リストを照合する。
     // 外形監視用の /api/health と、端末エージェント専用の /api/device/agent だけは除外する。
-    if (config.AUTH_MODE === 'cloudflare-access' && !isHealth && !isDeviceAgent) {
+    if (
+      config.AUTH_MODE === 'cloudflare-access' &&
+      !isHealth &&
+      !isDeviceAgent &&
+      !isDeviceCommand
+    ) {
       await requireCloudflareAccess(request);
     }
 

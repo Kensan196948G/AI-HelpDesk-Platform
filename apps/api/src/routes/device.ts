@@ -246,6 +246,18 @@ async function snapshotResponse(email: string, browserDeviceId?: string) {
   };
 }
 
+function asJsonValue<T>(value: unknown): T | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'string') {
+    try {
+      return JSON.parse(value) as T;
+    } catch {
+      return null;
+    }
+  }
+  return value as T;
+}
+
 export async function deviceRoutes(app: FastifyInstance): Promise<void> {
   // ブラウザから取得できる実端末情報（読み取りのみ）。
   app.post(
@@ -269,6 +281,97 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
 
   // 端末エージェントからの取り込み。Access のパス限定アプリ（/api/device/agent）は
   // ブラウザセッションを持たないため、アプリ側のデバイストークンでユーザーに紐づける。
+  // ── 実端末コマンド（許可リストのみ） ─────────────────────────────
+  // UI が提案の Y 承認後に登録し、端末エージェントが取りに来て実行する。
+  // 端末エージェントの経路は Access のサービスドメイン + デバイストークンで守る。
+  const CommandBodySchema = z.object({
+    opId: z.enum(['SPOOLER_RESTART']),
+    params: z.record(z.unknown()).optional(),
+  });
+  const CommandResultSchema = z.object({
+    ok: z.boolean(),
+    result: z.unknown().optional(),
+    error: z.string().max(2000).optional(),
+  });
+  const CommandIdSchema = z.object({ id: z.string().uuid() });
+
+  app.post(
+    '/device/command',
+    { preHandler: authenticateUi, bodyLimit: 8 * 1024 },
+    async (request) => {
+      if (!request.uiEmail) throw badRequest('UI の認証情報がありません。');
+      if (!checkRateLimit(`device-command:${request.uiEmail}`, 10, 60_000)) {
+        throw new ApiError(429, 'RATE_LIMITED', 'コマンドの要求が多すぎます。少し待ってください。');
+      }
+      const input = CommandBodySchema.parse(request.body);
+      const inventory = await loadClientInventory(request.uiEmail).catch(() => null);
+      const rows = await sql<{ id: string }[]>`
+      INSERT INTO device_commands (user_email, device_id, op_id, params)
+      VALUES (
+        ${request.uiEmail},
+        ${inventory?.deviceId ?? null},
+        ${input.opId},
+        ${JSON.stringify(input.params ?? {})}::jsonb
+      )
+      RETURNING id, op_id, status, device_id, created_at
+    `;
+      return { ok: true, command: rows[0] };
+    },
+  );
+
+  // 端末エージェントが次のコマンドを取得する（1件だけ・配信済みに更新）。
+  app.get('/device/command', async (request, reply) => {
+    const email = await authenticateDeviceToken(request);
+    const rows = await sql<{ id: string }[]>`
+      UPDATE device_commands
+      SET status = 'delivered', delivered_at = now()
+      WHERE id = (
+        SELECT id FROM device_commands
+        WHERE user_email = ${email} AND status = 'queued'
+        ORDER BY created_at
+        LIMIT 1
+      )
+      AND status = 'queued'
+      RETURNING id, op_id, params, created_at
+    `;
+    if (!rows[0]) return reply.code(204).send();
+    const command = rows[0] as { params?: unknown };
+    return { ok: true, command: { ...command, params: asJsonValue(command.params) ?? {} } };
+  });
+
+  // 端末エージェントの実行結果。
+  app.post('/device/command/:id/result', async (request) => {
+    const email = await authenticateDeviceToken(request);
+    const { id } = CommandIdSchema.parse(request.params);
+    const input = CommandResultSchema.parse(request.body);
+    const rows = await sql<{ id: string }[]>`
+      UPDATE device_commands
+      SET status = ${input.ok ? 'done' : 'failed'},
+          result = ${JSON.stringify(input.result ?? null)}::jsonb,
+          error = ${input.error ?? null},
+          completed_at = now()
+      WHERE id = ${id} AND user_email = ${email} AND status = 'delivered'
+      RETURNING id, status, result, error, completed_at
+    `;
+    if (!rows[0]) throw new ApiError(404, 'NOT_FOUND', '対象のコマンドが見つかりません。');
+    const command = rows[0] as { result?: unknown };
+    return { ok: true, command: { ...command, result: asJsonValue(command.result) } };
+  });
+
+  // UI からの状態確認。
+  app.get('/device/command/:id', { preHandler: authenticateUi }, async (request) => {
+    if (!request.uiEmail) throw badRequest('UI の認証情報がありません。');
+    const { id } = CommandIdSchema.parse(request.params);
+    const rows = await sql<{ id: string }[]>`
+      SELECT id, op_id, status, device_id, result, error, created_at, delivered_at, completed_at
+      FROM device_commands
+      WHERE id = ${id} AND user_email = ${request.uiEmail}
+    `;
+    if (!rows[0]) throw new ApiError(404, 'NOT_FOUND', '対象のコマンドが見つかりません。');
+    const command = rows[0] as { result?: unknown };
+    return { ok: true, command: { ...command, result: asJsonValue(command.result) } };
+  });
+
   app.post('/device/agent', { bodyLimit: 2 * 1024 * 1024 }, async (request) => {
     if (!checkRateLimit(`device-agent:${clientAddress(request)}`, 30, 60_000)) {
       throw new ApiError(429, 'RATE_LIMITED', '端末エージェントのリクエストが多すぎます。');
