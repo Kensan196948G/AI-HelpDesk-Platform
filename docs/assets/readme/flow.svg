@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 250" width="1200" height="250" role="img" aria-label="相談 → AI 一次対応 → 人が引き継ぐ → ナレッジ化 の流れ">
+  <defs>
+    <linearGradient id="card" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#eef2ff"/>
+    </linearGradient>
+    <linearGradient id="arrow" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#c7d2fe"/>
+      <stop offset="1" stop-color="#818cf8"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="250" rx="20" fill="#f8fafc"/>
+
+  <g font-family="system-ui, -apple-system, 'Hiragino Sans', 'Yu Gothic', sans-serif">
+    <!-- カード -->
+    <g>
+      <rect x="30" y="55" width="250" height="150" rx="18" fill="url(#card)" stroke="#e0e7ff" stroke-width="2"/>
+      <circle cx="62" cy="88" r="16" fill="#6366f1"/>
+      <text x="62" y="94" font-size="16" font-weight="700" fill="#fff" text-anchor="middle">1</text>
+      <text x="94" y="96" font-size="30">🙋</text>
+      <text x="52" y="140" font-size="22" font-weight="700" fill="#1e293b">相談する</text>
+      <text x="52" y="170" font-size="14" fill="#64748b">チャットで送るだけ</text>
+      <text x="52" y="190" font-size="14" fill="#64748b">PC 情報も自動で添付</text>
+      <circle cx="62" cy="88" r="16" fill="#6366f1" opacity="0.4">
+        <animate attributeName="r" values="16;24;16" dur="2.4s" repeatCount="indefinite"/>
+        <animate attributeName="opacity" values="0.4;0;0.4" dur="2.4s" repeatCount="indefinite"/>
+      </circle>
+    </g>
+
+    <g>
+      <rect x="330" y="55" width="250" height="150" rx="18" fill="url(#card)" stroke="#e0e7ff" stroke-width="2"/>
+      <circle cx="362" cy="88" r="16" fill="#0ea5e9"/>
+      <text x="362" y="94" font-size="16" font-weight="700" fill="#fff" text-anchor="middle">2</text>
+      <text x="394" y="96" font-size="30">🤖</text>
+      <text x="352" y="140" font-size="22" font-weight="700" fill="#1e293b">AI が先に答える</text>
+      <text x="352" y="170" font-size="14" fill="#64748b">24 時間すぐ返事</text>
+      <text x="352" y="190" font-size="14" fill="#64748b">承認済みナレッジが根拠</text>
+    </g>
+
+    <g>
+      <rect x="630" y="55" width="250" height="150" rx="18" fill="url(#card)" stroke="#e0e7ff" stroke-width="2"/>
+      <circle cx="662" cy="88" r="16" fill="#f59e0b"/>
+      <text x="662" y="94" font-size="16" font-weight="700" fill="#fff" text-anchor="middle">3</text>
+      <text x="694" y="96" font-size="30">🧑‍🔧</text>
+      <text x="652" y="140" font-size="22" font-weight="700" fill="#1e293b">人が引き継ぐ</text>
+      <text x="652" y="170" font-size="14" fill="#64748b">DX 推進部へバトン</text>
+      <text x="652" y="190" font-size="14" fill="#64748b">AI に追加質問もできる</text>
+    </g>
+
+    <g>
+      <rect x="930" y="55" width="240" height="150" rx="18" fill="url(#card)" stroke="#e0e7ff" stroke-width="2"/>
+      <circle cx="962" cy="88" r="16" fill="#10b981"/>
+      <text x="962" y="94" font-size="16" font-weight="700" fill="#fff" text-anchor="middle">4</text>
+      <text x="994" y="96" font-size="30">📚</text>
+      <text x="952" y="140" font-size="22" font-weight="700" fill="#1e293b">ナレッジになる</text>
+      <text x="952" y="170" font-size="14" fill="#64748b">承認すると本棚へ</text>
+      <text x="952" y="190" font-size="14" fill="#64748b">次の人の答えになる</text>
+    </g>
+
+    <!-- 矢印と流れる光 -->
+    <g>
+      <path d="M280 130 H330" stroke="url(#arrow)" stroke-width="4" stroke-linecap="round"/>
+      <path d="M318 122 L330 130 L318 138 Z" fill="#818cf8"/>
+      <circle cx="280" cy="130" r="5" fill="#6366f1">
+        <animate attributeName="cx" values="282;328" dur="1.4s" repeatCount="indefinite"/>
+        <animate attributeName="opacity" values="0.2;1;0.2" dur="1.4s" repeatCount="indefinite"/>
+      </circle>
+    </g>
+    <g>
+      <path d="M580 130 H630" stroke="url(#arrow)" stroke-width="4" stroke-linecap="round"/>
+      <path d="M618 122 L630 130 L618 138 Z" fill="#818cf8"/>
+      <circle cx="580" cy="130" r="5" fill="#0ea5e9">
+        <animate attributeName="cx" values="582;628" dur="1.4s" begin="0.45s" repeatCount="indefinite"/>
+        <animate attributeName="opacity" values="0.2;1;0.2" dur="1.4s" begin="0.45s" repeatCount="indefinite"/>
+      </circle>
+    </g>
+    <g>
+      <path d="M880 130 H930" stroke="url(#arrow)" stroke-width="4" stroke-linecap="round"/>
+      <path d="M918 122 L930 130 L918 138 Z" fill="#818cf8"/>
+      <circle cx="880" cy="130" r="5" fill="#f59e0b">
+        <animate attributeName="cx" values="882;928" dur="1.4s" begin="0.9s" repeatCount="indefinite"/>
+        <animate attributeName="opacity" values="0.2;1;0.2" dur="1.4s" begin="0.9s" repeatCount="indefinite"/>
+      </circle>
+    </g>
+
+    <text x="600" y="235" font-size="13" fill="#94a3b8" text-anchor="middle">むずかしい操作はありません。ふだんのチャットと同じです。</text>
+  </g>
+</svg>

@@ -1,40 +1,218 @@
-# みらいAI窓口 × ヘルプデスク MVP
+<div align="center">
 
-社員の IT 相談を「1つの入口」で受け、**PC 基本情報の事前取得（読み取りのみ・実機）→ AI 一次対応 → ヘルプデスクへの引継ぎ → 対応・解決記録 → ナレッジ化・承認**までを一気通貫で体験できる、個人利用向けの MVP です。
+<img src="docs/assets/readme/hero.svg" alt="みらい AI 窓口 — 社員の IT 相談をひとつの窓口で" width="100%">
 
-- 位置づけ: **MVP / Prototype**（正式版ではありません）
-- **WebUI**: 既存プロトタイプ `Mirai_AIHelpdesk_Cowork_StepWizard_V3.1_PCinfo_Offline.html` を **そのまま配信**（画面構成・CSS・28 業務ツールを維持）
-- **公開 URL**: https://ai-helpdesk.mirai-dx-platform.com （**Cloudflare Access** の OTP ログイン）
-- **AI**: 自由記述の回答に **DeepSeek-V4.1-Flash**（API ID: `deepseek-flash`）。診断・修復・セキュリティ初動は元の決定ルール
-- **PC基本情報**: ログイン中のブラウザから実機情報を取得。端末エージェント導入時は導入ソフト・セキュリティも取得（読み取りのみ）
-- **DB**: Local PostgreSQL 16（`ai_helpdesk_preview` / `ai_helpdesk_mvp`）
-- **認証**: Cloudflare Access のみ（One-time PIN / 12h / `kensan1969@gmail.com` と `@mirai-const.co.jp`）
+<br><br>
 
-## 状態（2026-10-23）
+**「PC が動かない」「この作業、どうやるの？」を、ひとつの窓口で。**
 
-| 項目 | 状態 |
+<a href="https://ai-helpdesk.mirai-dx-platform.com"><img src="https://img.shields.io/badge/%F0%9F%8C%90%20%E3%83%87%E3%83%A2-%E5%85%AC%E9%96%8B%E4%B8%AD-2ea043?style=for-the-badge&logo=cloudflare&logoColor=white" alt="デモ公開中"></a>
+<img src="https://img.shields.io/badge/%F0%9F%A4%96%20AI-DeepSeek%20V4.1%20Flash-4f46e5?style=for-the-badge&logo=openai&logoColor=white" alt="AI: DeepSeek V4.1 Flash">
+<img src="https://img.shields.io/badge/%F0%9F%94%92%20PC%E6%83%85%E5%A0%B1-%E8%AA%AD%E3%81%BF%E5%8F%96%E3%82%8A%E3%81%AE%E3%81%BF-0ea5e9?style=for-the-badge&logo=shieldcheck&logoColor=white" alt="PC 情報は読み取りのみ">
+<img src="https://img.shields.io/badge/%F0%9F%93%A6%20%E7%8A%B6%E6%85%8B-MVP%20%E8%A9%A6%E4%BD%9C-f59e0b?style=for-the-badge" alt="MVP 試作">
+<img src="https://img.shields.io/badge/%F0%9F%A7%AA%20%E8%87%AA%E5%8B%95%E3%83%86%E3%82%B9%E3%83%88-%E3%81%82%E3%82%8A-22c55e?style=for-the-badge&logo=vitest&logoColor=white" alt="自動テストあり">
+
+</div>
+
+> [!WARNING]
+> これは **試作版（MVP）** です。会社の正式システムではありません。
+> 「こんなふうに使える」を確かめるためのものなので、本番の業務データは入れないでください。
+
+---
+
+## 🍀 これは、なに？
+
+社員のみなさんの「困った！」を **1 つの窓口** で受け付けて、
+**AI が先に答え、むずかしい話だけ人が引き継ぐ** しくみです。
+
+いまは、聞き先がバラバラになりがちです 👇
+
+```
+メールに書く 📧 ／ 電話する 📞 ／ 直接たずねる 🚶 ／ チャットする 💬
+        ↓
+  担当者が毎回おなじことを聞く（型番は？ OS は？ いつから？）
+        ↓
+  解決しても、その知識は担当者のなかに残るだけ 😢
+```
+
+この窓口では、こう変わります 👇
+
+```
+ひとつの窓口に書く 💬
+        ↓
+AI がすぐ答える 🤖（PC の情報も自動で添付）
+        ↓
+むずかしい時だけ DX 推進部へバトン 🧑‍🔧
+        ↓
+解決した内容が「ナレッジ」になり、次の人の答えになる 📚
+```
+
+---
+
+## 😵 こんなことで、困っていませんか？
+
+| いまの困りごと | この窓口だと |
 |---|---|
-| 初動 Assessment / MVP Scope | 完了（[docs/00](docs/00-assessment.md) / [docs/01](docs/01-mvp-scope.md)） |
-| OpenDesign | 設計検討の記録（[design/opendesign](design/opendesign/)）。実画面はユーザー指示により既存 HTML が正本 |
-| WebUI（既存プロトタイプ） | **配信中**（レイアウト変更なし。状態/AI のみブリッジ） |
-| Local PostgreSQL | Migration / Seed / Read・Write / Backup-Restore 検証済み |
-| API | Fastify。認証（local / Cloudflare Access）、案件、引継ぎ、解決、ナレッジ、監査、状態保存、実PC情報、AI |
-| Tests | **74 tests 成功**（Unit / API integration / Worker / UI / Access / 許可リスト / 実PC情報・エージェント） |
-| 実PC情報 | **ブラウザ取得 + 端末エージェント**（読み取りのみ。導入ソフトはエージェント） |
-| Cloudflare Preview | **公開中**（Tunnel + Access。OTP ログイン画面を確認） |
-| Access 許可メール | **設定済み**（`docs/MailAddress.txt` + Cloudflare allow ポリシー） |
-| Access OTP ログイン | **確認済み**（2026-10-23 15:32 JST / `onetimepin` / `allowed=true`） |
-| DeepSeek API キー | **設定済み・実回答確認済み**（`provider: deepseek` / `model: deepseek-flash` = V4.1-Flash） |
-| AI用KB | **9件**（共有フォルダ / Teams / 印刷 / VPN / PC性能 / Windows Update / BitLocker / Defender / ソフト導入） |
-| CI | **GitHub Actions**（`.github/workflows/ci.yml` / job `verify`。PostgreSQL 16 service） |
+| 🙋 聞きたいけど、誰に聞けばいいか分からない | 🤖 まず AI が 24 時間すぐ答えます |
+| ⏰ ヘルプデスクが混んでいて、返事が遅い | ⚡ よくある質問は、その場で解決します |
+| 🔁 同じ質問が、何度も何度も来る | 📚 解決した内容がナレッジになり、次の人の答えになります |
+| 🖥 「PC の型番は？」と毎回聞かれる | 📋 PC の基本情報が、自動で添付されます |
+| 😰 引き継ぐたびに、最初から説明し直す | 🧑‍🔧 ここまでのやりとりが、そのまま引き継がれます |
 
-## 主要 3 Flow
+---
 
-1. **相談受付〜引継ぎ**: 相談種類 → 内容＋PC 基本情報 → AI 一次対応 → 解決 or 引継ぎ（TKT/INC）
-2. **ヘルプデスク対応**: ボード → 案件詳細 → 担当割当 → 解決記録
-3. **ナレッジ化〜完了**: 伏せ字済み下書き → 承認申請 → 別の承認者が承認 → 公開
+## ✨ できること（4 つ）
 
-## 構成
+**1. 🙋 相談する**
+チャットに書くだけ。むずかしい設定はありません。PC の基本情報も自動で付きます。
+
+**2. 🤖 AI が先に答える**
+社内で **承認ずみのナレッジ** と PC の情報を根拠に、その場で回答します。
+AI は 24 時間働いてくれるので、夜中でも朝イチでも返事が返ってきます。
+
+**3. 🧑‍🔧 人が引き継ぐ**
+AI では解決しないときは、**DX 推進部** へバトンを渡します。
+引き継いだ担当者は、AI に追加で質問することもできます。
+
+**4. 📚 ナレッジになる**
+解決した内容は、**人が承認して** はじめて「本棚」に入ります。
+承認されたものだけが、次の人の答えになります。
+
+<br>
+
+<img src="docs/assets/readme/flow.svg" alt="相談 → AI 一次対応 → 人が引き継ぐ → ナレッジ化 の流れ" width="100%">
+
+---
+
+## 🧭 つかいかた（3 ステップ）
+
+### 1. 相談する 🗣️
+
+窓口をひらいて、ふだん話すように書くだけです。
+
+> 例：「昨日から社外の共有フォルダが開けません。Windows 11 です。」
+
+画面が PC の基本情報（OS・メモリ・空き容量など）を自動で集めます。
+**見るだけで、変更はしません。**
+
+### 2. AI の答えをためす 🤖
+
+AI が「まずこれを試してください」と手順を返します。
+やってみて、**解決した／しなかった** をボタンで選ぶだけ。
+
+### 3. 解決しなければ、人へ 🧑‍🔧
+
+「解決しなかった」を選ぶと、DX 推進部へ自動で引き継がれます。
+引き継ぎメモに、ここまでのやりとりと PC の情報が入っているので、
+**同じことをもう一度説明する必要はありません。**
+
+---
+
+## 📚 ナレッジは「ぐるぐる」回ります
+
+1 回の解決が、次の人の時間を短くします。
+
+<img src="docs/assets/readme/cycle.svg" alt="相談 → 解決 → ナレッジ → 次の人へ の循環" width="560">
+
+- 🧑‍⚖️ ナレッジは、**人が承認したものだけ** が使われます（AI が勝手に登録することはありません）
+- 🙈 承認の前に、メールアドレスや電話番号などの個人情報は **自動で伏せ字** になります
+- 📈 使われるほど「役に立った率」が記録され、見直しのきっかけになります
+
+---
+
+## 🔒 安心して使うために
+
+| 気になること | どうなっているか |
+|---|---|
+| 🔍 PC の情報を勝手に見られない？ | **読み取りだけ**です。ファイルの中身・閲覧履歴・画面・キー入力・メール本文は取りません |
+| 🙈 個人情報は大丈夫？ | メール・電話・IP・カード番号などを **自動で伏せ字** にしてから保存・送信します |
+| 🔑 誰でも使える？ | **社内の人だけ**です。Cloudflare Access のログイン＋許可リストで判定します（許可外は全拒否） |
+| 🧑‍⚖️ AI の答えが間違っていたら？ | AI の答えは **下書き** です。ナレッジとして残す前に、必ず人が承認します |
+| 🖐 遠隔で操作されない？ | しません。遠隔サポートは **案内文を送るところまで**。画面の操作・コマンド実行は別の同意と承認が必要です |
+| 📤 共有は同意した分だけ？ | はい。**同意した範囲だけ** が引き継がれます（同意は情報ごと・目的ごとに分かれています） |
+
+---
+
+## ❓ よくある質問
+
+<details>
+<summary><b>🙋 パソコンに詳しくなくても使えますか？</b></summary>
+
+はい。やることは「チャットに書く」と「解決した／しなかったを選ぶ」だけです。
+専門用語はなるべく画面に出さないようにしています。
+
+</details>
+
+<details>
+<summary><b>🤖 AI の答えは、どこから来ているの？</b></summary>
+
+社内で **承認ずみのナレッジ**（9 件からスタート）と、相談者さんの PC の基本情報です。
+インターネットの適当な情報をそのまま答えているわけではありません。
+それでも間違うことはあるので、最後は人が確認します。
+
+</details>
+
+<details>
+<summary><b>⏱ どれくらいで返事が来ますか？</b></summary>
+
+AI の一次対応は、ふつう **数秒** です。
+人に引き継いだ場合は、DX 推進部の受付時間内での対応になります。
+
+</details>
+
+<details>
+<summary><b>🔐 相談した内容は、誰に見られるの？</b></summary>
+
+自分自身と、対応する DX 推進部の担当者だけです。
+「操作する人」の切り替えはデモ用の機能で、実際のログインは Cloudflare Access のみです。
+
+</details>
+
+<details>
+<summary><b>🖥 自分の PC 以外の情報が混ざったりしませんか？</b></summary>
+
+しません。端末ごとに情報を分けて保存しています。
+いま見ている PC の情報だけが表示されます。
+
+</details>
+
+<details>
+<summary><b>📚 ナレッジは誰が承認するの？</b></summary>
+
+申請した人とは **別の承認者** が確認します（自分の下書きは自分で承認できません）。
+承認されると、AI の答えの根拠として使われるようになります。
+
+</details>
+
+---
+
+## 🚦 いまの状態（正直なところ）
+
+| できること | 状態 |
+|---|---|
+| 💬 相談 → PC 情報の取得 → AI 一次対応 | ✅ 動いています |
+| 🧑‍🔧 ヘルプデスクへの引き継ぎ・対応・解決記録 | ✅ 動いています |
+| 📚 ナレッジ化 → 承認 → 公開 | ✅ 動いています |
+| 📄 最終報告書（HTML / PDF）の出力 | ✅ 動いています |
+| 🖐 本人同意つきの遠隔サポート（案内文まで） | ✅ 動いています |
+| 🔍 PC の詳しい情報（導入ソフトなど） | ✅ 端末エージェントを入れた PC で取得できます |
+| 🌐 別の人のアカウントへの引き継ぎ | 🚧 準備中です（いまは同じログイン内のデモ） |
+| 🔔 通知（メール・チャット） | 🚧 まだありません |
+| 🖥 画面共有・遠隔操作 | 🚧 設計のみ（実装していません） |
+| 🧪 全画面の通しテスト（E2E） | 🚧 一部のみ |
+
+> [!NOTE]
+> 「動いています」は、サーバー側の動きを実際に確認した範囲です。
+> 画面の全ステップを通しで自動確認するテストは、まだ一部しかありません。
+
+---
+
+## 🧑‍💻 エンジニア向け（たたんであります）
+
+<details>
+<summary><b>構成・起動・テスト・デプロイを見る</b></summary>
+
+### 構成
 
 ```
 Browser
@@ -44,127 +222,94 @@ Cloudflare Tunnel  ai-helpdesk.mirai-dx-platform.com
   │
   ▼
 Node 22 / Fastify  ai-helpdesk-api.service（127.0.0.1:18950）
-  │  ├─ 既存プロトタイプ HTML を配信（boot / bridge / device-bridge を注入）
+  │  ├─ 既存プロトタイプ HTML を配信（boot / bridge / device-bridge / assist-bridge を注入）
   │  ├─ /api/state（prototype_states）
-  │  ├─ /api/device/browser・/api/device/inventory（実PC情報）
+  │  ├─ /api/device/browser・/api/device/inventory（実 PC 情報）
   │  ├─ /api/device/agent（端末エージェント / デバイストークン）
-  │  └─ /api/ai/answer（deepseek-flash + 承認済みナレッジ + PC情報）
+  │  ├─ /api/ai/answer（deepseek-flash + 承認済みナレッジ + PC 情報）
+  │  ├─ /api/reports/final（最終報告書: Standalone HTML / PDF）
+  │  └─ /api/ai/remote-prompt（STEP5 の案内文下書き。実行はしない）
   ▼
-Local PostgreSQL  ai_helpdesk_preview（device_inventories / device_tokens 含む）
+Local PostgreSQL  ai_helpdesk_preview
 ```
 
-- Cloudflare Worker / Pages は、DSH の self-evolution policy gate が `wrangler` 配備を DEPLOY（critical）として拒否するため使用していません。
-- Tunnel + Access は policy gate で拒否されず、既存 HTML をそのまま配信できるため採用しました。
+UI は既存プロトタイプ `Mirai_AIHelpdesk_Cowork_StepWizard_V3.1_PCinfo_Offline.html` を
+**そのまま配信** し、ブリッジ JS だけで状態保存・AI・実 PC 情報を足しています。
 
-## アクセス制御
-
-許可リストの正本は **[docs/MailAddress.txt](docs/MailAddress.txt)** です。
-
-- 完全一致メール（例: `kensan1969@gmail.com`）と `@domain`（例: `@mirai-const.co.jp`）を 1 行 1 件で書く。
-- `#` 以降のコメント、`例：` / `e.g.` 以降の例示は無視する（例示用の typo メールを誤って許可しないため）。
-- アプリは `ACCESS_ALLOWLIST_FILE`（既定 `docs/MailAddress.txt`）を読み、Cloudflare Access のヘッダーと照合する。**ファイルが無い・空の場合は全拒否（fail-closed）**。
-- **Cloudflare Access の allow ポリシーと同じ内容に保つ**（二重チェック）。変更時は両方を更新して API を再起動する。
-- 端末エージェント専用の `/api/device/agent` だけは Cloudflare Access のパス限定 bypass とし、アプリ側のデバイストークンで保護する（人間の UI / API は従来どおり Access 必須）。
-- **端末は `device_id` 単位で分離**する。PCチェックはログイン中ブラウザの端末情報を表示し、別端末（サーバー等）のエージェント情報は混ぜない。エージェントは画面の `WEB-XXXXXXXX` を `browserDeviceId` に指定して、その端末へリンクする。
-
-### 端末エージェント（実PC情報）
+### ローカル起動
 
 ```bash
-# 管理者: サービス環境を読み込む（秘密値は表示しない）
-set -a; . ~/.config/ai-helpdesk/api.conf; set +a
+npm install
+cp .env.example .env.local      # DATABASE_URL / SESSION_SECRET / SEED_PASSWORD を設定
+chmod 600 .env.local
 
-# トークン発行（既存設定に deviceToken を追記。値は画面へ出さない）
-NODE_ENV=production npx tsx scripts/issue-device-token.ts \
-  --email user@mirai-const.co.jp --out ~/.config/ai-helpdesk/device-agent.json
-
-# 対象PC: 読み取り専用エージェント（Node.js 20+）
-# 画面のPC基本情報に表示される WEB-XXXXXXXX を指定して、その端末へリンクする
-node scripts/endpoint-agent.mjs --config ~/.config/ai-helpdesk/device-agent-windows.json \
-  --browser-device-id WEB-XXXXXXXX --once
-# Windows で取得コマンドの失敗を確認する場合
-# node scripts/endpoint-agent.mjs --config ... --browser-device-id ... --debug --dry-run
+npm run db:migrate
+npm run db:seed
+npm run dev:api                 # http://127.0.0.1:18950/（開発モードは認証なし）
 ```
 
-- Windows の設定は `%USERPROFILE%\.config\ai-helpdesk\device-agent-windows.json` に置く。`browserDeviceId` はPCチェック画面の端末名（`WEB-XXXXXXXX`）。
+### 検証
 
-#### Windows: Node不要のバックグラウンド収集（推奨）
+```bash
+npm run typecheck   # API + worker
+npm run lint
+npm test            # Unit / API integration（PostgreSQL テスト DB）
+npm run build
+bash scripts/scan-secrets.sh
+npm audit --omit=dev --audit-level=high
+```
 
-> **以下は Windows の PowerShell で実行してください。** Linux サーバーの bash では `powershell` / `Start-ScheduledTask` が無いため動きません。Linux は Node 版（上記）を使います。
+### デプロイ（Preview）
 
-常駐エージェントは不要です。**ログオン時 + 60分ごと**に PowerShell の CLI を1回実行するタスクを登録します。
+```bash
+set -a; . ~/.config/ai-helpdesk/api.conf; set +a
+NODE_ENV=production npx tsx scripts/migrate.ts
+npm run build
+systemctl --user restart ai-helpdesk-api
+```
+
+### 端末エージェント（任意・読み取りのみ）
+
+ブラウザ取得だけで足りない情報（導入ソフト・セキュリティ状態など）は、
+端末エージェントで取得できます。Windows は **Node 不要** の PowerShell 収集タスクが使えます。
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\windows\install-collector-task.ps1 `
   -ConfigPath "$env:USERPROFILE\.config\ai-helpdesk\device-agent-windows.json"
 ```
 
-- 実行タスク: `AIHelpDesk-Collector`（ログオン時 + 60分間隔、常駐プロセスなし）
-- ログ: `%LOCALAPPDATA%\AIHelpDesk\collector.log`
-- 手動実行: `Start-ScheduledTask -TaskName AIHelpDesk-Collector`
-- 多数PCへ配布する場合は、GPO / Intune のログオンスクリプトから同じインストーラを実行する（PCごとの手作業なし）。
-- 管理者権限が必要な環境では PowerShell を管理者として実行してください。BitLockerのオン/オフも表示する場合は、管理者PowerShellで `-Elevated` を付けて登録する。
+- 収集: OS / CPU / メモリ / ディスク / GPU / ネットワーク / プリンター / 音声 / USB / 導入ソフト / セキュリティ状態
+- 非収集: **ファイル内容 / 閲覧履歴 / 画面 / キー入力 / メール本文**
+- 詳細: [docs/08-deployment.md](docs/08-deployment.md) §0-1 / [docs/09-operations.md](docs/09-operations.md) §6-1
 
-- 収集: OS / CPU / メモリ / ディスク / GPU / ネットワーク / プリンター / 音声 / USB / 導入ソフト / セキュリティ状態。
-- 非収集: ファイル内容 / 閲覧履歴 / 画面 / キー入力 / メール本文。
-- 詳細: [docs/08-deployment.md](docs/08-deployment.md) §0-1 / [docs/09-operations.md](docs/09-operations.md) §6-1。
-
-## ローカル起動
-
-```bash
-npm install
-cp .env.example .env.local
-# DATABASE_URL / SESSION_SECRET / SEED_PASSWORD を設定
-chmod 600 .env.local
-
-npm run db:migrate
-npm run db:seed
-npm run dev:api
-# http://127.0.0.1:18950/ （開発モードは認証なし）
-```
-
-本番相当（Access モード）:
-
-```bash
-npm run build
-AUTH_MODE=cloudflare-access ACCESS_ALLOWLIST_FILE=docs/MailAddress.txt \
-  DATABASE_URL=... SESSION_SECRET=... npm run start:api
-```
-
-## 検証
-
-```bash
-npm run typecheck   # API + worker
-npm run lint
-npm test            # 74 tests（PostgreSQL テスト DB）
-npm run build
-bash scripts/scan-secrets.sh
-npm audit --omit=dev --audit-level=high
-```
-
-実測: TypeCheck ✅ / Lint ✅（error 0）/ 74 tests ✅ / Build ✅ / Secret scan ✅ / npm audit 0 vulnerabilities。
-
-## ドキュメント
+### ドキュメント
 
 - [初動 Assessment](docs/00-assessment.md) / [MVP Scope](docs/01-mvp-scope.md) / [Plan](docs/02-plan.md)
-- [WebUI 確認質問（旧）](docs/03-questions.md)
 - [Database](docs/04-database.md) / [API](docs/05-api.md) / [Test](docs/06-test.md)
 - [Security](docs/07-security.md) / [Deployment](docs/08-deployment.md) / [Operations](docs/09-operations.md)
-- [Backlog](docs/10-backlog.md) / [受入照合](docs/11-acceptance.md)
-- [Round Log](docs/12-round-log.md) / [Blocker 報告](docs/13-blocked-report.md)
-- **[既存プロトタイプ UI 100% 適用（現行）](docs/14-prototype-ui-integration.md)**
-- [OpenDesign 設計（参考）](design/opendesign/DESIGN.md)
+- [受入照合](docs/11-acceptance.md) / [Round Log](docs/12-round-log.md) / [Blocker 報告](docs/13-blocked-report.md)
+- [最終報告書](docs/21-final-report-export.md) / [STEP5 引継ぎと遠隔支援](docs/22-remote-assist-handover.md) / [RSP / MeshCentral 連携設計](docs/23-rsp-meshcentral-integration.md)
 
-## 既知の制約・要ユーザー対応
+### 既知の制約
 
 - UI の全 STEP E2E（ウィザード全 STEP・ヘルプデスク・ナレッジ承認）は未実施です。
-- DeepSeek API キーは `~/.config/ai-helpdesk/api.conf`（0600）に設定済み。自由記述の回答は `deepseek-flash`（DeepSeek-V4.1-Flash）で生成され、承認済みナレッジと実PC情報を根拠にします。
-- 端末エージェントは Node.js 20+ が必要です。設定ファイルは `~/.config/ai-helpdesk/device-agent.json`（0600）。デバイストークンは `scripts/issue-device-token.ts` で発行し、DB には SHA-256 ハッシュのみ保存します。
-- 端末エージェントは1ユーザー1端末（source 単位）の MVP です。複数端末の同時管理は未対応です。
-- ローカル DNS（192.168.245.11）が新ホストを NXDOMAIN キャッシュ中です。1.1.1.1 では解決済み。TTL 経過後に再確認してください。
-- アプリ内の「操作する人」切替は**デモ用**です。実際のログインは Cloudflare Access のみです。
-- 既存プロトタイプの「完全オフライン」等の表示は、事実と異なる主要ラベルだけ更新しています（[docs/14](docs/14-prototype-ui-integration.md) §2-1）。
+- 端末エージェントは 1 ユーザー 1 端末（source 単位）の MVP です。複数端末の同時管理は未対応です。
+- 遠隔支援は同じログイン内のデモです。別ログイン間の案件共有・通知・画面共有（MeshCentral 等）は未実装です（[docs/22](docs/22-remote-assist-handover.md) §12）。
+- 最終報告書は画面の状態から生成します。サーバー側の案件台帳との突合・電子署名は未実装です（[docs/21](docs/21-final-report-export.md) §7-1）。
 - 添付実体・端末修復実行・外部ヘルプデスク基盤連携・SSO は対象外です。
+- アクセス制御の正本は [docs/MailAddress.txt](docs/MailAddress.txt)。空・不存在の場合は **全拒否**（fail-closed）です。
+  Cloudflare Access の allow ポリシーと同じ内容に保ち、変更時は両方を更新して API を再起動してください。
 
-## ライセンス
+</details>
 
-未設定（個人利用 MVP。必要に応じて追加）。
+---
+
+## 📄 ライセンス
+
+未設定（個人利用の試作）。
+
+---
+
+<div align="center">
+<sub>最終更新: 2026-10-24 ／ この README は「はじめて見る人」向けに書き直しました。技術的な正本は <a href="docs/">docs/</a> にあります。</sub>
+</div>

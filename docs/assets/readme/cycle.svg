@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 420" width="640" height="420" role="img" aria-label="相談 → 解決 → ナレッジ → 次の人へ の循環">
+  <defs>
+    <linearGradient id="ring" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#a5b4fc"/>
+      <stop offset="0.5" stop-color="#34d399"/>
+      <stop offset="1" stop-color="#38bdf8"/>
+    </linearGradient>
+    <radialGradient id="core" cx="0.5" cy="0.4" r="0.7">
+      <stop offset="0" stop-color="#eef2ff"/>
+      <stop offset="1" stop-color="#c7d2fe"/>
+    </radialGradient>
+  </defs>
+  <rect width="640" height="420" rx="20" fill="#f8fafc"/>
+
+  <circle cx="320" cy="210" r="130" fill="none" stroke="url(#ring)" stroke-width="5" stroke-dasharray="10 12" opacity="0.7">
+    <animate attributeName="stroke-dashoffset" from="0" to="-220" dur="6s" repeatCount="indefinite"/>
+  </circle>
+
+  <circle cx="320" cy="210" r="78" fill="url(#core)" stroke="#c7d2fe" stroke-width="2"/>
+  <text x="320" y="196" font-family="system-ui, -apple-system, 'Hiragino Sans', 'Yu Gothic', sans-serif" font-size="18" font-weight="700" fill="#3730a3" text-anchor="middle">みんなの</text>
+  <text x="320" y="224" font-family="system-ui, -apple-system, 'Hiragino Sans', 'Yu Gothic', sans-serif" font-size="22" font-weight="800" fill="#312e81" text-anchor="middle">ナレッジ</text>
+  <text x="320" y="248" font-family="system-ui, -apple-system, 'Hiragino Sans', 'Yu Gothic', sans-serif" font-size="12" fill="#6366f1" text-anchor="middle">承認ずみだけ</text>
+
+  <!-- 回る光 -->
+  <g>
+    <circle r="7" fill="#10b981" opacity="0.95">
+      <animateMotion dur="7s" repeatCount="indefinite" path="M320,80 A130,130 0 1,1 319.9,80"/>
+      <animate attributeName="opacity" values="1;0.4;1" dur="1.8s" repeatCount="indefinite"/>
+    </circle>
+  </g>
+
+  <!-- 4 ノード -->
+  <g font-family="system-ui, -apple-system, 'Hiragino Sans', 'Yu Gothic', sans-serif" text-anchor="middle">
+    <g>
+      <circle cx="320" cy="80" r="30" fill="#fff" stroke="#a5b4fc" stroke-width="3"/>
+      <text x="320" y="90" font-size="26">🙋</text>
+      <text x="320" y="40" font-size="15" font-weight="700" fill="#1e293b">① 相談</text>
+    </g>
+    <g>
+      <circle cx="450" cy="210" r="30" fill="#fff" stroke="#a5b4fc" stroke-width="3"/>
+      <text x="450" y="220" font-size="26">✅</text>
+      <text x="540" y="215" font-size="15" font-weight="700" fill="#1e293b">② 解決</text>
+    </g>
+    <g>
+      <circle cx="320" cy="340" r="30" fill="#fff" stroke="#a5b4fc" stroke-width="3"/>
+      <text x="320" y="350" font-size="26">📝</text>
+      <text x="320" y="395" font-size="15" font-weight="700" fill="#1e293b">③ ナレッジ化</text>
+    </g>
+    <g>
+      <circle cx="190" cy="210" r="30" fill="#fff" stroke="#a5b4fc" stroke-width="3"/>
+      <text x="190" y="220" font-size="26">🧑‍🤝‍🧑</text>
+      <text x="100" y="215" font-size="15" font-weight="700" fill="#1e293b">④ 次の人へ</text>
+    </g>
+  </g>
+</svg>
