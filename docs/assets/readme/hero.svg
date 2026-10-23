@@ -57,7 +57,7 @@
 
   <g class="font" fill="#cbd5e1">
     <text id="sub1" x="72" y="238" font-size="24">社員の IT 相談を、ひとつの窓口で。</text>
-    <text id="sub2" x="72" y="276" font-size="17" fill="#94a3b8">聞く → AI が先に答える → 人が引き継ぐ → ナレッジになる</text>
+    <text id="sub2" x="72" y="276" font-size="17" fill="#94a3b8">聞く → AI がその場で直す → 本人が Y/N → ナレッジになる</text>
   </g>
 
   <circle id="pulse" cx="72" cy="318" r="6" fill="#34d399"/>
