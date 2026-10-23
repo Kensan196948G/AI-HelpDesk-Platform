@@ -13,6 +13,7 @@ const PROTOTYPE_FILE = 'Mirai_AIHelpdesk_Cowork_StepWizard_V3.1_PCinfo_Offline.h
 const BRIDGE_FILES = [
   path.join('apps', 'api', 'src', 'prototype', 'bridge.js'),
   path.join('apps', 'api', 'src', 'prototype', 'device-bridge.js'),
+  path.join('apps', 'api', 'src', 'prototype', 'employee-bridge.js'),
 ];
 const COWORK_KEY = 'mirai-wizard-v31-cowork';
 const HELPDESK_KEY = 'mirai-wizard-v31-helpdesk';
