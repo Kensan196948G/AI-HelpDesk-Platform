@@ -27,24 +27,24 @@
 - DB: Local PostgreSQL 16（`127.0.0.1:5435`、DB 名 `ai_helpdesk_mvp`）
 - DB driver: `postgres`（postgres.js）
 - Validation: `zod`
-- Test: `vitest` / `@playwright/test`
+- Test: `vitest`（Unit / Integration）、`@playwright/test`（E2E、WebUI 承認後）
 - Lint/Format: `biome`
 - Edge: Cloudflare Worker（静的配信 + API プロキシ、`worker/`）
 - API 公開: Cloudflare Tunnel（ローカル Node API → 検証用ホスト名）
-- CI: GitHub Actions
+- CI: GitHub Actions（**現在は self-evolution policy gate により workflow ファイルの追加が拒否される。Blocker として docs/08-deployment.md に記録**）
 
 ## 4. コマンド
 
 ```bash
-pnpm install
-pnpm typecheck        # 全 workspace の tsc --noEmit
-pnpm lint             # biome check
-pnpm test             # vitest
-pnpm build            # web + api
-pnpm db:migrate       # 空 DB から再実行可能（冪等）
-pnpm db:seed          # 再実行可能（TRUNCATE はしない。upsert のみ）
-pnpm dev              # api + web
-pnpm e2e              # Playwright
+npm install
+npm run typecheck        # 全 workspace の tsc --noEmit
+npm run lint             # biome check
+npm test             # vitest
+npm run build            # web + api
+npm run db:migrate       # 空 DB から再実行可能（冪等）
+npm run db:seed          # 再実行可能（TRUNCATE はしない。upsert のみ）
+npm run dev              # api + web
+npm run e2e              # Playwright
 ```
 
 ## 5. 実装規約
