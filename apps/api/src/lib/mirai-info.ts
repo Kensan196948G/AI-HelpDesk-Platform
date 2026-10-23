@@ -117,4 +117,66 @@ export async function listEmployees(scope: EmployeeScope): Promise<{
 /** テスト用にキャッシュをリセットする。 */
 export function resetEmployeeCache(): void {
   cache = null;
+  emailCache.clear();
+}
+
+/**
+ * メールアドレスから社員を1件に決める。
+ * 名簿に同じメールが複数ある場合は「どちらか分からない」ので null（安全側）。
+ */
+export function pickUniqueEmployee(rows: EmployeeRow[]): EmployeeRow | null {
+  return rows.length === 1 ? (rows[0] ?? null) : null;
+}
+
+const EMAIL_CACHE_MAX = 500;
+const emailCache = new Map<string, { at: number; employee: EmployeeRow | null }>();
+
+/**
+ * ログインしたメール（Cloudflare Access）から社員を引く。
+ * - 返すのは氏名・所属・社員番号だけ（メールは返さない）。
+ * - `status='有効'` のみ。見つからない/重複/失敗は null。
+ * - 10分メモリキャッシュ（メールごと）。
+ */
+export async function findEmployeeByEmail(email: string): Promise<EmployeeRow | null> {
+  const normalized = String(email || '')
+    .trim()
+    .toLowerCase();
+  if (!normalized) return null;
+  const hit = emailCache.get(normalized);
+  if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.employee;
+  try {
+    const sql = await getClient();
+    const rows = await sql<EmployeeRow[]>`
+      SELECT
+        employee_no AS "employeeNo",
+        name,
+        organization,
+        division,
+        section
+      FROM mirai_info.employee_directory
+      WHERE status = '有効'
+        AND lower(btrim(email)) = ${normalized}
+      ORDER BY updated_at DESC
+      LIMIT 2
+    `;
+    const employee = pickUniqueEmployee(
+      rows
+        .filter((row) => row.employeeNo && row.name)
+        .map((row) => ({
+          employeeNo: row.employeeNo,
+          name: row.name,
+          organization: row.organization ?? undefined,
+          division: row.division ?? undefined,
+          section: row.section ?? undefined,
+        })),
+    );
+    if (emailCache.size >= EMAIL_CACHE_MAX) {
+      const oldest = emailCache.keys().next().value;
+      if (oldest) emailCache.delete(oldest);
+    }
+    emailCache.set(normalized, { at: Date.now(), employee });
+    return employee;
+  } catch {
+    return null;
+  }
 }
