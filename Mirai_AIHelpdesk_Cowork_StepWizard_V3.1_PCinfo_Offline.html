@@ -2551,14 +2551,21 @@ function realDeptOf(e){
  if(/総務|人事|管理|経営|企画/.test(s))return 'real-kanri';
  return 'real-all';
 }
-function realLabelOf(e){return [e.division,e.section,e.name].filter(Boolean).join(' / ')}
+/* 表示名は「部署 / 氏名」。本部段（管理本部・技術本部など）は省略する。
+   例: 管理本部 + DX推進部 → 「DX推進部 / 佐藤 奨太」／東京支店 + 工事部 → 「東京支店 / 工事部 / 山田 太郎」 */
+function shortOrgOf(e){
+ const org=[e.division,e.section].filter(Boolean);
+ if(org.length>1&&/本部$/.test(org[0]))return org.slice(1);
+ return org;
+}
+function realLabelOf(e){return shortOrgOf(e).concat(e.name).filter(Boolean).join(' / ')}
 function empIdOf(empNo){return EMP_PREFIX+empNo}
 function ensureRealUser(empNo,role){
  const d=realDir();if(!d||!empNo)return null;
  const e=d.all.find(x=>x.employeeNo===empNo);if(!e)return null;
  const id=empIdOf(empNo),prev=USERS[id]||{},r=role||prev.role||'employee';
  USERS[id]=Object.assign({},prev,{id,name:e.name,employeeNo:empNo,real:true,role:r,dept:realDeptOf(e),
-  title:[e.division,e.section].filter(Boolean).join('／')||ROLES[r],device:prev.device||('MRK-'+empNo),hd:e.name});
+  title:shortOrgOf(e).join('／')||ROLES[r],device:prev.device||('MRK-'+empNo),hd:e.name});
  ensureRealDevice(id);
  if(window.HD&&typeof window.HD.addStaff==='function'&&r!=='employee'){
   const lab=r==='approver'?'ナレッジ承認者':r==='auditor'?'監査担当者':r==='itadmin'?'IT端末管理者':'ヘルプデスク担当';
