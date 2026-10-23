@@ -19,7 +19,7 @@
 | WebUI（既存プロトタイプ） | **配信中**（レイアウト変更なし。状態/AI のみブリッジ） |
 | Local PostgreSQL | Migration / Seed / Read・Write / Backup-Restore 検証済み |
 | API | Fastify。認証（local / Cloudflare Access）、案件、引継ぎ、解決、ナレッジ、監査、状態保存、実PC情報、AI |
-| Tests | **70 tests 成功**（Unit / API integration / Worker / UI / Access / 許可リスト / 実PC情報・エージェント） |
+| Tests | **71 tests 成功**（Unit / API integration / Worker / UI / Access / 許可リスト / 実PC情報・エージェント） |
 | 実PC情報 | **ブラウザ取得 + 端末エージェント**（読み取りのみ。導入ソフトはエージェント） |
 | Cloudflare Preview | **公開中**（Tunnel + Access。OTP ログイン画面を確認） |
 | Access 許可メール | **設定済み**（`docs/MailAddress.txt` + Cloudflare allow ポリシー） |
@@ -110,13 +110,13 @@ AUTH_MODE=cloudflare-access ACCESS_ALLOWLIST_FILE=docs/MailAddress.txt \
 ```bash
 npm run typecheck   # API + worker
 npm run lint
-npm test            # 70 tests（PostgreSQL テスト DB）
+npm test            # 71 tests（PostgreSQL テスト DB）
 npm run build
 bash scripts/scan-secrets.sh
 npm audit --omit=dev --audit-level=high
 ```
 
-実測: TypeCheck ✅ / Lint ✅（error 0）/ 70 tests ✅ / Build ✅ / Secret scan ✅ / npm audit 0 vulnerabilities。
+実測: TypeCheck ✅ / Lint ✅（error 0）/ 71 tests ✅ / Build ✅ / Secret scan ✅ / npm audit 0 vulnerabilities。
 
 ## ドキュメント
 

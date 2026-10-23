@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { sql } from '../db.js';
+import { browserInputToInventory } from '../domain/device.js';
+import { storeDeviceInventory } from '../lib/device-inventory.js';
 import { buildServer } from '../server.js';
 
 const EMAIL = 'dev@example.com';
@@ -134,5 +136,52 @@ describe('device routes', () => {
       payload: { platform: 'Windows' },
     });
     expect(response.statusCode).toBe(400);
+  });
+
+  it('実PC情報があるユーザーの案件は demo ではなく実スナップショットを使う', async () => {
+    const email = 'kimura@example.com';
+    const inventory = browserInputToInventory({
+      deviceId: 'case-browser-1',
+      platform: 'Windows',
+      os: 'Windows 11 (15.0.0)',
+      browser: { name: 'Google Chrome', version: '141.0.0' },
+      hardware: {
+        cpuCores: 8,
+        deviceMemoryGB: 16,
+        screen: { width: 1920, height: 1080, pixelRatio: 1, colorDepth: 24 },
+      },
+      collectedAt: new Date().toISOString(),
+    });
+    await storeDeviceInventory(email, inventory);
+    try {
+      const login = await app.inject({
+        method: 'POST',
+        url: '/api/auth/login',
+        payload: { email, password: process.env.SEED_PASSWORD ?? '' },
+      });
+      expect(login.statusCode, login.body).toBe(200);
+      const raw = login.headers['set-cookie'];
+      const cookie = (Array.isArray(raw) ? raw[0] : raw)?.split(';')[0];
+      expect(cookie).toBeTruthy();
+
+      const created = await app.inject({
+        method: 'POST',
+        url: '/api/cases',
+        headers: { cookie: cookie as string },
+        payload: {
+          category: 'pc_network',
+          subject: 'PC が重い',
+          body: 'ブラウザで作業していると重くなります',
+          urgency: 'normal',
+          pcEnabled: true,
+        },
+      });
+      expect(created.statusCode, created.body).toBe(200);
+      const body = created.json();
+      expect(body.case.pc.source).toBe('browser');
+      expect(body.case.pc.itemCount).toBeGreaterThanOrEqual(31);
+    } finally {
+      await sql`DELETE FROM device_inventories WHERE user_email = ${email}`;
+    }
   });
 });
