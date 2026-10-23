@@ -287,5 +287,6 @@ describe('renderFinalReportPdf', () => {
     const pdf = await renderFinalReportPdf(html);
     expect(pdf.subarray(0, 4).toString('ascii')).toBe('%PDF');
     expect(pdf.length).toBeGreaterThan(1_000);
-  });
+    // ヘッドレス Chrome の起動と描画は CI の共有ランナーで 10 秒を超えることがある。
+  }, 60_000);
 });

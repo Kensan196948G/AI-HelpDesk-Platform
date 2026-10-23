@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 380" width="1200" height="380" role="img" aria-label="みらい AI 窓口 — 社員の IT 相談をひとつの窓口で">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b1226"/>
+      <stop offset="0.55" stop-color="#152a5c"/>
+      <stop offset="1" stop-color="#1f3b7a"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.4" r="0.7">
+      <stop offset="0" stop-color="#60a5fa" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#60a5fa" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="txt" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#e0f2fe"/>
+      <stop offset="0.5" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#a5b4fc"/>
+    </linearGradient>
+  </defs>
+
+  <style><![CDATA[
+    .font { font-family: system-ui, -apple-system, "Hiragino Sans", "Yu Gothic", sans-serif; }
+    /* アニメーションが動かない環境でも、静止状態で必ず読めるようにする */
+    #title { animation: reveal 1.7s steps(9, end) 0.2s both; }
+    @keyframes reveal { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+    #underline { animation: line 1.7s ease-out 0.4s both; transform-origin: 72px 0; }
+    @keyframes line { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+    #sub1 { animation: rise .9s ease-out 1.9s both; }
+    #sub2 { animation: rise .9s ease-out 2.3s both; }
+    @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+    .float { animation: float 4.2s ease-in-out infinite; }
+    .float2 { animation: float 3.4s ease-in-out .4s infinite; }
+    .float3 { animation: float 5s ease-in-out .8s infinite; }
+    .float4 { animation: float 4.6s ease-in-out 1.2s infinite; }
+    @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
+    #sheen { animation: sheen 9s linear infinite; }
+    @keyframes sheen { from { transform: translateX(-500px); } to { transform: translateX(1300px); } }
+    #pulse { animation: pulse 1.6s ease-in-out infinite; transform-origin: 72px 318px; }
+    @keyframes pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.5); opacity: .55; } }
+  ]]></style>
+
+  <rect width="1200" height="380" rx="24" fill="url(#bg)"/>
+  <rect width="1200" height="380" rx="24" fill="url(#glow)"/>
+
+  <!-- うっすら流れる光 -->
+  <rect id="sheen" x="-500" y="0" width="220" height="380" fill="#93c5fd" opacity="0.06"/>
+
+  <!-- 浮かぶアイコン -->
+  <g class="font" font-size="46" text-anchor="middle">
+    <text class="float" x="930" y="120">💬</text>
+    <text class="float2" x="1060" y="86" font-size="38">🤖</text>
+    <text class="float3" x="1010" y="250" font-size="42">🧑‍🔧</text>
+    <text class="float4" x="1120" y="290" font-size="34">📚</text>
+  </g>
+
+  <!-- タイトル -->
+  <text id="title" class="font" x="72" y="182" font-size="64" font-weight="800" fill="url(#txt)" letter-spacing="2">みらい AI 窓口</text>
+  <rect id="underline" x="72" y="196" width="470" height="6" rx="3" fill="#38bdf8" opacity="0.85"/>
+
+  <g class="font" fill="#cbd5e1">
+    <text id="sub1" x="72" y="238" font-size="24">社員の IT 相談を、ひとつの窓口で。</text>
+    <text id="sub2" x="72" y="276" font-size="17" fill="#94a3b8">聞く → AI が先に答える → 人が引き継ぐ → ナレッジになる</text>
+  </g>
+
+  <circle id="pulse" cx="72" cy="318" r="6" fill="#34d399"/>
+  <text class="font" x="90" y="323" font-size="15" fill="#6ee7b7">デモ公開中</text>
+</svg>
