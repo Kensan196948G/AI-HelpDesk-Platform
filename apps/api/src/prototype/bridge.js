@@ -11,7 +11,6 @@
     helpdesk: 'mirai-wizard-v31-helpdesk',
   };
   const last = Object.create(null);
-  const KEEPALIVE_LIMIT = 60 * 1024;
 
   function current(name) {
     try {
@@ -21,7 +20,7 @@
     }
   }
 
-  async function putState(name, raw) {
+  async function sendState(name, raw) {
     if (!raw) return;
     let data;
     try {
@@ -35,13 +34,39 @@
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body,
-        // keepalive の本文は仕様上 64KiB まで。超えると送信自体が失敗するため、小さいときだけ使う。
-        keepalive: body.length < KEEPALIVE_LIMIT,
+        // keepalive は使わない。ページ全体で合計 64KiB の枠を 2 つの状態
+        // （AI相談・ヘルプデスク）で奪い合い、超えると fetch 自体が
+        // "Failed to fetch" で失敗して保存が止まる（2026-10-23 に実測:
+        // 16.7KB の AI相談 + 52.5KB のヘルプデスクで再現）。
+        // 取りこぼしは 500ms ごとの同期と変更イベントで回収する。
+        keepalive: false,
       });
       if (!response.ok) throw new Error('state save HTTP ' + response.status);
     } catch (error) {
       // 次の interval / 変更イベントで再試行する
       delete last[name];
+    }
+  }
+
+  /**
+   * 保存は「利用者ごとに 1 本」に直列化し、途中の変更は最新だけを送る。
+   * 連続で切り替えたときに古い PUT が後から届いて新しい状態を上書きする（順序の逆転）のを防ぐ。
+   */
+  const pending = Object.create(null);
+  const sending = Object.create(null);
+  async function putState(name, raw) {
+    if (!raw) return;
+    pending[name] = raw;
+    if (sending[name]) return;
+    sending[name] = true;
+    try {
+      while (pending[name]) {
+        const nextRaw = pending[name];
+        pending[name] = null;
+        await sendState(name, nextRaw);
+      }
+    } finally {
+      sending[name] = false;
     }
   }
 

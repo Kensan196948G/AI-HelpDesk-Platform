@@ -54,6 +54,14 @@
         staff: all.filter((employee) => employee.section === STAFF_SECTION),
       };
       window.__AIHD_EMPLOYEE_OPTIONS__ = optionsHtml(all);
+      window.__AIHD_DIR_VERSION__ = (window.__AIHD_DIR_VERSION__ || 0) + 1;
+      // 画面側は「操作する人」のグループ（一般社員＝全社員、各ロール＝DX推進部）を
+      // このイベントで作り直す。名簿が取れないときは従来のデモ名簿のまま。
+      window.dispatchEvent(
+        new CustomEvent('aihd-employees', {
+          detail: { total: all.length, staff: window.__AIHD_EMPLOYEES__.staff.length },
+        }),
+      );
       applyToSelects();
       try {
         if (typeof refresh === 'function') refresh();
