@@ -61,7 +61,8 @@
   - DeepSeek に判断させない領域を変えないため。
 - サーバー `POST /api/ai/answer`:
   - 入力の PII を伏せ字化
-  - PostgreSQL の承認済みナレッジを検索
+  - PostgreSQL の承認済みナレッジ（`knowledge.status = approved`）と、**本人が画面で承認・公開したナレッジ**
+    （`prototype_states` の helpdesk 状態 `kb[]` のうち `status = active`）を合わせて検索（2026-10-23 追加。Flow C の「公開ナレッジが次の AI 回答の根拠になる」を UI 上で成立させる）
   - DeepSeek `deepseek-flash`（DeepSeek-V4.1-Flash、`thinking: disabled`）に「承認済みナレッジと PC 情報だけを根拠、600字以内、推測しない」と指示
   - 返答と根拠 KB、参照した PC 情報の取得元を UI に返す
 - API キー未設定・DeepSeek 障害時は、承認済みナレッジのローカル回答にフォールバックする。
