@@ -1,6 +1,6 @@
 > **2026-10-23 追記（解消済み/一部）**: ユーザー指示により Cloudflare Tunnel + Access で Preview を公開した。
 > Access 許可メールは `docs/MailAddress.txt`（`kensan1969@gmail.com` / `@mirai-const.co.jp`）と Cloudflare allow ポリシーで解消済み。
-> 残 Blocker は「OTP 実ログイン確認」「CI」。詳細は [14-prototype-ui-integration.md](14-prototype-ui-integration.md)。
+> OTP 実ログインは 2026-10-23 15:32 JST に確認済み（`onetimepin` / `allowed=true`）。残 Blocker は「CI」。詳細は [14-prototype-ui-integration.md](14-prototype-ui-integration.md)。
 
 # Blocker 報告（Goal: Mirai AI HelpDesk MVP）
 

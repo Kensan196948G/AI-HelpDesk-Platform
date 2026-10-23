@@ -26,6 +26,7 @@
   ローカル origin は ヘッダーなし 401 / 許可（`kensan1969@gmail.com`・`@mirai-const.co.jp`）200 /
   許可外・例示 typo・サブドメイン 403 / 許可リスト欠落・空 403（自動テスト）/ `/api/health` 200。
   起動ログに `アクセス許可リストを読み込みました（emails=1, domains=1）` を確認。
+- OTP 実ログイン（2026-10-23 15:32 JST）: Cloudflare Access ログで `Mirai AI HelpDesk MVP` / `onetimepin` / `allowed=true` を確認。
 - 注意: `cloudflared tunnel route dns <name>` はデフォルト config の tunnel を選ぶことがあった。
   DNS は UUID 指定 + `--overwrite-dns` で修正した。既存の `ai-design` 等には変更なし。
 - 注意: ローカル DNS 192.168.245.11 は新ホストを NXDOMAIN キャッシュ中。1.1.1.1 では解決済み。

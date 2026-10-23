@@ -47,7 +47,8 @@
   `ACCESS_ALLOWED_EMAIL` は非推奨化。
 - `AUTH_MODE=cloudflare-access` では `/api/health` 以外の全リクエストで許可リストを照合。
 - **59 tests 成功**（許可リスト解析 11 / Access 認証 8 を含む）。
-- 残: OTP の実ログイン確認、全 STEP E2E、CI。
+- OTP 実ログインを 2026-10-23 15:32 JST に確認（Cloudflare Access ログ: `onetimepin` / `allowed=true`）。
+- 残: 全 STEP E2E、CI。
 
 ## 現在の Evidence
 
@@ -61,7 +62,7 @@
 | npm audit（runtime） | 0 vulnerabilities |
 | DB | migrate / seed / 再実行 / Read-Write / Backup-Restore |
 | API | 主要 3 Flow、セキュリティ、権限、監査 |
-| Access | allow ポリシー適用済み + アプリ許可リスト照合（fail-closed） |
+| Access | allow ポリシー適用済み + アプリ許可リスト照合（fail-closed）+ OTP 実ログイン確認済み |
 | PR | #1 OPEN（mergeable、Required Checks なし） |
 | OpenDesign | artifact v3 / linter P0 0 |
 

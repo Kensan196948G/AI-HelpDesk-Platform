@@ -106,6 +106,7 @@
 | 許可外・例示 typo・サブドメイン | 403（`other@gmail.com` / `k-aritoh@mirai-ocnst.co.jp` / `taro@sub.mirai-const.co.jp`） |
 | 許可リスト欠落・空 | 403（fail-closed、自動テストで確認） |
 | Cloudflare allow ポリシー | 1 件（ID `1a05a10a-64ed-40c4-ae28-ac5f4707c9dc`、2026-10-23 適用） |
+| OTP 実ログイン | ✅ 2026-10-23 15:32 JST / Cloudflare Access ログ `onetimepin` / `allowed=true` |
 | 本番モードのログイン | `/api/auth/login` 404 |
 | 公開 URL | 302 → `winter-lake-f4c9.cloudflareaccess.com` の OTP ログイン画面 |
 | Access ログイン画面 | 「Log in to Mirai AI HelpDesk MVP」「Email」「Send login code」を確認 |
@@ -122,7 +123,7 @@
 |---|---|---|
 | 1 | Access の許可メール | **設定済み**（2026-10-23）。`docs/MailAddress.txt` + Cloudflare allow ポリシー（`kensan1969@gmail.com` / `@mirai-const.co.jp`） |
 | 2 | DeepSeek API キー | **設定済み・検証済み**（残対応なし） |
-| 3 | 12h / OTP の実ログイン | 許可メールの受信箱に届く OTP コード。ユーザーによるログイン確認が必要 |
+| 3 | 12h / OTP の実ログイン | **確認済み**（2026-10-23 15:32 JST、`onetimepin` / `allowed=true`） |
 | 4 | CI | `.github/workflows` は policy gate で拒否。人間による追加、または policy 例外 |
 | 5 | DNS | ローカル DNS（192.168.245.11）が新ホストを NXDOMAIN キャッシュ中。1.1.1.1 では解決済み。TTL 経過後に再確認 |
 

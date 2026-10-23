@@ -46,6 +46,7 @@ npx tsx scripts/seed.ts
 | UI 配信 | ✅ 200 | 元 HTML のタイトル・主要画面・約 500KB |
 | Access 認証 | ✅ | ヘッダーなし 401 / 許可 200 / 不一致 403 / 本番 login 404 |
 | Access 許可リスト | ✅ | `docs/MailAddress.txt` から 2 件（完全一致 1 / ドメイン 1）。例示 typo は拒否、欠落・空は 403（fail-closed） |
+| OTP 実ログイン | ✅ | 2026-10-23 15:32 JST / Access ログ `Mirai AI HelpDesk MVP` / `onetimepin` / `allowed=true` |
 | 公開 URL | ✅ | 302 → Cloudflare Access OTP ログイン画面 |
 | DeepSeek 実回答 | ✅ | `provider: deepseek` / `model: deepseek-chat` / 331文字 / KB-2026-0001 |
 | UI ウィザード STEP 1〜3 | ✅ | 種類選択 → 内容 → AI一次対応。ページエラー 0 |

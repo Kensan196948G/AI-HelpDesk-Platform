@@ -21,6 +21,7 @@
 | Tests | **59 tests 成功**（Unit / API integration / Worker / UI / Access / 許可リスト） |
 | Cloudflare Preview | **公開中**（Tunnel + Access。OTP ログイン画面を確認） |
 | Access 許可メール | **設定済み**（`docs/MailAddress.txt` + Cloudflare allow ポリシー） |
+| Access OTP ログイン | **確認済み**（2026-10-23 15:32 JST / `onetimepin` / `allowed=true`） |
 | DeepSeek API キー | **設定済み・実回答確認済み**（`provider: deepseek` / `deepseek-chat`） |
 | CI | **Blocker**（policy gate が `.github/workflows/` を拒否） |
 
@@ -107,7 +108,7 @@ npm audit --omit=dev --audit-level=high
 
 ## 既知の制約・要ユーザー対応
 
-- **Access の OTP 実ログインは未確認**。許可リスト（`docs/MailAddress.txt`）と Cloudflare allow ポリシーは設定済みですが、許可メールの受信箱に届く OTP でのログイン確認が必要です。
+- UI の全 STEP E2E（ウィザード全 STEP・ヘルプデスク・ナレッジ承認）は未実施です。
 - DeepSeek API キーは `~/.config/ai-helpdesk/api.conf`（0600）に設定済み。自由記述の回答は `deepseek-chat` で生成され、承認済みナレッジを根拠にします。
 - **CI 未設定**。`.github/workflows/` は policy gate で拒否されます。人間による追加、または policy 例外が必要です。
 - ローカル DNS（192.168.245.11）が新ホストを NXDOMAIN キャッシュ中です。1.1.1.1 では解決済み。TTL 経過後に再確認してください。
