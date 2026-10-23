@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildCaseContext,
+  buildPcContext,
   type CaseSnapshot,
   extractCaseSnapshot,
   mergeCaseSnapshot,
@@ -159,5 +161,56 @@ describe('mergeCaseSnapshot', () => {
     expect(cowork.tickets).toHaveLength(1);
     expect(helpdesk.tickets).toHaveLength(1);
     expect(helpdesk.drafts).toHaveLength(1);
+  });
+});
+
+describe('AI 追加質問へ渡す文脈', () => {
+  function snapshot(): CaseSnapshot {
+    const cowork = coworkState() as Record<string, any>;
+    return {
+      caseId: 'CASE-0001',
+      case: {
+        ...cowork.cases[0],
+        pc: {
+          state: 'done',
+          snap: {
+            items: [
+              { grp: 'ネットワーク', k: 'IPアドレス', v: '192.168.10.34', lv: 'ok' },
+              { grp: '端末', k: 'シリアル', v: 'SN-0001', lv: 'ok' },
+              { grp: '資産', k: '資産番号', v: 'PC-12345', lv: 'ok' },
+              { grp: 'OS', k: 'エディション', v: 'Windows 11 Pro', lv: 'ok' },
+            ],
+          },
+        },
+      },
+      chat: {
+        id: 'chat-1',
+        messages: [{ id: 'm1', kind: 'user', text: '連絡先は a@example.com です' }],
+      },
+      ticket: null,
+      inc: null,
+      draft: null,
+      kb: null,
+      proposals: [],
+      extractedAt: new Date().toISOString(),
+    };
+  }
+
+  it('PC 情報は IP・シリアル・資産番号を伏せたうえで AI に渡す', () => {
+    const context = buildPcContext(snapshot());
+    expect(context).toContain('Windows 11 Pro');
+    expect(context).not.toContain('192.168.10.34');
+    expect(context).not.toContain('SN-0001');
+    expect(context).not.toContain('PC-12345');
+    expect(context).toContain('[IPアドレス]');
+    expect(context).toContain('[シリアル番号]');
+    expect(context).toContain('[資産番号]');
+  });
+
+  it('案件の文脈はメール等の PII を伏せ、直近の発言を含める', () => {
+    const context = buildCaseContext(snapshot());
+    expect(context).toContain('共有フォルダが開けません');
+    expect(context).not.toContain('a@example.com');
+    expect(context).toContain('[メールアドレス]');
   });
 });

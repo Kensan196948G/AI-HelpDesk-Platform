@@ -303,6 +303,18 @@ API:
 | PATCH | `/api/case-handovers/:id` | 所有者・担当者・DX | `resolved` / `completed` / `cancelled` |
 | POST | `/api/ai/answer-case` | DX 推進部 | 共有案件の PC 情報（IP・シリアル・資産番号はマスク）と件名・本文・直近の会話を根拠に AI が回答。**B さん自身の端末情報は使わない** |
 
+実測（2026-10-24、稼働中インスタンス / Cloudflare Access と同じ email ヘッダー経路）:
+
+| 手順 | 結果 |
+|---|---|
+| A（別ドメイン内の合成アドレス）が B を宛先に指定して共有 | OK（宛先表示も一致） |
+| B の受信箱 → 引き受け → STEP 3 でマージ | OK（状態が未保存でも 409 の上限付きリトライで復帰） |
+| B の AI 追加質問 | OK（`provider=deepseek` / `deepseek-flash` の実回答） |
+| 承認なしの `completed` | OK（409 `APPROVAL_REQUIRED`） |
+| **別の DX 担当者 C** が承認 | OK（`completed` / `self_approved=false`） |
+
+再現: `AIHD_E2E_ALLOW=1` とサービス用 `DATABASE_URL` を設定して `node scripts/e2e/two-account-handover.mjs`（実在社員の状態はバックアップ後に復元する）。
+
 注意:
 
 - マージは ID（CASE / TKT / INC / DR / KB）で upsert する。B さんの `ui.user` / `helpdesk.actor` は上書きしない。

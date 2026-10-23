@@ -4,9 +4,10 @@ import { answerWithDeepSeek } from '../ai/deepseek.js';
 import { authenticateUi } from '../auth/ui.js';
 import { config } from '../config.js';
 import { sql } from '../db.js';
-import { redactPII } from '../domain/pii.js';
 import { ApiError, badRequest, forbidden } from '../errors.js';
 import {
+  buildCaseContext,
+  buildPcContext,
   type CaseSnapshot,
   extractCaseSnapshot,
   mergeCaseSnapshot,
@@ -140,41 +141,6 @@ async function latestHandoverForCase(caseId: string): Promise<HandoverRow | unde
     LIMIT 1
   `;
   return rows[0];
-}
-
-function buildPcContext(snapshot: CaseSnapshot): string {
-  const pc = snapshot.case.pc as { snap?: { items?: unknown[] } } | undefined;
-  const items = Array.isArray(pc?.snap?.items) ? pc?.snap?.items : [];
-  if (items.length === 0) return '';
-  return items
-    .map((raw) => {
-      const item = raw as { grp?: string; k?: string; v?: string };
-      const key = String(item.k ?? '');
-      let value = String(item.v ?? '');
-      if (/ipアドレス|ip address/i.test(key)) value = '[IPアドレス]';
-      else if (/シリアル|serial/i.test(key)) value = '[シリアル番号]';
-      else if (/資産番号|asset/i.test(key)) value = '[資産番号]';
-      else value = redactPII(value).text;
-      return `${String(item.grp ?? '')}／${redactPII(key).text}：${value}`;
-    })
-    .join('\n')
-    .slice(0, 4000);
-}
-
-function buildCaseContext(snapshot: CaseSnapshot): string {
-  const subject = redactPII(String(snapshot.case.subject ?? '')).text;
-  const body = redactPII(String(snapshot.case.body ?? '')).text;
-  const chatMessages = snapshot.chat?.messages;
-  const messages = Array.isArray(chatMessages)
-    ? (chatMessages as Array<Record<string, unknown>>)
-        .slice(-6)
-        .map((message) => {
-          const text = String(message.text ?? '');
-          return text ? `${String(message.kind ?? 'ai')}: ${redactPII(text).text}` : '';
-        })
-        .filter(Boolean)
-    : [];
-  return [`件名: ${subject}`, `本文: ${body}`, ...messages].join('\n').slice(0, 6000);
 }
 
 function appendChat(
