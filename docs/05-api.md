@@ -119,11 +119,13 @@
 | Method | Path | 権限 | 説明 |
 |---|---|---|---|
 | POST | `/api/device/browser` | Access 認証 | ブラウザで取得した実端末情報（OS / 画面 / CPU コア / メモリ推定 / GPU / 回線 / 音声）を保存 |
-| GET | `/api/device/inventory` | Access 認証 | ログイン中ユーザーの最新 PC 情報（ブラウザ + エージェントをマージ）とスナップショット |
+| GET | `/api/device/inventory` | Access 認証 | `?deviceId=` のブラウザ端末情報（同一端末にリンクされたエージェントのみマージ） |
 | POST | `/api/device/agent` | デバイストークン | 端末エージェントのハードウェア・導入ソフト・セキュリティ情報を取り込み |
 
 - `POST /api/device/browser` の応答: `{ok, inventory, snapshot}`。`snapshot` は既存プロトタイプの `pcSnapshot()` と同じ形（`at`, `device`, `items[35]`, `ver`）。
 - `POST /api/device/agent` は `X-Device-Token` 必須。トークンは `device_tokens` に SHA-256 ハッシュで保存し、ユーザーに紐づける。IP 単位 30 回/分。
+- 在庫は `(user_email, source, device_id)` 単位。`POST /api/device/agent` の `browserDeviceId`（画面の `WEB-XXXXXXXX`）でブラウザ端末へリンクする。未リンクの場合 `linked: false` で保存のみ行い、ブラウザのスナップショットには混ぜない。
+- `GET /api/device/inventory` は `?deviceId=<browser UUID>` を指定するとそのブラウザ端末を基準にする。省略時は最新のブラウザ端末。
 - `/api/device/agent` だけは Cloudflare Access のパス限定 bypass（アプリ ID `250fa30a-d49c-4a83-b773-8fbdec3c0b6a`）。人間の UI / API は Access 必須。
 - `/api/ai/answer` の応答に `device: {source, collectedAt}` を含む。PC コンテキストから IP・シリアル・資産番号・メールは除外する。
 

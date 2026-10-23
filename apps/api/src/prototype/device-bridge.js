@@ -428,6 +428,7 @@
     // ignore
   }
 
+  window.__AIHD_DEVICE_ID__ = deviceId();
   window.__AIHD_DEVICE_DEBUG__ = { state, ensureSnapshot, collectBrowser };
   ensureSnapshot(false);
   setInterval(() => ensureSnapshot(true), 10 * 60 * 1000);

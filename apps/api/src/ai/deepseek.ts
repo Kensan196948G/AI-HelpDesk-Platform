@@ -3,7 +3,7 @@ import { sql } from '../db.js';
 import { detectIntent, type KnowledgeLike } from '../domain/ai.js';
 import { buildDeviceAiContext } from '../domain/device.js';
 import { redactPII } from '../domain/pii.js';
-import { loadMergedInventory } from '../lib/device-inventory.js';
+import { loadClientInventory } from '../lib/device-inventory.js';
 import { findApprovedKnowledge } from '../lib/knowledge-search.js';
 
 export interface AiSource {
@@ -107,12 +107,18 @@ async function callDeepSeek(
  * APIキー未設定・API障害時はローカルの承認済みナレッジにフォールバックする。
  * 診断・修復・セキュリティ初動などの安全装置は、プロトタイプ側の決定ルールが担当する。
  */
-export async function answerWithDeepSeek(input: string, email?: string): Promise<AiAnswer> {
+export async function answerWithDeepSeek(
+  input: string,
+  email?: string,
+  browserDeviceId?: string,
+): Promise<AiAnswer> {
   const redacted = redactPII(input);
   const intent = detectIntent('', redacted.text);
   const knowledge = await findApprovedKnowledge(sql, redacted.text, intent.keywords);
   const sources = toSources(knowledge);
-  const inventory = email ? await loadMergedInventory(email).catch(() => null) : null;
+  const inventory = email
+    ? await loadClientInventory(email, browserDeviceId).catch(() => null)
+    : null;
   const deviceContext = inventory ? buildDeviceAiContext(inventory, redacted.text) : '';
   const device = inventory
     ? { source: inventory.source, collectedAt: inventory.collectedAt }

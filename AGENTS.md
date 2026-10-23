@@ -65,6 +65,7 @@ node scripts/endpoint-agent.mjs --config ~/.config/ai-helpdesk/device-agent.json
 - PC 基本情報は**読み取り専用**。ブラウザ取得 + 端末エージェントで実端末のハードウェア・ソフトウェア情報を取得する。
   ファイル内容・閲覧履歴・画面・キー入力・メール本文は取得しない。IP・シリアル・資産番号・メールは AI へ渡す前に伏せる。
 - 端末エージェント専用の `/api/device/agent` は Cloudflare Access のパス限定 bypass とし、アプリ側のデバイストークン（SHA-256 ハッシュ保存）で保護する。人間の UI / API は従来どおり Access 必須。
+- PC情報は `(user_email, source, device_id)` 単位。ログイン中ブラウザの端末情報を表示し、同一 device_id にリンクされたエージェントだけをマージする。別端末（サーバー等）のエージェントを混ぜない。
 - ローカル PostgreSQL をインターネットへ直接公開しない。公開は Cloudflare Access + Tunnel 経由の Node のみ。
 - 本番/Preview のログインは Cloudflare Access のみ。アプリ内ログインを追加しない。
 - 本番環境・Production deploy・破壊的 DB 操作は行わない（承認がある場合を除く）。

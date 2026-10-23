@@ -16,7 +16,7 @@
 | Tunnel config | `~/.cloudflared/ai-helpdesk-config.yml` |
 | API service | `ai-helpdesk-api.service`（Node 22 / 127.0.0.1:18950） |
 | Tunnel service | `ai-helpdesk-cloudflared.service` |
-| DB | Local PostgreSQL `ai_helpdesk_preview`（migration 003 適用済み） |
+| DB | Local PostgreSQL `ai_helpdesk_preview`（migration 003/004 適用済み） |
 | DNS | CNAME `ai-helpdesk` → `96d0214e-...cfargotunnel.com`（proxied） |
 
 - `AUTH_MODE=cloudflare-access`。アプリ内ログインは無効（`/api/auth/login` は 404）。
@@ -45,6 +45,7 @@
   {
     "url": "https://ai-helpdesk.mirai-dx-platform.com/api/device/agent",
     "deviceToken": "aihd_...",
+    "browserDeviceId": "WEB-XXXXXXXX",
     "intervalMinutes": 60
   }
   ```
@@ -56,13 +57,19 @@
   ```
 - 実行（対象PC上）:
   ```bash
-  node scripts/endpoint-agent.mjs --config ~/.config/ai-helpdesk/device-agent.json --once
+  node scripts/endpoint-agent.mjs --config ~/.config/ai-helpdesk/device-agent.json \
+    --browser-device-id WEB-XXXXXXXX --once
   # 定期実行はタスクスケジューラ / systemd timer / cron から --once を呼ぶ
   ```
 - 収集: OS / CPU / メモリ / ディスク / GPU / ネットワーク / バッテリー / プリンター / 音声 / USB / 導入ソフト / セキュリティ状態。
 - 非収集: ファイル内容 / 閲覧履歴 / 画面 / キー入力 / メール本文。
 - 失敗時: `401` はトークン不正、`302` は Access 設定、`ETIMEDOUT` はネットワーク。トークンは設定ファイル以外へ保存しない。
-- 本環境では `kensan1969@gmail.com` 用の設定を `~/.config/ai-helpdesk/device-agent.json`（0600）に作成済み。対象PCへ安全にコピーして実行する。
+- Windows で PowerShell の取得に失敗する場合は `--debug --dry-run` を付けると、失敗したコマンドを表示する（秘密値は出ない）。
+- Windows の設定例: `%USERPROFILE%\.config\ai-helpdesk\device-agent-windows.json`（0600 相当の保護フォルダ）。`browserDeviceId` はPCチェック画面の `WEB-XXXXXXXX`。
+- 本環境では `kensan1969@gmail.com` 用の設定を `~/.config/ai-helpdesk/device-agent.json`（0600）に作成済み。
+  Windows クライアント用は `~/.config/ai-helpdesk/device-agent-windows.json`（0600、`browserDeviceId: WEB-206AD268`）に作成済み。対象PCへ安全にコピーして実行する。
+- 現在のブラウザ端末は Windows 11（`WEB-206AD268` / 6 論理コア / 32GB / Intel UHD 630）。Ubuntu 上のエージェントは未リンクのため表示されない。
+- **重要**: エージェントは実行した端末の情報を送る。サーバー上で実行した agent をブラウザ端末へリンクしないこと。
 
 ## 1. 目標構成
 

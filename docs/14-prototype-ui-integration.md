@@ -75,7 +75,9 @@
 
 - ブラウザ: OS / 画面 / CPU コア / 推定メモリ / GPU / 回線 / 音声デバイスを取得し、`POST /api/device/browser` で保存する。
 - 端末エージェント: Windows / macOS / Linux で CPU・メモリ・ディスク・GPU・ネットワーク・プリンター・音声・USB・導入ソフト・セキュリティ状態を読み取り、`POST /api/device/agent` で送信する。
-- サーバーは両者をマージし、既存プロトタイプの `pcSnapshot()` を差し替えて 35 項目のスナップショットを返す（DOM / CSS は変更しない）。
+- サーバーは **同じ `device_id` のブラウザ + エージェントだけ**をマージし、既存プロトタイプの `pcSnapshot()` を差し替えて 35 項目のスナップショットを返す（DOM / CSS は変更しない）。
+- 別端末のエージェント（例: サーバー上の Ubuntu）は、ブラウザ端末へリンクしない限り混ぜない。
+- エージェントは画面の `WEB-XXXXXXXX` を `browserDeviceId` に指定してリンクする。
 - 取得しない: ファイル内容 / 閲覧履歴 / 画面 / キー入力 / メール本文。
 - 端末エージェントの認証: `/api/device/agent` は Access のパス限定 bypass とし、アプリ側のデバイストークン（SHA-256 ハッシュ保存、IP 30 回/分）で保護する。
 - 設定: `~/.config/ai-helpdesk/device-agent.json`（0600）。発行: `scripts/issue-device-token.ts`。
@@ -128,11 +130,12 @@
 | UI の AI 呼び出し | `H.kb` → `/api/ai/answer` 200 → **DeepSeek 実回答**（331文字 / 根拠 KB-2026-0001） |
 | 実PC情報（ブラウザ） | `POST /api/device/browser` 200 / 35 項目 / OS・CPU 8 コア・16GB・Chrome 141・GPU を取得 |
 | 実PC情報（エージェント） | Linux 実機で `POST /api/device/agent` 200 / 300 ソフト / CPU 16 コア・30.8GB / 更新 92 件 |
+| 端末分離 | ブラウザは Windows 11（`WEB-206AD268`）/ 6 コア / 32GB / Intel UHD 630。Ubuntu agent は未リンクのため非表示 |
 | AI の PC コンテキスト | `provider: deepseek` / `model: deepseek-flash` / `device.source: browser` / 16GB・8 コアを回答に反映 |
 | エージェント公開経路 | `https://.../api/device/agent` へ 200（Access bypass + デバイストークン） |
 | UI ウィザード STEP 1〜3 | 種類選択 → 内容入力 → AI一次対応まで実操作。ページエラー 0 |
 | DeepSeek モデル | `provider: deepseek` / `model: deepseek-flash`（V4.1-Flash） / 確信度 高 |
-| 自動テスト | **71 tests 成功**（UI/Access/許可リスト/state/AI/実PC情報/エージェント/ブリッジ） |
+| 自動テスト | **72 tests 成功**（UI/Access/許可リスト/state/AI/実PC情報/エージェント/ブリッジ） |
 
 証跡: `docs/evidence/access-login.png` / `docs/evidence/preview-home-local-access-header.png` / `docs/evidence/preview-wizard-step3.png` / `docs/evidence/preview-deepseek-answer.png`
 

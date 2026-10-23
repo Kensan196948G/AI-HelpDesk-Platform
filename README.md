@@ -19,7 +19,7 @@
 | WebUI（既存プロトタイプ） | **配信中**（レイアウト変更なし。状態/AI のみブリッジ） |
 | Local PostgreSQL | Migration / Seed / Read・Write / Backup-Restore 検証済み |
 | API | Fastify。認証（local / Cloudflare Access）、案件、引継ぎ、解決、ナレッジ、監査、状態保存、実PC情報、AI |
-| Tests | **71 tests 成功**（Unit / API integration / Worker / UI / Access / 許可リスト / 実PC情報・エージェント） |
+| Tests | **72 tests 成功**（Unit / API integration / Worker / UI / Access / 許可リスト / 実PC情報・エージェント） |
 | 実PC情報 | **ブラウザ取得 + 端末エージェント**（読み取りのみ。導入ソフトはエージェント） |
 | Cloudflare Preview | **公開中**（Tunnel + Access。OTP ログイン画面を確認） |
 | Access 許可メール | **設定済み**（`docs/MailAddress.txt` + Cloudflare allow ポリシー） |
@@ -64,6 +64,7 @@ Local PostgreSQL  ai_helpdesk_preview（device_inventories / device_tokens 含�
 - アプリは `ACCESS_ALLOWLIST_FILE`（既定 `docs/MailAddress.txt`）を読み、Cloudflare Access のヘッダーと照合する。**ファイルが無い・空の場合は全拒否（fail-closed）**。
 - **Cloudflare Access の allow ポリシーと同じ内容に保つ**（二重チェック）。変更時は両方を更新して API を再起動する。
 - 端末エージェント専用の `/api/device/agent` だけは Cloudflare Access のパス限定 bypass とし、アプリ側のデバイストークンで保護する（人間の UI / API は従来どおり Access 必須）。
+- **端末は `device_id` 単位で分離**する。PCチェックはログイン中ブラウザの端末情報を表示し、別端末（サーバー等）のエージェント情報は混ぜない。エージェントは画面の `WEB-XXXXXXXX` を `browserDeviceId` に指定して、その端末へリンクする。
 
 ### 端末エージェント（実PC情報）
 
@@ -76,8 +77,14 @@ NODE_ENV=production npx tsx scripts/issue-device-token.ts \
   --email user@mirai-const.co.jp --out ~/.config/ai-helpdesk/device-agent.json
 
 # 対象PC: 読み取り専用エージェント（Node.js 20+）
-node scripts/endpoint-agent.mjs --config ~/.config/ai-helpdesk/device-agent.json --once
+# 画面のPC基本情報に表示される WEB-XXXXXXXX を指定して、その端末へリンクする
+node scripts/endpoint-agent.mjs --config ~/.config/ai-helpdesk/device-agent-windows.json \
+  --browser-device-id WEB-XXXXXXXX --once
+# Windows で取得コマンドの失敗を確認する場合
+# node scripts/endpoint-agent.mjs --config ... --browser-device-id ... --debug --dry-run
 ```
+
+- Windows の設定は `%USERPROFILE%\.config\ai-helpdesk\device-agent-windows.json` に置く。`browserDeviceId` はPCチェック画面の端末名（`WEB-XXXXXXXX`）。
 
 - 収集: OS / CPU / メモリ / ディスク / GPU / ネットワーク / プリンター / 音声 / USB / 導入ソフト / セキュリティ状態。
 - 非収集: ファイル内容 / 閲覧履歴 / 画面 / キー入力 / メール本文。
@@ -110,13 +117,13 @@ AUTH_MODE=cloudflare-access ACCESS_ALLOWLIST_FILE=docs/MailAddress.txt \
 ```bash
 npm run typecheck   # API + worker
 npm run lint
-npm test            # 71 tests（PostgreSQL テスト DB）
+npm test            # 72 tests（PostgreSQL テスト DB）
 npm run build
 bash scripts/scan-secrets.sh
 npm audit --omit=dev --audit-level=high
 ```
 
-実測: TypeCheck ✅ / Lint ✅（error 0）/ 71 tests ✅ / Build ✅ / Secret scan ✅ / npm audit 0 vulnerabilities。
+実測: TypeCheck ✅ / Lint ✅（error 0）/ 72 tests ✅ / Build ✅ / Secret scan ✅ / npm audit 0 vulnerabilities。
 
 ## ドキュメント
 

@@ -37,7 +37,7 @@ npx tsx scripts/seed.ts
 |---|---|---|
 | TypeCheck（API） | ✅ 成功 | `tsc --noEmit` |
 | Lint / Format | ✅ 成功 | Biome。warning 27（non-null assertion 等）、error 0 |
-| Unit test | ✅ 60 件成功 | PII / signal / audit / PC / AI / password / Worker / Access / 許可リスト / 実PC情報 / 端末エージェント / ブリッジ |
+| Unit test | ✅ 61 件成功 | PII / signal / audit / PC / AI / password / Worker / Access / 許可リスト / 実PC情報 / 端末エージェント / ブリッジ |
 | Integration test | ✅ 11 件成功 | 主要 3 Flow、セキュリティ、権限、UI 配信、state、AI |
 | API Build | ✅ 成功 | `apps/api/dist` を生成 |
 | Dependency audit（runtime） | ✅ 0 vulnerabilities | `npm audit --omit=dev --audit-level=high` |
@@ -48,6 +48,7 @@ npx tsx scripts/seed.ts
 | Access 許可リスト | ✅ | `docs/MailAddress.txt` から 2 件（完全一致 1 / ドメイン 1）。例示 typo は拒否、欠落・空は 403（fail-closed） |
 | 実PC情報（ブラウザ） | ✅ | `POST /api/device/browser` 200 / 35 項目 / OS・CPU 8 コア・16GB・Chrome 141・GPU |
 | 実PC情報（エージェント） | ✅ | Linux 実機で `POST /api/device/agent` 200 / 300 ソフト / 16 コア・30.8GB / 更新 92 件 |
+| 端末分離 | ✅ | ブラウザ Windows 11 と別端末 Ubuntu agent を分離。未リンク agent はブラウザを上書きしない（自動テスト） |
 | AI の PC コンテキスト | ✅ | `provider: deepseek` / `model: deepseek-flash` / `device.source: browser` / 16GB・8 コアを回答に反映 |
 | エージェント公開経路 | ✅ | `https://.../api/device/agent` へ 200（Access bypass + デバイストークン） |
 | OTP 実ログイン | ✅ | 2026-10-23 15:32 JST / Access ログ `Mirai AI HelpDesk MVP` / `onetimepin` / `allowed=true` |
@@ -58,7 +59,7 @@ npx tsx scripts/seed.ts
 
 ```
 Test Files  16 passed (16)
-Tests       71 passed (71)
+Tests       72 passed (72)
 ```
 
 ## 4. Integration test が見ているもの

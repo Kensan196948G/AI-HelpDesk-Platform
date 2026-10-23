@@ -11,7 +11,8 @@ import {
 import { ApiError, badRequest, unauthorized } from '../errors.js';
 import {
   inventorySummary,
-  loadMergedInventory,
+  loadClientInventory,
+  resolveBrowserDeviceId,
   storeDeviceInventory,
 } from '../lib/device-inventory.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
@@ -202,7 +203,13 @@ const AgentInputSchema = z.object({
   hardware: HardwareSchema.optional(),
   software: z.array(SoftwareAppSchema).max(300).optional(),
   security: SecuritySchema.optional(),
+  // UI に表示された WEB-XXXXXXXX（ブラウザ端末）とエージェントをリンクする。
+  browserDeviceId: z.string().trim().max(120).optional(),
   collectedAt: z.string().datetime().optional(),
+});
+
+const DeviceQuerySchema = z.object({
+  deviceId: z.string().trim().max(120).optional(),
 });
 
 function deviceTokenFrom(request: FastifyRequest): string | null {
@@ -230,8 +237,8 @@ async function authenticateDeviceToken(request: FastifyRequest): Promise<string>
   return row.user_email;
 }
 
-async function snapshotResponse(email: string) {
-  const merged = await loadMergedInventory(email);
+async function snapshotResponse(email: string, browserDeviceId?: string) {
+  const merged = await loadClientInventory(email, browserDeviceId);
   if (!merged) return { inventory: null, snapshot: null };
   return {
     inventory: inventorySummary(merged),
@@ -249,14 +256,15 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
       const input = BrowserInputSchema.parse(request.body);
       const inventory = browserInputToInventory(input);
       await storeDeviceInventory(request.uiEmail, inventory);
-      return { ok: true, ...(await snapshotResponse(request.uiEmail)) };
+      return { ok: true, ...(await snapshotResponse(request.uiEmail, inventory.deviceId)) };
     },
   );
 
   // ログイン中ユーザーの最新 PC 情報（ブラウザ + エージェントをマージ）。
   app.get('/device/inventory', { preHandler: authenticateUi }, async (request) => {
     if (!request.uiEmail) throw badRequest('UI の認証情報がありません。');
-    return { ok: true, ...(await snapshotResponse(request.uiEmail)) };
+    const query = DeviceQuerySchema.parse(request.query);
+    return { ok: true, ...(await snapshotResponse(request.uiEmail, query.deviceId)) };
   });
 
   // 端末エージェントからの取り込み。Access のパス限定アプリ（/api/device/agent）は
@@ -268,8 +276,20 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
     const email = await authenticateDeviceToken(request);
     const input = AgentInputSchema.parse(request.body);
     const inventory = agentInputToInventory(input);
+    const linkedDeviceId = input.browserDeviceId
+      ? await resolveBrowserDeviceId(email, input.browserDeviceId)
+      : null;
+    if (linkedDeviceId) inventory.deviceId = linkedDeviceId;
     await storeDeviceInventory(email, inventory);
     request.uiEmail = email;
-    return { ok: true, ...(await snapshotResponse(email)) };
+    if (!linkedDeviceId) {
+      return {
+        ok: true,
+        linked: false,
+        inventory: inventorySummary(inventory),
+        snapshot: buildPrototypeDeviceSnapshot(inventory),
+      };
+    }
+    return { ok: true, linked: true, ...(await snapshotResponse(email, linkedDeviceId)) };
   });
 }

@@ -90,8 +90,13 @@ set -a; . ~/.config/ai-helpdesk/api.conf; set +a
 NODE_ENV=production npx tsx scripts/issue-device-token.ts \
   --email user@mirai-const.co.jp --out ~/.config/ai-helpdesk/device-agent.json
 
-# 対象PCで1回送信
-node scripts/endpoint-agent.mjs --config ~/.config/ai-helpdesk/device-agent.json --once
+# 対象PCで1回送信（画面の WEB-XXXXXXXX を指定してブラウザ端末へリンク）
+node scripts/endpoint-agent.mjs --config ~/.config/ai-helpdesk/device-agent.json \
+  --browser-device-id WEB-XXXXXXXX --once
+
+# Windows で取得失敗を確認
+node scripts/endpoint-agent.mjs --config %USERPROFILE%\.config\ai-helpdesk\device-agent-windows.json \
+  --browser-device-id WEB-XXXXXXXX --debug --dry-run
 
 # 状態確認（DB）
 # device_inventories.updated_at / source / software 件数
@@ -103,6 +108,8 @@ node scripts/endpoint-agent.mjs --config ~/.config/ai-helpdesk/device-agent.json
 - 設定ファイルの権限は **0600**。リポジトリ・ログ・チャットへ貼らない。
 - 定期実行は OS のスケジューラから `--once` を呼ぶ（60 分間隔を推奨）。
 - エージェントは読み取り専用。修復・設定変更・遠隔操作は行わない。
+- 端末は `device_id` 単位で分離される。未リンクの agent（例: サーバー上の Ubuntu）は、ブラウザ端末のPC情報には混ざらない。
+- リンクコードはPCチェック画面の端末名（`WEB-XXXXXXXX`）で確認できる。別端末のコードを指定すると、その端末の情報として保存される。
 
 ## 7. 既知の運用制約
 

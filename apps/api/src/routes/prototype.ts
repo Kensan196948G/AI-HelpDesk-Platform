@@ -18,7 +18,10 @@ const HELPDESK_KEY = 'mirai-wizard-v31-helpdesk';
 
 const StateParamsSchema = z.object({ name: z.enum(['cowork', 'helpdesk']) });
 const StateBodySchema = z.object({ data: z.unknown() });
-const AiBodySchema = z.object({ text: z.string().trim().min(1).max(4000) });
+const AiBodySchema = z.object({
+  text: z.string().trim().min(1).max(4000),
+  deviceId: z.string().trim().max(120).optional(),
+});
 
 const CSP = [
   "default-src 'none'",
@@ -170,9 +173,9 @@ export async function prototypeRoutes(app: FastifyInstance): Promise<void> {
   );
 
   app.post('/api/ai/answer', { preHandler: authenticateUi }, async (request, reply) => {
-    const { text } = AiBodySchema.parse(request.body);
+    const { text, deviceId } = AiBodySchema.parse(request.body);
     try {
-      return await answerWithDeepSeek(text, request.uiEmail);
+      return await answerWithDeepSeek(text, request.uiEmail, deviceId);
     } catch (error) {
       request.log.warn({ err: error }, 'AI answer failed');
       reply.code(502);

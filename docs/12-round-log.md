@@ -59,13 +59,13 @@
 - DeepSeek を `deepseek-flash`（DeepSeek-V4.1-Flash、`thinking: disabled`）へ更新。
 - 端末エージェント用に `/api/device/agent` のパス限定 Access bypass + デバイストークン（SHA-256 / 0600 / IP 30回/分）を実装。
 - 実測: ブラウザ 35 項目 / エージェント 300 ソフト / AI が 16GB・8 コアを回答に反映 / 公開エージェント経路 200。
-- **71 tests 成功**（16 files）。残: 全 STEP E2E、対象PCへのエージェント配布、CI。
+- **72 tests 成功**（16 files）。端末は `device_id` 単位で分離し、未リンク agent はブラウザを上書きしない。残: 全 STEP E2E、Windowsエージェントの実機配布、CI。
 
 ## 現在の Evidence
 
 | 項目 | 結果 |
 |---|---|
-| Tests | 71 passed（16 files） |
+| Tests | 72 passed（16 files） |
 | TypeCheck | 成功 |
 | Lint | 成功（warning 27 / error 0） |
 | Build | 成功 |
@@ -74,7 +74,7 @@
 | DB | migrate / seed / 再実行 / Read-Write / Backup-Restore |
 | API | 主要 3 Flow、セキュリティ、権限、監査 |
 | Access | allow ポリシー + アプリ許可リスト（fail-closed）+ OTP 実ログイン + エージェント用 bypass |
-| PC情報 | ブラウザ 35 項目 / エージェント 300 ソフト / マージ・AI コンテキスト |
+| PC情報 | ブラウザ 35 項目 / エージェント 300 ソフト / 端末単位マージ / AI コンテキスト |
 | AI | `deepseek-flash`（V4.1-Flash）/ PC 情報を回答に反映 |
 | PR | #1 OPEN（mergeable、Required Checks なし） |
 | OpenDesign | artifact v3 / linter P0 0 |

@@ -9,11 +9,13 @@
  * 使い方:
  *   node scripts/endpoint-agent.mjs --config ~/.config/ai-helpdesk/device-agent.json --once
  *   node scripts/endpoint-agent.mjs --dry-run --print-json
+ *   node scripts/endpoint-agent.mjs --debug --dry-run   # 取得コマンドの失敗を表示
  *
  * 設定ファイル（0600）:
  *   {
  *     "url": "https://ai-helpdesk.mirai-dx-platform.com/api/device/agent",
  *     "deviceToken": "aihd_...",
+ *     "browserDeviceId": "WEB-XXXXXXXX",  // PCチェック画面の端末名（同一端末へリンク）
  *     "cfAccessClientId": "...",       // Cloudflare Access サービスドメインを使う場合
  *     "cfAccessClientSecret": "...",
  *     "proxySecret": "",               // REQUIRE_PROXY_SECRET=true の場合のみ
@@ -40,9 +42,12 @@ const url =
 const deviceToken = process.env.AIHD_DEVICE_TOKEN ?? config.deviceToken;
 const intervalMinutes = Number(args.interval ?? config.intervalMinutes ?? 60);
 const dryRun = Boolean(args['dry-run']);
+const debug = Boolean(args.debug) || process.env.AIHD_AGENT_DEBUG === '1';
 const printJson = Boolean(args['print-json']);
 const watch = Boolean(args.watch);
 const deviceId = process.env.AIHD_DEVICE_ID ?? config.deviceId ?? os.hostname();
+const browserDeviceId =
+  args['browser-device-id'] ?? process.env.AIHD_BROWSER_DEVICE_ID ?? config.browserDeviceId;
 
 if (!deviceToken && !dryRun) {
   console.error(
@@ -88,7 +93,12 @@ function safe(command, commandArgs, timeout = 20000) {
       stdio: ['ignore', 'pipe', 'ignore'],
       windowsHide: true,
     }).trim();
-  } catch {
+  } catch (error) {
+    if (debug) {
+      console.error(
+        `[agent] command failed: ${command} ${commandArgs.join(' ')}: ${error.message}`,
+      );
+    }
     return null;
   }
 }
@@ -608,6 +618,7 @@ async function collect() {
     hardware: base.hardware ?? {},
     software: asArray(base.software).slice(0, 300),
     security: base.security ?? {},
+    ...(browserDeviceId ? { browserDeviceId: String(browserDeviceId) } : {}),
     collectedAt: new Date().toISOString(),
   };
 }
@@ -661,7 +672,7 @@ async function runOnce() {
   }
   const result = await post(payload);
   console.log(
-    `[agent] posted ${summary(payload)} snapshot_items=${result?.snapshot?.items?.length ?? '?'}`,
+    `[agent] posted ${summary(payload)} linked=${result?.linked ?? '?'} snapshot_items=${result?.snapshot?.items?.length ?? '?'}`,
   );
 }
 

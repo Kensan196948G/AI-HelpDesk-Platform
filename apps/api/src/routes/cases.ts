@@ -12,7 +12,7 @@ import { initialSignal, signalAfterAssessment, signalAfterHandoff } from '../dom
 import { badRequest, conflict, notFound } from '../errors.js';
 import { appendAudit } from '../lib/audit-log.js';
 import { loadCaseDetail } from '../lib/case-loader.js';
-import { loadMergedInventory } from '../lib/device-inventory.js';
+import { loadClientInventory } from '../lib/device-inventory.js';
 import { asJsonArray } from '../lib/json.js';
 import { findApprovedKnowledge } from '../lib/knowledge-search.js';
 import { nextCaseNo, nextIncNo } from '../lib/numbers.js';
@@ -67,7 +67,7 @@ export async function caseRoutes(app: FastifyInstance): Promise<void> {
       body: body.text,
     });
     // 実端末の情報があればそれを使い、無い場合だけデモ情報へフォールバックする。
-    const inventory = await loadMergedInventory(user.email).catch(() => null);
+    const inventory = await loadClientInventory(user.email).catch(() => null);
     const pc = pcEnabled
       ? inventory
         ? buildCasePcSnapshot(inventory, { subject: subject.text, body: body.text })

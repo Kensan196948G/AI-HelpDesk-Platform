@@ -82,7 +82,7 @@
       fetch('/api/ai/answer', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ text, deviceId: window.__AIHD_DEVICE_ID__ || undefined }),
       })
         .then((response) => {
           if (!response.ok) throw new Error('AI API HTTP ' + response.status);

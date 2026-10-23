@@ -76,6 +76,7 @@ const agentPayload = {
     diskEncryption: { enabled: true, detail: 'BitLocker' },
     windowsUpdate: { pending: 0 },
   },
+  browserDeviceId: 'route-browser-1',
   collectedAt: new Date().toISOString(),
 };
 
@@ -93,7 +94,10 @@ describe('device routes', () => {
     const os = body.snapshot.items.find((item: { k: string }) => item.k === 'OS');
     expect(os.v).toContain('Windows 11');
 
-    const get = await app.inject({ method: 'GET', url: '/api/device/inventory' });
+    const get = await app.inject({
+      method: 'GET',
+      url: '/api/device/inventory?deviceId=route-browser-1',
+    });
     expect(get.statusCode, get.body).toBe(200);
     expect(get.json().snapshot.items.length).toBeGreaterThanOrEqual(31);
   });
@@ -107,16 +111,57 @@ describe('device routes', () => {
     });
     expect(response.statusCode, response.body).toBe(200);
     const body = response.json();
+    expect(body.linked).toBe(true);
     expect(body.inventory.source).toBe('agent');
     expect(body.snapshot.device).toBe('PC-ROUTE-01');
     const teams = body.snapshot.items.find((item: { k: string }) => item.k === 'Teams');
     expect(teams.v).toContain('Microsoft Teams');
 
-    const get = await app.inject({ method: 'GET', url: '/api/device/inventory' });
+    const get = await app.inject({
+      method: 'GET',
+      url: '/api/device/inventory?deviceId=route-browser-1',
+    });
     const merged = get.json();
     expect(merged.inventory.source).toBe('agent');
     expect(merged.inventory.softwareCount).toBe(2);
     expect(merged.snapshot.items.length).toBeGreaterThanOrEqual(31);
+  });
+
+  it('別端末の未リンクエージェントはブラウザのスナップショットを上書きしない', async () => {
+    // 直前のテストでリンク済み agent が残っているため、未リンクの検証前に取り除く。
+    await sql`
+      DELETE FROM device_inventories
+      WHERE user_email = ${EMAIL} AND source = 'agent' AND device_id = 'route-browser-1'
+    `;
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/device/agent',
+      headers: { 'x-device-token': agentToken },
+      payload: {
+        ...agentPayload,
+        deviceId: 'route-server-ubuntu',
+        hostname: 'SERVER-UBUNTU',
+        os: 'Ubuntu 24.04.4 LTS',
+        platform: 'Linux',
+        software: [{ name: 'Ubuntu Package', version: '1.0' }],
+        browserDeviceId: undefined,
+        collectedAt: new Date().toISOString(),
+      },
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    expect(response.json().linked).toBe(false);
+
+    const get = await app.inject({
+      method: 'GET',
+      url: '/api/device/inventory?deviceId=route-browser-1',
+    });
+    expect(get.statusCode, get.body).toBe(200);
+    const body = get.json();
+    expect(body.inventory.source).toBe('browser');
+    const os = body.snapshot.items.find((item: { k: string }) => item.k === 'OS');
+    expect(os.v).toContain('Windows 11');
+    const teams = body.snapshot.items.find((item: { k: string }) => item.k === 'Teams');
+    expect(teams.v).toBe('未取得');
   });
 
   it('不正なデバイストークンは 401', async () => {
