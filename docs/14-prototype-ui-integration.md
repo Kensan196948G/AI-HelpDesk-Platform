@@ -75,6 +75,7 @@
 
 - ブラウザ: OS / 画面 / CPU コア / 推定メモリ / GPU / 回線 / 音声デバイスを取得し、`POST /api/device/browser` で保存する。
 - 端末エージェント: Windows / macOS / Linux で CPU・メモリ・ディスク・GPU・ネットワーク・プリンター・音声・USB・導入ソフト・セキュリティ状態を読み取り、`POST /api/device/agent` で送信する。
+- Windows は Node 不要の PowerShell CLI も用意。ログオン時 + 60分ごとのタスクでバックグラウンド実行でき、常駐プロセスは持たない。
 - サーバーは **同じ `device_id` のブラウザ + エージェントだけ**をマージし、既存プロトタイプの `pcSnapshot()` を差し替えて 35 項目のスナップショットを返す（DOM / CSS は変更しない）。
 - 別端末のエージェント（例: サーバー上の Ubuntu）は、ブラウザ端末へリンクしない限り混ぜない。
 - エージェントは画面の `WEB-XXXXXXXX` を `browserDeviceId` に指定してリンクする。

@@ -59,7 +59,9 @@
 - DeepSeek を `deepseek-flash`（DeepSeek-V4.1-Flash、`thinking: disabled`）へ更新。
 - 端末エージェント用に `/api/device/agent` のパス限定 Access bypass + デバイストークン（SHA-256 / 0600 / IP 30回/分）を実装。
 - 実測: ブラウザ 35 項目 / エージェント 300 ソフト / AI が 16GB・8 コアを回答に反映 / 公開エージェント経路 200。
-- **72 tests 成功**（16 files）。端末は `device_id` 単位で分離し、未リンク agent はブラウザを上書きしない。残: 全 STEP E2E、Windowsエージェントの実機配布、CI。
+- **72 tests 成功**（16 files）。端末は `device_id` 単位で分離し、未リンク agent はブラウザを上書きしない。
+- Windows 向けに Node 不要の PowerShell CLI + ログオン/60分タスク（常駐なし）を追加。構文・`-DryRun`・API送信（35項目）を Linux pwsh で検証。
+- 残: 全 STEP E2E、Windows実機での CIM/BitLocker/Defender 取得確認、GPO/Intune 配布、CI。
 
 ## 現在の Evidence
 

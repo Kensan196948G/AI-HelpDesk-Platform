@@ -46,6 +46,9 @@ npm run db:seed          # 再実行可能（TRUNCATE はしない。upsert の�
 npm run dev:api          # API + 既存 UI を http://127.0.0.1:18950 で配信
 node scripts/endpoint-agent.mjs --config ~/.config/ai-helpdesk/device-agent.json --once
                           # 端末エージェント（読み取り専用）で実PC情報を送信
+powershell -ExecutionPolicy Bypass -File scripts/windows/install-collector-task.ps1 `
+  -ConfigPath "$env:USERPROFILE\.config\ai-helpdesk\device-agent-windows.json"
+                          # Windows: Node不要のログオン時+60分タスクを登録
 ```
 
 ## 5. 実装規約

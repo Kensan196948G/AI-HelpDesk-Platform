@@ -32,7 +32,7 @@ MVP では実装しない。必要になった順に Issue 化する。
 | B-19 | 高度なナレッジ版管理・差分・利用統計 | 現在は単純な version のみ |
 | B-20 | 専用 DB ロール・最小権限 | 現在は Local PG の既存スーパーユーザー |
 | B-21 | CSRF トークン・WAF・Turnstile | SameSite + Origin 検証で代替中 |
-| B-22 | 端末エージェントの Windows インストーラ / コード署名 / 自動更新 | 現在は Node.js スクリプトの手動配布 |
+| B-22 | ~~Windows ログオンタスク（Node不要）~~ **一部完了** | PowerShell CLI + ログオン/60分タスクを追加。残: GPO/Intune 配布、コード署名、Windows実機検証 |
 | B-23 | エージェント用 Access bypass をサービスドメインへ移行 | 現在の資格情報に `access-service-token.write` が無いため bypass + デバイストークン |
 | B-24 | 複数端末の同時管理（user_email + device_id） | 現在は user_email + source の 1 端末 MVP |
 | B-25 | 導入ソフトの AI 送信 allowlist / 除外設定 | 現在は関連ソフト最大 20 件に絞る |

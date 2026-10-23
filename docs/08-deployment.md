@@ -71,6 +71,24 @@
 - 現在のブラウザ端末は Windows 11（`WEB-206AD268` / 6 論理コア / 32GB / Intel UHD 630）。Ubuntu 上のエージェントは未リンクのため表示されない。
 - **重要**: エージェントは実行した端末の情報を送る。サーバー上で実行した agent をブラウザ端末へリンクしないこと。
 
+#### Windows: Node不要のバックグラウンド収集（PowerShell + タスクスケジューラ）
+
+常駐エージェントではなく、ログオン時 + 60分ごとに CLI を1回実行する方式。
+
+```powershell
+# 対象PC（管理者が必要な場合あり）
+powershell -ExecutionPolicy Bypass -File .\scripts\windows\install-collector-task.ps1 `
+  -ConfigPath "$env:USERPROFILE\.config\ai-helpdesk\device-agent-windows.json"
+```
+
+- `install-collector-task.ps1` は `collect-pc-info.ps1` と設定を `%LOCALAPPDATA%\AIHelpDesk\` にコピーし、タスク `AIHelpDesk-Collector` を登録する。
+- タスク: ログオン時 + 60分間隔、隠しウィンドウ、常駐なし。ログは `%LOCALAPPDATA%\AIHelpDesk\collector.log`。
+- 手動: `Start-ScheduledTask -TaskName AIHelpDesk-Collector`。
+- 停止: `Unregister-ScheduledTask -TaskName AIHelpDesk-Collector -Confirm:$false`。
+- 多数PCへは GPO / Intune のログオンスクリプトで配布する（PCごとの手作業なし）。
+- 検証: PowerShell 構文・`-DryRun`・API送信（35項目）を Linux の pwsh で確認済み。Windows の CIM / BitLocker / Defender 取得はWindows実機で `-DryRun -PrintJson` を実行して確認する。
+- **方式の限界**: ブラウザだけではインストールソフト・Windows 11 Pro のエディションは取得できない。PC側で CLI を動かす必要がある（常駐でなくてよい）。サーバーから WinRM で取りに行く方式は、NAT / Cloudflare 配下のクライアントには届かないため、本環境では採用しない。
+
 ## 1. 目標構成
 
 ```

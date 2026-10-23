@@ -111,6 +111,26 @@ node scripts/endpoint-agent.mjs --config %USERPROFILE%\.config\ai-helpdesk\devic
 - 端末は `device_id` 単位で分離される。未リンクの agent（例: サーバー上の Ubuntu）は、ブラウザ端末のPC情報には混ざらない。
 - リンクコードはPCチェック画面の端末名（`WEB-XXXXXXXX`）で確認できる。別端末のコードを指定すると、その端末の情報として保存される。
 
+### Windows: ログオン時 + 定期実行（Node不要）
+
+```powershell
+# 登録（初回のみ）
+powershell -ExecutionPolicy Bypass -File .\scripts\windows\install-collector-task.ps1 `
+  -ConfigPath "$env:USERPROFILE\.config\ai-helpdesk\device-agent-windows.json"
+
+# 手動実行 / 状態確認
+Start-ScheduledTask -TaskName AIHelpDesk-Collector
+Get-ScheduledTaskInfo -TaskName AIHelpDesk-Collector
+Get-Content "$env:LOCALAPPDATA\AIHelpDesk\collector.log" -Tail 20
+
+# 削除
+Unregister-ScheduledTask -TaskName AIHelpDesk-Collector -Confirm:$false
+```
+
+- 常駐プロセスは持たない。ログオン時と60分ごとに `collect-pc-info.ps1` が1回実行される。
+- 失敗時は `collector.log` と `-DryRun -PrintJson` で確認する。秘密値（トークン）はログへ出さない。
+- 多数PCへは GPO / Intune のログオンスクリプトで同じインストーラを実行する。
+
 ## 7. 既知の運用制約
 
 - Preview は Cloudflare Tunnel + Access で公開済み（[docs/08-deployment.md](08-deployment.md) §0）。

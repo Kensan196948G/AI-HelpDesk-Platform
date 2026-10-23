@@ -86,6 +86,21 @@ node scripts/endpoint-agent.mjs --config ~/.config/ai-helpdesk/device-agent-wind
 
 - Windows の設定は `%USERPROFILE%\.config\ai-helpdesk\device-agent-windows.json` に置く。`browserDeviceId` はPCチェック画面の端末名（`WEB-XXXXXXXX`）。
 
+#### Windows: Node不要のバックグラウンド収集（推奨）
+
+常駐エージェントは不要です。**ログオン時 + 60分ごと**に PowerShell の CLI を1回実行するタスクを登録します。
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\windows\install-collector-task.ps1 `
+  -ConfigPath "$env:USERPROFILE\.config\ai-helpdesk\device-agent-windows.json"
+```
+
+- 実行タスク: `AIHelpDesk-Collector`（ログオン時 + 60分間隔、常駐プロセスなし）
+- ログ: `%LOCALAPPDATA%\AIHelpDesk\collector.log`
+- 手動実行: `Start-ScheduledTask -TaskName AIHelpDesk-Collector`
+- 多数PCへ配布する場合は、GPO / Intune のログオンスクリプトから同じインストーラを実行する（PCごとの手作業なし）。
+- 管理者権限が必要な環境では PowerShell を管理者として実行してください。
+
 - 収集: OS / CPU / メモリ / ディスク / GPU / ネットワーク / プリンター / 音声 / USB / 導入ソフト / セキュリティ状態。
 - 非収集: ファイル内容 / 閲覧履歴 / 画面 / キー入力 / メール本文。
 - 詳細: [docs/08-deployment.md](docs/08-deployment.md) §0-1 / [docs/09-operations.md](docs/09-operations.md) §6-1。
