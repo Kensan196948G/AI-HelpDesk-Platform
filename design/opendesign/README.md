@@ -1,3 +1,6 @@
+> **2026-10-23 追記**: ユーザー指示により、実画面は既存プロトタイプ HTML を 100% 適用する方針に変更。
+> 本ディレクトリの設計は参考記録として残す。現行の正本は [../../docs/14-prototype-ui-integration.md](../../docs/14-prototype-ui-integration.md)。
+
 # OpenDesign 成果物（WebUI 設計）
 
 - 作成日: 2026-10-23

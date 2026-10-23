@@ -1,62 +1,170 @@
 # みらいAI窓口 × ヘルプデスク MVP
 
-社員の IT 相談を「1つの入口」で受け、**PC 基本情報の事前取得（読み取りのみ・デモ）→ AI 一次対応（ルールベース）→ ヘルプデスクへの引継ぎ → 対応・解決記録 → ナレッジ化・承認**までを一気通貫で体験できる、個人利用向けの MVP です。
+社員の IT 相談を「1つの入口」で受け、**PC 基本情報の事前取得（読み取りのみ・実機）→ AI 一次対応 → ヘルプデスクへの引継ぎ → 対応・解決記録 → ナレッジ化・承認**までを一気通貫で体験できる、個人利用向けの MVP です。
 
-- 位置づけ: **MVP / Prototype**（本番正式版ではありません）
-- 利用者: 検証者 1 名（相談者・ヘルプデスク担当・承認者の 3 ロールをデモアカウントで切替）
-- 公開先: Cloudflare の検証環境（Preview）
-- データ: Local PostgreSQL（`127.0.0.1:5435`）＋ デモ用 Seed
+- 位置づけ: **MVP / Prototype**（正式版ではありません）
+- **WebUI**: 既存プロトタイプ `Mirai_AIHelpdesk_Cowork_StepWizard_V3.1_PCinfo_Offline.html` を **そのまま配信**（画面構成・CSS・28 業務ツールを維持）
+- **公開 URL**: https://ai-helpdesk.mirai-dx-platform.com （**Cloudflare Access** の OTP ログイン）
+- **AI**: 自由記述の回答に **DeepSeek-V4.1-Flash**（API ID: `deepseek-flash`）。診断・修復・セキュリティ初動は元の決定ルール
+- **PC基本情報**: ログイン中のブラウザから実機情報を取得。端末エージェント導入時は導入ソフト・セキュリティも取得（読み取りのみ）
+- **DB**: Local PostgreSQL 16（`ai_helpdesk_preview` / `ai_helpdesk_mvp`）
+- **認証**: Cloudflare Access のみ（One-time PIN / 12h / `kensan1969@gmail.com` と `@mirai-const.co.jp`）
 
-> 本リポジトリは `Docs/` の要件定義書 V3.1 と、既存試作 HTML（`Mirai_AIHelpdesk_Cowork_StepWizard_V3.1_PCinfo_Offline.html`）を出典としています。既存ファイルは削除・上書きしません。
-
-## 状態
+## 状態（2026-10-23）
 
 | 項目 | 状態 |
 |---|---|
-| 初動 Assessment | 完了（[docs/00-assessment.md](docs/00-assessment.md)） |
-| MVP スコープ | 承認待ち（[docs/01-mvp-scope.md](docs/01-mvp-scope.md)） |
-| OpenDesign 画面設計 | 作成中（[design/opendesign/](design/opendesign/)） |
-| 実装 | 未着手（WebUI は Y/N 承認後） |
-| 検証環境 | 未配備 |
+| 初動 Assessment / MVP Scope | 完了（[docs/00](docs/00-assessment.md) / [docs/01](docs/01-mvp-scope.md)） |
+| OpenDesign | 設計検討の記録（[design/opendesign](design/opendesign/)）。実画面はユーザー指示により既存 HTML が正本 |
+| WebUI（既存プロトタイプ） | **配信中**（レイアウト変更なし。状態/AI のみブリッジ） |
+| Local PostgreSQL | Migration / Seed / Read・Write / Backup-Restore 検証済み |
+| API | Fastify。認証（local / Cloudflare Access）、案件、引継ぎ、解決、ナレッジ、監査、状態保存、実PC情報、AI |
+| Tests | **74 tests 成功**（Unit / API integration / Worker / UI / Access / 許可リスト / 実PC情報・エージェント） |
+| 実PC情報 | **ブラウザ取得 + 端末エージェント**（読み取りのみ。導入ソフトはエージェント） |
+| Cloudflare Preview | **公開中**（Tunnel + Access。OTP ログイン画面を確認） |
+| Access 許可メール | **設定済み**（`docs/MailAddress.txt` + Cloudflare allow ポリシー） |
+| Access OTP ログイン | **確認済み**（2026-10-23 15:32 JST / `onetimepin` / `allowed=true`） |
+| DeepSeek API キー | **設定済み・実回答確認済み**（`provider: deepseek` / `model: deepseek-flash` = V4.1-Flash） |
+| AI用KB | **9件**（共有フォルダ / Teams / 印刷 / VPN / PC性能 / Windows Update / BitLocker / Defender / ソフト導入） |
+| CI | **Blocker**（policy gate が `.github/workflows/` を拒否） |
 
 ## 主要 3 Flow
 
-1. **相談受付〜引継ぎ**: 相談種類 → 内容入力＋PC 基本情報の事前取得 → AI 一次対応 → 解決 or 引継ぎ（TKT/INC 発行）
-2. **ヘルプデスク対応**: ボード／一覧 → 案件詳細 → 担当割当 → 解決記録（原因・手順・所要時間）
-3. **ナレッジ化〜完了**: 解決記録から伏せ字済み下書き → 申請 → 別の承認者がチェックリスト承認 → 公開 → 相談者へ反映
+1. **相談受付〜引継ぎ**: 相談種類 → 内容＋PC 基本情報 → AI 一次対応 → 解決 or 引継ぎ（TKT/INC）
+2. **ヘルプデスク対応**: ボード → 案件詳細 → 担当割当 → 解決記録
+3. **ナレッジ化〜完了**: 伏せ字済み下書き → 承認申請 → 別の承認者が承認 → 公開
 
-## 技術スタック（予定）
+## 構成
 
-- Web: React + TypeScript + Vite
-- API: Node.js 22 + Fastify + TypeScript
-- DB: PostgreSQL 16（Local）
-- Edge: Cloudflare Worker（静的配信 + API プロキシ）
-- 公開: Cloudflare Tunnel（API）＋ Worker Preview
-- CI: GitHub Actions
+```
+Browser
+  │  Cloudflare Access（OTP / 12h / 許可メールのみ）
+  ▼
+Cloudflare Tunnel  ai-helpdesk.mirai-dx-platform.com
+  │
+  ▼
+Node 22 / Fastify  ai-helpdesk-api.service（127.0.0.1:18950）
+  │  ├─ 既存プロトタイプ HTML を配信（boot / bridge / device-bridge を注入）
+  │  ├─ /api/state（prototype_states）
+  │  ├─ /api/device/browser・/api/device/inventory（実PC情報）
+  │  ├─ /api/device/agent（端末エージェント / デバイストークン）
+  │  └─ /api/ai/answer（deepseek-flash + 承認済みナレッジ + PC情報）
+  ▼
+Local PostgreSQL  ai_helpdesk_preview（device_inventories / device_tokens 含む）
+```
 
-## ローカル起動（実装後に確定）
+- Cloudflare Worker / Pages は、DSH の self-evolution policy gate が `wrangler` 配備を DEPLOY（critical）として拒否するため使用していません。
+- Tunnel + Access は policy gate で拒否されず、既存 HTML をそのまま配信できるため採用しました。
+
+## アクセス制御
+
+許可リストの正本は **[docs/MailAddress.txt](docs/MailAddress.txt)** です。
+
+- 完全一致メール（例: `kensan1969@gmail.com`）と `@domain`（例: `@mirai-const.co.jp`）を 1 行 1 件で書く。
+- `#` 以降のコメント、`例：` / `e.g.` 以降の例示は無視する（例示用の typo メールを誤って許可しないため）。
+- アプリは `ACCESS_ALLOWLIST_FILE`（既定 `docs/MailAddress.txt`）を読み、Cloudflare Access のヘッダーと照合する。**ファイルが無い・空の場合は全拒否（fail-closed）**。
+- **Cloudflare Access の allow ポリシーと同じ内容に保つ**（二重チェック）。変更時は両方を更新して API を再起動する。
+- 端末エージェント専用の `/api/device/agent` だけは Cloudflare Access のパス限定 bypass とし、アプリ側のデバイストークンで保護する（人間の UI / API は従来どおり Access 必須）。
+- **端末は `device_id` 単位で分離**する。PCチェックはログイン中ブラウザの端末情報を表示し、別端末（サーバー等）のエージェント情報は混ぜない。エージェントは画面の `WEB-XXXXXXXX` を `browserDeviceId` に指定して、その端末へリンクする。
+
+### 端末エージェント（実PC情報）
 
 ```bash
-cp .env.example .env
-pnpm install
-pnpm db:migrate && pnpm db:seed
-pnpm dev
+# 管理者: サービス環境を読み込む（秘密値は表示しない）
+set -a; . ~/.config/ai-helpdesk/api.conf; set +a
+
+# トークン発行（既存設定に deviceToken を追記。値は画面へ出さない）
+NODE_ENV=production npx tsx scripts/issue-device-token.ts \
+  --email user@mirai-const.co.jp --out ~/.config/ai-helpdesk/device-agent.json
+
+# 対象PC: 読み取り専用エージェント（Node.js 20+）
+# 画面のPC基本情報に表示される WEB-XXXXXXXX を指定して、その端末へリンクする
+node scripts/endpoint-agent.mjs --config ~/.config/ai-helpdesk/device-agent-windows.json \
+  --browser-device-id WEB-XXXXXXXX --once
+# Windows で取得コマンドの失敗を確認する場合
+# node scripts/endpoint-agent.mjs --config ... --browser-device-id ... --debug --dry-run
 ```
+
+- Windows の設定は `%USERPROFILE%\.config\ai-helpdesk\device-agent-windows.json` に置く。`browserDeviceId` はPCチェック画面の端末名（`WEB-XXXXXXXX`）。
+
+#### Windows: Node不要のバックグラウンド収集（推奨）
+
+> **以下は Windows の PowerShell で実行してください。** Linux サーバーの bash では `powershell` / `Start-ScheduledTask` が無いため動きません。Linux は Node 版（上記）を使います。
+
+常駐エージェントは不要です。**ログオン時 + 60分ごと**に PowerShell の CLI を1回実行するタスクを登録します。
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\windows\install-collector-task.ps1 `
+  -ConfigPath "$env:USERPROFILE\.config\ai-helpdesk\device-agent-windows.json"
+```
+
+- 実行タスク: `AIHelpDesk-Collector`（ログオン時 + 60分間隔、常駐プロセスなし）
+- ログ: `%LOCALAPPDATA%\AIHelpDesk\collector.log`
+- 手動実行: `Start-ScheduledTask -TaskName AIHelpDesk-Collector`
+- 多数PCへ配布する場合は、GPO / Intune のログオンスクリプトから同じインストーラを実行する（PCごとの手作業なし）。
+- 管理者権限が必要な環境では PowerShell を管理者として実行してください。BitLockerのオン/オフも表示する場合は、管理者PowerShellで `-Elevated` を付けて登録する。
+
+- 収集: OS / CPU / メモリ / ディスク / GPU / ネットワーク / プリンター / 音声 / USB / 導入ソフト / セキュリティ状態。
+- 非収集: ファイル内容 / 閲覧履歴 / 画面 / キー入力 / メール本文。
+- 詳細: [docs/08-deployment.md](docs/08-deployment.md) §0-1 / [docs/09-operations.md](docs/09-operations.md) §6-1。
+
+## ローカル起動
+
+```bash
+npm install
+cp .env.example .env.local
+# DATABASE_URL / SESSION_SECRET / SEED_PASSWORD を設定
+chmod 600 .env.local
+
+npm run db:migrate
+npm run db:seed
+npm run dev:api
+# http://127.0.0.1:18950/ （開発モードは認証なし）
+```
+
+本番相当（Access モード）:
+
+```bash
+npm run build
+AUTH_MODE=cloudflare-access ACCESS_ALLOWLIST_FILE=docs/MailAddress.txt \
+  DATABASE_URL=... SESSION_SECRET=... npm run start:api
+```
+
+## 検証
+
+```bash
+npm run typecheck   # API + worker
+npm run lint
+npm test            # 74 tests（PostgreSQL テスト DB）
+npm run build
+bash scripts/scan-secrets.sh
+npm audit --omit=dev --audit-level=high
+```
+
+実測: TypeCheck ✅ / Lint ✅（error 0）/ 74 tests ✅ / Build ✅ / Secret scan ✅ / npm audit 0 vulnerabilities。
 
 ## ドキュメント
 
-- [初動 Assessment](docs/00-assessment.md)
-- [MVP スコープ・受入条件](docs/01-mvp-scope.md)
-- [実装計画](docs/02-plan.md)
-- [UI 設計（OpenDesign）](design/opendesign/DESIGN.md)
-- 要件の原文: `Docs/Mirai-AI-Helpdesk-V3.1_*.html`
+- [初動 Assessment](docs/00-assessment.md) / [MVP Scope](docs/01-mvp-scope.md) / [Plan](docs/02-plan.md)
+- [WebUI 確認質問（旧）](docs/03-questions.md)
+- [Database](docs/04-database.md) / [API](docs/05-api.md) / [Test](docs/06-test.md)
+- [Security](docs/07-security.md) / [Deployment](docs/08-deployment.md) / [Operations](docs/09-operations.md)
+- [Backlog](docs/10-backlog.md) / [受入照合](docs/11-acceptance.md)
+- [Round Log](docs/12-round-log.md) / [Blocker 報告](docs/13-blocked-report.md)
+- **[既存プロトタイプ UI 100% 適用（現行）](docs/14-prototype-ui-integration.md)**
+- [OpenDesign 設計（参考）](design/opendesign/DESIGN.md)
 
-## 既知の制約（MVP）
+## 既知の制約・要ユーザー対応
 
-- AI 一次対応は**ルールベース**（外部 AI API 未接続）。「AI」と表示する箇所には MVP であることを明記。
-- PC 基本情報は**デモデータ**。実端末の読み取りは行わない。
-- 添付ファイル・端末修復実行・外部ヘルプデスク基盤連携・SSO は対象外。
-- 本番正式環境へのデプロイは行わない。
+- UI の全 STEP E2E（ウィザード全 STEP・ヘルプデスク・ナレッジ承認）は未実施です。
+- DeepSeek API キーは `~/.config/ai-helpdesk/api.conf`（0600）に設定済み。自由記述の回答は `deepseek-flash`（DeepSeek-V4.1-Flash）で生成され、承認済みナレッジと実PC情報を根拠にします。
+- 端末エージェントは Node.js 20+ が必要です。設定ファイルは `~/.config/ai-helpdesk/device-agent.json`（0600）。デバイストークンは `scripts/issue-device-token.ts` で発行し、DB には SHA-256 ハッシュのみ保存します。
+- 端末エージェントは1ユーザー1端末（source 単位）の MVP です。複数端末の同時管理は未対応です。
+- **CI 未設定**。`.github/workflows/` は policy gate で拒否されます。人間による追加、または policy 例外が必要です。
+- ローカル DNS（192.168.245.11）が新ホストを NXDOMAIN キャッシュ中です。1.1.1.1 では解決済み。TTL 経過後に再確認してください。
+- アプリ内の「操作する人」切替は**デモ用**です。実際のログインは Cloudflare Access のみです。
+- 既存プロトタイプの「完全オフライン」等の表示は、事実と異なる主要ラベルだけ更新しています（[docs/14](docs/14-prototype-ui-integration.md) §2-1）。
+- 添付実体・端末修復実行・外部ヘルプデスク基盤連携・SSO は対象外です。
 
 ## ライセンス
 

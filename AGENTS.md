@@ -10,9 +10,9 @@
 ## 2. 正本（Source of Truth）の優先順位
 
 1. この `AGENTS.md` と適用中のリポジトリ指示
-2. `docs/01-mvp-scope.md`（承認済み MVP スコープ）と `design/opendesign/DESIGN.md`（承認済み UI 仕様）
+2. `docs/01-mvp-scope.md`（MVP スコープ）と `docs/14-prototype-ui-integration.md`（現行 UI の正本）
 3. `Docs/` の要件定義書・詳細仕様書（既存の業務要件）
-4. `Mirai_AIHelpdesk_Cowork_StepWizard_V3.1_PCinfo_Offline.html`（既存試作。画面の参考。実装の正本ではない）
+4. `Mirai_AIHelpdesk_Cowork_StepWizard_V3.1_PCinfo_Offline.html`（**UI の正本**。画面構成・CSS は変更しない）
 5. `docs/` の設計・API・DB・テスト・運用ドキュメント
 6. Git 履歴 / Issue / PR
 7. OpenDesign の成果物（`design/opendesign/` と OpenDesign プロジェクト）
@@ -22,29 +22,33 @@
 
 ## 3. 技術スタック（MVP）
 
-- Frontend: React + TypeScript + Vite（`apps/web`）
+- Frontend: 既存プロトタイプ HTML（`Mirai_AIHelpdesk_Cowork_StepWizard_V3.1_PCinfo_Offline.html`）を Fastify から配信
 - Backend: Node.js 22 + Fastify + TypeScript（`apps/api`）
 - DB: Local PostgreSQL 16（`127.0.0.1:5435`、DB 名 `ai_helpdesk_mvp`）
 - DB driver: `postgres`（postgres.js）
 - Validation: `zod`
-- Test: `vitest` / `@playwright/test`
+- Test: `vitest`（Unit / Integration / UI / Access / 実PC情報・端末エージェント）
 - Lint/Format: `biome`
-- Edge: Cloudflare Worker（静的配信 + API プロキシ、`worker/`）
-- API 公開: Cloudflare Tunnel（ローカル Node API → 検証用ホスト名）
-- CI: GitHub Actions
+- Edge: **Cloudflare Tunnel + Cloudflare Access**（`ai-helpdesk.mirai-dx-platform.com`）
+- `worker/` は参考実装（policy gate により Workers 配備は不可）
+- CI: GitHub Actions（**現在は self-evolution policy gate により workflow ファイルの追加が拒否される。Blocker として docs/08-deployment.md に記録**）
 
 ## 4. コマンド
 
 ```bash
-pnpm install
-pnpm typecheck        # 全 workspace の tsc --noEmit
-pnpm lint             # biome check
-pnpm test             # vitest
-pnpm build            # web + api
-pnpm db:migrate       # 空 DB から再実行可能（冪等）
-pnpm db:seed          # 再実行可能（TRUNCATE はしない。upsert のみ）
-pnpm dev              # api + web
-pnpm e2e              # Playwright
+npm install
+npm run typecheck        # 全 workspace の tsc --noEmit
+npm run lint             # biome check
+npm test             # vitest
+npm run build            # api
+npm run db:migrate       # 空 DB から再実行可能（冪等）
+npm run db:seed          # 再実行可能（TRUNCATE はしない。upsert のみ）
+npm run dev:api          # API + 既存 UI を http://127.0.0.1:18950 で配信
+node scripts/endpoint-agent.mjs --config ~/.config/ai-helpdesk/device-agent.json --once
+                          # 端末エージェント（読み取り専用）で実PC情報を送信
+powershell -ExecutionPolicy Bypass -File scripts/windows/install-collector-task.ps1 `
+  -ConfigPath "$env:USERPROFILE\.config\ai-helpdesk\device-agent-windows.json"
+                          # Windows: Node不要のログオン時+60分タスクを登録
 ```
 
 ## 5. 実装規約
@@ -58,17 +62,22 @@ pnpm e2e              # Playwright
 
 ## 6. セキュリティ
 
-- Secret / Credential / 実个人情報をリポジトリ・ログ・Seed・PR に書かない。
+- Secret / Credential / 実個人情報をリポジトリ・ログ・Seed・PR に書かない。
 - `.env` はコミットしない。`.env.example` のみ。
 - 相談本文は保存前にパスワード・メール・電話・IP・カード番号等を伏せ字にする。
-- PC 基本情報は**読み取り専用のデモデータ**。実端末情報は取得しない。
-- ローカル PostgreSQL をインターネットへ直接公開しない。公開は Cloudflare Tunnel 経由の API のみ。
+- PC 基本情報は**読み取り専用**。ブラウザ取得 + 端末エージェントで実端末のハードウェア・ソフトウェア情報を取得する。
+  ファイル内容・閲覧履歴・画面・キー入力・メール本文は取得しない。IP・シリアル・資産番号・メールは AI へ渡す前に伏せる。
+- 端末エージェント専用の `/api/device/agent` は Cloudflare Access のパス限定 bypass とし、アプリ側のデバイストークン（SHA-256 ハッシュ保存）で保護する。人間の UI / API は従来どおり Access 必須。
+- PC情報は `(user_email, source, device_id)` 単位。ログイン中ブラウザの端末情報を表示し、同一 device_id にリンクされたエージェントだけをマージする。別端末（サーバー等）のエージェントを混ぜない。
+- ローカル PostgreSQL をインターネットへ直接公開しない。公開は Cloudflare Access + Tunnel 経由の Node のみ。
+- 本番/Preview のログインは Cloudflare Access のみ。アプリ内ログインを追加しない。
 - 本番環境・Production deploy・破壊的 DB 操作は行わない（承認がある場合を除く）。
 
-## 7. WebUI の承認
+## 7. WebUI の扱い
 
-WebUI の新規構築・改修は、OpenDesign で設計し、`design/opendesign/` に成果物を残す。
-ユーザーの明示的な Y（承認）前に WebUI 実装を開始しない。承認済み仕様の重大変更は再承認。
+ユーザー指示（2026-10-23）により、WebUI は既存プロトタイプ HTML を **100% 適用**する。
+DOM / CSS / 画面遷移を変更しない。状態保存・AI・認証のブリッジのみ追加する。
+やむを得ず表示文言を変える場合は `docs/14-prototype-ui-integration.md` に理由を記録し、ユーザーに報告する。
 
 ## 8. Git / PR
 
