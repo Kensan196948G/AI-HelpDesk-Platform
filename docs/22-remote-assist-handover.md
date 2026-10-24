@@ -336,6 +336,10 @@ API:
 指名された担当者のアドレスへ届くことを確認（9/9 OK）。再現: `scripts/dev-smtp-sink.mjs` と
 `AIHD_E2E_ALLOW=1 node scripts/e2e/handover-notify.mjs`。
 
+アプリパスワードを差し替えるときは `bash scripts/set-smtp-password.sh --test-to <確認先>` を使う。
+パスワードは `read -s`（または `--file`）で受け取り、バックアップ・`0600`・SMTP 認証の確認・
+サービス再起動・テスト送信までを一度に行う（秘密は引数・ログに残さない）。
+
 本番で有効にするには `~/.config/ai-helpdesk/api.conf` に `MAIL_TRANSPORT` / `SMTP_HOST` /
 `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` / `MAIL_FROM`（必要なら `HANDOVER_NOTIFY_EMAIL`）を設定し、
 `systemctl --user restart ai-helpdesk-api` する。
