@@ -33,8 +33,8 @@ import {
 const SESSION_TTL_SQL = sql`now() + interval '30 minutes'`;
 const SESSION_MAX_STEPS = 6;
 const STEP_APPROVAL_TTL_SQL = sql`now() + interval '5 minutes'`;
-/** リスク 4 以上の管理者承認の有効期限（設計 §4-3）。 */
-const ADMIN_APPROVAL_TTL_SQL = sql`now() + interval '10 minutes'`;
+/** リスク 4 以上の管理者承認の有効期限（依頼者側の 5 分と揃える）。 */
+const ADMIN_APPROVAL_TTL_SQL = sql`now() + interval '5 minutes'`;
 /** Skill に timeoutSec が無い場合の実行期限（秒）。 */
 const DEFAULT_STEP_TIMEOUT_SEC = 60;
 const TERMINAL_SESSION_STATUSES = new Set(['resolved', 'escalated', 'stopped', 'expired']);
@@ -574,6 +574,10 @@ function skillForProposal(proposal: Proposal, skills: SkillRecord[]): SkillRecor
   const skill = skills.find((candidate) => candidate.id === proposal.skillId);
   if (!skill)
     throw new ApiError(409, 'SKILL_NOT_ALLOWED', '提案された Skill は承認されていません。');
+  // リスク 5 は「禁止（実行不可）」。承認済みカタログに入っていても実行させない。
+  if (skill.riskLevel >= 5) {
+    throw new ApiError(409, 'SKILL_RISK_FORBIDDEN', 'リスクレベル 5 の Skill は実行できません。');
+  }
   return skill;
 }
 
@@ -610,18 +614,23 @@ async function insertProposedStep(
  */
 async function applyCommandOutcome(email: string, stepId: string): Promise<void> {
   await sql.begin(async (tx) => {
+    // ロック順は session → step に固定する（承認・停止・スイープとのデッドロック回避）。
+    const preRows = await tx<{ session_id: string; command_id: string | null }[]>`
+      SELECT session_id, command_id FROM resolution_steps WHERE id = ${stepId}
+    `;
+    if (!preRows[0]?.command_id) return;
+    const sessionRows = await tx<SessionRow[]>`
+      SELECT * FROM resolution_sessions
+      WHERE id = ${preRows[0].session_id} AND user_email = ${email}
+      FOR UPDATE
+    `;
+    const session = sessionRows[0];
+    if (!session) return;
     const stepRows = await tx<StepRow[]>`
       SELECT * FROM resolution_steps WHERE id = ${stepId} FOR UPDATE
     `;
     const step = stepRows[0];
     if (!step || !step.command_id) return;
-    const sessionRows = await tx<SessionRow[]>`
-      SELECT * FROM resolution_sessions
-      WHERE id = ${step.session_id} AND user_email = ${email}
-      FOR UPDATE
-    `;
-    const session = sessionRows[0];
-    if (!session) return;
     // 停止・期限切れ・解決済みのセッションでは、結果が届いても状態を進めない（H-3）。
     if (['stopped', 'expired', 'resolved', 'escalated'].includes(session.status)) {
       if (step.status === 'approved' || step.status === 'executing' || step.status === 'proposed') {
@@ -660,16 +669,21 @@ async function applyCommandOutcome(email: string, stepId: string): Promise<void>
 
     if (command.status === 'done' && (step.status === 'approved' || step.status === 'executing')) {
       // fieldsToAi の厳密適用には、このステップの Skill の outputPolicy が要る。
-      const policyRows = await tx<{ output_policy: unknown }[]>`
-        SELECT output_policy FROM skills
-        WHERE id = ${step.skill_id} AND version = ${step.skill_version}
+      // 承認後に Skill 定義が変わっていたら、そのポリシーは使わない（content_hash で束縛）。
+      const policyRows = await tx<{ output_policy: unknown; content_hash: string | null }[]>`
+        SELECT output_policy, content_hash FROM skills
+        WHERE id = ${step.skill_id} AND version = ${step.skill_version} AND status = 'approved'
         LIMIT 1
       `;
+      const policyRow = policyRows[0];
+      const policyMatches = Boolean(
+        policyRow && policyRow.content_hash === step.skill_content_hash,
+      );
       const { summary, full, ai } = buildResultPayload(
         command.result,
         command.error,
         true,
-        policyRows[0]?.output_policy,
+        policyMatches ? policyRow?.output_policy : null,
       );
       const updated = await tx<{ id: string }[]>`
         UPDATE resolution_steps
@@ -761,7 +775,18 @@ function redactJsonValue(value: unknown, depth = 0): unknown {
   return value;
 }
 
-/** 端末結果を要約（AI/画面向け）と全文（伏せ字・上限つき）に分ける。 */
+function isStructuredJsonText(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return false;
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    return Boolean(parsed && typeof parsed === 'object');
+  } catch {
+    return false;
+  }
+}
+
+/** 端末結果を要約（画面向け）と全文、AI 入力用（fieldsToAi 適用）に分ける。 */
 function buildResultPayload(
   result: unknown,
   error: string | null,
@@ -795,25 +820,32 @@ function buildResultPayload(
     result: redactJsonValue(raw),
     error: error ? redactPII(error).text.slice(0, 4000) : null,
   };
-  // AI に渡してよいのは outputPolicy.fieldsToAi を満たす normalized と要約だけ。
+
+  // AI 入力は outputPolicy が宣言されている場合だけ作る（既定拒否）。
+  const policy = jsonObjectOrNull(outputPolicy);
+  const declared = Array.isArray(policy?.fieldsToAi);
+  const filteredNormalized = declared ? applyFieldsToAi(redactJsonValue(normalized), policy) : null;
+  // stdoutSummary が JSON 全体（os-info 等）の場合は宣言外フィールドを含むため AI に渡さず、
+  // fieldsToAi で絞った normalized から要約を作り直す。
+  const aiSummary = !declared
+    ? ''
+    : isStructuredJsonText(summaryText)
+      ? JSON.stringify(filteredNormalized ?? {}).slice(0, 2000)
+      : redactedSummary;
   const ai: Record<string, unknown> = {
     ok,
     exitCode,
-    summary: redactedSummary,
-    // fieldsToAi で絞ったうえで PII を伏せ字にする（宣言フィールドでも生値を渡さない）。
-    normalized: applyFieldsToAi(redactJsonValue(normalized), outputPolicy),
+    summary: aiSummary,
+    normalized: filteredNormalized,
   };
-  return { summary, full, ai };
-}
-
-function summaryToText(summary: unknown): string {
-  const record = jsonObjectOrNull(summary);
-  if (!record) return '';
-  try {
-    return JSON.stringify(record).slice(0, 1000);
-  } catch {
-    return '';
+  // outputPolicy.maxBytes を超える AI 入力は要約を削り、それでも超えるなら normalized を落とす。
+  const maxBytesRaw = Number(policy?.maxBytes);
+  const maxBytes = Number.isFinite(maxBytesRaw) && maxBytesRaw > 0 ? maxBytesRaw : 8192;
+  if (Buffer.byteLength(JSON.stringify(ai)) > maxBytes) {
+    ai.summary = String(ai.summary ?? '').slice(0, Math.max(0, Math.floor(maxBytes / 4)));
+    if (Buffer.byteLength(JSON.stringify(ai)) > maxBytes) ai.normalized = null;
   }
+  return { summary, full, ai };
 }
 
 async function loadProposalHistory(sessionId: string): Promise<ProposalHistoryEntry[]> {
@@ -882,57 +914,63 @@ async function cancelSessionWork(
  */
 export async function sweepResolveTimeouts(): Promise<number> {
   let swept = 0;
-  await sql.begin(async (tx) => {
-    const rows = await tx<StepRow[]>`
-      SELECT * FROM resolution_steps
-      WHERE status IN ('approved', 'executing')
-        AND deadline_at IS NOT NULL
-        AND deadline_at < now()
-      ORDER BY deadline_at ASC
-      LIMIT 50
-      FOR UPDATE SKIP LOCKED
-    `;
-    for (const step of rows) {
-      const message = '端末から結果が返りませんでした（タイムアウト）。担当者へ引き継ぎます。';
-      const summary = { ok: false, exitCode: null, summary: message, normalized: null };
-      const ai = { ok: false, exitCode: null, summary: message, normalized: null };
-      const updated = await tx<{ id: string }[]>`
-        UPDATE resolution_steps
-        SET status = 'failed', executed_at = COALESCE(executed_at, now()),
-            result_summary = ${jsonbValue(summary)}, result_ai = ${jsonbValue(ai)},
-            error = 'RESULT_TIMEOUT'
-        WHERE id = ${step.id} AND status IN ('approved', 'executing')
-        RETURNING id
-      `;
-      if (!updated[0]) continue;
-      await tx`
-        UPDATE device_commands SET status = 'expired', completed_at = now()
-        WHERE step_id = ${step.id} AND status = 'queued'
-      `;
+  // 対象セッションを先に特定し、session → step の固定順でロックする。
+  const candidates = await sql<{ session_id: string }[]>`
+    SELECT DISTINCT session_id FROM resolution_steps
+    WHERE status IN ('approved', 'executing')
+      AND deadline_at IS NOT NULL
+      AND deadline_at < now()
+    LIMIT 50
+  `;
+  for (const candidate of candidates) {
+    await sql.begin(async (tx) => {
       const sessionRows = await tx<SessionRow[]>`
-        SELECT * FROM resolution_sessions WHERE id = ${step.session_id} FOR UPDATE
+        SELECT * FROM resolution_sessions WHERE id = ${candidate.session_id} FOR UPDATE
       `;
       const session = sessionRows[0];
-      if (
-        session &&
-        session.status === 'executing' &&
-        !TERMINAL_SESSION_STATUSES.has(session.status)
-      ) {
-        await tx`
-          UPDATE resolution_sessions SET status = 'escalated', updated_at = now()
-          WHERE id = ${session.id}
+      if (!session) return;
+      const rows = await tx<StepRow[]>`
+        SELECT * FROM resolution_steps
+        WHERE session_id = ${candidate.session_id}
+          AND status IN ('approved', 'executing')
+          AND deadline_at IS NOT NULL
+          AND deadline_at < now()
+        FOR UPDATE
+      `;
+      for (const step of rows) {
+        const message = '端末から結果が返りませんでした（タイムアウト）。担当者へ引き継ぎます。';
+        const summary = { ok: false, exitCode: null, summary: message, normalized: null };
+        const ai = { ok: false, exitCode: null, summary: message, normalized: null };
+        const updated = await tx<{ id: string }[]>`
+          UPDATE resolution_steps
+          SET status = 'failed', executed_at = COALESCE(executed_at, now()),
+              result_summary = ${jsonbValue(summary)}, result_ai = ${jsonbValue(ai)},
+              error = 'RESULT_TIMEOUT'
+          WHERE id = ${step.id} AND status IN ('approved', 'executing')
+          RETURNING id
         `;
+        if (!updated[0]) continue;
+        await tx`
+          UPDATE device_commands SET status = 'expired', completed_at = now()
+          WHERE step_id = ${step.id} AND status = 'queued'
+        `;
+        if (session.status === 'executing') {
+          await tx`
+            UPDATE resolution_sessions SET status = 'escalated', updated_at = now()
+            WHERE id = ${session.id}
+          `;
+        }
+        await appendResolveAudit(tx, {
+          action: 'resolution.timeout',
+          sessionId: step.session_id,
+          actorEmail: session.user_email,
+          stepId: step.id,
+          detail: { by: 'system', reason: 'result_timeout' },
+        });
+        swept += 1;
       }
-      await appendResolveAudit(tx, {
-        action: 'resolution.timeout',
-        sessionId: step.session_id,
-        actorEmail: session?.user_email ?? '',
-        stepId: step.id,
-        detail: { by: 'system', reason: 'result_timeout' },
-      });
-      swept += 1;
-    }
-  });
+    });
+  }
   return swept;
 }
 
@@ -959,11 +997,13 @@ async function manualCloseSession(
       WHERE id = ${session.id}
     `;
     await cancelSessionWork(tx, session.id);
+    // 理由は自由入力なので、監査へ書く前に PII を伏せ字にする。
+    const safeReason = reason ? redactPII(reason).text.slice(0, 500) : undefined;
     await appendResolveAudit(tx, {
       action: status === 'resolved' ? 'resolution.resolved' : 'resolution.escalated',
       sessionId: session.id,
       actorEmail: email,
-      detail: { by: 'manual', ...(reason ? { reason } : {}) },
+      detail: { by: 'manual', ...(safeReason ? { reason: safeReason } : {}) },
     });
   });
 }
@@ -971,7 +1011,10 @@ async function manualCloseSession(
 export async function resolveRoutes(app: FastifyInstance): Promise<void> {
   // 期限切れの実行を放置しない（設計 §4-3）。テストがハングしないよう unref する。
   const timeoutTimer = setInterval(() => {
-    void sweepResolveTimeouts().catch(() => undefined);
+    // 失敗を握りつぶすと自動失敗機能が止まったことに気付けないため、ログには残す。
+    void sweepResolveTimeouts().catch((error: unknown) => {
+      console.warn('[resolve] タイムアウトのスイープに失敗しました', error);
+    });
   }, 30_000);
   timeoutTimer.unref?.();
   app.addHook('onClose', async () => {
@@ -1025,7 +1068,10 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
       LEFT JOIN skills sk ON sk.id = s.skill_id AND sk.version = s.skill_version
       WHERE s.status = 'proposed'
         AND s.risk_level >= 4
+        AND s.admin_approval_hash IS NULL
+        AND (s.admin_expires_at IS NULL OR s.admin_expires_at > now())
         AND rs.status IN ('active', 'waiting_execute')
+        AND rs.expires_at > now()
       ORDER BY s.created_at ASC
       LIMIT 50
     `;
@@ -1075,16 +1121,21 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
       const input = AdminApproveSchema.parse(request.body);
 
       const outcome = await sql.begin(async (tx) => {
+        // ロック順は session → step に固定する（停止・スイープとのデッドロック回避）。
+        const preRows = await tx<{ session_id: string }[]>`
+          SELECT session_id FROM resolution_steps WHERE id = ${stepId}
+        `;
+        if (!preRows[0]) return { failure: notFound('ステップが見つかりません。') };
+        const sessionRows = await tx<SessionRow[]>`
+          SELECT * FROM resolution_sessions WHERE id = ${preRows[0].session_id} FOR UPDATE
+        `;
+        const session = sessionRows[0];
+        if (!session) return { failure: notFound('解決セッションが見つかりません。') };
         const stepRows = await tx<StepRow[]>`
           SELECT * FROM resolution_steps WHERE id = ${stepId} FOR UPDATE
         `;
         const step = stepRows[0];
         if (!step) return { failure: notFound('ステップが見つかりません。') };
-        const sessionRows = await tx<SessionRow[]>`
-          SELECT * FROM resolution_sessions WHERE id = ${step.session_id} FOR UPDATE
-        `;
-        const session = sessionRows[0];
-        if (!session) return { failure: notFound('解決セッションが見つかりません。') };
         if (canonicalEmail(session.user_email) === canonicalEmail(email)) {
           return {
             failure: new ApiError(
@@ -1108,6 +1159,15 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
             ),
           };
         }
+        if (Number(step.risk_level) >= 5) {
+          return {
+            failure: new ApiError(
+              409,
+              'SKILL_RISK_FORBIDDEN',
+              'リスクレベル 5 の Skill は実行できません。',
+            ),
+          };
+        }
         if (Number(step.risk_level) < 4) {
           return {
             failure: new ApiError(
@@ -1125,16 +1185,26 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
             failure: new ApiError(
               409,
               'ADMIN_APPROVAL_EXPIRED',
-              '管理者承認の期限（10 分）が切れました。提案を取り直してください。',
+              '管理者承認の期限（5 分）が切れました。提案を取り直してください。',
             ),
           };
         }
 
         if (input.decision === 'N') {
-          await tx`
+          const rejected = await tx<{ id: string }[]>`
             UPDATE resolution_steps SET status = 'rejected'
-            WHERE id = ${step.id} AND status = 'proposed'
+            WHERE id = ${step.id} AND status = 'proposed' AND admin_approval_hash IS NULL
+            RETURNING id
           `;
+          if (!rejected[0]) {
+            return {
+              failure: new ApiError(
+                409,
+                'ADMIN_ALREADY_DECIDED',
+                'このステップは既に管理者が承認または却下しています。',
+              ),
+            };
+          }
           await tx`
             UPDATE resolution_sessions SET status = 'stopped', updated_at = now()
             WHERE id = ${session.id}
@@ -1170,13 +1240,23 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
             ),
           };
         }
-        await tx`
+        const decided = await tx<{ id: string }[]>`
           UPDATE resolution_steps
           SET admin_approval_hash = ${expectedHash},
               admin_approved_by = ${canonicalEmail(email)},
               admin_approved_at = now()
-          WHERE id = ${step.id} AND status = 'proposed'
+          WHERE id = ${step.id} AND status = 'proposed' AND admin_approval_hash IS NULL
+          RETURNING id
         `;
+        if (!decided[0]) {
+          return {
+            failure: new ApiError(
+              409,
+              'ADMIN_ALREADY_DECIDED',
+              'このステップは既に管理者が承認または却下しています。',
+            ),
+          };
+        }
         await appendResolveAudit(tx, {
           action: 'resolution.admin_approved',
           sessionId: session.id,
@@ -1296,18 +1376,23 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
       }
 
       const outcome = await sql.begin(async (tx) => {
+        // ロック順は session → step に固定する（停止・スイープとのデッドロック回避）。
+        const preRows = await tx<{ session_id: string }[]>`
+          SELECT session_id FROM resolution_steps WHERE id = ${stepId}
+        `;
+        if (!preRows[0]) return { failure: notFound('ステップが見つかりません。') };
+        const sessionRows = await tx<SessionRow[]>`
+          SELECT * FROM resolution_sessions
+          WHERE id = ${preRows[0].session_id} AND user_email = ${email}
+          FOR UPDATE
+        `;
+        const session = sessionRows[0];
+        if (!session) return { failure: notFound('ステップが見つかりません。') };
         const stepRows = await tx<StepRow[]>`
           SELECT * FROM resolution_steps WHERE id = ${stepId} FOR UPDATE
         `;
         const step = stepRows[0];
         if (!step) return { failure: notFound('ステップが見つかりません。') };
-        const sessionRows = await tx<SessionRow[]>`
-          SELECT * FROM resolution_sessions
-          WHERE id = ${step.session_id} AND user_email = ${email}
-          FOR UPDATE
-        `;
-        const session = sessionRows[0];
-        if (!session) return { failure: notFound('ステップが見つかりません。') };
 
         if (TERMINAL_SESSION_STATUSES.has(session.status) || session.status === 'executing') {
           return {
@@ -1429,7 +1514,7 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
               failure: new ApiError(
                 409,
                 'ADMIN_APPROVAL_EXPIRED',
-                'IT 管理者の承認期限が切れました。承認を取り直してください。',
+                'IT 管理者の承認期限（5 分）が切れました。承認を取り直してください。',
               ),
             };
           }
@@ -1495,6 +1580,15 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
           LIMIT 1
         `;
         const skill = skillRows[0] ? toSkillRecord(skillRows[0]) : null;
+        if (Number(step.risk_level) >= 5 || (skill && skill.riskLevel >= 5)) {
+          return {
+            failure: new ApiError(
+              409,
+              'SKILL_RISK_FORBIDDEN',
+              'リスクレベル 5 の Skill は実行できません。',
+            ),
+          };
+        }
         if (
           !skill ||
           skill.contentHash !== step.skill_content_hash ||
@@ -1654,11 +1748,10 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
         listApprovedSkills(),
         loadProposalHistory(current.session.id),
       ]);
-      // AI に渡すのは fieldsToAi 適用後の result_ai だけ（旧データは従来の要約へ退避）。
+      // AI に渡すのは fieldsToAi 適用後の result_ai だけ。旧データ（result_ai なし）は
+      // 未フィルターの last_summary へ退避せず、何も渡さない（fail-closed）。
       const lastResultAi = await loadLastResultAi(current.session.id);
-      const lastResultAiText = lastResultAi
-        ? JSON.stringify(lastResultAi).slice(0, 1000)
-        : summaryToText(current.session.last_summary);
+      const lastResultAiText = lastResultAi ? JSON.stringify(lastResultAi).slice(0, 1000) : '';
       const proposal = await proposeNext({
         text: caseText(ownedCase),
         lastSummary: lastResultAiText,

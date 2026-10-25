@@ -334,6 +334,17 @@ describe('device command channel', () => {
       VALUES (${sessionId}, ${EMAIL}, 'CASE-DEVICE-TEST', ${AGENT_DEVICE}, 'waiting_execute', now() + interval '30 minutes')
       ON CONFLICT (id) DO NOTHING
     `;
+    // 解決ループのコマンドは step の期限を満たすときだけ配信される（Phase C）。
+    await sql`
+      INSERT INTO resolution_steps
+        (id, session_id, seq, skill_id, skill_version, skill_content_hash, params,
+         rationale, risk_level, status, nonce, approval_expires_at, deadline_at)
+      VALUES
+        (${stepId}, ${sessionId}, 1, 'os.info', '1.0.0', 'sha256:unknown', '{}'::jsonb,
+         'test', 1, 'approved', 'test-nonce', now() + interval '5 minutes',
+         now() + interval '60 seconds')
+      ON CONFLICT (id) DO NOTHING
+    `;
     await sql`
       INSERT INTO device_commands
         (user_email, device_id, op_id, params, skill_id, skill_version, session_id, step_id)

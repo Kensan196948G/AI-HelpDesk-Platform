@@ -415,12 +415,18 @@ Phase B の独立レビューで指摘された High 3 件を、Phase C 着手�
 | 項目 | 状態 | 実体 |
 |---|---|---|
 | 端末オフライン / 結果タイムアウト | 実装 | 承認時に `RESOLVE_DEVICE_OFFLINE_SEC`（既定 120 秒）で `DEVICE_OFFLINE`。承認時に `timeout_sec` / `deadline_at` を確定し、`sweepResolveTimeouts()` が期限超過を `failed`（`RESULT_TIMEOUT`）→ セッション `escalated`。期限後の結果は状態を進めない |
-| リスク 4 以上の IT 管理者承認 | 実装 | `RESOLVE_ADMIN_ALLOWLIST`（既定空・fail-closed）。`GET /api/resolve/admin/pending` と `POST /api/resolve/steps/:id/admin-approve`。payload は利用者側と別の 13 キー。自己承認・改ざん・期限切れ（10 分）を拒否。UI に承認待ちと注意表示 |
+| リスク 4 以上の IT 管理者承認 | 実装 | `RESOLVE_ADMIN_ALLOWLIST`（既定空・fail-closed）。`GET /api/resolve/admin/pending` と `POST /api/resolve/steps/:id/admin-approve`。payload は利用者側と別の 13 キー。自己承認・改ざん・期限切れ（5 分・依頼者側と同一）を拒否。UI に承認待ちと注意表示 |
 | 手動「解決した」「担当者へ」 | 実装 | `POST /api/resolve/sessions/:id/resolve` / `escalate`。監査に `by: manual` と理由。UI に両ボタン |
 | fieldsToAi の厳密適用 | 実装 | 結果取り込み時に `result_ai`（宣言フィールドのみ・既定拒否）を保存し、次提案は `result_ai` だけを使う。画面用 `last_summary` は従来どおり |
 
 - migration: `013_resolution_phase_c.sql`（additive。CHECK 制約は 011 のままで足りる）
-- テスト: **273 件**（+12）。`npm run typecheck` / `npm run lint` 緑
+- テスト: **278 件**（+17）。`npm run typecheck` / `npm run lint` 緑
+- 独立レビュー対応: AI 要約の fieldsToAi 迂回、期限後コマンド配信、リスク 5 の実行、
+  session/step のロック順逆転（デッドロック）、複数管理者の上書き、手動理由の PII、
+  既存データの期限 backfill（migration 014）を修正。
+- 既知の制約: 一部 Skill の実出力キー（osName / volumes / name）が `fieldsToAi`
+  （os / disks / service）と一致せず、厳密適用後は AI 入力が空になる。Skill 定義の変更は
+  `approved.json` の再承認が必要なため、人間の承認後に名前を揃える。
 - 未実施: Windows 実機での PowerShell 実行とロールバック確認、管理画面（別画面）への承認導線統合、
   fieldsToAi のドット記法拡張
 - 注記: 本ブランチは `feat/resolve-loop-poc`（Phase B）から分岐。`main` は設計書（572ecb3）のみで、

@@ -176,6 +176,8 @@
       }
       try {
         const data = await api(`/api/resolve/steps/${STATE.step.id}`);
+        // 手動クローズ後に古いポーリング応答が返った場合は状態を巻き戻さない。
+        if (STATE.mode !== 'executing') return;
         STATE.session = data.session;
         STATE.step = data.step;
         const status = data.step?.status;
@@ -251,6 +253,8 @@
     } catch (error) {
       // 管理者でなければ 403。承認待ちは表示しない（存在も漏らさない）。
       STATE.adminItems = [];
+      // 403 以外は一時障害の可能性があるため、次回の定期更新で再試行する。
+      if (error.status !== 403 && error.status !== 401) STATE.adminLoaded = false;
     }
     render(true);
   }
@@ -498,6 +502,12 @@
     else if (action === 'admin-approve')
       void adminApprove(Number(button.getAttribute('data-index') || '0'));
   });
+
+  // 承認待ちは画面を開いた後に増えるため、60 秒ごとに取り直す。
+  setInterval(() => {
+    STATE.adminLoaded = false;
+    void loadAdminPending();
+  }, 60_000);
 
   setInterval(ensurePanel, 800);
   window.addEventListener('load', ensurePanel, { once: true });

@@ -371,6 +371,15 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
               SELECT 1 FROM resolution_sessions s
               WHERE s.id = dc.session_id
                 AND s.status IN ('waiting_execute', 'executing', 'waiting_continue')
+                -- 期限切れの解決ステップは配信しない（配信と期限判定を同一 UPDATE で原子的に行う）。
+                AND (
+                  dc.step_id IS NULL OR EXISTS (
+                    SELECT 1 FROM resolution_steps st
+                    WHERE st.id = dc.step_id
+                      AND st.status IN ('approved', 'executing')
+                      AND (st.deadline_at IS NULL OR st.deadline_at > now())
+                  )
+                )
             )
           )
         ORDER BY dc.created_at

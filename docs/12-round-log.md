@@ -341,4 +341,7 @@
   `RESOLVE_ADMIN_ALLOWLIST` は既定空（fail-closed）。
 - 手動「解決した」「担当者へ」を API / UI に追加。監査に理由を記録。
 - `outputPolicy.fieldsToAi` を結果取り込み時に厳密適用し、AI には `result_ai` のみ渡す。
-- 検証: 273 tests PASS、typecheck / lint 緑。未実施: Windows 実機実行、管理画面への承認導線統合。
+- 検証: 278 tests PASS、typecheck / lint 緑。未実施: Windows 実機実行、管理画面への承認導線統合。
+- 独立レビュー（High 4 / Medium 6）対応: AI 要約の fieldsToAi 迂回、期限後コマンド配信、
+  リスク 5 の実行、lock 順逆転、管理者の二重承認、理由の PII、既存データ backfill（014）を修正。
+  残: Skill 実出力名と fieldsToAi の不一致（`approved.json` 再承認が必要）、UI の同時操作競合。

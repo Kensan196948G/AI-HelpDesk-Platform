@@ -192,6 +192,16 @@ N のレスポンス: `{ "ok": true, "step": {status:"rejected"...}, "session": 
 | 409  | `PARAM_INVALID`        | Skill パラメータ不正                        |
 | 429  | `RATE_LIMITED`         | レート制限（sessions 20/分、approve 10/分） |
 | 404  | `NOT_FOUND`            | 案件・セッション・ステップが無い/他者のもの |
+| 403  | `FORBIDDEN`            | IT 管理者以外が承認待ち/承認を操作          |
+| 403  | `SELF_APPROVAL_FORBIDDEN` | 依頼者本人による管理者承認               |
+| 409  | `ADMIN_APPROVAL_REQUIRED` | リスク 4 以上で管理者承認が無い           |
+| 409  | `ADMIN_APPROVAL_EXPIRED`  | 管理者承認の 5 分期限切れ                 |
+| 409  | `ADMIN_ALREADY_DECIDED`   | 別の管理者が承認/却下済み                 |
+| 400  | `ADMIN_APPROVAL_MISMATCH` | 管理者承認ハッシュ不一致                  |
+| 409  | `SKILL_RISK_FORBIDDEN`    | リスク 5（禁止）の Skill                  |
+| 409  | `DEVICE_OFFLINE`          | 端末の最終応答が閾値超過                  |
+| 409  | `SESSION_TERMINAL`        | 終端状態への手動クローズ                  |
+| 409  | `ADMIN_APPROVAL_NOT_REQUIRED` | リスク 4 未満に管理者承認を要求        |
 
 ## 8. Phase C で追加した API
 
@@ -219,6 +229,7 @@ N のレスポンス: `{ "ok": true, "step": {status:"rejected"...}, "session": 
 - 承認時に端末の最終応答が `RESOLVE_DEVICE_OFFLINE_SEC`（既定 120 秒）より古いと 409 `DEVICE_OFFLINE`。
 - 承認時に `step.timeoutSec` / `step.deadlineAt` が確定。期限超過は `step.status = "failed"`、
   `step.error = "RESULT_TIMEOUT"`、セッションは `escalated`。期限後の結果は状態を進めない。
+- 端末への配信 `/api/device/command` も期限を原子的に確認し、期限切れの step のコマンドは配信しない。
 
 ### fieldsToAi
 
