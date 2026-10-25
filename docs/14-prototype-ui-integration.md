@@ -34,6 +34,19 @@
   - AI モデル名「社内ローカルLLM（模擬）」等 →「DeepSeek-V4.1-Flash」
 - 変更点は `apps/api/src/routes/prototype.ts` の文字列置換と `apps/api/src/prototype/bridge.js` / `device-bridge.js` に限定。
 
+#### 2-1-1. 保存状態の欠落キー補完（2026-10-25 追加）
+
+- 画面の `load()` は `v===31` の保存値をそのまま採用するため、一部キーだけを持つ状態を
+  読み込むと `S.stats` / `S.faqCandidates` 参照画面が TypeError で白画面になる
+  （2026-10-23 の検証用スクリプトが実在アカウントの状態を上書きした事例で発生）。
+- `prototype.ts` の `patchStateLoad()` が `load()` の該当行に**欠落キーだけ**を補う処理を差し込む。
+  既存の値は上書きしない。既定値に `freshState()` は使わず（サンプル案件・FAQ・監査ログを
+  生成してしまうため）、キーごとの空の既定値と `seedDevices()`（端末）を使う。
+- DOM / CSS / 画面遷移は変更しない。元 HTML の当該 1 行に文字列置換で追記するだけ。
+- 状態を書き込む検証スクリプトは、`GET /api/state` が返す**正規化後メール**を正本にしてバックアップ・復元し、
+  復元後の内容一致を検証すること。API と DB の一致確認、preview の既定拒否、復元のトランザクション化も行う
+  （`scripts/e2e/two-account-handover.mjs`）。
+
 ### 2-2. 認証は Cloudflare Access のみ
 
 - 公開 URL: **https://ai-helpdesk.mirai-dx-platform.com**

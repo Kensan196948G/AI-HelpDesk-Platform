@@ -3,10 +3,14 @@
  * - A（合成アドレス・allowed ドメイン）が案件を共有
  * - B（DX 推進部の実在社員）が受信箱から引き受け、AI 追加質問
  * - C（別の DX 推進部社員）がナレッジ承認
- * 実行後に A の状態・引継ぎ行・B の状態を元へ戻す。
- * 実行: AIHD_E2E_ALLOW=1 とサービス用 DATABASE_URL を設定して
+ * 実行後に A/B/C の状態・引継ぎ行を元へ戻し、内容が一致することを検証する。
+ * 実行: AIHD_E2E_ALLOW=1 AIHD_E2E_CONFIRM_DB=<DB名> とサービス用 DATABASE_URL を設定して
  *   node scripts/e2e/two-account-handover.mjs
  * メールアドレスは出力しない（マスクのみ）。
+ *
+ * 注意: これは稼働中 DB を一時的に書き換える。必ず検証用 DB（例 ai_helpdesk_verify）で
+ * 実行し、preview で実行する場合は事前にバックアップを取ること。
+ * 同じ DB に対して同時に 2 つ実行しないこと（排他はしていない）。
  */
 import postgres from 'postgres';
 
@@ -18,7 +22,32 @@ if (process.env.AIHD_E2E_ALLOW !== '1') {
   process.exit(2);
 }
 
-const BASE = 'http://127.0.0.1:18950';
+const dbName = (() => {
+  try {
+    return decodeURIComponent(new URL(process.env.DATABASE_URL || '').pathname.replace(/^\//, ''));
+  } catch {
+    return '';
+  }
+})();
+if (
+  /^ai_helpdesk_preview/.test(dbName.trim().toLowerCase()) &&
+  process.env.AIHD_E2E_ALLOW_PREVIEW !== '1'
+) {
+  console.error(
+    'preview（本番相当）DB への書き込みは既定で拒否します。\n' +
+      '意図して実行する場合だけ AIHD_E2E_ALLOW_PREVIEW=1 を設定してください。',
+  );
+  process.exit(2);
+}
+if (!dbName || process.env.AIHD_E2E_CONFIRM_DB !== dbName) {
+  console.error(
+    `対象 DB を確認できません（DB=${dbName || '不明'}）。\n` +
+      '誤った DB を書き換えないよう、AIHD_E2E_CONFIRM_DB=<DATABASE_URL の DB 名> を明示してください。',
+  );
+  process.exit(2);
+}
+
+const BASE = process.env.AIHD_E2E_BASE || 'http://127.0.0.1:18950';
 const app = postgres(process.env.DATABASE_URL, { max: 2 });
 const info = postgres({
   host: '/var/run/postgresql',
@@ -73,8 +102,73 @@ const C = dx[1];
 const domain = B.email.split('@')[1].toLowerCase();
 const A_EMAIL = `aihd-e2e-a@${domain}`;
 
+// 別名（EMAIL_ALIASES）はサーバーだけが知る。GET /api/state は正規化後の email を返すため、
+// それを正本にしてバックアップ・復元のキーを決める（環境変数の取りこぼしで復元漏れしない）。
+async function canonicalEmailOf(email) {
+  const result = await call(email, 'GET', '/api/state');
+  if (result.status !== 200 || typeof result.json?.email !== 'string') {
+    throw new Error(`正規化後のメールを取得できません（${mask(email)} / HTTP ${result.status}）。`);
+  }
+  return result.json.email.trim().toLowerCase();
+}
+
+let A_KEY;
+let B_KEY;
+let C_KEY;
+try {
+  A_KEY = await canonicalEmailOf(A_EMAIL);
+  B_KEY = await canonicalEmailOf(B.email);
+  C_KEY = await canonicalEmailOf(C.email);
+} catch (error) {
+  console.error(String(error.message || error));
+  process.exit(2);
+}
+const stateKeys = [A_KEY, B_KEY, C_KEY];
+if (new Set(stateKeys).size !== stateKeys.length) {
+  console.error(
+    'A/B/C の正規化後メールが重複しています（別名設定を確認してください）。状態を分離できないため中止します。',
+  );
+  process.exit(2);
+}
+
+// API（BASE）が実際に使っている DB と DATABASE_URL が同じかを、一意なトークンで確認する。
+// 別 DB を指したまま B/C の状態を書き換える事故を防ぐ（A は合成アカウント）。
+const probeToken = `probe-${Date.now()}`;
+const probe = await call(A_EMAIL, 'PUT', '/api/state/cowork', {
+  data: { v: 31, __e2eProbe: probeToken },
+});
+if (probe.status !== 200) {
+  console.error(`プリフライト（状態の書き込み）に失敗しました: HTTP ${probe.status}`);
+  process.exit(2);
+}
+const probeRows = await app`
+  SELECT count(*)::int AS n FROM prototype_states
+  WHERE user_email = ${A_KEY} AND data::text LIKE ${`%${probeToken}%`}
+`;
+if (probeRows[0]?.n !== 1) {
+  console.error(
+    'API（BASE）と DATABASE_URL の DB が一致しません。書き込みは行っていません。\n' +
+      'BASE のサービスが使う DATABASE_URL を指定してください。',
+  );
+  process.exit(2);
+}
+await app`DELETE FROM prototype_states WHERE user_email = ${A_KEY}`;
+
+const stable = (value) => {
+  if (Array.isArray(value)) return value.map(stable);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort()
+        .map((key) => [key, stable(value[key])]),
+    );
+  }
+  return value;
+};
+const digest = (value) => JSON.stringify(stable(value));
+
 console.log(
-  `A=${mask(A_EMAIL)} (合成) / B=${mask(B.email)} / C=${mask(C.email)} / case=${CASE_ID}`,
+  `A=${mask(A_EMAIL)} (合成) / B=${mask(B.email)} / C=${mask(C.email)} / case=${CASE_ID} / DB=${dbName}`,
 );
 
 const cowork = {
@@ -144,9 +238,10 @@ const minimal = {
 };
 
 // ---- 既存状態のバックアップ --------------------------------------------
+// 別名は正規化後のキーで保存されるため、A/B/C すべてを正規化キーで退避する。
 const backupRows = await app`
   SELECT user_email, name, data FROM prototype_states
-  WHERE user_email IN (${A_EMAIL}, ${B.email})
+  WHERE user_email IN (${A_KEY}, ${B_KEY}, ${C_KEY})
 `;
 const backup = new Map(backupRows.map((r) => [`${r.user_email}|${r.name}`, r.data]));
 
@@ -237,7 +332,7 @@ try {
     await app`SELECT status, approved_by, self_approved FROM case_handovers WHERE id = ${handoverId}`;
   if (
     row[0]?.status === 'completed' &&
-    row[0]?.approved_by === C.email &&
+    row[0]?.approved_by === C_KEY &&
     row[0]?.self_approved === false
   ) {
     ok('DB: completed / 承認者=C / 自己承認ではない');
@@ -247,24 +342,52 @@ try {
 } catch (error) {
   ng('例外', String(error.message || error));
 } finally {
-  // ---- 復元 ------------------------------------------------------------
-  if (handoverId) await app`DELETE FROM case_handovers WHERE id = ${handoverId}`;
-  await app`DELETE FROM case_handovers WHERE case_id = ${CASE_ID}`;
-  await app`DELETE FROM prototype_states WHERE user_email = ${A_EMAIL}`;
-  await app`DELETE FROM prototype_states WHERE user_email = ${B.email}`;
-  for (const [key, data] of backup) {
-    const [email, name] = key.split('|');
-    await app`
-      INSERT INTO prototype_states (user_email, name, data)
-      VALUES (${email}, ${name}, ${JSON.stringify(data)}::jsonb)
-      ON CONFLICT (user_email, name) DO UPDATE SET data = EXCLUDED.data
-    `;
+  // ---- 復元（1 トランザクションで行う。途中失敗でも部分復元を残さない） ----
+  let restoredCount = 0;
+  let leftoverHandovers = -1;
+  try {
+    const outcome = await app.begin(async (tx) => {
+      if (handoverId) await tx`DELETE FROM case_handovers WHERE id = ${handoverId}`;
+      await tx`DELETE FROM case_handovers WHERE case_id = ${CASE_ID}`;
+      // A/B/C の状態を一度消し、退避した内容だけを戻す（検証用フィクスチャを残さない）。
+      await tx`DELETE FROM prototype_states WHERE user_email IN (${A_KEY}, ${B_KEY}, ${C_KEY})`;
+      for (const [key, data] of backup) {
+        const [email, name] = key.split('|');
+        await tx`
+          INSERT INTO prototype_states (user_email, name, data)
+          VALUES (${email}, ${name}, ${app.json(data)})
+          ON CONFLICT (user_email, name) DO UPDATE SET data = EXCLUDED.data
+        `;
+      }
+      const restoredRows = await tx`
+        SELECT user_email, name, data FROM prototype_states
+        WHERE user_email IN (${A_KEY}, ${B_KEY}, ${C_KEY})
+      `;
+      const restored = new Map(restoredRows.map((r) => [`${r.user_email}|${r.name}`, r.data]));
+      const mismatched = [...backup.keys()].filter(
+        (key) => !restored.has(key) || digest(restored.get(key)) !== digest(backup.get(key)),
+      );
+      const extra = [...restored.keys()].filter((key) => !backup.has(key));
+      const left = await tx`
+        SELECT count(*)::int AS n FROM case_handovers WHERE case_id = ${CASE_ID}
+      `;
+      return { restored, mismatched, extra, left: left[0].n };
+    });
+    restoredCount = outcome.restored.size;
+    leftoverHandovers = outcome.left;
+    if (outcome.mismatched.length === 0 && outcome.extra.length === 0) {
+      ok('状態を元へ戻した（復元後に内容が一致）', `${backup.size} 件`);
+    } else {
+      ng(
+        '状態の復元が一致しない',
+        `戻り不一致=${outcome.mismatched.length} 件 / 残存=${outcome.extra.length} 件。手動での復元が必要です`,
+      );
+    }
+  } catch (error) {
+    ng('復元処理が失敗しました', String(error.message || error));
   }
-  const leftA =
-    await app`SELECT count(*)::int AS n FROM prototype_states WHERE user_email = ${A_EMAIL}`;
-  const leftH = await app`SELECT count(*)::int AS n FROM case_handovers WHERE case_id = ${CASE_ID}`;
   console.log(
-    `  復元: A の状態=${leftA[0].n} 件 / 残った引継ぎ=${leftH[0].n} 件 / B は既存 ${backupRows.filter((x) => x.user_email === B.email).length} 件へ戻した`,
+    `  復元: 対象状態=${restoredCount} 件（退避=${backup.size} 件） / 残った引継ぎ=${leftoverHandovers} 件`,
   );
   await app.end({ timeout: 5 });
   await info.end({ timeout: 5 });

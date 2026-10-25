@@ -1,7 +1,9 @@
+import { runInNewContext } from 'node:vm';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { resetRateLimits } from '../lib/rate-limit.js';
 import { buildServer } from '../server.js';
+import { patchStateLoad, STATE_DEFAULTS_PATCH } from './prototype.js';
 
 let app: FastifyInstance;
 
@@ -37,6 +39,8 @@ describe('prototype UI integration', () => {
     // 元の UI の主要な画面要素が残っている
     expect(html).toContain('新しい相談をはじめる');
     expect(html).toContain('信号の色の割合');
+    // 古い・欠けた状態で白画面にならないための補完パッチが入っている
+    expect(html).toContain(STATE_DEFAULTS_PATCH);
   });
 
   it('UI 状態を PostgreSQL に保存・取得できる', async () => {
@@ -136,5 +140,58 @@ describe('prototype UI integration', () => {
     expect(statuses.slice(0, 20).every((status) => status === 200)).toBe(true);
     expect(statuses[20]).toBe(429);
     resetRateLimits();
+  });
+});
+
+describe('保存済み状態の欠落キー補完', () => {
+  it('load() の保存値採用行に補完を差し込み、二重適用しない', () => {
+    const html = '<script>function load(){if(o&&o.v===31){S=o}}</script>';
+    const once = patchStateLoad(html);
+    expect(once).not.toBe(html);
+    expect(once).toContain(STATE_DEFAULTS_PATCH);
+    expect(once).not.toContain('{S=o}');
+    expect(patchStateLoad(once)).toBe(once);
+    // 対象行が無い HTML は変更しない（将来の画面更新で壊さない）
+    const other = '<script>const x = 1;</script>';
+    expect(patchStateLoad(other)).toBe(other);
+  });
+
+  it('一部キーだけの状態に既定値を補い、既存の値は上書きしない', () => {
+    const seedDevices = () => ({ 'MRK-NB-1': { id: 'MRK-NB-1', os: 'Windows 11' } });
+    const state: Record<string, unknown> = {
+      v: 31,
+      ui: { user: 'emp:MK0623', screen: 'home' },
+      cases: [{ id: 'CASE-1' }],
+      chats: [],
+      proposals: {},
+      tickets: [{ id: 'TKT-1' }],
+      audit: [],
+      counters: { case: 5 },
+    };
+    runInNewContext(STATE_DEFAULTS_PATCH, { S: state, seedDevices });
+
+    expect(state.stats).toEqual({ intents: {}, aiResolved: 0, queries: 0 });
+    expect(state.faqCandidates).toEqual([]);
+    expect(state.faqs).toEqual([]);
+    expect(state.estop).toBe(false);
+    expect(state.failNext).toBe(false);
+    expect(state.devices).toEqual({ 'MRK-NB-1': { id: 'MRK-NB-1', os: 'Windows 11' } });
+    // 既存のデータは失わない
+    expect(state.cases).toEqual([{ id: 'CASE-1' }]);
+    expect((state.tickets as unknown[]).length).toBe(1);
+    // 欠けている入れ子のキーだけを補う
+    const ui = state.ui as Record<string, unknown>;
+    expect(ui.user).toBe('emp:MK0623');
+    expect(ui.theme).toBe('auto');
+    const counters = state.counters as Record<string, unknown>;
+    expect(counters.case).toBe(5);
+    expect(counters.ticket).toBe(0);
+  });
+
+  it('S が無い・seedDevices が無い場合でも例外にしない', () => {
+    expect(() => runInNewContext(STATE_DEFAULTS_PATCH, {})).not.toThrow();
+    const state: Record<string, unknown> = { v: 31, chats: [] };
+    expect(() => runInNewContext(STATE_DEFAULTS_PATCH, { S: state })).not.toThrow();
+    expect(state.devices).toEqual({});
   });
 });
