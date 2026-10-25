@@ -20,6 +20,28 @@ const BRIDGE_FILES = [
 const COWORK_KEY = 'mirai-wizard-v31-cowork';
 const HELPDESK_KEY = 'mirai-wizard-v31-helpdesk';
 
+/**
+ * 保存済みの状態が古い・欠けている場合でも、画面が例外で止まらないようにする。
+ *
+ * 画面の `load()` は `v===31` なら保存値をそのまま `S` に入れる。そのため
+ * 一部のキーだけを持つ状態（検証用スクリプトが書き込んだフィクスチャ等）を
+ * 読み込むと、`S.stats` や `S.faqCandidates` を参照する画面が TypeError で
+ * 白画面になる。ここでは「無いキーだけ」を画面側の既定値で補い、既存の値は
+ * 上書きしない（利用者のデータを失わない）。
+ *
+ * 既定値に `freshState()` は使わない。`freshState()` はサンプル案件・FAQ・
+ * 監査ログも生成するため、補完のたびにデータが増えてしまう。端末だけは
+ * `S.devices[端末ID]` を直接参照する画面があるため `seedDevices()` を使う。
+ */
+export const STATE_DEFAULTS_PATCH = `(function(){try{var D={v:31,ui:{view:'flow',screen:'home',case:null,user:'u1',model:'local',theme:'auto',chat:null},chats:[],proposals:{},tickets:[],audit:[],devices:(typeof seedDevices==='function'?seedDevices():{}),faqCandidates:[],faqs:[],estop:false,failNext:false,counters:{prop:0,ticket:0,faq:0,fc:0},stats:{intents:{},aiResolved:0,queries:0}};var fill=function(target,source){for(var key in source){if(!(key in target)){target[key]=source[key];}else if(source[key]&&typeof source[key]==='object'&&!Array.isArray(source[key])&&target[key]&&typeof target[key]==='object'&&!Array.isArray(target[key])){fill(target[key],source[key]);}}};fill(S,D);}catch(e){}})();`;
+
+/** `load()` の「保存値をそのまま採用する」1 行に、欠落キー補完を差し込む。 */
+export function patchStateLoad(html: string): string {
+  const marker = 'if(o&&o.v===31){S=o}';
+  if (!html.includes(marker)) return html;
+  return html.replace(marker, () => `if(o&&o.v===31){S=o;${STATE_DEFAULTS_PATCH}}`);
+}
+
 const StateParamsSchema = z.object({ name: z.enum(['cowork', 'helpdesk']) });
 const StateBodySchema = z.object({ data: z.unknown() });
 const AiBodySchema = z.object({
@@ -129,6 +151,8 @@ function renderPrototype(boot: {
     'AIは模擬で、外部へは通信しません。データはこのブラウザ内に保存されます。',
     'AI回答は DeepSeek API、データは PostgreSQL に保存されます。',
   );
+  // 古い・欠けた状態を読み込んでも白画面にならないよう、欠落キーを補完する。
+  html = patchStateLoad(html);
   // 最初のアプリ <script> の直前に、サーバー保持の状態を localStorage へ入れる。
   // 置換文字列は `$'` `$&` `$$` を特殊パターンとして解釈するため、利用者データを含む文字列は関数で渡す。
   html = html.replace('<script>', () => `${bootScript}<script>`);
