@@ -412,6 +412,7 @@ function linuxCollect() {
   }
 
   const software = [];
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: dpkg-query の出力フォーマット（${...} は dpkg のプレースホルダ）
   const dpkg = safe('dpkg-query', ['-W', '-f=${Package}\t${Version}\t${Maintainer}\n'], 30000);
   if (dpkg) {
     for (const line of dpkg.split('\n')) {
