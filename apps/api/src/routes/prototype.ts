@@ -49,7 +49,7 @@ export function patchStateLoad(html: string): string {
  * 社員名簿から案件の依頼者を解決し、解決できない場合も表示を壊さないようにする。
  */
 export const ENSURE_CASE_USERS =
-  'function ensureCaseUsers(){try{(S.cases||[]).forEach(function(c){var id=String((c&&c.userId)||"");if(id.indexOf("emp:")===0&&!USERS[id]){var m=/^emp:([a-z]+):(.+)$/.exec(id);if(m)ensureRealUser(m[2],m[1]);}});}catch(e){}}';
+  'function ensureCaseUsers(){try{(S.cases||[]).forEach(function(c){var id=String((c&&c.userId)||"");if(id.indexOf("emp:")===0&&!USERS[id]){var m=/^emp:(?:([a-z]+):)?([A-Za-z0-9_-]+)$/.exec(id);if(m&&m[2]){var rid=ensureRealUser(m[2],m[1]||"employee");if(rid&&rid!==id&&USERS[rid])USERS[id]=USERS[rid];}}});}catch(e){}}';
 
 export function patchCaseUserResolution(html: string): string {
   let out = html;

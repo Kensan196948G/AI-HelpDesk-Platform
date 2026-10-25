@@ -5,7 +5,12 @@ import { config } from '../config.js';
 import { sql } from '../db.js';
 import { resetRateLimits } from '../lib/rate-limit.js';
 import { buildServer } from '../server.js';
-import { patchCaseUserResolution, patchStateLoad, STATE_DEFAULTS_PATCH } from './prototype.js';
+import {
+  ENSURE_CASE_USERS,
+  patchCaseUserResolution,
+  patchStateLoad,
+  STATE_DEFAULTS_PATCH,
+} from './prototype.js';
 
 let app: FastifyInstance;
 
@@ -230,5 +235,34 @@ describe('保存済み状態の欠落キー補完', () => {
     expect(patchCaseUserResolution(once)).toBe(once);
     // 対象コードが無い HTML は変更しない
     expect(patchCaseUserResolution('<div>no marker</div>')).toBe('<div>no marker</div>');
+  });
+
+  it('案件の依頼者は emp:MK0200 / emp:staff:MK1073 のどちらでも名簿から解決する', () => {
+    const calls: Array<[string, string]> = [];
+    const USERS: Record<string, unknown> = {};
+    const context = {
+      S: {
+        cases: [
+          { id: 'C1', userId: 'emp:MK0200' },
+          { id: 'C2', userId: 'emp:staff:MK1073' },
+          { id: 'C3', userId: 'u1' },
+        ],
+      },
+      USERS,
+      ensureRealUser: (empNo: string, role: string) => {
+        calls.push([empNo, role]);
+        const id = `emp:${empNo}`;
+        USERS[id] = { employeeNo: empNo };
+        return id;
+      },
+    };
+    runInNewContext(`${ENSURE_CASE_USERS};ensureCaseUsers();`, context);
+    expect(calls).toEqual([
+      ['MK0200', 'employee'],
+      ['MK1073', 'staff'],
+    ]);
+    // 画面が使う ID（emp:staff:MK1073）にも同じ社員を紐づける
+    expect(USERS['emp:MK0200']).toBeDefined();
+    expect(USERS['emp:staff:MK1073']).toBeDefined();
   });
 });
