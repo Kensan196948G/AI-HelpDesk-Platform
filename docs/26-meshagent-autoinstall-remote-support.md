@@ -4,7 +4,7 @@
 |---|---|
 | 版 | v0.1（検討中） |
 | 日付 | 2026-10-25 |
-| 状態 | **設計検討中。決定事項は「未決」**（§12） |
+| 状態 | **設計確定（D1〜D8 は 2026-10-25 決定）** / Phase 1 設計を §16 に追加 |
 | 関連 | [docs/22](22-remote-assist-handover.md) / [docs/23](23-rsp-meshcentral-integration.md) / [docs/19](19-device-command-execution.md) / [docs/25](25-skill-resolution-loop.md) |
 | 前提 | Mirai-Info = データハブ、RSP = 展開・遠隔操作の実行面、AI HelpDesk = 受付・同意・監査・報告（docs/23） |
 
@@ -244,16 +244,16 @@ AI 運用アシスタント
 
 ## 12. 決定事項（未決）
 
-| ID | 決定事項 | 選択肢 | 推奨 | 状態 |
-|---|---|---|---|---|
-| D1 | 自動導入のトリガ | 即時 / 担当者受諾時 | 担当者受諾時 | **未決** |
-| D2 | 導入同意 | 都度同意 / 包括同意 | 都度同意（初回のみ記憶） | **未決** |
-| D3 | `FULLINSTALL_ENABLED` | 有効化 / 現状維持 | Phase 0 の実測後に判断 | **未決** |
-| D4 | RSP 連携方式 | push / pull | **push（専用サービス API）**（§15 の実測を踏まえ推奨を変更） | **未決** |
-| D5 | 同一 UI の深さ | ディープリンク / iframe | Phase 1 はディープリンク | **未決** |
-| D6 | 遠隔操作の範囲・録画 | 閲覧のみ / 操作可、録画要否 | 操作可・録画必須（要運用合意） | **未決** |
-| D7 | マッピングの正 | hostname / asset_tag / 利用者→貸与端末 | hostname 第一、利用者→貸与端末を補完 | **未決** |
-| D8 | 導入失敗時の担当者アクション | 再試行 / 電話 / 訪問 | 失敗理由別に提示 | **未決** |
+| ID | 決定事項 | 決定（2026-10-25） | 補足 |
+|---|---|---|---|
+| D1 | 自動導入のトリガ | **担当者がケースを受諾した時点**で enqueue | 放置・誤操作で端末にソフトを入れない |
+| D2 | 導入同意 | **初回同意を記憶**（包括同意が規程上可能なら包括） | 同意取得と監査記録を実装時に確認 |
+| D3 | `FULLINSTALL_ENABLED` | **現状 false を維持**し、canary 許可リスト追加後に 1 台だけ有効化 | EDR・サービス再作成を伴うため段階的に |
+| D4 | RSP 連携方式 | **push（専用サービス API）** | `ensure-agent` を実装・実測済み（§15-5） |
+| D5 | 同一 UI の深さ | **Phase 1 はディープリンク**、iframe は Phase 2 | RSP 側の CSP 対応が必要 |
+| D6 | 遠隔操作の範囲・録画 | **操作可・録画必須**（運用合意前提） | 保持期間・閲覧権限は運用で決定 |
+| D7 | マッピングの正 | **hostname 第一 + 利用者→貸与端末で補完** | 0/複数件は担当者が選択 |
+| D8 | 導入失敗時 | **理由別に再試行／電話／訪問を提示** | 15 分間隔・日中のみの制約を明記 |
 
 ## 13. リスク
 
@@ -348,3 +348,92 @@ RSP 側の実装を main にマージ（`cf15774`）し、`rsp-api.service` を�
 - **未導入端末の `triggered_deploy=true` は実測していない**（実際の展開キュー投入を伴うため）。
   実測する場合は、対象端末の合意と `FULLINSTALL_ENABLED` の状態を確認してから行う。
 - RSP 側 PR: `#145`（PyJWT 2.15.0 更新と Trivy DB の GHCR 切替を含む）
+
+
+## 16. Phase 1 設計（ケース画面の遠隔対応パネル）
+
+D1〜D8 の決定を前提に、最初に実装する範囲を定義する。**自動 enqueue は Phase 2** とし、
+Phase 1 は「担当者が明示的に導入を依頼し、状態を見て、RSP を開く」までとする。
+
+### 16-1. スコープ
+
+- 担当者（helpdesk / approver ロール）のケース画面に「遠隔対応」パネルを追加
+- 対象端末の MeshAgent 状態表示（導入済み / 未導入 / 導入待ち / 失敗）
+- 手動「導入を依頼」（RSP `ensure-agent` 呼び出し）
+- RSP のデバイス/セッションへの **ディープリンク**（別タブ・SSO）
+- 操作の監査記録（case × rsp_device × request）
+
+非スコープ: 自動 enqueue（Phase 2）、iframe 埋め込み（Phase 2）、コマンドキュー連携（Phase 3）、
+画面録画の自動収集（運用側）。
+
+### 16-2. 画面構成（ケース内）
+
+```
+🛟 遠隔対応
+端末: 202010001M（利用者: 山田 太郎）  状態: MeshAgent 導入済み・online
+[導入状況を更新] [RSPで開く]
+
+（未導入の場合）
+状態: MeshAgent 未導入
+[導入を依頼]   ※展開は平日 15 分間隔。完了まで時間がかかります
+```
+
+- パネルは担当者ロールのみ表示
+- 端末が特定できない場合は「端末を特定できません」と表示し、RSP で手動選択する導線のみ出す
+- 「RSPで開く」は RSP のログイン済みセッションを前提としたディープリンク（Phase 1）
+- 導入依頼後は 30 秒間隔で状態を更新（画面を閉じてもサーバ側の要求は残る）
+
+### 16-3. 端末マッピング（Phase 1）
+
+- 第一キー: AI HelpDesk の PC 情報の `hostname`（端末エージェント導入済みの場合）
+- hostname が無い場合: 利用者に紐づく貸与端末を Mirai-Info から取得し、候補が 1 件なら提示、
+  複数件は担当者が選択（`device_mesh_links` に `verified_by` とともに保存）
+- RSP の `device_id` は `GET /api/v1/service/devices?hostname=...` を追加して解決する
+  （Phase 0 では DB 直接参照で代替。Phase 1 でサービス API を追加）
+- マッピング未確定のまま「導入」「RSPで開く」を押させない
+
+### 16-4. AI HelpDesk 側 API（案）
+
+| メソッド | パス | 内容 |
+|---|---|---|
+| GET | `/api/cases/:id/remote-support` | 端末・マッピング・MeshAgent 状態・直近の導入要求 |
+| POST | `/api/cases/:id/remote-support/ensure` | RSP `ensure-agent` を呼び、`mesh_install_requests` を記録 |
+| POST | `/api/cases/:id/remote-support/refresh` | RSP の状態を再取得（ポーリング用） |
+| GET | `/api/cases/:id/remote-support/links` | RSP のディープリンク（desktop / device） |
+
+- RSP サービスキーは **サーバ環境変数のみ**（ブラウザへ返さない）
+- レート制限: ensure は 1 ケース 1 分 3 回まで
+- 監査: `remote_support.requested` / `remote_support.opened` を既存監査チェーンへ追記
+
+### 16-5. RSP 側の追加（Phase 1）
+
+- `ensure-agent` は実装済み（§15-5）
+- 端末検索用に `GET /api/v1/service/devices?hostname=` を追加（サービスキー + IP allowlist）
+- ディープリンク生成は RSP の既存 `create_remote_session_url` を利用（Phase 2 でセッション作成 API）
+
+### 16-6. 設定
+
+| 変数 | 用途 |
+|---|---|
+| `RSP_BASE_URL` | RSP のベース URL（サーバ側） |
+| `RSP_SERVICE_KEY` | `X-RSP-Service-Key`（サーバ側のみ・ログに出さない） |
+| `RSP_DEEP_LINK_BASE` | 担当者に返す RSP の URL |
+
+### 16-7. エラーとフォールバック
+
+| 状況 | 表示 |
+|---|---|
+| RSP 503 `SERVICE_AUTH_DISABLED` | 「遠隔対応の連携が未設定です。管理者に連絡してください」 |
+| 401 `INVALID_SERVICE_KEY` | 同上（設定不備として扱う） |
+| 404 `DEVICE_NOT_FOUND` | 「端末が見つかりません。マッピングを確認してください」 |
+| WinRM 不通 | 「導入できません（WinRM 不通）。電話・訪問で対応してください」 |
+| 導入失敗（ワーカー） | 理由を表示し、再試行/電話/訪問を提示 |
+
+### 16-8. Phase 1 受入
+
+- 担当者ロールでパネルが表示され、他ロールには表示されない
+- 導入済み端末: 「導入済み・online」と表示され、`ensure` は skip（`triggered_deploy=false`）
+- 未導入端末: 「導入を依頼」で RSP の展開キューに投入され、状態が「導入待ち」になる
+- RSP で開く: ディープリンクが開き、対象端末が一致している
+- 監査: 誰が・いつ・どのケースで・どの端末に対して要求/起動したかが残る
+- テスト: 上記を mock RSP で自動テスト + 実機 1 台で手動確認（Phase 0 の実測を再利用）
