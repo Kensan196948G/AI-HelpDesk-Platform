@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { sql } from '../db.js';
@@ -258,7 +258,13 @@ describe('device command channel', () => {
       headers: { 'x-device-token': agentToken },
     });
     expect(res.statusCode, res.body).toBe(200);
-    expect(res.json().command.id).toBe(commandId);
+    const command = res.json().command;
+    expect(command.id).toBe(commandId);
+    // 既存の SPOOLER_RESTART は解決ループの skill 情報を持たない（null で返る）。
+    expect(command.skill_id).toBeNull();
+    expect(command.skill_version).toBeNull();
+    expect(command.session_id).toBeNull();
+    expect(command.step_id).toBeNull();
     const again = await app.inject({
       method: 'GET',
       url: '/api/device/command',
@@ -314,5 +320,32 @@ describe('device command channel', () => {
       payload: { ok: true },
     });
     expect(res.statusCode).toBe(404);
+  });
+
+  it('Skill コマンドは skill_id / skill_version / session_id / step_id を返す', async () => {
+    // 先行テストが残した queued 行の影響を受けないように消してから検証する。
+    await sql`DELETE FROM device_commands WHERE user_email = ${EMAIL} AND status = 'queued'`;
+    const sessionId = randomUUID();
+    const stepId = randomUUID();
+    await sql`
+      INSERT INTO device_commands
+        (user_email, device_id, op_id, params, skill_id, skill_version, session_id, step_id)
+      VALUES
+        (${EMAIL}, 'route-browser-1', 'os.info', '{}'::jsonb, 'os.info', '1.0.0',
+         ${sessionId}, ${stepId})
+    `;
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/device/command',
+      headers: { 'x-device-token': agentToken },
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    const command = res.json().command;
+    expect(command.op_id).toBe('os.info');
+    expect(command.skill_id).toBe('os.info');
+    expect(command.skill_version).toBe('1.0.0');
+    expect(command.session_id).toBe(sessionId);
+    expect(command.step_id).toBe(stepId);
+    expect(command.params).toEqual({});
   });
 });

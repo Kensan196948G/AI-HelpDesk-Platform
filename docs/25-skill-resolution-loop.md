@@ -368,3 +368,20 @@
 - 既存 `device_commands` との互換（移行 or 併存）
 - 高リスク Skill の承認者ロール定義（既存 `itadmin` を利用）
 - 画面の配置（案件チャット下 / 別ツール）の最終確認
+
+## 17. 実装状況（2026-10-25 / Phase B）
+
+| 項目 | 状態 |
+|---|---|
+| DB | `011_resolution_loop.sql`（skills / resolution_sessions / resolution_steps、device_commands・device_tokens 拡張） |
+| API | `/api/resolve/*` 7 本。承認ハッシュ・Y/N 二段階・状態機械 |
+| Skill | 読み取り専用 5 件（os.info / disk.space / spooler.status / service.status / network.adapters）。起動時に `.ps1` の SHA-256 を計算して upsert |
+| 端末 | `endpoint-command-agent.mjs` が許可済み `.ps1` を引数配列で実行。`--mock`/非 Windows は fixture |
+| UI | `resolve-bridge.js`（案件ウィザード下にカード）。実行前 Y/N → 結果 → 継続 Y/N → 停止 |
+| テスト | 新規 46 件（resolve）+ device 13 件、全体 **253 件**。UI E2E で 2 ステップのループを実測 |
+| 未実施 | Windows 実機の PowerShell 実行、estop 連携、端末オフライン検知、承認期限切れ後の再提案 |
+
+Phase B の実測（隔離 DB + mock エージェント）:
+- `network.adapters` 提案 → Y → `done` → 結果表示 → 継続 Y → `os.info` 提案 → Y → `done` → 継続 N → `stopped`
+- 画面の pageerror / HTTP 4xx は 0。
+

@@ -148,6 +148,29 @@
 - 報告書のエラー: 429 `RATE_LIMITED` / `REPORT_QUOTA`、502 `PDF_FAILED`、503 `PDF_UNAVAILABLE` / `PDF_BUSY`。
 - 詳細: [21-final-report-export.md](21-final-report-export.md) / [22-remote-assist-handover.md](22-remote-assist-handover.md)。
 
+## 6-4. 解決ループ / Skills（Phase B / 2026-10-25 追加）
+
+設計: [25-skill-resolution-loop.md](25-skill-resolution-loop.md)。すべて Access 認証済み（`authenticateUi`）。
+AI は Skill ID とパラメータだけを提案し、コマンド文字列は生成しない。
+
+| Method | Path | 権限 | 説明 |
+|---|---|---|---|
+| GET | `/api/resolve/skills` | Access 認証 | 承認済み Skill の一覧（読み取り専用の 5 件） |
+| POST | `/api/resolve/sessions` | 本人 | `{caseId, deviceId}` でセッション開始＋初回提案。`step.approvalChallenge` を返す |
+| POST | `/api/resolve/steps/:id/approve` | 本人 | `{decision:'Y'|'N', approvalHash}`。Y は承認ハッシュ検証後 `device_commands` に登録 |
+| GET | `/api/resolve/steps/:id` | 本人 | 実行状態。`done` / `failed` を検知してセッションを更新 |
+| POST | `/api/resolve/steps/:id/continue` | 本人 | 結果後の Y/N。Y は次の提案、N は停止 |
+| POST | `/api/resolve/sessions/:id/stop` | 本人 | 中止 |
+| GET | `/api/resolve/sessions/:id` | 本人 | セッションとステップ概要 |
+
+- 承認ハッシュ: `stableStringify(payload)` → SHA-256（hex）。`payload` は `sessionId, stepId, seq, skillId,
+  skillVersion, skillContentHash, params, deviceId, userEmail, riskLevel, nonce, expiresAt` の 12 キー。
+- 実行は `device_commands`（`skill_id` / `session_id` / `step_id` 付き）に登録し、端末エージェントが
+  `GET /api/device/command` で取得して実行する。Phase B は読み取り専用 Skill のみ。
+- エラー: `APPROVAL_MISMATCH` / `APPROVAL_EXPIRED` / `SESSION_EXPIRED` / `STEP_NOT_APPROVABLE` /
+  `STEP_NOT_CONTINUABLE` / `STEP_LIMIT` / `SKILL_NOT_ALLOWED` / `PARAM_INVALID` / `NO_SKILL` / `RATE_LIMITED`。
+- 上限: 最大 6 ステップ・30 分・同一 Skill+params の再実行禁止。失敗は安全側で `escalated`。
+
 ## 7. セキュリティ上の前提
 
 - Preview では Worker が `X-Proxy-Secret` を付与し、API は共有秘密のない直接アクセスを拒否する（`REQUIRE_PROXY_SECRET=true`）。

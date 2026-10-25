@@ -320,3 +320,14 @@
 - 最終確認（2026-10-25 14:09）: 公開 URL 再読み込みで、認証済みブラウザから 11 リクエスト（GET /・名簿・
   device/browser・state PUT）がすべて 200。`mode:enforce` の JWT 検証成功を確認し、proxy secret 経路の
   多層防御が実ブラウザで成立することを実測した。
+
+## Round 29 — 解決ループ / Skills Phase B（2026-10-25）
+
+- 設計（Phase A）: docs/25-skill-resolution-loop.md。Y/N 二段階、承認ハッシュ、停止条件、Skill スキーマ、API/DB、脅威モデル。
+- Phase B（読み取り専用ループPoC）を実装:
+  - DB 011（skills / resolution_sessions / resolution_steps、device_commands・device_tokens 拡張）
+  - `/api/resolve/*` 7 本、承認ハッシュ（stableStringify + SHA-256）、状態機械、PII 伏せ字、監査
+  - 読み取り専用 Skill 5 件（PowerShell + `--mock` fixture）、端末エージェントの許可スクリプト実行
+  - UI `resolve-bridge.js`（カード、実行前 Y/N、結果、継続 Y/N、中止）
+- 検証: 新規 46 件 + device 13 件、全体 253 件 PASS。UI E2E で network.adapters → os.info の 2 ステップを実測（pageerror 0）。
+- 未実施: Windows 実機、estop 連携、端末オフライン、承認期限切れ再提案。

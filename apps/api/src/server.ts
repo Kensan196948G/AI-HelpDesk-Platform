@@ -6,6 +6,8 @@ import { allowlistSize, getAllowlist } from './auth/allowlist.js';
 import { requireCloudflareAccess } from './auth/ui.js';
 import { config } from './config.js';
 import { ApiError, forbidden } from './errors.js';
+import { resolveRoutes } from './resolve/routes.js';
+import { ensureSkillCatalog } from './resolve/skills.js';
 import { auditRoutes } from './routes/audit.js';
 import { authRoutes } from './routes/auth.js';
 import { caseHandoverRoutes } from './routes/case-handovers.js';
@@ -184,6 +186,12 @@ export async function buildServer(options?: { logger?: boolean }): Promise<Fasti
   });
 
   await app.register(prototypeRoutes);
+  // 解決ループの Skill カタログを同期する。スクリプト未作成でも起動は止めない（draft 登録）。
+  try {
+    await ensureSkillCatalog();
+  } catch (error) {
+    app.log.error({ err: error }, 'Skill カタログの同期に失敗しました。');
+  }
   if (config.AUTH_MODE === 'local') {
     await app.register(authRoutes, { prefix: '/api' });
   }
@@ -198,6 +206,7 @@ export async function buildServer(options?: { logger?: boolean }): Promise<Fasti
   await app.register(knowledgeRoutes, { prefix: '/api' });
   await app.register(auditRoutes, { prefix: '/api' });
   await app.register(dashboardRoutes, { prefix: '/api' });
+  await app.register(resolveRoutes, { prefix: '/api' });
   await app.register(healthRoutes, { prefix: '/api' });
 
   return app;

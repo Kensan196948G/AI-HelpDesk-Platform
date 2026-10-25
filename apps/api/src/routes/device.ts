@@ -333,7 +333,7 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
         LIMIT 1
       )
       AND status = 'queued'
-      RETURNING id, op_id, params, created_at
+      RETURNING id, op_id, params, created_at, skill_id, skill_version, session_id, step_id
     `;
     if (!rows[0]) return reply.code(204).send();
     const command = rows[0] as { params?: unknown };
