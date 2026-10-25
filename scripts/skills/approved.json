@@ -7,8 +7,8 @@
       "scriptHash": "sha256:3eb14a4ff13d60373a2bd05ab0db2fd9f33226991368337487dbb2066cae1bb6",
       "contentHash": "sha256:d7ac254f6ad7196644755863303d963653cd4e25b6c0f3eb05c398fb386b156b",
       "approvedBy": "kensan1969@gmail.com",
-      "approvedAt": "2026-10-25T07:34:15.761Z",
-      "note": "2026-10-25 Phase C: fieldsToAi を実出力キーへ整合（人間承認）"
+      "approvedAt": "2026-10-25T15:55:39.162Z",
+      "note": "2026-10-26 オーナー承認: temp.cleanup の verify を deletedBytes>=1 に強化"
     },
     {
       "id": "disk.space",
@@ -16,8 +16,8 @@
       "scriptHash": "sha256:a07b9aae1957bb32bc7da3dbc61a9d6c502a8343a50f4b116ff52318d6eb277d",
       "contentHash": "sha256:1810ec9b7e7d9612654f698741f078b7f3125bffa16f3ab12fe51701af3024a5",
       "approvedBy": "kensan1969@gmail.com",
-      "approvedAt": "2026-10-25T07:34:15.761Z",
-      "note": "2026-10-25 Phase C: fieldsToAi を実出力キーへ整合（人間承認）"
+      "approvedAt": "2026-10-25T15:55:39.162Z",
+      "note": "2026-10-26 オーナー承認: temp.cleanup の verify を deletedBytes>=1 に強化"
     },
     {
       "id": "spooler.status",
@@ -25,8 +25,8 @@
       "scriptHash": "sha256:38efeb36160b873cecf8d15358ff02b000b792284a3b5b8d19016e13a37d166c",
       "contentHash": "sha256:62d6e79f5cf510464fffc2616ce0f4cd22d33954681b7da006bff876863ed828",
       "approvedBy": "kensan1969@gmail.com",
-      "approvedAt": "2026-10-25T07:34:15.761Z",
-      "note": "2026-10-25 Phase C: fieldsToAi を実出力キーへ整合（人間承認）"
+      "approvedAt": "2026-10-25T15:55:39.162Z",
+      "note": "2026-10-26 オーナー承認: temp.cleanup の verify を deletedBytes>=1 に強化"
     },
     {
       "id": "service.status",
@@ -34,8 +34,8 @@
       "scriptHash": "sha256:b577fb8e6f5aa7588ce93d37ffb7eee91c1624a70db921c6cb21ad68f9c01ab3",
       "contentHash": "sha256:5c154948fdfc704f00c8acbd16741dabe4220a3e6ca00739f61211d6d7ac3f1d",
       "approvedBy": "kensan1969@gmail.com",
-      "approvedAt": "2026-10-25T07:34:15.761Z",
-      "note": "2026-10-25 Phase C: fieldsToAi を実出力キーへ整合（人間承認）"
+      "approvedAt": "2026-10-25T15:55:39.162Z",
+      "note": "2026-10-26 オーナー承認: temp.cleanup の verify を deletedBytes>=1 に強化"
     },
     {
       "id": "network.adapters",
@@ -43,8 +43,71 @@
       "scriptHash": "sha256:13698d5c0cf06aed87f5f5ba4342747a42cca58045df78f8581917300c4fa941",
       "contentHash": "sha256:d148bd14a65beb2120718f56ef0a649cc7292836b5991852718a7943006c769c",
       "approvedBy": "kensan1969@gmail.com",
-      "approvedAt": "2026-10-25T07:34:15.761Z",
-      "note": "2026-10-25 Phase C: fieldsToAi を実出力キーへ整合（人間承認）"
+      "approvedAt": "2026-10-25T15:55:39.162Z",
+      "note": "2026-10-26 オーナー承認: temp.cleanup の verify を deletedBytes>=1 に強化"
+    },
+    {
+      "id": "spooler.restart",
+      "version": "1.0.0",
+      "scriptHash": "sha256:c5e94d258ec4f3601b86ae35c4d66f6120deef7d52eaf127228c8aba8fca9950",
+      "contentHash": "sha256:3460d8ff156ba69bfe379bff9f6cf9919ff3d64988569daff959584590e8ce2d",
+      "approvedBy": "kensan1969@gmail.com",
+      "approvedAt": "2026-10-25T15:55:39.162Z",
+      "note": "2026-10-26 オーナー承認: temp.cleanup の verify を deletedBytes>=1 に強化"
+    },
+    {
+      "id": "spooler.queue.purge",
+      "version": "1.0.0",
+      "scriptHash": "sha256:ecf7e4498fddb017e1dd6a2591abb69f3c3f06eeefc87cf7df27575bf0aac81b",
+      "contentHash": "sha256:f6b7505960e77454f634c40dbda9ec18b12c5e4afa00a2361f576653d3e5d368",
+      "approvedBy": "kensan1969@gmail.com",
+      "approvedAt": "2026-10-25T15:55:39.162Z",
+      "note": "2026-10-26 オーナー承認: temp.cleanup の verify を deletedBytes>=1 に強化"
+    },
+    {
+      "id": "service.start",
+      "version": "1.0.0",
+      "scriptHash": "sha256:b869689ebca3a889d3b67da48ae74f6f2a0e190574583d698bb2bb675a567cce",
+      "contentHash": "sha256:737c56a989f24ceb42aa1d4775b9871213f07ee918c1d35390b4081ba7c2dc85",
+      "approvedBy": "kensan1969@gmail.com",
+      "approvedAt": "2026-10-25T15:55:39.162Z",
+      "note": "2026-10-26 オーナー承認: temp.cleanup の verify を deletedBytes>=1 に強化"
+    },
+    {
+      "id": "temp.cleanup",
+      "version": "1.0.0",
+      "scriptHash": "sha256:6df628cada387995406c9d036d11e36afae27dc5a49f960a4b8e97db73ab4e25",
+      "contentHash": "sha256:df9d7a8cc31cc67ceecf4fee4b1d5122a9cb6e0c618a119a1743f658f01a618d",
+      "approvedBy": "kensan1969@gmail.com",
+      "approvedAt": "2026-10-25T15:55:39.162Z",
+      "note": "2026-10-26 オーナー承認: temp.cleanup の verify を deletedBytes>=1 に強化"
+    },
+    {
+      "id": "dns.flush",
+      "version": "1.0.0",
+      "scriptHash": "sha256:fdfa1b0e6f5fa46799cb041348388f38cf21af4bc8d0fbf78599ea07533ebbe2",
+      "contentHash": "sha256:48425bc5eb461366cf1691f8baaca3c38563a614587193df5505c53f2e81d1dc",
+      "approvedBy": "kensan1969@gmail.com",
+      "approvedAt": "2026-10-25T15:55:39.162Z",
+      "note": "2026-10-26 オーナー承認: temp.cleanup の verify を deletedBytes>=1 に強化"
+    },
+    {
+      "id": "bitlocker.status",
+      "version": "1.0.0",
+      "scriptHash": "sha256:c45e631f973943c6c7ada0b641222df613ca99c59bffc9bd1f14a3c44e314cb1",
+      "contentHash": "sha256:66ef95144dbb18ff1be97befeb0e4e33fc48e1bf072ecdbf7f5f843301fa99f5",
+      "approvedBy": "kensan1969@gmail.com",
+      "approvedAt": "2026-10-25T15:55:39.162Z",
+      "note": "2026-10-26 オーナー承認: temp.cleanup の verify を deletedBytes>=1 に強化"
+    },
+    {
+      "id": "defender.quickscan",
+      "version": "1.0.0",
+      "scriptHash": "sha256:e680ad54172765cedda2d358c50327e507ca7533cdebc8668ff96dc8da5d1a07",
+      "contentHash": "sha256:9d042749e12a187e46811812dc7f6092d020ea56d6e42fce7a8555dc0b1af701",
+      "approvedBy": "kensan1969@gmail.com",
+      "approvedAt": "2026-10-25T15:55:39.162Z",
+      "note": "2026-10-26 オーナー承認: temp.cleanup の verify を deletedBytes>=1 に強化"
     }
   ]
 }

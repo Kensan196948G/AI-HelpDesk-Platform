@@ -31,6 +31,10 @@
 - 管理者権限の常時付与（昇格は別エージェント/別承認）
 - 複数端末の一括実行（Phase D 以降）
 
+> **2026-10-25 追記**
+> 第 1 項（AI が任意の PowerShell を生成して実行すること）について、**読み取り専用のプリミティブに限定して探索を許可する改訂案**を [28-readonly-exploration-mode.md](28-readonly-exploration-mode.md) §5 に置いた。
+> ただし **本節の契約は未変更**であり、改訂には人間の承認を要する。実測は [27-solution-gap-measurement.md](27-solution-gap-measurement.md)。
+
 ## 2. 現状（実装事実）とギャップ
 
 | 項目 | 現状 | ギャップ |
@@ -298,6 +302,57 @@
   - `stdout` / `stderr` は最大 64KB で打ち切り、UTF-8。タイムアウト 60 秒（Skill ごと）。
   - 終了コード・所要時間・正規化結果を返す。
   - 昇格が必要な Skill は **別の管理者エージェント**（別トークン・別サービス）で実行。
+
+### 12-1. 管理者エージェント経路（privilege 分離 / 実装済み 2026-10-25）
+
+昇格必須 5 件（`spooler.restart` / `spooler.queue.purge` / `service.start` /
+`bitlocker.status` / `defender.quickscan`）を実行可能にするための経路。
+**分離はサーバ側で強制する**。エージェント側の制限は二重防御であり、単独では信頼しない。
+
+| 層 | standard（既定） | admin |
+|---|---|---|
+| トークン | `device_tokens.privilege = 'standard'` | `device_tokens.privilege = 'admin'` |
+| 配信（`GET /api/device/command`） | 昇格必須でないコマンドのみ | 昇格必須のコマンドのみ |
+| 結果送信（`POST /api/device/command/:id/result`） | 昇格必須コマンドは **403 `PRIVILEGE_MISMATCH`** | 昇格不要コマンドは **403 `PRIVILEGE_MISMATCH`** |
+| エージェント設定 | `deviceToken`（従来どおり） | `adminDeviceToken`（standard と別トークン。無ければ起動拒否） |
+| エージェントの許可リスト | `SKILL_SCRIPTS` 全件（従来どおり） | 昇格必須 5 件のみ（それ以外は未知 Skill として拒否） |
+| 最後の砦 | — | `.ps1` が非昇格なら `exit 3` |
+
+- 判定は `device_commands.skill_id` + `skill_version` から `skills.requires->>'elevation'` を
+  EXISTS で参照する。`skill_id IS NULL` の既存経路（`SPOOLER_RESTART`）は昇格不要として standard に配信する。
+- `requires.elevation` は JSON の boolean `true` も文字列 `"true"` も `'true'` になる。
+  値が無い/NULL の場合は「昇格不要」（fail-closed で標準側）。jsonb の二重エンコードで
+  `elevation` が失われた場合も標準側に倒れる。
+- 権限不一致の結果送信は 403、他ユーザーのコマンドは従来どおり 404（存在を漏らさない）。
+- 既存行は Migration 016 の `DEFAULT 'standard'` で standard になり、標準エージェントの挙動は変わらない。
+
+#### 運用手順
+
+1. **管理者トークンの発行**（standard とは別の値。値は秘密として扱い、コミットしない）:
+
+   ```sql
+   -- 監査のため発行理由を label に残す。token_hash は SHA-256(hex)。
+   INSERT INTO device_tokens (token_hash, user_email, label, privilege)
+   VALUES ('<sha256(hex) of admin token>', '<user_email>', 'endpoint-agent-admin', 'admin');
+   ```
+
+   32 バイト以上のランダム文字列を作り、その SHA-256 hex を `token_hash` に、
+   生値は端末の設定ファイルにだけ置く。
+
+2. **端末の設定ファイル**（`~/.config/ai-helpdesk/device-agent.json`）に `adminDeviceToken` を追加する。
+   `deviceToken` と同一値は起動時に拒否される（同一だとサーバが standard と判定し、
+   admin コマンドが 1 件も配信されないため）。
+
+3. **サービス登録**（別サービスとして動かす。standard エージェントと同居させない）:
+   - 環境変数 `AIHD_AGENT_PRIVILEGE=admin` を付けて `endpoint-command-agent.mjs` を起動する。
+   - Windows は **管理者として実行**するサービス／タスク（LocalSystem 等）に登録し、
+     非昇格の標準エージェント（ユーザーセッション）とは別プロセスにする。
+   - 例（登録方針）: `sc.exe create AIHelpDeskAdminAgent binPath= "<node.exe> <repo>\scripts\endpoint-command-agent.mjs --config <path>" start= auto`、
+     `AIHD_AGENT_PRIVILEGE` はサービス環境変数（`reg add` 等）またはラッパースクリプトで設定する。
+   - 実機のサービス登録・実行検証は Windows 実機が必要なため未実施（静的・統合テストまで）。
+
+4. **無効化**: 当該トークン行の `revoked_at` を現在時刻に更新する（以後 401）。端末側のサービスも停止する。
+
 - Windows 実機検証:
   - 対象 PC に Node 20+ または PowerShell エージェントを配布
   - 署名/ハッシュ検証、実行ポリシー、ログオン時タスク
@@ -380,6 +435,19 @@
 | UI | `resolve-bridge.js`（案件ウィザード下にカード）。実行前 Y/N → 結果 → 継続 Y/N → 停止 |
 | テスト | 新規 46 件（resolve）+ device 13 件、全体 **253 件**。UI E2E で 2 ステップのループを実測 |
 | 未実施 | Windows 実機の PowerShell 実行、estop 連携、端末オフライン検知、承認期限切れ後の再提案 |
+
+### 17-2. Phase 2（修復 Skill・2026-10-25）
+
+| 項目 | 状態 |
+|---|---|
+| カタログ | **12 件**（Phase B 読み取り 5 + Phase 2 修復 7） |
+| 修復 7 件 | `spooler.restart`(2) / `spooler.queue.purge`(3) / `service.start`(2) / `temp.cleanup`(2) / `dns.flush`(1) / `bitlocker.status`(1) / `defender.quickscan`(1) |
+| 承認 | **7 件は `draft`**。`scripts/approve-skills.ts` を人間が実行するまで端末エージェントは拒否する（fail-closed） |
+| 実行可能性 | 非昇格エージェント（standard）で実行できるのは `temp.cleanup` / `dns.flush` の **2 件**。残り 5 件は昇格必須で、`admin` トークンの管理者エージェントにだけ配信される（§12-1） |
+| 権限分離 | **実装済み**。`016_agent_privilege.sql` で `device_tokens.privilege`（standard / admin・既定 standard）を追加。`GET /api/device/command` は `skills.requires->>'elevation'` で配信を分離し、`POST /api/device/command/:id/result` は権限不一致を 403 `PRIVILEGE_MISMATCH` で拒否する（サーバ側で強制）。エージェントは `AIHD_AGENT_PRIVILEGE`（既定 standard）と `adminDeviceToken` で二重防御 |
+| 検証 | typecheck / lint（自変更ファイル）/ test **327 件 PASS**（2 回連続実行）。`.ps1` 12 件の Parser 構文 OK、PSScriptAnalyzer Error 0。**Windows 実機の実行検証は未実施**（静的契約まで） |
+| 残り（人間の Gate） | 修復 7 件の承認（`scripts/approve-skills.ts` を人間が実行）、管理者トークンの発行、Windows 実機でのサービス登録（管理者権限）と実行検証 |
+| 既知の制約 | UTF-8 BOM なし（既存 5 件と同一）。PS 5.1 では日本語 stderr が化け得る |
 
 Phase B の実測（隔離 DB + mock エージェント）:
 - `network.adapters` 提案 → Y → `done` → 結果表示 → 継続 Y → `os.info` 提案 → Y → `done` → 継続 N → `stopped`

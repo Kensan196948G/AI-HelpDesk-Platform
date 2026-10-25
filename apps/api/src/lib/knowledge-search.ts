@@ -1,4 +1,4 @@
-import type { KnowledgeLike } from '../domain/ai.js';
+import { type KnowledgeLike, keywordForms } from '../domain/ai.js';
 
 /**
  * 承認済みナレッジ候補を、相談文と意図キーワードでスコアリングして上位を返す。
@@ -12,7 +12,9 @@ export function scoreKnowledge(
 ): KnowledgeLike[] {
   const lowerText = text.toLowerCase();
   const tokens = new Set(
-    intentKeywords.map((keyword) => keyword.toLowerCase()).filter((keyword) => keyword.length >= 2),
+    intentKeywords
+      .flatMap((keyword) => keywordForms(keyword))
+      .filter((keyword) => keyword.length >= 2),
   );
 
   return candidates
@@ -21,9 +23,11 @@ export function scoreKnowledge(
         `${knowledge.title}\n${knowledge.symptom}\n${knowledge.cause}\n${knowledge.keywords.join(' ')}`.toLowerCase();
       // 相談文に含まれる「専門キーワード」の一致を最優先する。
       // 「手順」のような一般語だけで他のKBが上位に来るのを防ぐ。
+      // 活用差（遅い／遅く）は keywordForms で吸収する。
       let specific = 0;
       for (const keyword of knowledge.keywords) {
-        if (keyword && lowerText.includes(keyword.toLowerCase())) specific += 4;
+        if (keyword && keywordForms(keyword).some((form) => lowerText.includes(form)))
+          specific += 4;
       }
       let contextual = 0;
       for (const token of tokens) {

@@ -82,8 +82,39 @@ const READ_ONLY_REQUIRES = {
 } as const;
 
 /**
- * Phase B の 5 Skill（すべて読み取り専用 / risk_level 1 / Windows）。
+ * 修復系（変更を伴う）Skill の `requires` で、実行に昇格が必要なもの。
+ *
+ * リスク 4 以上ではないため管理者承認は要求しない（`adminApproval: false`）が、
+ * Windows の仕様上 Stop-Service / Start-Service / BitLocker 参照などは昇格が要る。
+ * `requires` は承認ハッシュにも含まれるメタデータであり、エージェントの実行権限を
+ * 自動で昇格させるものではない（昇格は別エージェント・別承認。docs/25 §12）。
+ */
+const CHANGE_ELEVATED_REQUIRES = {
+  userConfirm: true,
+  adminApproval: false,
+  elevation: true,
+} as const;
+
+/** 修復系のうち、ユーザー権限のままで実行できる Skill の `requires`。 */
+const CHANGE_STANDARD_REQUIRES = {
+  userConfirm: true,
+  adminApproval: false,
+  elevation: false,
+} as const;
+
+/**
+ * Skill カタログ。
+ * - Phase B: 読み取り専用 5 件（risk_level 1）
+ * - Phase 2: 修復系 7 件（risk_level 1〜3 / verify・rollback 付き）
+ *
  * スクリプト文字列は保持せず、許可済みの引数配列だけを持つ。
+ * `args` はテンプレート（`{{param}}`）で、端末エージェントが配列のまま
+ * PowerShell へ渡す（シェル文字列連結はしない）。
+ *
+ * 注意: 端末エージェント（scripts/endpoint-command-agent.mjs）の実行タイムアウトは
+ * 60 秒固定のため、`timeoutSec` は 60 以下にする（skills.test.ts で検証）。
+ * `verify` / `rollback` は現時点ではメタデータ（画面表示・承認ハッシュの対象）で、
+ * 実行は Phase D の範囲。verify は「実行後の確認条件」を宣言する。
  */
 export const SKILL_CATALOG: SkillDefinition[] = [
   {
@@ -242,6 +273,335 @@ export const SKILL_CATALOG: SkillDefinition[] = [
       maskPii: true,
     },
   },
+  // ── Phase 2: 修復系 7 件 ─────────────────────────────────────────────
+  // 変更系 Skill は rollback を必ず持つ。取消不可のものは reversible:false と
+  // 影響範囲を description に明記する（承認画面と承認ハッシュの対象）。
+  {
+    id: 'spooler.restart',
+    version: '1.0.0',
+    title: '印刷スプーラを再起動する',
+    summary: '印刷ジョブが処理されないとき、Spooler サービスを再起動し、起動状態を確認します。',
+    symptoms: [
+      '印刷が止まる',
+      '印刷キューに残る',
+      'プリンタが応答しない',
+      'スプーラを再起動したい',
+    ],
+    os: ['windows'],
+    riskLevel: 2,
+    requires: CHANGE_ELEVATED_REQUIRES,
+    paramsSchema: { type: 'object', additionalProperties: false, properties: {} },
+    scriptPath: 'scripts/skills/windows/spooler-restart.ps1',
+    args: [],
+    // 実行後の確認条件: 再起動後に Spooler が Running であること（既存の読み取り Script で確認）。
+    verify: {
+      description: '再起動後に Spooler が Running であること',
+      script: 'scripts/skills/windows/service-status.ps1',
+      args: ['-Service', 'Spooler'],
+      expect: { status: 'Running' },
+    },
+    // 可逆: 再起動のみで設定は変えない。自動復元は行わない。
+    rollback: {
+      reversible: true,
+      script: null,
+      args: [],
+      description:
+        '再起動前の状態に戻せる。起動していた場合は再起動のみで設定は変わらない。停止していた場合は service.start で Spooler を起動する（自動復元は行わない）。',
+    },
+    timeoutSec: 60,
+    // 実スクリプト（spooler-restart.ps1）の出力キーに合わせる。
+    resultSchema: {
+      name: 'string',
+      displayName: 'string',
+      status: 'string',
+      startType: 'string',
+      previousStatus: 'string',
+      restarted: 'boolean',
+    },
+    outputPolicy: {
+      maxBytes: 8192,
+      fieldsToAi: ['name', 'status', 'startType', 'previousStatus', 'restarted'],
+      maskPii: true,
+    },
+  },
+  {
+    id: 'spooler.queue.purge',
+    version: '1.0.0',
+    title: 'エラーになった印刷ジョブを削除する',
+    summary:
+      '印刷キューに残ったエラー状態の印刷ジョブを削除します。削除したジョブは元に戻せません。',
+    symptoms: ['印刷ジョブが消えない', '印刷キューが詰まる', 'エラーの印刷ジョブを消したい'],
+    os: ['windows'],
+    riskLevel: 3,
+    requires: CHANGE_ELEVATED_REQUIRES,
+    // confirm:'PURGE' を必須にし、利用者の Y/N（承認ハッシュ）と合わせて二重確認とする。
+    // 端末エージェントも params.confirm を再検証し、正しいときだけ -ConfirmPurge を渡す。
+    paramsSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['confirm'],
+      properties: { confirm: { type: 'string', enum: ['PURGE'] } },
+    },
+    scriptPath: 'scripts/skills/windows/spooler-queue-purge.ps1',
+    args: ['-ConfirmPurge'],
+    verify: {
+      description: '削除後にエラー状態の印刷ジョブが 0 件であること',
+      resultField: 'remainingErrorCount',
+      equals: 0,
+    },
+    // 取消不可: 削除したジョブは復元できない。影響範囲を明記する。
+    rollback: {
+      reversible: false,
+      script: null,
+      args: [],
+      description:
+        '取消不可。削除した印刷ジョブは復元できない。影響範囲: 対象端末の全プリンタの印刷キューにあるエラー状態のジョブ（他ユーザーのジョブを削除するには管理者権限が必要）。必要なら利用者が再印刷する。',
+    },
+    timeoutSec: 60,
+    // 実スクリプト（spooler-queue-purge.ps1）は件数だけを返す（プリンタ名・ジョブ名は返さない）。
+    resultSchema: {
+      purgedCount: 'number',
+      failedCount: 'number',
+      remainingErrorCount: 'number',
+      irreversible: 'boolean',
+    },
+    outputPolicy: {
+      maxBytes: 8192,
+      fieldsToAi: ['purgedCount', 'failedCount', 'remainingErrorCount', 'irreversible'],
+      maskPii: true,
+    },
+  },
+  {
+    id: 'service.start',
+    version: '1.0.0',
+    title: '指定サービスを起動する',
+    summary: '許可された Windows サービス（Spooler / W32Time）を起動し、起動状態を確認します。',
+    symptoms: ['サービスが停止している', 'サービスを起動したい', '時刻同期が止まっている'],
+    os: ['windows'],
+    riskLevel: 2,
+    requires: CHANGE_ELEVATED_REQUIRES,
+    // 起動対象は enum で限定する（サービス.status より狭くし、昇格操作の対象を増やさない）。
+    paramsSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['name'],
+      properties: {
+        name: { type: 'string', enum: ['Spooler', 'W32Time'] },
+      },
+    },
+    scriptPath: 'scripts/skills/windows/service-start.ps1',
+    args: ['-Service', '{{name}}'],
+    verify: {
+      description: '起動後にサービスが Running であること',
+      script: 'scripts/skills/windows/service-status.ps1',
+      args: ['-Service', '{{name}}'],
+      expect: { status: 'Running' },
+    },
+    // 可逆: 起動したサービスは停止して元に戻せる（自動停止はしない）。
+    rollback: {
+      reversible: true,
+      script: null,
+      args: [],
+      description:
+        '起動したサービスを停止して元に戻せる（自動停止は行わない。必要なら管理者が Stop-Service を実行する）。',
+    },
+    timeoutSec: 60,
+    // 実スクリプト（service-start.ps1）の出力キーに合わせる。
+    resultSchema: {
+      name: 'string',
+      displayName: 'string',
+      status: 'string',
+      startType: 'string',
+      previousStatus: 'string',
+      started: 'boolean',
+    },
+    outputPolicy: {
+      maxBytes: 8192,
+      fieldsToAi: ['name', 'status', 'startType', 'previousStatus', 'started'],
+      maskPii: true,
+    },
+  },
+  {
+    id: 'temp.cleanup',
+    version: '1.0.0',
+    title: '古い一時ファイルを削除する',
+    summary:
+      '実行ユーザーの TEMP フォルダから、指定日数より前に更新されたファイルを削除し、前後の空き容量を計測します。',
+    symptoms: ['ディスクが圧迫されている', '一時ファイルを消したい', 'PC が重い'],
+    os: ['windows'],
+    riskLevel: 2,
+    requires: CHANGE_STANDARD_REQUIRES,
+    // 削除対象の古さは 1〜30 日。範囲外・未知パラメータはサーバとエージェントの両方で拒否する。
+    paramsSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['olderThanDays'],
+      properties: {
+        olderThanDays: { type: 'integer', minimum: 1, maximum: 30 },
+      },
+    },
+    scriptPath: 'scripts/skills/windows/temp-cleanup.ps1',
+    args: ['-OlderThanDays', '{{olderThanDays}}'],
+    verify: {
+      // 旧定義は freedBytes >= 0 で、常に真になるため「解決候補」を誤って作っていた
+      // （2026-10-25 の実測）。削除実績（deletedBytes）で判定する。
+      // 削除できたファイルが 0 件なら、この修復は効果が無かったとみなし停止しない。
+      description: '一時ファイルを1件以上削除できたこと（deletedBytes >= 1）',
+      resultField: 'deletedBytes',
+      minimum: 1,
+    },
+    // 復元不可: 削除した一時ファイルは戻せない。影響範囲を明記する。
+    rollback: {
+      reversible: false,
+      script: null,
+      args: [],
+      description:
+        '削除した一時ファイルは復元できない。影響範囲: 実行ユーザーの %TEMP% 配下で olderThanDays より古いファイルのみ（フォルダ・システム TEMP・他ユーザーの領域は対象外）。未保存の作業ファイルが含まれる場合がある。',
+    },
+    timeoutSec: 60,
+    // 実スクリプト（temp-cleanup.ps1）の出力キーに合わせる。TEMP のフルパスは返さない。
+    resultSchema: {
+      freeBytesBefore: 'number',
+      freeBytesAfter: 'number',
+      freedBytes: 'number',
+      freedMB: 'number',
+      deletedBytes: 'number',
+      deletedCount: 'number',
+      skippedCount: 'number',
+      truncated: 'boolean',
+    },
+    outputPolicy: {
+      maxBytes: 8192,
+      fieldsToAi: ['freedMB', 'deletedCount', 'skippedCount', 'truncated'],
+      maskPii: true,
+    },
+  },
+  {
+    id: 'dns.flush',
+    version: '1.0.0',
+    title: 'DNS キャッシュをクリアする',
+    summary: '名前解決のキャッシュをクリアします（ipconfig /flushdns）。設定は変更しません。',
+    symptoms: ['名前解決がおかしい', '特定のサイトが開かない', 'DNS キャッシュを消したい'],
+    os: ['windows'],
+    // 変更はキャッシュのみで設定を変えないためリスク 1。昇格も不要。
+    riskLevel: 1,
+    requires: CHANGE_STANDARD_REQUIRES,
+    paramsSchema: { type: 'object', additionalProperties: false, properties: {} },
+    scriptPath: 'scripts/skills/windows/dns-flush.ps1',
+    args: [],
+    verify: {
+      description: 'ipconfig /flushdns が終了コード 0 で完了したこと',
+      resultField: 'flushed',
+      equals: true,
+    },
+    // 取消不要: キャッシュは参照時に自動再構築される。
+    rollback: {
+      reversible: true,
+      script: null,
+      args: [],
+      description: 'DNS キャッシュは参照時に自動再構築されるため取消操作は不要（設定変更なし）。',
+    },
+    timeoutSec: 30,
+    // 実スクリプト（dns-flush.ps1）の出力キーに合わせる。
+    resultSchema: { flushed: 'boolean', exitCode: 'number' },
+    outputPolicy: {
+      maxBytes: 8192,
+      fieldsToAi: ['flushed', 'exitCode'],
+      maskPii: true,
+    },
+  },
+  {
+    id: 'bitlocker.status',
+    version: '1.0.0',
+    title: 'BitLocker の状態を確認する',
+    summary:
+      '各ドライブの BitLocker 保護状態・暗号化方式・進捗を読み取りで確認します。回復キーは取得しません。',
+    symptoms: [
+      'BitLocker の状態を知りたい',
+      '暗号化されているか確認したい',
+      '保護が有効か知りたい',
+    ],
+    os: ['windows'],
+    riskLevel: 1,
+    requires: CHANGE_ELEVATED_REQUIRES,
+    paramsSchema: { type: 'object', additionalProperties: false, properties: {} },
+    scriptPath: 'scripts/skills/windows/bitlocker-status.ps1',
+    args: [],
+    verify: {
+      description: 'ボリューム状態が 1 件以上取得できたこと',
+      resultField: 'volumeCount',
+      minimum: 1,
+    },
+    // 読み取りのみ。回復キーは取得も出力もしない。
+    rollback: {
+      reversible: true,
+      script: null,
+      args: [],
+      description:
+        '読み取りのみのため変更なし（ロールバック不要）。回復キーの取得・出力は行わない。',
+    },
+    timeoutSec: 60,
+    // 実スクリプト（bitlocker-status.ps1）の出力キーに合わせる。
+    // bdeStatusExitCode は manage-bde フォールバック時だけ数値（通常は null）。
+    resultSchema: {
+      supported: 'boolean',
+      volumeCount: 'number',
+      volumes: [
+        {
+          mountPoint: 'string',
+          volumeStatus: 'string',
+          protectionStatus: 'string',
+          encryptionMethod: 'string',
+          encryptionPercentage: 'number',
+        },
+      ],
+      bdeStatusExitCode: 'number',
+    },
+    outputPolicy: {
+      maxBytes: 8192,
+      fieldsToAi: ['supported', 'volumeCount', 'volumes'],
+      maskPii: true,
+    },
+  },
+  {
+    id: 'defender.quickscan',
+    version: '1.0.0',
+    title: 'Defender のクイックスキャンを開始する',
+    summary:
+      'Microsoft Defender のクイックスキャンを開始します（完了は待たず、開始だけを確認します）。',
+    symptoms: ['ウイルスチェックをしたい', 'Defender でスキャンしたい', 'PC が重いので確認したい'],
+    os: ['windows'],
+    riskLevel: 1,
+    requires: CHANGE_ELEVATED_REQUIRES,
+    paramsSchema: { type: 'object', additionalProperties: false, properties: {} },
+    scriptPath: 'scripts/skills/windows/defender-quickscan.ps1',
+    args: [],
+    verify: {
+      description: 'クイックスキャンが開始されたこと',
+      resultField: 'started',
+      equals: true,
+    },
+    // スキャン開始のみ。設定変更なし。実行中スキャンの自動中止はしない。
+    rollback: {
+      reversible: true,
+      script: null,
+      args: [],
+      description:
+        'スキャン開始のみで設定変更はない。実行中のスキャンは Windows セキュリティ画面から中止できる（自動中止は行わない）。',
+    },
+    timeoutSec: 45,
+    // 実スクリプト（defender-quickscan.ps1）の出力キーに合わせる。検知名・検出パスは返さない。
+    resultSchema: {
+      started: 'boolean',
+      scanType: 'string',
+      startedAt: 'string',
+    },
+    outputPolicy: {
+      maxBytes: 8192,
+      fieldsToAi: ['started', 'scanType', 'startedAt'],
+      maskPii: true,
+    },
+  },
 ];
 
 /** スクリプト内容の SHA-256（`sha256:<hex>` 形式）。 */
@@ -366,8 +726,12 @@ export function toSkillRecord(row: SkillRow): SkillRecord {
 }
 
 /**
- * JSON Schema のうち、Phase B のカタログで使う範囲（object / string enum / required /
- * additionalProperties:false）を検証する。テンプレート引数に使う値だけを許可する。
+ * JSON Schema のうち、カタログで使う範囲を検証する。
+ * object / string enum / required / additionalProperties:false / 型 / minimum / maximum。
+ *
+ * `minimum` / `maximum` は temp.cleanup の olderThanDays（1〜30）のような
+ * 数値範囲をサーバ側でも強制するために見る（端末エージェント側でも再検証する）。
+ * テンプレート引数に使う値だけを許可する。
  */
 export function validateParams(
   schema: unknown,
@@ -407,6 +771,17 @@ export function validateParams(
     }
     if (type === 'boolean' && typeof raw !== 'boolean') {
       return { ok: false, message: `パラメータ ${key} は真偽値で指定してください。` };
+    }
+    if (type === 'number' || type === 'integer') {
+      const numeric = typeof raw === 'number' ? raw : Number.NaN;
+      const minimum = typeof propertySchema.minimum === 'number' ? propertySchema.minimum : null;
+      const maximum = typeof propertySchema.maximum === 'number' ? propertySchema.maximum : null;
+      if (minimum !== null && numeric < minimum) {
+        return { ok: false, message: `パラメータ ${key} は ${minimum} 以上で指定してください。` };
+      }
+      if (maximum !== null && numeric > maximum) {
+        return { ok: false, message: `パラメータ ${key} は ${maximum} 以下で指定してください。` };
+      }
     }
     const allowed = asStringArray(propertySchema.enum);
     if (allowed.length > 0 && !allowed.includes(String(raw))) {

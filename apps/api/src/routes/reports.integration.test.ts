@@ -50,6 +50,10 @@ function reportPayload(caseId: string, kind: 'ai_resolved' | 'helpdesk_resolved'
 
 beforeAll(async () => {
   resetRateLimits();
+  // 24 時間クォータ（50 件）は final_reports の実データで判定され、テスト DB は
+  // 実行間で残る。前回までの実行分を消さないと 429 になり、結果が「何回目か」に
+  // 依存する（2026-10-25 実測: 全 311 件中 2 件が REPORT_QUOTA で失敗）。
+  await sql`DELETE FROM final_reports`;
   app = await buildServer({ logger: false });
   await app.ready();
 });

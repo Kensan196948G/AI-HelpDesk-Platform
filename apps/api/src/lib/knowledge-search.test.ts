@@ -53,4 +53,16 @@ describe('findApprovedKnowledge', () => {
     ]);
     expect(result[0]?.kbNo).toBe('KB-2026-0005');
   });
+
+  // 2026-10-25 の実測で、活用形の不一致により候補ゼロになった回帰。
+  it('活用形が違っても（遅い／遅く）専門キーワードとして一致する', async () => {
+    const result = await findApprovedKnowledge(tx, 'アプリの起動が遅く、操作が固まります。', [
+      '容量',
+      '空き',
+      '遅い',
+      '重い',
+      '保存',
+    ]);
+    expect(result.some((knowledge) => knowledge.kbNo === 'KB-2026-0005')).toBe(true);
+  });
 });

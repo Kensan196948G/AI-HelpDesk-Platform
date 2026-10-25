@@ -14,7 +14,7 @@
  *   - Windows: SPOOLER_RESTART（Restart-Service Spooler）
  *   - それ以外: 実行せず「未対応OS」として報告（Linux での動作確認用）
  *
- * Skill 実行（Phase B / 読み取り専用）:
+ * Skill 実行（Phase B 読み取り 5 件 / Phase 2 修復 7 件）:
  *   command に skill_id / skill_version がある場合だけ、リポジトリ内の許可済み
  *   PowerShell スクリプト（scripts/skills/windows/）を引数配列で実行する。
  *   - Windows: powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass
@@ -25,10 +25,28 @@
  *     command.device_id と照合できるようにする。
  *   - 既存の SPOOLER_RESTART と --dry-run の挙動は変更しない。
  *
+ * 権限区分（AIHD_AGENT_PRIVILEGE / 既定 standard。docs/25 §12・§17-2）:
+ *   - standard: 従来どおり。`config.deviceToken` を使い、昇格不要のコマンドだけを受け取る。
+ *   - admin   : 昇格必須の 5 件（ELEVATED_SKILL_IDS）だけを実行できる。`config.adminDeviceToken`
+ *               （standard とは別トークン）が必須で、無ければ起動しない。許可リスト外の
+ *               skill_id・skill_id なしのコマンドは「未知の Skill」として拒否する（二重防御）。
+ *   - 分離の本体はサーバ側（device_tokens.privilege）で強制する。ここは
+ *     設定ミスやサーバ侵害時に余計なコマンドを実行しないための二重防御であり、
+ *     単独で信頼してはならない。昇格していないプロセスでは .ps1 が exit 3 で拒否する。
+ *
+ * fail-closed:
+ *   - SKILL_SCRIPTS に無い skill_id は実行しない（未知 Skill を拒否）。
+ *   - 人間が承認した scripts/skills/approved.json と id@version / contentHash /
+ *     scriptHash が一致しない Skill も実行しない（承認は人間の Gate）。
+ *   - Phase 2 の修復 7 件は、人間が承認するまで manifest に無いため拒否される（仕様）。
+ *   - パラメータは params を agent 側でも再検証し、許可値・整数範囲だけを引数にする。
+ *   - 注意: 本ファイルの実行検証は Windows 実機が無いため未実施（静的な契約検証のみ）。
+ *
  * 設定ファイルは endpoint-agent.mjs と同じものを使う（url / deviceToken /
  * browserDeviceId / cfAccessClientId / cfAccessClientSecret / proxySecret）。
  */
 import { execFileSync, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -52,6 +70,34 @@ const dryRun = Boolean(args['dry-run']);
 // --mock を付けた場合、または Windows 以外では PowerShell を実行せず fixture を返す。
 const mockMode = Boolean(args.mock) || process.platform !== 'win32';
 
+// ── 権限区分（既定 standard） ────────────────────────────────────────
+// サーバ側 device_tokens.privilege と対になる。admin は昇格必須 Skill だけを実行する。
+const AGENT_PRIVILEGES = Object.freeze(['standard', 'admin']);
+// 昇格必須（skills.requires.elevation = true）の修復 5 件。admin の許可リストはこれだけ。
+const ELEVATED_SKILL_IDS = Object.freeze([
+  'spooler.restart',
+  'spooler.queue.purge',
+  'service.start',
+  'bitlocker.status',
+  'defender.quickscan',
+]);
+
+function resolveAgentPrivilege() {
+  const raw = args.privilege ?? process.env.AIHD_AGENT_PRIVILEGE ?? config.agentPrivilege;
+  if (raw === undefined || raw === null || raw === '') return 'standard';
+  const value = String(raw).trim().toLowerCase();
+  if (!AGENT_PRIVILEGES.includes(value)) {
+    console.error(
+      `[command-agent] AIHD_AGENT_PRIVILEGE が不正です: ${value}（standard / admin のいずれか）`,
+    );
+    process.exit(1);
+  }
+  return value;
+}
+
+const agentPrivilege = resolveAgentPrivilege();
+const isAdminAgent = agentPrivilege === 'admin';
+
 // 端末識別: サーバ側の command.device_id（= ブラウザ端末 ID）と照合する。
 const deviceIdHeader =
   typeof config.browserDeviceId === 'string' && config.browserDeviceId.trim() !== ''
@@ -60,26 +106,49 @@ const deviceIdHeader =
 const reportedDeviceId =
   deviceIdHeader ?? (config.deviceId ? String(config.deviceId) : os.hostname());
 
+// トークンは権限ごとに分ける（standard と admin で別トークン・別サービス）。
+const deviceToken = isAdminAgent ? config.adminDeviceToken : config.deviceToken;
+
 const headers = { Accept: 'application/json' };
-if (config.deviceToken) headers['x-device-token'] = config.deviceToken;
+if (deviceToken) headers['x-device-token'] = deviceToken;
 if (deviceIdHeader) headers['x-device-id'] = deviceIdHeader;
 if (config.cfAccessClientId) {
   headers['CF-Access-Client-Id'] = config.cfAccessClientId;
   headers['CF-Access-Client-Secret'] = config.cfAccessClientSecret;
 }
 if (config.proxySecret) headers['x-proxy-secret'] = config.proxySecret;
-if (!config.deviceToken) {
-  console.error('[command-agent] deviceToken が設定されていません。');
+if (!deviceToken) {
+  console.error(
+    isAdminAgent
+      ? '[command-agent] admin エージェントには adminDeviceToken が必要です（standard とは別トークン）。'
+      : '[command-agent] deviceToken が設定されていません。',
+  );
+  process.exit(1);
+}
+// 同じトークンを使い回すと、サーバ側では standard と判定され admin コマンドが
+// 一切配信されない（設定ミスに気づかないまま機能が死ぬ）。起動時に拒否する。
+if (isAdminAgent && config.deviceToken && config.deviceToken === config.adminDeviceToken) {
+  console.error(
+    '[command-agent] adminDeviceToken が deviceToken と同じです。別トークンを発行してください。',
+  );
   process.exit(1);
 }
 
 // ── Skill 定義（許可リスト） ──────────────────────────────────────────
-// skill_id → リポジトリ同梱の読み取り専用スクリプト。ここに無い skill_id は実行しない。
+// skill_id → リポジトリ同梱のスクリプト。ここに無い skill_id は実行しない。
+// buildArgs は「型付きパラメータ → 引数配列」の唯一の変換点であり、
+// 許可リスト・整数範囲の検証もここで行う（シェル文字列は組み立てない）。
 const SKILLS_DIR = path.join(import.meta.dirname, 'skills', 'windows');
+// 端末エージェントの実行タイムアウト。Skill 定義の timeoutSec はこれを超えない
+// （超えるとサーバ側の期限より先に agent が打ち切り、結果が返らなくなる）。
 const SKILL_TIMEOUT_MS = 60_000;
 const OUTPUT_LIMIT_BYTES = 64 * 1024;
 const SUMMARY_LIMIT_CHARS = 2_000;
 const SERVICE_NAMES = Object.freeze(['Spooler', 'W32Time', 'Winmgmt']);
+const SERVICE_START_NAMES = Object.freeze(['Spooler', 'W32Time']);
+const PURGE_CONFIRM_TOKEN = 'PURGE';
+const TEMP_CLEANUP_MIN_DAYS = 1;
+const TEMP_CLEANUP_MAX_DAYS = 30;
 
 const SKILL_SCRIPTS = new Map([
   ['os.info', { file: 'os-info.ps1', buildArgs: () => [] }],
@@ -93,6 +162,36 @@ const SKILL_SCRIPTS = new Map([
     },
   ],
   ['network.adapters', { file: 'network-adapters.ps1', buildArgs: () => [] }],
+  // ── Phase 2: 修復系 7 件（manifest 承認後にだけ実行できる） ──
+  ['spooler.restart', { file: 'spooler-restart.ps1', buildArgs: () => [] }],
+  [
+    'spooler.queue.purge',
+    {
+      file: 'spooler-queue-purge.ps1',
+      // 取消不可。params.confirm が 'PURGE' のときだけ -ConfirmPurge を渡す。
+      buildArgs: (params) => {
+        requirePurgeConfirm(params);
+        return ['-ConfirmPurge'];
+      },
+    },
+  ],
+  [
+    'service.start',
+    {
+      file: 'service-start.ps1',
+      buildArgs: (params) => ['-Service', requireAllowedStartService(params)],
+    },
+  ],
+  [
+    'temp.cleanup',
+    {
+      file: 'temp-cleanup.ps1',
+      buildArgs: (params) => ['-OlderThanDays', String(requireOlderThanDays(params))],
+    },
+  ],
+  ['dns.flush', { file: 'dns-flush.ps1', buildArgs: () => [] }],
+  ['bitlocker.status', { file: 'bitlocker-status.ps1', buildArgs: () => [] }],
+  ['defender.quickscan', { file: 'defender-quickscan.ps1', buildArgs: () => [] }],
 ]);
 
 // ── mock fixture（Windows 以外 / --mock 用・PII なし） ─────────────────
@@ -131,6 +230,51 @@ const MOCK_FIXTURES = Object.freeze({
         interfaceDescription: 'Intel(R) Wi-Fi 6 AX201 160MHz',
       },
     ],
+  }),
+  // ── Phase 2: 修復系（PII なし・実出力キーに合わせた固定 fixture） ──
+  'spooler.restart': Object.freeze({
+    name: 'Spooler',
+    displayName: 'Print Spooler',
+    status: 'Running',
+    startType: 'Auto',
+    previousStatus: 'Running',
+    restarted: true,
+  }),
+  'spooler.queue.purge': Object.freeze({
+    purgedCount: 1,
+    failedCount: 0,
+    remainingErrorCount: 0,
+    irreversible: true,
+  }),
+  'temp.cleanup': Object.freeze({
+    freeBytesBefore: 1_073_741_824,
+    freeBytesAfter: 1_178_599_424,
+    freedBytes: 104_857_600,
+    freedMB: 100,
+    deletedBytes: 104_857_600,
+    deletedCount: 12,
+    skippedCount: 0,
+    truncated: false,
+  }),
+  'dns.flush': Object.freeze({ flushed: true, exitCode: 0 }),
+  'bitlocker.status': Object.freeze({
+    supported: true,
+    volumeCount: 1,
+    volumes: [
+      {
+        mountPoint: 'C:',
+        volumeStatus: 'FullyEncrypted',
+        protectionStatus: 'On',
+        encryptionMethod: 'XtsAes256',
+        encryptionPercentage: 100,
+      },
+    ],
+    bdeStatusExitCode: null,
+  }),
+  'defender.quickscan': Object.freeze({
+    started: true,
+    scanType: 'QuickScan',
+    startedAt: '2026-10-25T00:00:00.0000000Z',
   }),
 });
 
@@ -204,6 +348,45 @@ function requireAllowedService(params) {
   return service;
 }
 
+/** service.start の起動対象を許可リストで検証する（agent 側でも多層防御）。 */
+function requireAllowedStartService(params) {
+  const raw = params?.name;
+  const name = typeof raw === 'string' ? raw.trim() : '';
+  if (!SERVICE_START_NAMES.includes(name)) {
+    throw new Error(
+      `service.start の name が許可されていません: ${name === '' ? '(empty)' : name}`,
+    );
+  }
+  return name;
+}
+
+/**
+ * spooler.queue.purge の二重確認トークンを検証する。
+ * 利用者の実行前 Y/N（承認ハッシュ）と合わせて二重確認とし、サーバ・端末の両方で見る。
+ */
+function requirePurgeConfirm(params) {
+  const raw = params?.confirm;
+  const token = typeof raw === 'string' ? raw.trim() : '';
+  if (token !== PURGE_CONFIRM_TOKEN) {
+    throw new Error(`spooler.queue.purge には confirm="${PURGE_CONFIRM_TOKEN}" が必要です`);
+  }
+  return token;
+}
+
+/** temp.cleanup の olderThanDays を 1..30 の整数として検証する。 */
+function requireOlderThanDays(params) {
+  const raw = params?.olderThanDays;
+  if (typeof raw !== 'number' || !Number.isInteger(raw)) {
+    throw new Error('temp.cleanup の olderThanDays は整数で指定してください');
+  }
+  if (raw < TEMP_CLEANUP_MIN_DAYS || raw > TEMP_CLEANUP_MAX_DAYS) {
+    throw new Error(
+      `temp.cleanup の olderThanDays は ${TEMP_CLEANUP_MIN_DAYS}..${TEMP_CLEANUP_MAX_DAYS} で指定してください`,
+    );
+  }
+  return raw;
+}
+
 const APPROVAL_MANIFEST = path.join(import.meta.dirname, 'skills', 'approved.json');
 
 /**
@@ -256,6 +439,16 @@ function runMockSkill(skillId, params) {
   if (skillId === 'service.status') {
     const service = requireAllowedService(params);
     normalized = { ...MOCK_SERVICES[service] };
+  } else if (skillId === 'service.start') {
+    // 起動対象も mock で検証する（本番と同じ fail-closed を維持）。
+    const name = requireAllowedStartService(params);
+    normalized = { ...MOCK_SERVICES[name], previousStatus: 'Stopped', started: true };
+  } else if (skillId === 'spooler.queue.purge') {
+    requirePurgeConfirm(params);
+    normalized = structuredClone(MOCK_FIXTURES[skillId]);
+  } else if (skillId === 'temp.cleanup') {
+    requireOlderThanDays(params);
+    normalized = structuredClone(MOCK_FIXTURES[skillId]);
   } else {
     const fixture = MOCK_FIXTURES[skillId];
     if (!fixture) throw new Error(`未対応の Skill です: ${skillId}`);
@@ -362,7 +555,25 @@ function executeSkill(command) {
   };
 }
 
+/**
+ * admin エージェントの許可リスト（昇格必須 5 件）を強制する（二重防御）。
+ * サーバが privilege を誤って配信しても、standard 系 Skill や skill_id なしの
+ * 既存経路（SPOOLER_RESTART 等）は実行しない。
+ */
+function assertSkillAllowedForPrivilege(command) {
+  if (!isAdminAgent) return;
+  const skillId = command?.skill_id ? String(command.skill_id) : '';
+  if (!skillId || !ELEVATED_SKILL_IDS.includes(skillId)) {
+    throw new Error(
+      `管理者エージェントは昇格必須 Skill 以外を実行しません: ${
+        skillId === '' ? String(command?.op_id ?? '(unknown)') : skillId
+      }`,
+    );
+  }
+}
+
 function execute(command) {
+  assertSkillAllowedForPrivilege(command);
   // 既存の SPOOLER_RESTART 等（skill_id なし）は従来経路のまま。
   if (command.skill_id) return executeSkill(command);
 
@@ -420,7 +631,15 @@ async function tick() {
 }
 
 async function main() {
-  log('command-agent start', { commandUrl, intervalSeconds, mock: mockMode });
+  log('command-agent start', {
+    commandUrl,
+    intervalSeconds,
+    mock: mockMode,
+    privilege: agentPrivilege,
+  });
+  if (isAdminAgent) {
+    log('管理者エージェント: 昇格必須 Skill のみ実行します', ELEVATED_SKILL_IDS.join(', '));
+  }
   if (!deviceIdHeader) {
     log('警告: config.browserDeviceId が未設定のため x-device-id を送りません');
   }

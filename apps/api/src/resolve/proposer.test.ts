@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  escalationReasonForDecision,
   fallbackPropose,
   isDuplicateProposal,
   type ProposalContext,
   type ProposalHistoryEntry,
+  proposalFromAiBody,
 } from './proposer.js';
 import { SKILL_CATALOG, type SkillRecord } from './skills.js';
 
@@ -135,5 +137,83 @@ describe('fallback proposer', () => {
         { skillId: 'service.status', params: { service: 'Spooler' } },
       ]),
     ).toBe(false);
+  });
+});
+
+describe('AI 提案の正規化と終了宣言（decision）', () => {
+  const base = { skills: skillRecords(), history: [] as ProposalHistoryEntry[] };
+
+  it('decision=escalate は skillId が空でも終了宣言として採用し、理由は ai_escalated', () => {
+    const proposal = proposalFromAiBody(
+      { skillId: '', params: {}, rationale: '人手が必要です', decision: 'escalate' },
+      base,
+    );
+    expect(proposal).toMatchObject({
+      skillId: '',
+      params: {},
+      source: 'ai',
+      decision: 'escalate',
+    });
+    expect(escalationReasonForDecision(proposal?.decision)).toBe('ai_escalated');
+  });
+
+  it('decision=stop は skillId が有効でも終了宣言を優先し、理由は ai_stop', () => {
+    const proposal = proposalFromAiBody({ skillId: 'spooler.status', decision: 'stop' }, base);
+    expect(proposal?.decision).toBe('stop');
+    expect(proposal?.skillId).toBe('');
+    expect(escalationReasonForDecision(proposal?.decision)).toBe('ai_stop');
+  });
+
+  it('skillId が未知でも decision は採用する（終了宣言は Skill に依存しない）', () => {
+    const proposal = proposalFromAiBody({ skillId: 'not-in-catalog', decision: 'escalate' }, base);
+    expect(proposal?.decision).toBe('escalate');
+  });
+
+  it('未知の decision 値は無視し、従来どおり skillId を検証する', () => {
+    const proposal = proposalFromAiBody(
+      { skillId: 'spooler.status', params: {}, decision: 'resolve' },
+      base,
+    );
+    expect(proposal?.skillId).toBe('spooler.status');
+    expect(proposal).not.toHaveProperty('decision');
+  });
+
+  it('decision の無い提案に decision キーを生やさない（既存挙動の後方互換）', () => {
+    const proposal = proposalFromAiBody({ skillId: 'os.info', params: {} }, base);
+    expect(proposal).not.toBeNull();
+    // undefined のプロパティを足すと既存テスト（キー集合の検証）が壊れるため作らない。
+    expect(Object.keys(proposal ?? {}).sort()).toEqual([
+      'params',
+      'rationale',
+      'skillId',
+      'source',
+    ]);
+  });
+
+  it('skillId がカタログに無い / params が不正 / 重複提案は null（従来どおり fallback へ）', () => {
+    expect(proposalFromAiBody({ skillId: 'not-in-catalog' }, base)).toBeNull();
+    expect(proposalFromAiBody({ skillId: 'spooler.queue.purge', params: {} }, base)).toBeNull();
+    expect(
+      proposalFromAiBody(
+        { skillId: 'os.info', params: {} },
+        { skills: base.skills, history: [{ skillId: 'os.info', params: {} }] },
+      ),
+    ).toBeNull();
+  });
+
+  it('壊れた応答（null / 文字列 / 配列）は null', () => {
+    for (const raw of [null, undefined, 'text', 42, [], [{}]]) {
+      expect(proposalFromAiBody(raw, base)).toBeNull();
+    }
+  });
+
+  it('fallback の提案は decision を返さない（従来どおり提案を続ける）', () => {
+    const proposal = fallbackPropose(context({ text: '印刷できません。' }));
+    expect(proposal).not.toBeNull();
+    expect(proposal).not.toHaveProperty('decision');
+  });
+
+  it('escalationReasonForDecision は未指定で null', () => {
+    expect(escalationReasonForDecision(undefined)).toBeNull();
   });
 });

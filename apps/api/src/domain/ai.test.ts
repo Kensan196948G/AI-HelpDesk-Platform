@@ -19,6 +19,12 @@ describe('detectIntent', () => {
     expect(detectIntent('Teamsの音が出ない', '').id).toBe('audio');
     expect(detectIntent('不審なメールを開いた', '').id).toBe('security');
   });
+
+  // 2026-10-25 の実測（30 件評価）で、この 2 表現が KB-2026-0005 に到達しなかった。
+  it('形容詞の連用形と口語表現でも性能の相談と判定する', () => {
+    expect(detectIntent('アプリの起動や操作が遅く、マウスが固まります', '').id).toBe('storage');
+    expect(detectIntent('最近パソコンがもっさりする。ファンもうるさい', '').id).toBe('storage');
+  });
 });
 
 describe('composeAssessment', () => {
