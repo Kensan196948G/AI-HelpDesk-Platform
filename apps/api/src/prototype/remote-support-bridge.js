@@ -138,7 +138,8 @@
 
   function installLabel(install) {
     if (!install) return '未確認';
-    if (install.agentInstalled) return install.agentOnline ? '導入済み・online' : '導入済み・offline';
+    if (install.agentInstalled)
+      return install.agentOnline ? '導入済み・online' : '導入済み・offline';
     if (install.status === 'triggered') return '導入待ち（展開キュー）';
     if (install.status === 'failed') return '導入できませんでした';
     return install.status;
