@@ -86,6 +86,19 @@ export function patchCaseUserResolution(html: string): string {
     .split('おすすめの担当：${t.suggest}（${staff(t.suggest).role}）')
     .join('おすすめの担当：${staff(t.suggest).name}（${staff(t.suggest).role}）');
   // 解決記録の記入例: 印刷の相談に共有フォルダの例が入らないよう、印刷を優先する。
+  // 依頼者が内部 ID（emp:MK...）のまま画面・CSV に出る場合に、社員名簿から氏名へ直す。
+  out = out
+    .split('function intakeFromCowork(o){')
+    .join(
+      "function personLabel(v){var s=String(v==null?'':v);if(s.indexOf('emp:')!==0)return s;var m=/^emp:(?:[a-z]+:)?([A-Za-z0-9_-]+)$/.exec(s);var no=m?m[1]:'';try{var e=(window.__AIHD_EMPLOYEES__&&window.__AIHD_EMPLOYEES__.all||[]).find(function(x){return x.employeeNo===no});if(e)return (e.section?e.section+' ':'')+e.name;}catch(_){}return no||s;}\nfunction intakeFromCowork(o){",
+    );
+  out = out.split('requester:o.requester,').join('requester:personLabel(o.requester),');
+  out = out.split('esc(t.requester)').join('esc(personLabel(t.requester))');
+  out = out.split('${t.requester}（受付：').join('${personLabel(t.requester)}（受付：');
+  out = out.split('personTokens(t.requester)').join('personTokens(personLabel(t.requester))');
+  out = out
+    .split('fmtFull(t.createdAt),t.requester,')
+    .join('fmtFull(t.createdAt),personLabel(t.requester),');
   out = out
     .split('if(/印刷|プリンタ|複合機/.test(s))')
     .join('if(/印刷|プリンタ|複合機|プリント/.test(s))');
