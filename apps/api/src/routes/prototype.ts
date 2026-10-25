@@ -70,6 +70,30 @@ export function patchCaseUserResolution(html: string): string {
   // 「AI相談」の挨拶はデモ利用者（u1〜u5）向けの TIPS を持つ。実在社員（emp:MK...）で
   // 開くと TIPS が無く TypeError になるため、無い場合は空のリストにする。
   out = out.split('TIPS[u.id].map(').join('(TIPS[u.id]||[]).map(');
+  // 引継ぎメモの「推定分野」: 画面の旧カテゴリ名（IT端末 等）も CATS のキーへ寄せる。
+  out = out
+    .split('const cat=k=>CATS.find(c=>c.k===k)||CATS[6];')
+    .join(
+      "const cat=k=>CATS.find(c=>c.k===k)||CATS.find(c=>c.k===({IT端末:'device','ID・アクセス権':'account','業務・規程':'other','セキュリティ事故':'security','AI窓口':'other'})[k])||CATS[6];",
+    );
+  // 引継ぎメモの「おすすめの担当」: 社員番号（MK...）を名簿から氏名へ解決する。
+  out = out
+    .split("const staff=n=>STAFF.find(s=>s.name===n)||{name:n,role:''};")
+    .join(
+      "const staff=n=>{if(!n)return {name:'（未定）',role:''};const t=STAFF.find(s=>s.name===n)||STAFF.find(s=>s.employeeNo===n);if(t)return t;try{const e=(window.__AIHD_EMPLOYEES__&&window.__AIHD_EMPLOYEES__.all||[]).find(x=>x.employeeNo===n);if(e)return {name:e.name,role:'ヘルプデスク担当'};}catch(_){}return {name:n,role:''};};",
+    );
+  out = out
+    .split('おすすめの担当：${t.suggest}（${staff(t.suggest).role}）')
+    .join('おすすめの担当：${staff(t.suggest).name}（${staff(t.suggest).role}）');
+  // 解決記録の記入例: 印刷の相談に共有フォルダの例が入らないよう、印刷を優先する。
+  out = out
+    .split('if(/印刷|プリンタ|複合機/.test(s))')
+    .join('if(/印刷|プリンタ|複合機|プリント/.test(s))');
+  out = out
+    .split('if(/共有フォルダ|アクセス権|アクセスでき/.test(s))')
+    .join(
+      "if(!(/印刷|プリンタ|複合機|プリント/.test(t.subject)||(t.cat==='device'&&/印刷|プリンタ|複合機|プリント/.test(s)))&&/共有フォルダ|アクセス権|アクセスでき/.test(s))",
+    );
   return out;
 }
 
