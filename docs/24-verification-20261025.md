@@ -41,14 +41,16 @@
 | High | 「デモ用の記入例」が案件種別と無関係で、承認ナレッジ・最終報告書まで汚染 | **PR #35**: 印刷・プリンタ・複合機・プリントを優先判定（件名または category=device のとき） |
 | Medium | チケット一覧で依頼者が内部 ID（`emp:MK...`）表示 | **PR #37**: 社員名簿から「部署 氏名」へ解決（名簿外は社員番号） |
 | Medium | preview DB のバックアップなし | **PR #38**: 日次バックアップ（PG16 dump・検証・14 日保持・systemd timer） |
-| Medium | Access JWT を検証していない（`ACCESS_JWT_MODE=off`） | **2026-10-25 設定変更**: `report` モードで検証開始（失敗はログのみ、次段階で enforce） |
+| Medium | Access JWT を検証していない（`ACCESS_JWT_MODE=off`） | **2026-10-25 設定変更**: `report` で実 JWT の検証成功を確認後、**`enforce` へ移行**（ローカル偽ヘッダーは 401） |
+| Medium | disk 使用率 87% | **2026-10-25 整理**: npm/npx/pip/trivy/pnpm のキャッシュを削除し **82%**（約 43GB 解放） |
 
 ### 未対応（既知の課題）
 
 | 重大度 | 内容 | 推奨 |
 |---|---|---|
-| Medium | `REQUIRE_PROXY_SECRET=false`（JWT は report モードで検証開始。proxy secret は未設定） | 付与方法を設計（cloudflared/Worker）。JWT は report のログを確認して enforce へ |
-| Medium | disk 87% | 不要ファイル整理（バックアップは約 85KB/回で影響小） |
+| Medium | `REQUIRE_PROXY_SECRET=false`（JWT は enforce 済み。proxy secret は未設定） | 付与方法を設計（cloudflared / Worker） |
+| Low | `~/.cache/uv` 9.9GB が常駐プロセス（chroma-mcp）にロックされ削除できない | メンテナンス時にプロセス停止 → `uv cache clean` |
+| Low | Playwright の旧ブラウザ・他プロジェクトのキャッシュ・/tmp に大きめの残骸 | 利用状況を確認して個別に整理（誤削除防止のため今回は未実施） |
 | Low | 氏名は保存前マスクの対象外（設計は「名宛てとして保持」） | 要件と設計のどちらを正とするか決定 |
 | Medium | 本番モードで MVP リレーショナル API はログイン経路がなく到達不能（設計の不一致） | 内部専用と明記、または Access 連携セッションを実装 |
 
@@ -65,7 +67,9 @@
 | 7 | 依頼者 ID 表示の修正（PR #37）を反映（12:47、build → restart） |
 | 8 | `ACCESS_JWT_MODE=report` / `ACCESS_TEAM_DOMAIN` / `ACCESS_AUD` を設定（12:47、再起動） |
 | 9 | DB 日次バックアップを登録（PR #38、12:49 に手動実行 → timer 有効化） |
-| 10 | 反映後に再検証（下記） |
+| 10 | `ACCESS_JWT_MODE=enforce` へ移行（12:56、再起動） |
+| 11 | キャッシュ整理（npm / npx / pip / trivy / pnpm）で disk 87% → 82% |
+| 12 | 反映後に再検証（下記） |
 
 - 状態修復前: cowork 8 キー / 案件 4（E2E 1 含む）/ チャット 5（E2E 1）/ チケット 1（E2E）/ devices 0
 - 状態修復後: cowork 14 キー / 案件 3 / チャット 4 / チケット 0 / devices 11 / E2E 文字列なし
@@ -89,6 +93,8 @@
 | 依頼者表示（M3） | `personLabel('emp:MK0200')` → DX推進部 加藤 里美 / 名簿外 → 社員番号 / 通常の氏名は変化なし |
 | Access JWT（report） | 起動ログ `mode:report`、JWT なしリクエストは警告を出して 200（公開は Access 302） |
 | DB バックアップ | `ai_helpdesk_preview-20261025-124925.dump` 85,289 bytes / systemd 実行 `Result=success` / 次回 2026-10-26 02:32 JST |
+| Access JWT（enforce） | 公開 Access 経由 `POST /api/device/browser` 200 / ローカル email ヘッダーのみ **401** / 公開未認証 302 / ログ `mode:enforce`（成功・失敗） |
+| disk | **87% → 82%**（772GB → 729GB 使用 / 空き 125GB → 169GB、約 43GB 解放） |
 
 稼働中インスタンス（公開 URL のオリジン）:
 
@@ -111,9 +117,8 @@
 
 ## 7. 次にやるべきこと
 
-1. `ACCESS_JWT_MODE=report` のログで誤検知がないことを確認し、`enforce` へ段階移行する。
-   `REQUIRE_PROXY_SECRET` は付与方法（cloudflared / Worker）を設計してから有効化する。
-2. disk 使用率の整理（87%）。不要な node_modules / 旧バックアップ等を確認する。
+1. `REQUIRE_PROXY_SECRET` の付与方法（cloudflared / Worker）を設計し、多層防御を完成させる。
+2. disk の追加整理（uv キャッシュ 9.9GB は chroma-mcp 停止時、Playwright 旧版・他プロジェクトのキャッシュは利用確認後）。
 3. 氏名マスクの方針決定（要件と設計の突合）。
 4. Windows 実機での端末エージェント配布・定期実行の確認（未実施）。
 5. 引継ぎ担当者のラベル（部署）と、記入例の AI 化は次段階の改善候補。
