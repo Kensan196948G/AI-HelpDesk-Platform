@@ -100,6 +100,7 @@
 | DB バックアップ | `ai_helpdesk_preview-20261025-124925.dump` 85,289 bytes / systemd 実行 `Result=success` / 次回 2026-10-26 02:32 JST |
 | Access JWT（enforce） | 公開 Access 経由 `POST /api/device/browser` 200 / ローカル email ヘッダーのみ **401** / 公開未認証 302 / ログ `mode:enforce`（成功・失敗） |
 | proxy secret | 直接 18950 → **401 `PROXY_REQUIRED`** / プロキシ経由 18949（JWT なし）→ 401 `UNAUTHORIZED` / 両方の `/api/health` 200 / 公開 302 |
+| 認証済み実ブラウザ（公開） | 14:09 の再読み込みで **11 リクエストすべて 200**（`GET /`・`/api/employees`・`/api/device/browser`・`PUT /api/state/*`）。`mode:enforce` の JWT 検証成功、`PROXY_REQUIRED`・`BAD_GATEWAY`・5xx は 0 |
 | 公開経路（bypass） | `POST https://.../api/device/agent` がオリジンまで到達し、API の 401（デバイストークン）を返す＝Tunnel → プロキシ → API の経路を実測 |
 | disk | **87% → 81%**（772GB → 722GB 使用 / 空き 125GB → 176GB、約 50GB 解放。uv は 9.9GB → 488MB） |
 
@@ -124,8 +125,8 @@
 
 ## 7. 次にやるべきこと
 
-1. 認証済みの実ブラウザ要求をログで確認（プロキシ切替後の初回）。
-2. proxy secret の限界を踏まえた権限分離、または Cloudflare Worker + Secret への移行検討。
-3. disk の追加整理（Playwright 旧版・他プロジェクトのキャッシュは利用確認後）。
-4. 氏名マスクの方針決定（要件と設計の突合）。
-5. Windows 実機での端末エージェント配布・定期実行の確認（未実施）。
+1. proxy secret の限界を踏まえた権限分離、または Cloudflare Worker + Secret への移行検討。
+2. disk の追加整理（Playwright 旧版・他プロジェクトのキャッシュは利用確認後）。
+3. 氏名マスクの方針決定（要件と設計の突合）。
+4. Windows 実機での端末エージェント配布・定期実行の確認（未実施）。
+5. 引継ぎ担当者のラベル（部署）と、記入例の AI 化は次段階の改善候補。
