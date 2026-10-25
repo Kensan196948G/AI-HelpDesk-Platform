@@ -21,6 +21,8 @@
     error: null,
     pollTimer: null,
     lastKey: '',
+    adminItems: null,
+    adminLoaded: false,
   };
 
   function esc(value) {
@@ -222,6 +224,61 @@
     }
   }
 
+  async function manualClose(action) {
+    if (!STATE.session?.id || STATE.busy) return;
+    STATE.busy = true;
+    STATE.error = null;
+    try {
+      const data = await api(`/api/resolve/sessions/${STATE.session.id}/${action}`, {});
+      STATE.session = data.session;
+      STATE.mode = action === 'resolve' ? 'resolved' : 'escalated';
+      stopPolling();
+    } catch (error) {
+      STATE.error = String(error.message || error);
+      toast?.(`操作できませんでした: ${STATE.error}`, 'bad');
+    } finally {
+      STATE.busy = false;
+      render(true);
+    }
+  }
+
+  async function loadAdminPending() {
+    if (STATE.adminLoaded) return;
+    STATE.adminLoaded = true;
+    try {
+      const data = await api('/api/resolve/admin/pending');
+      STATE.adminItems = Array.isArray(data.items) ? data.items : [];
+    } catch (error) {
+      // 管理者でなければ 403。承認待ちは表示しない（存在も漏らさない）。
+      STATE.adminItems = [];
+    }
+    render(true);
+  }
+
+  async function adminApprove(index) {
+    const item = STATE.adminItems?.[index];
+    if (!item || STATE.busy) return;
+    STATE.busy = true;
+    STATE.error = null;
+    try {
+      const payload = item.adminApprovalChallenge?.payload;
+      if (!payload) throw new Error('承認チャレンジがありません。再読み込みしてください。');
+      const approvalHash = await sha256Hex(stableStringify(payload));
+      await api(`/api/resolve/steps/${item.stepId}/admin-approve`, {
+        decision: 'Y',
+        approvalHash,
+      });
+      STATE.adminItems = STATE.adminItems.filter((candidate) => candidate.stepId !== item.stepId);
+      toast?.('IT管理者として承認しました。依頼者本人の実行確認待ちです。', 'ok');
+    } catch (error) {
+      STATE.error = String(error.message || error);
+      toast?.(`承認できませんでした: ${STATE.error}`, 'bad');
+    } finally {
+      STATE.busy = false;
+      render(true);
+    }
+  }
+
   async function stop() {
     if (!STATE.session?.id || STATE.busy) return;
     STATE.busy = true;
@@ -314,15 +371,26 @@
         '<div class="u-small" style="margin-top:4px">パラメータ: <span class="u-mono">' +
         esc(JSON.stringify(STATE.step.params || {})) +
         '</span></div>' +
+        (STATE.step.requiresAdminApproval
+          ? STATE.step.adminApprovedBy
+            ? '<div class="u-small" style="margin-top:4px;color:#1f7a3f">IT管理者の承認済み: ' +
+              esc(STATE.step.adminApprovedBy) +
+              '</div>'
+            : '<div class="u-small" style="margin-top:4px;color:#b42318">リスク4以上のため、IT管理者の承認が必要です（自己承認はできません）。</div>'
+          : '') +
         '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">' +
         '<button class="u-btn pri" data-aihd-resolve="approve" data-decision="Y">実行する（Y）</button>' +
         '<button class="u-btn" data-aihd-resolve="approve" data-decision="N">やめる（N）</button>' +
+        '<button class="u-btn" data-aihd-resolve="resolve">解決した</button>' +
+        '<button class="u-btn" data-aihd-resolve="escalate">担当者へ</button>' +
         '<button class="u-btn" data-aihd-resolve="stop">中止</button></div>';
     } else if (STATE.mode === 'executing') {
       body =
         '<div style="margin-top:8px">端末で読み取りを実行しています…</div>' +
-        '<div class="u-small u-muted" style="margin-top:4px">端末エージェントが応答すると結果が表示されます。</div>' +
-        '<div style="margin-top:10px"><button class="u-btn" data-aihd-resolve="stop">中止</button></div>';
+        '<div class="u-small u-muted" style="margin-top:4px">端末エージェントが応答すると結果が表示されます。2 分応答が無い場合は自動で失敗します。</div>' +
+        '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">' +
+        '<button class="u-btn" data-aihd-resolve="stop">中止</button>' +
+        '<button class="u-btn" data-aihd-resolve="escalate">担当者へ</button></div>';
     } else if (STATE.mode === 'result' && STATE.step) {
       body =
         '<div style="margin-top:8px"><b>結果</b></div>' +
@@ -332,10 +400,16 @@
         '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">' +
         '<button class="u-btn pri" data-aihd-resolve="continue" data-decision="Y">続ける（Y）</button>' +
         '<button class="u-btn" data-aihd-resolve="continue" data-decision="N">やめる（N）</button>' +
+        '<button class="u-btn pri" data-aihd-resolve="resolve">解決した</button>' +
+        '<button class="u-btn" data-aihd-resolve="escalate">担当者へ</button>' +
         '<button class="u-btn" data-aihd-resolve="stop">中止</button></div>';
     } else if (STATE.mode === 'stopped') {
       body =
         '<div style="margin-top:8px">解決ループを停止しました。必要ならやり直せます。</div>' +
+        '<div style="margin-top:8px"><button class="u-btn" data-aihd-resolve="start">もう一度開始</button></div>';
+    } else if (STATE.mode === 'resolved') {
+      body =
+        '<div style="margin-top:8px">解決済みにしました。必要ならナレッジ化してください。</div>' +
         '<div style="margin-top:8px"><button class="u-btn" data-aihd-resolve="start">もう一度開始</button></div>';
     } else if (STATE.mode === 'escalated') {
       body =
@@ -357,7 +431,34 @@
     panel.innerHTML =
       header +
       (body || '') +
+      adminPanelHtml() +
       (STATE.busy ? '<div class="u-small u-muted" style="margin-top:6px">処理中…</div>' : '');
+  }
+
+  function adminPanelHtml() {
+    const items = STATE.adminItems || [];
+    if (!items.length) return '';
+    return (
+      '<div style="margin-top:12px;border-top:1px solid #d9e2ec;padding-top:8px">' +
+      '<div class="u-small"><b>IT管理者の承認待ち（リスク4以上）</b></div>' +
+      items
+        .map(
+          (item, index) =>
+            '<div class="u-small" style="margin-top:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
+            '<span>' +
+            esc(item.skillTitle) +
+            ' / ' +
+            esc(item.requester) +
+            ' / リスク' +
+            esc(item.riskLevel) +
+            '</span>' +
+            '<button class="u-btn" data-aihd-resolve="admin-approve" data-index="' +
+            index +
+            '">承認</button></div>',
+        )
+        .join('') +
+      '</div>'
+    );
   }
 
   function ensurePanel() {
@@ -377,6 +478,7 @@
       // 描画がスキップされることがある。新しい要素には必ず描画する。
       STATE.lastKey = '';
       render(true);
+      void loadAdminPending();
       return;
     }
     render(false);
@@ -391,6 +493,10 @@
     else if (action === 'approve') void approve(decision);
     else if (action === 'continue') void continueLoop(decision);
     else if (action === 'stop') void stop();
+    else if (action === 'resolve') void manualClose('resolve');
+    else if (action === 'escalate') void manualClose('escalate');
+    else if (action === 'admin-approve')
+      void adminApprove(Number(button.getAttribute('data-index') || '0'));
   });
 
   setInterval(ensurePanel, 800);

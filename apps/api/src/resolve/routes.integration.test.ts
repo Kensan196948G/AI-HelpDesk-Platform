@@ -130,6 +130,18 @@ beforeAll(async () => {
            (${OTHER_EMAIL}, 'browser', ${OTHER_DEVICE}, '{}'::jsonb)
     ON CONFLICT (user_email, source, device_id) DO NOTHING
   `;
+  // Phase C: 承認時の端末オンライン判定は device_tokens.last_used_at を正とする。
+  // 端末エージェントが実際にポーリングしている状態を fixture でも再現する。
+  await sql`
+    INSERT INTO device_tokens (token_hash, user_email, label, device_id, last_used_at)
+    VALUES (${`test-token-${EMAIL}`}, ${EMAIL}, 'test', ${DEVICE}, now()),
+           (${`test-token-${OTHER_EMAIL}`}, ${OTHER_EMAIL}, 'test', ${OTHER_DEVICE}, now())
+    ON CONFLICT (token_hash) DO UPDATE
+      SET user_email = EXCLUDED.user_email,
+          device_id = EXCLUDED.device_id,
+          revoked_at = NULL,
+          last_used_at = now()
+  `;
   await sql`DELETE FROM device_commands WHERE user_email IN (${EMAIL}, ${OTHER_EMAIL}) AND session_id IS NOT NULL`;
   await sql`DELETE FROM resolution_sessions WHERE user_email IN (${EMAIL}, ${OTHER_EMAIL})`;
   await sql`DELETE FROM prototype_states WHERE user_email IN (${EMAIL}, ${OTHER_EMAIL}) AND name = 'cowork'`;

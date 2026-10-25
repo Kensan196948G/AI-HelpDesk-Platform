@@ -88,6 +88,71 @@ export function computeApprovalHash(payload: ApprovalPayload): string {
 }
 
 /**
+ * リスク 4 以上の Skill に対する IT 管理者承認の payload（設計 §4-3）。
+ *
+ * 利用者の承認 payload（12 キー固定）とは **別物** にする。既存テストと画面の
+ * ハッシュ計算が 12 キーに依存しているため、管理者承認の追加で壊してはいけない。
+ * adminEmail を含めることで「誰の承認か」をハッシュに束縛する。
+ */
+export interface AdminApprovalPayload {
+  stepId: string;
+  sessionId: string;
+  seq: number;
+  skillId: string;
+  skillVersion: string;
+  skillContentHash: string;
+  params: Record<string, unknown>;
+  deviceId: string;
+  userEmail: string;
+  riskLevel: number;
+  adminEmail: string;
+  nonce: string;
+  expiresAt: string;
+}
+
+/** 管理者承認 payload の元データ（step / session / 承認者の列から再構築する）。 */
+export interface AdminApprovalPayloadSource {
+  stepId: string;
+  sessionId: string;
+  seq: number;
+  skillId: string;
+  skillVersion: string;
+  skillContentHash: string;
+  params: Record<string, unknown>;
+  deviceId: string;
+  userEmail: string;
+  riskLevel: number;
+  adminEmail: string;
+  nonce: string;
+  expiresAt: Date | string;
+}
+
+export function buildAdminApprovalPayload(
+  source: AdminApprovalPayloadSource,
+): AdminApprovalPayload {
+  return {
+    stepId: source.stepId,
+    sessionId: source.sessionId,
+    seq: source.seq,
+    skillId: source.skillId,
+    skillVersion: source.skillVersion,
+    skillContentHash: source.skillContentHash,
+    params: source.params,
+    deviceId: source.deviceId,
+    userEmail: source.userEmail,
+    riskLevel: source.riskLevel,
+    adminEmail: source.adminEmail,
+    nonce: source.nonce,
+    expiresAt: toIsoString(source.expiresAt),
+  };
+}
+
+/** 管理者承認ハッシュ（利用者側と同じ SHA-256(stableStringify(payload))）。 */
+export function computeAdminApprovalHash(payload: AdminApprovalPayload): string {
+  return createHash('sha256').update(stableStringify(payload)).digest('hex');
+}
+
+/**
  * 送信された approvalHash とサーバ再計算値を定数時間で比較する。
  * 形式不正（64 桁 hex 以外）は比較せず false。
  */

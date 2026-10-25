@@ -331,3 +331,14 @@
   - UI `resolve-bridge.js`（カード、実行前 Y/N、結果、継続 Y/N、中止）
 - 検証: 新規 46 件 + device 13 件、全体 253 件 PASS。UI E2E で network.adapters → os.info の 2 ステップを実測（pageerror 0）。
 - 未実施: Windows 実機、estop 連携、端末オフライン、承認期限切れ再提案。
+
+## Round 30 — 解決ループ / Skills Phase C（部分）（2026-10-25）
+
+- Phase C のうち Windows 実機を除く 4 項目を実装（migration 013、`/api/resolve/*`、UI、テスト 12 件追加）。
+- 端末オフライン（`RESOLVE_DEVICE_OFFLINE_SEC`、既定 120 秒）と結果タイムアウト
+  （承認時に deadline 確定 → スイープで `failed` / `RESULT_TIMEOUT` → `escalated`）をサーバで強制。
+- リスク 4 以上は IT 管理者の承認を必須化（別 payload・自己承認不可・期限 10 分）。
+  `RESOLVE_ADMIN_ALLOWLIST` は既定空（fail-closed）。
+- 手動「解決した」「担当者へ」を API / UI に追加。監査に理由を記録。
+- `outputPolicy.fieldsToAi` を結果取り込み時に厳密適用し、AI には `result_ai` のみ渡す。
+- 検証: 273 tests PASS、typecheck / lint 緑。未実施: Windows 実機実行、管理画面への承認導線統合。

@@ -193,9 +193,42 @@ N のレスポンス: `{ "ok": true, "step": {status:"rejected"...}, "session": 
 | 429  | `RATE_LIMITED`         | レート制限（sessions 20/分、approve 10/分） |
 | 404  | `NOT_FOUND`            | 案件・セッション・ステップが無い/他者のもの |
 
-## 8. Phase B の制限（UI 表示の前提）
+## 8. Phase C で追加した API
 
-- 全 Skill は読み取り専用・リスク 1。実行前 Y/N と結果後 Y/N の 2 段階。
-- estop・端末オフライン/結果タイムアウトは未接続（TODO）。
+### 手動クローズ（本人）
+
+- `POST /api/resolve/sessions/:id/resolve` `{ "reason": "任意" }` → `{ "ok": true, "session": {status:"resolved"} }`
+- `POST /api/resolve/sessions/:id/escalate` `{ "reason": "任意" }` → `{ "ok": true, "session": {status:"escalated"} }`
+- 終端状態からの再操作は 409 `SESSION_TERMINAL`。監査に `by: "manual"` と理由を残す。
+
+### IT 管理者承認（リスク 4 以上）
+
+- `GET /api/resolve/admin/pending` → `{ "ok": true, "items": [{ "stepId", "sessionId", "seq", "skillId",
+  "skillTitle", "riskLevel", "requester", "deviceId", "createdAt",
+  "adminApprovalChallenge": { "payload": {...13キー...}, "nonce", "expiresAt" } }] }`
+  - 管理者以外は 403 `FORBIDDEN`。自己案件は一覧に出さない。
+- `POST /api/resolve/steps/:id/admin-approve` `{ "decision": "Y", "approvalHash": "<sha256>" }`
+  - 402/400 系: 自己承認 403 `SELF_APPROVAL_FORBIDDEN`、ハッシュ不一致 400 `ADMIN_APPROVAL_MISMATCH`、
+    期限切れ 409 `ADMIN_APPROVAL_EXPIRED`、対象外 409 `ADMIN_APPROVAL_NOT_REQUIRED`。
+  - 承認しても step は `proposed` のまま。依頼者本人の Y が別途必要。
+
+管理者承認 payload は利用者側（12 キー）と別で、`adminEmail` を含む 13 キー。
+
+### 端末オフライン / タイムアウト
+
+- 承認時に端末の最終応答が `RESOLVE_DEVICE_OFFLINE_SEC`（既定 120 秒）より古いと 409 `DEVICE_OFFLINE`。
+- 承認時に `step.timeoutSec` / `step.deadlineAt` が確定。期限超過は `step.status = "failed"`、
+  `step.error = "RESULT_TIMEOUT"`、セッションは `escalated`。期限後の結果は状態を進めない。
+
+### fieldsToAi
+
+- `step.resultAi` は `outputPolicy.fieldsToAi` を適用した AI 入力用の結果。
+  `outputPolicy` 欠落・`fieldsToAi` 非配列・`normalized` 非オブジェクトは空（fail-closed）。
+- `step.resultSummary` は従来どおり画面表示用（PII 伏せ字のみ）。
+
+## 9. Phase B の制限（UI 表示の前提）
+
+- Phase B の Skill は読み取り専用・リスク 1。実行前 Y/N と結果後 Y/N の 2 段階。
 - 失敗（device_commands が failed）は安全側で初回から `escalated`。
-- 承認チャレンジが 5 分切れした場合の再提案 API は task-7 の対象外（セッションを中止して作り直す）。
+- 承認チャレンジが 5 分切れした場合はセッションを中止して作り直す（再提案 API は未提供）。
+- Windows 実機での PowerShell 実行は Phase C でも未検証（mock/fixture で検証）。

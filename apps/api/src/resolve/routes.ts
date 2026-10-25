@@ -1,6 +1,8 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
+import { canonicalEmail } from '../auth/email-alias.js';
 import { authenticateUi } from '../auth/ui.js';
+import { config } from '../config.js';
 import { sql } from '../db.js';
 import { stableStringify } from '../domain/audit.js';
 import { redactPII } from '../domain/pii.js';
@@ -9,9 +11,12 @@ import { appendAudit } from '../lib/audit-log.js';
 import { jsonbValue } from '../lib/jsonb-value.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
 import {
+  type AdminApprovalPayload,
   type ApprovalChallenge,
   approvalHashMatches,
+  buildAdminApprovalPayload,
   buildApprovalPayload,
+  computeAdminApprovalHash,
   computeApprovalHash,
   newNonce,
 } from './approval.js';
@@ -28,6 +33,10 @@ import {
 const SESSION_TTL_SQL = sql`now() + interval '30 minutes'`;
 const SESSION_MAX_STEPS = 6;
 const STEP_APPROVAL_TTL_SQL = sql`now() + interval '5 minutes'`;
+/** リスク 4 以上の管理者承認の有効期限（設計 §4-3）。 */
+const ADMIN_APPROVAL_TTL_SQL = sql`now() + interval '10 minutes'`;
+/** Skill に timeoutSec が無い場合の実行期限（秒）。 */
+const DEFAULT_STEP_TIMEOUT_SEC = 60;
 const TERMINAL_SESSION_STATUSES = new Set(['resolved', 'escalated', 'stopped', 'expired']);
 
 const SessionIdParamsSchema = z.object({ id: z.string().uuid() });
@@ -41,6 +50,12 @@ const ApproveSchema = z.object({
   approvalHash: z.string().trim().max(128).optional(),
 });
 const ContinueSchema = z.object({ decision: z.enum(['Y', 'N']) });
+/** IT 管理者承認（リスク 4 以上）。利用者側とは別 payload / 別ハッシュ。 */
+const AdminApproveSchema = z.object({
+  decision: z.enum(['Y', 'N']),
+  approvalHash: z.string().trim().max(128).optional(),
+});
+const ManualCloseSchema = z.object({ reason: z.string().trim().max(500).optional() }).default({});
 
 interface SessionRow {
   id: string;
@@ -76,10 +91,17 @@ interface StepRow {
   command_id: string | null;
   result_summary: unknown;
   result_full: unknown;
+  result_ai: unknown;
   error: string | null;
   created_at: Date | string;
   executed_at: Date | string | null;
   approval_expires_at: Date | string;
+  timeout_sec: number | null;
+  deadline_at: Date | string | null;
+  admin_nonce: string | null;
+  admin_expires_at: Date | string | null;
+  admin_approved_by: string | null;
+  admin_approved_at: Date | string | null;
   sk_title: string | null;
   sk_summary: string | null;
   sk_symptoms: unknown;
@@ -175,6 +197,8 @@ function sessionDto(session: SessionRow) {
     startedAt: toIso(session.started_at),
     expiresAt: toIso(session.expires_at),
     lastSummary: jsonObjectOrNull(session.last_summary),
+    // Phase C: ステップ実行の既定タイムアウト（Skill 側の timeoutSec が優先）。
+    stepTimeoutSec: DEFAULT_STEP_TIMEOUT_SEC,
     createdAt: toIso(session.created_at),
     updatedAt: toIso(session.updated_at),
   };
@@ -226,6 +250,102 @@ function approvalChallengeFor(row: StepRow, session: SessionRow): ApprovalChalle
   return { payload, nonce: payload.nonce, expiresAt: payload.expiresAt };
 }
 
+/**
+ * リスク 4 以上の管理者承認 payload を step / session から組み立てる。
+ * 依頼者向けの承認 payload（12 キー）とは分離し、既存画面のハッシュ計算を壊さない。
+ */
+function adminApprovalPayloadFor(
+  row: StepRow,
+  session: SessionRow,
+  adminEmail: string,
+): AdminApprovalPayload | null {
+  if (row.status !== 'proposed' || Number(row.risk_level) < 4) return null;
+  if (!row.admin_nonce || !row.admin_expires_at) return null;
+  return buildAdminApprovalPayload({
+    stepId: row.id,
+    sessionId: session.id,
+    seq: Number(row.seq),
+    skillId: row.skill_id,
+    skillVersion: row.skill_version,
+    skillContentHash: row.skill_content_hash,
+    params: jsonObject(row.params),
+    deviceId: session.device_id,
+    userEmail: session.user_email,
+    riskLevel: Number(row.risk_level),
+    adminEmail,
+    nonce: row.admin_nonce,
+    expiresAt: row.admin_expires_at,
+  });
+}
+
+/** IT 管理者の許可リスト（呼び出し時にパースする。テストが config を差し替えるため）。 */
+function resolveAdminAllowlist(): Set<string> {
+  return new Set(
+    String(config.RESOLVE_ADMIN_ALLOWLIST ?? '')
+      .split(',')
+      .map((value) => canonicalEmail(value))
+      .filter(Boolean),
+  );
+}
+
+function isResolveAdmin(email: string): boolean {
+  return resolveAdminAllowlist().has(canonicalEmail(email));
+}
+
+/** 端末エージェントの最終応答時刻（device_tokens.last_used_at の最大）。 */
+async function deviceLastSeenAt(email: string, deviceId: string): Promise<number | null> {
+  const rows = await sql<{ last_seen: Date | string | null }[]>`
+    SELECT max(last_used_at) AS last_seen
+    FROM device_tokens
+    WHERE user_email = ${email} AND device_id = ${deviceId} AND revoked_at IS NULL
+  `;
+  const raw = rows[0]?.last_seen ?? null;
+  if (!raw) return null;
+  const parsed = new Date(raw).getTime();
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/** 設計 §4-3「端末オフライン（2 分応答なし）」。最終応答が無い端末は offline 扱い。 */
+function isDeviceOnline(lastSeenAt: number | null): boolean {
+  if (lastSeenAt === null) return false;
+  return Date.now() - lastSeenAt <= config.RESOLVE_DEVICE_OFFLINE_SEC * 1000;
+}
+
+/**
+ * outputPolicy.fieldsToAi を厳密に適用する（設計 §6 / §8-3）。
+ * - outputPolicy 欠落 / fieldsToAi が配列でない / normalized が object でない → 何も渡さない。
+ * - 宣言されたキーだけをサブツリーごと通す（未知・未宣言キーは落とす）。
+ */
+function applyFieldsToAi(
+  normalized: unknown,
+  outputPolicy: unknown,
+): Record<string, unknown> | null {
+  const policy = jsonObjectOrNull(outputPolicy);
+  const fields = policy?.fieldsToAi;
+  if (!Array.isArray(fields)) return null;
+  const record = jsonObjectOrNull(normalized);
+  if (!record) return null;
+  const allowed = new Set(fields.filter((field): field is string => typeof field === 'string'));
+  const filtered: Record<string, unknown> = {};
+  for (const field of allowed) {
+    if (Object.hasOwn(record, field)) {
+      filtered[field] = record[field];
+    }
+  }
+  return filtered;
+}
+
+/** 直近の done ステップの result_ai（fieldsToAi 適用済み）を次提案の材料にする。 */
+async function loadLastResultAi(sessionId: string): Promise<unknown | null> {
+  const rows = await sql<{ result_ai: unknown }[]>`
+    SELECT result_ai FROM resolution_steps
+    WHERE session_id = ${sessionId} AND status = 'done' AND result_ai IS NOT NULL
+    ORDER BY seq DESC
+    LIMIT 1
+  `;
+  return rows[0]?.result_ai ?? null;
+}
+
 function stepDto(row: StepRow, session: SessionRow) {
   const skill = skillFromStep(row);
   return {
@@ -261,6 +381,13 @@ function stepDto(row: StepRow, session: SessionRow) {
     commandId: row.command_id,
     resultSummary: jsonObjectOrNull(row.result_summary),
     resultFull: jsonObjectOrNull(row.result_full),
+    // fieldsToAi を適用した AI 入力用の結果（生ログは含めない）。
+    resultAi: jsonObjectOrNull(row.result_ai),
+    timeoutSec: row.timeout_sec === null ? DEFAULT_STEP_TIMEOUT_SEC : Number(row.timeout_sec),
+    deadlineAt: toIsoOrNull(row.deadline_at),
+    requiresAdminApproval: Number(row.risk_level) >= 4,
+    adminApprovedBy: row.admin_approved_by,
+    adminApprovedAt: toIsoOrNull(row.admin_approved_at),
     error: row.error,
     approvedBy: row.approved_by,
     approvedAt: toIsoOrNull(row.approved_at),
@@ -458,14 +585,17 @@ async function insertProposedStep(
   seq: number,
 ): Promise<string> {
   const nonce = newNonce();
+  // リスク 4 以上は IT 管理者の承認が必要（設計 §4-3）。承認 payload は
+  // 依頼者向けとは別 nonce / 期限で組み立てる。リスク 1-3 でも列は埋めるが使わない。
+  const adminNonce = newNonce();
   const rows = await tx<{ id: string }[]>`
     INSERT INTO resolution_steps (
       session_id, seq, skill_id, skill_version, skill_content_hash, params, rationale,
-      risk_level, status, nonce, approval_expires_at
+      risk_level, status, nonce, approval_expires_at, admin_nonce, admin_expires_at
     ) VALUES (
       ${session.id}, ${seq}, ${skill.id}, ${skill.version}, ${skill.contentHash ?? 'sha256:unknown'},
       ${jsonbValue(proposal.params)}, ${proposal.rationale}, ${skill.riskLevel}, 'proposed',
-      ${nonce}, ${STEP_APPROVAL_TTL_SQL}
+      ${nonce}, ${STEP_APPROVAL_TTL_SQL}, ${adminNonce}, ${ADMIN_APPROVAL_TTL_SQL}
     )
     RETURNING id
   `;
@@ -529,11 +659,23 @@ async function applyCommandOutcome(email: string, stepId: string): Promise<void>
     }
 
     if (command.status === 'done' && (step.status === 'approved' || step.status === 'executing')) {
-      const { summary, full } = buildResultPayload(command.result, command.error, true);
+      // fieldsToAi の厳密適用には、このステップの Skill の outputPolicy が要る。
+      const policyRows = await tx<{ output_policy: unknown }[]>`
+        SELECT output_policy FROM skills
+        WHERE id = ${step.skill_id} AND version = ${step.skill_version}
+        LIMIT 1
+      `;
+      const { summary, full, ai } = buildResultPayload(
+        command.result,
+        command.error,
+        true,
+        policyRows[0]?.output_policy,
+      );
       const updated = await tx<{ id: string }[]>`
         UPDATE resolution_steps
         SET status = 'done', executed_at = COALESCE(executed_at, now()),
             result_summary = ${jsonbValue(summary)}, result_full = ${jsonbValue(full)},
+            result_ai = ${jsonbValue(ai)},
             error = ${command.error ? redactPII(command.error).text.slice(0, 2000) : null}
         WHERE id = ${step.id} AND status IN ('approved', 'executing')
         RETURNING id
@@ -562,10 +704,12 @@ async function applyCommandOutcome(email: string, stepId: string): Promise<void>
         command.error ?? '端末での実行に失敗しました。担当者へ引き継ぎます。',
       ).text.slice(0, 2000);
       const summary = { ok: false, exitCode: null, summary: redactedError, normalized: null };
+      const ai = { ok: false, exitCode: null, summary: redactedError, normalized: null };
       const updated = await tx<{ id: string }[]>`
         UPDATE resolution_steps
         SET status = 'failed', executed_at = COALESCE(executed_at, now()),
-            result_summary = ${jsonbValue(summary)}, error = ${redactedError}
+            result_summary = ${jsonbValue(summary)}, result_ai = ${jsonbValue(ai)},
+            error = ${redactedError}
         WHERE id = ${step.id} AND status IN ('approved', 'executing')
         RETURNING id
       `;
@@ -622,7 +766,12 @@ function buildResultPayload(
   result: unknown,
   error: string | null,
   ok: boolean,
-): { summary: Record<string, unknown>; full: Record<string, unknown> } {
+  outputPolicy?: unknown,
+): {
+  summary: Record<string, unknown>;
+  full: Record<string, unknown>;
+  ai: Record<string, unknown>;
+} {
   const raw = normalizeJsonValue(result);
   const record = jsonObjectOrNull(raw);
   const exitCode = typeof record?.exitCode === 'number' ? record.exitCode : null;
@@ -646,7 +795,15 @@ function buildResultPayload(
     result: redactJsonValue(raw),
     error: error ? redactPII(error).text.slice(0, 4000) : null,
   };
-  return { summary, full };
+  // AI に渡してよいのは outputPolicy.fieldsToAi を満たす normalized と要約だけ。
+  const ai: Record<string, unknown> = {
+    ok,
+    exitCode,
+    summary: redactedSummary,
+    // fieldsToAi で絞ったうえで PII を伏せ字にする（宣言フィールドでも生値を渡さない）。
+    normalized: applyFieldsToAi(redactJsonValue(normalized), outputPolicy),
+  };
+  return { summary, full, ai };
 }
 
 function summaryToText(summary: unknown): string {
@@ -718,12 +875,110 @@ async function cancelSessionWork(
   `;
 }
 
+/**
+ * 実行期限を過ぎたステップを failed にし、セッションをエスカレーションする（設計 §4-3）。
+ * GET からの遅延呼び出しと、resolveRoutes の定期実行の両方から使う。
+ * 期限後に届いた結果は step が failed のため applyCommandOutcome が状態を進めない。
+ */
+export async function sweepResolveTimeouts(): Promise<number> {
+  let swept = 0;
+  await sql.begin(async (tx) => {
+    const rows = await tx<StepRow[]>`
+      SELECT * FROM resolution_steps
+      WHERE status IN ('approved', 'executing')
+        AND deadline_at IS NOT NULL
+        AND deadline_at < now()
+      ORDER BY deadline_at ASC
+      LIMIT 50
+      FOR UPDATE SKIP LOCKED
+    `;
+    for (const step of rows) {
+      const message = '端末から結果が返りませんでした（タイムアウト）。担当者へ引き継ぎます。';
+      const summary = { ok: false, exitCode: null, summary: message, normalized: null };
+      const ai = { ok: false, exitCode: null, summary: message, normalized: null };
+      const updated = await tx<{ id: string }[]>`
+        UPDATE resolution_steps
+        SET status = 'failed', executed_at = COALESCE(executed_at, now()),
+            result_summary = ${jsonbValue(summary)}, result_ai = ${jsonbValue(ai)},
+            error = 'RESULT_TIMEOUT'
+        WHERE id = ${step.id} AND status IN ('approved', 'executing')
+        RETURNING id
+      `;
+      if (!updated[0]) continue;
+      await tx`
+        UPDATE device_commands SET status = 'expired', completed_at = now()
+        WHERE step_id = ${step.id} AND status = 'queued'
+      `;
+      const sessionRows = await tx<SessionRow[]>`
+        SELECT * FROM resolution_sessions WHERE id = ${step.session_id} FOR UPDATE
+      `;
+      const session = sessionRows[0];
+      if (
+        session &&
+        session.status === 'executing' &&
+        !TERMINAL_SESSION_STATUSES.has(session.status)
+      ) {
+        await tx`
+          UPDATE resolution_sessions SET status = 'escalated', updated_at = now()
+          WHERE id = ${session.id}
+        `;
+      }
+      await appendResolveAudit(tx, {
+        action: 'resolution.timeout',
+        sessionId: step.session_id,
+        actorEmail: session?.user_email ?? '',
+        stepId: step.id,
+        detail: { by: 'system', reason: 'result_timeout' },
+      });
+      swept += 1;
+    }
+  });
+  return swept;
+}
+
+/** 本人操作による「解決した」「担当者へ」。監査に理由を残し、未実行の作業を止める。 */
+async function manualCloseSession(
+  email: string,
+  sessionId: string,
+  status: 'resolved' | 'escalated',
+  reason: string | undefined,
+): Promise<void> {
+  await sql.begin(async (tx) => {
+    const sessionRows = await tx<SessionRow[]>`
+      SELECT * FROM resolution_sessions
+      WHERE id = ${sessionId} AND user_email = ${email}
+      FOR UPDATE
+    `;
+    const session = sessionRows[0];
+    if (!session) throw notFound('解決セッションが見つかりません。');
+    if (TERMINAL_SESSION_STATUSES.has(session.status)) {
+      throw new ApiError(409, 'SESSION_TERMINAL', 'このセッションはすでに終了しています。');
+    }
+    await tx`
+      UPDATE resolution_sessions SET status = ${status}, updated_at = now()
+      WHERE id = ${session.id}
+    `;
+    await cancelSessionWork(tx, session.id);
+    await appendResolveAudit(tx, {
+      action: status === 'resolved' ? 'resolution.resolved' : 'resolution.escalated',
+      sessionId: session.id,
+      actorEmail: email,
+      detail: { by: 'manual', ...(reason ? { reason } : {}) },
+    });
+  });
+}
+
 export async function resolveRoutes(app: FastifyInstance): Promise<void> {
-  // TODO(Phase B): 緊急停止（estop）は既存 helpdesk の状態（prototype_states.helpdesk）を
-  // 参照できないため未接続。Phase C で estop と接続し、ON のときはセッション開始・承認・
-  // 実行をすべて ESTOP_ACTIVE で拒否する（設計 §4-3）。
-  // TODO(Phase B): 端末オフライン / 結果タイムアウト（RESULT_TIMEOUT）の監視は未実装。
-  // 現状は device_commands の status（done/failed）だけで完了判定する。
+  // 期限切れの実行を放置しない（設計 §4-3）。テストがハングしないよう unref する。
+  const timeoutTimer = setInterval(() => {
+    void sweepResolveTimeouts().catch(() => undefined);
+  }, 30_000);
+  timeoutTimer.unref?.();
+  app.addHook('onClose', async () => {
+    clearInterval(timeoutTimer);
+  });
+  // Phase C: estop は開始・承認の各入口で ESTOP_ACTIVE として拒否する。
+  // 端末オフラインは承認時に DEVICE_OFFLINE、結果タイムアウトは sweepResolveTimeouts が処理する。
   // 承認済み Skill の一覧（要約のみ）。UI は Skill 名・リスク・パラメータスキーマを表示する。
   app.get('/resolve/skills', { preHandler: authenticateUi }, async (request) => {
     const email = requireEmail(request);
@@ -755,6 +1010,192 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
       })),
     };
   });
+
+  // IT 管理者の承認待ち（リスク 4 以上）。管理者以外には存在を返さない。
+  app.get('/resolve/admin/pending', { preHandler: authenticateUi }, async (request) => {
+    const email = requireEmail(request);
+    enforceRateLimit(`resolve-admin:${email}`, 60, '承認待ちの確認が多すぎます。');
+    if (!isResolveAdmin(email)) {
+      throw new ApiError(403, 'FORBIDDEN', 'IT 管理者のみ承認できます。');
+    }
+    const rows = await sql<StepRow[]>`
+      SELECT s.*, sk.title AS sk_title
+      FROM resolution_steps s
+      JOIN resolution_sessions rs ON rs.id = s.session_id
+      LEFT JOIN skills sk ON sk.id = s.skill_id AND sk.version = s.skill_version
+      WHERE s.status = 'proposed'
+        AND s.risk_level >= 4
+        AND rs.status IN ('active', 'waiting_execute')
+      ORDER BY s.created_at ASC
+      LIMIT 50
+    `;
+    const items = [];
+    for (const step of rows) {
+      const sessionRows = await sql<SessionRow[]>`
+        SELECT * FROM resolution_sessions WHERE id = ${step.session_id} LIMIT 1
+      `;
+      const session = sessionRows[0];
+      if (!session) continue;
+      // 自己承認は表示もしない（依頼者本人には承認させない）。
+      if (canonicalEmail(session.user_email) === canonicalEmail(email)) continue;
+      const payload = adminApprovalPayloadFor(step, session, canonicalEmail(email));
+      if (!payload) continue;
+      items.push({
+        stepId: step.id,
+        sessionId: session.id,
+        seq: Number(step.seq),
+        skillId: step.skill_id,
+        skillTitle: step.sk_title ?? step.skill_id,
+        riskLevel: Number(step.risk_level),
+        requester: session.user_email,
+        deviceId: session.device_id,
+        createdAt: toIso(step.created_at),
+        adminApprovalChallenge: {
+          payload,
+          nonce: payload.nonce,
+          expiresAt: payload.expiresAt,
+        },
+      });
+    }
+    return { ok: true, items };
+  });
+
+  // IT 管理者によるリスク 4 以上の承認。承認しても step は proposed のまま
+  // （依頼者本人の Y が別途必要。二段階を維持する）。
+  app.post(
+    '/resolve/steps/:id/admin-approve',
+    { preHandler: authenticateUi, bodyLimit: 8 * 1024 },
+    async (request) => {
+      const email = requireEmail(request);
+      enforceRateLimit(`resolve-admin-approve:${email}`, 20, '承認の操作が多すぎます。');
+      if (!isResolveAdmin(email)) {
+        throw new ApiError(403, 'FORBIDDEN', 'IT 管理者のみ承認できます。');
+      }
+      const { id: stepId } = StepIdParamsSchema.parse(request.params);
+      const input = AdminApproveSchema.parse(request.body);
+
+      const outcome = await sql.begin(async (tx) => {
+        const stepRows = await tx<StepRow[]>`
+          SELECT * FROM resolution_steps WHERE id = ${stepId} FOR UPDATE
+        `;
+        const step = stepRows[0];
+        if (!step) return { failure: notFound('ステップが見つかりません。') };
+        const sessionRows = await tx<SessionRow[]>`
+          SELECT * FROM resolution_sessions WHERE id = ${step.session_id} FOR UPDATE
+        `;
+        const session = sessionRows[0];
+        if (!session) return { failure: notFound('解決セッションが見つかりません。') };
+        if (canonicalEmail(session.user_email) === canonicalEmail(email)) {
+          return {
+            failure: new ApiError(
+              403,
+              'SELF_APPROVAL_FORBIDDEN',
+              '自分自身の操作を承認することはできません。',
+            ),
+          };
+        }
+        if (TERMINAL_SESSION_STATUSES.has(session.status)) {
+          return {
+            failure: new ApiError(409, 'SESSION_TERMINAL', 'このセッションは終了しています。'),
+          };
+        }
+        if (step.status !== 'proposed') {
+          return {
+            failure: new ApiError(
+              409,
+              'STEP_NOT_APPROVABLE',
+              'このステップは承認待ちではありません。',
+            ),
+          };
+        }
+        if (Number(step.risk_level) < 4) {
+          return {
+            failure: new ApiError(
+              409,
+              'ADMIN_APPROVAL_NOT_REQUIRED',
+              'リスクレベル 4 未満の Skill に管理者承認は不要です。',
+            ),
+          };
+        }
+        const adminExpiresAt = step.admin_expires_at
+          ? new Date(step.admin_expires_at).getTime()
+          : Number.NaN;
+        if (!Number.isFinite(adminExpiresAt) || Date.now() > adminExpiresAt) {
+          return {
+            failure: new ApiError(
+              409,
+              'ADMIN_APPROVAL_EXPIRED',
+              '管理者承認の期限（10 分）が切れました。提案を取り直してください。',
+            ),
+          };
+        }
+
+        if (input.decision === 'N') {
+          await tx`
+            UPDATE resolution_steps SET status = 'rejected'
+            WHERE id = ${step.id} AND status = 'proposed'
+          `;
+          await tx`
+            UPDATE resolution_sessions SET status = 'stopped', updated_at = now()
+            WHERE id = ${session.id}
+          `;
+          await appendResolveAudit(tx, {
+            action: 'resolution.admin_rejected',
+            sessionId: session.id,
+            actorEmail: email,
+            stepId: step.id,
+            detail: { seq: step.seq, skillId: step.skill_id, riskLevel: step.risk_level },
+          });
+          return { decision: 'N' as const };
+        }
+
+        const payload = adminApprovalPayloadFor(step, session, canonicalEmail(email));
+        if (!payload) {
+          return {
+            failure: new ApiError(409, 'ADMIN_APPROVAL_INVALID', '承認対象を再構築できません。'),
+          };
+        }
+        const expectedHash = computeAdminApprovalHash(payload);
+        if (!input.approvalHash) {
+          return {
+            failure: new ApiError(400, 'ADMIN_APPROVAL_MISMATCH', '承認ハッシュが必要です。'),
+          };
+        }
+        if (!approvalHashMatches(input.approvalHash, expectedHash)) {
+          return {
+            failure: new ApiError(
+              400,
+              'ADMIN_APPROVAL_MISMATCH',
+              '承認ハッシュが一致しません。画面を再読み込みしてください。',
+            ),
+          };
+        }
+        await tx`
+          UPDATE resolution_steps
+          SET admin_approval_hash = ${expectedHash},
+              admin_approved_by = ${canonicalEmail(email)},
+              admin_approved_at = now()
+          WHERE id = ${step.id} AND status = 'proposed'
+        `;
+        await appendResolveAudit(tx, {
+          action: 'resolution.admin_approved',
+          sessionId: session.id,
+          actorEmail: email,
+          stepId: step.id,
+          detail: {
+            seq: step.seq,
+            skillId: step.skill_id,
+            riskLevel: step.risk_level,
+            requester: session.user_email,
+          },
+        });
+        return { decision: 'Y' as const };
+      });
+
+      if (isFailure(outcome)) throw outcome.failure;
+      return { ok: true, decision: outcome.decision };
+    },
+  );
 
   // セッション開始 + 初回提案（承認待ちの step を返す）。
   app.post(
@@ -930,14 +1371,79 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
           return { decision: 'N' as const };
         }
 
-        if (Number(step.risk_level) >= 4) {
+        // 端末オフライン（設計 §4-3）。最終応答が閾値以上前なら実行させない。
+        const lastSeen = await deviceLastSeenAt(session.user_email, session.device_id);
+        if (!isDeviceOnline(lastSeen)) {
           return {
             failure: new ApiError(
-              403,
-              'ADMIN_APPROVAL_REQUIRED',
-              'リスクレベル 4 以上の Skill は IT 管理者の承認が必要です（自己承認はできません）。',
+              409,
+              'DEVICE_OFFLINE',
+              '対象端末が応答していません（オフライン）。端末を起動してからやり直してください。',
             ),
           };
+        }
+
+        if (Number(step.risk_level) >= 4) {
+          // リスク 4 以上は IT 管理者の承認が必須（自己承認不可）。承認は内容ハッシュに束縛する。
+          const adminApprovedBy = step.admin_approved_by;
+          if (!step.admin_approval_hash || !adminApprovedBy) {
+            return {
+              failure: new ApiError(
+                403,
+                'ADMIN_APPROVAL_REQUIRED',
+                'リスクレベル 4 以上の Skill は IT 管理者の承認が必要です（自己承認はできません）。',
+              ),
+            };
+          }
+          if (canonicalEmail(adminApprovedBy) === canonicalEmail(session.user_email)) {
+            return {
+              failure: new ApiError(
+                403,
+                'SELF_APPROVAL_FORBIDDEN',
+                '自分自身の操作を承認することはできません。',
+              ),
+            };
+          }
+          if (!isResolveAdmin(adminApprovedBy)) {
+            return {
+              failure: new ApiError(
+                403,
+                'ADMIN_APPROVAL_INVALID',
+                '承認者が IT 管理者の許可リストにありません。',
+              ),
+            };
+          }
+          const adminPayload = adminApprovalPayloadFor(step, session, adminApprovedBy);
+          if (!adminPayload) {
+            return {
+              failure: new ApiError(
+                403,
+                'ADMIN_APPROVAL_INVALID',
+                '管理者承認の内容を再構築できません。承認を取り直してください。',
+              ),
+            };
+          }
+          const adminExpiresAt = new Date(adminPayload.expiresAt).getTime();
+          if (!Number.isFinite(adminExpiresAt) || Date.now() > adminExpiresAt) {
+            return {
+              failure: new ApiError(
+                409,
+                'ADMIN_APPROVAL_EXPIRED',
+                'IT 管理者の承認期限が切れました。承認を取り直してください。',
+              ),
+            };
+          }
+          if (
+            !approvalHashMatches(step.admin_approval_hash, computeAdminApprovalHash(adminPayload))
+          ) {
+            return {
+              failure: new ApiError(
+                400,
+                'ADMIN_APPROVAL_MISMATCH',
+                'IT 管理者の承認ハッシュが一致しません。承認を取り直してください。',
+              ),
+            };
+          }
         }
 
         const challengeExpiresAt = new Date(step.approval_expires_at).getTime();
@@ -1024,10 +1530,15 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
         const command = commandRows[0];
         if (!command) throw new Error('device command insert failed');
 
+        // 実行期限は承認時に確定する（設計 §4-3。Skill の timeoutSec を優先）。
+        const timeoutSec =
+          Number(skill.timeoutSec) > 0 ? Number(skill.timeoutSec) : DEFAULT_STEP_TIMEOUT_SEC;
         const updated = await tx<{ id: string }[]>`
           UPDATE resolution_steps
           SET status = 'approved', approval_hash = ${expectedHash},
-              approved_by = ${email}, approved_at = now(), command_id = ${command.id}
+              approved_by = ${email}, approved_at = now(), command_id = ${command.id},
+              timeout_sec = ${timeoutSec},
+              deadline_at = now() + make_interval(secs => ${timeoutSec})
           WHERE id = ${step.id} AND status = 'proposed'
           RETURNING id
         `;
@@ -1075,6 +1586,8 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
     const email = requireEmail(request);
     enforceRateLimit(`resolve-step-get:${email}`, 120, '状態確認が多すぎます。');
     const { id: stepId } = StepIdParamsSchema.parse(request.params);
+    // 期限切れを先に確定させる（結果が来ないまま executing で固まらない）。
+    await sweepResolveTimeouts();
     const current = await loadStepAndSession(email, stepId);
     if (current.step.command_id) {
       await applyCommandOutcome(email, stepId);
@@ -1141,9 +1654,14 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
         listApprovedSkills(),
         loadProposalHistory(current.session.id),
       ]);
+      // AI に渡すのは fieldsToAi 適用後の result_ai だけ（旧データは従来の要約へ退避）。
+      const lastResultAi = await loadLastResultAi(current.session.id);
+      const lastResultAiText = lastResultAi
+        ? JSON.stringify(lastResultAi).slice(0, 1000)
+        : summaryToText(current.session.last_summary);
       const proposal = await proposeNext({
         text: caseText(ownedCase),
-        lastSummary: summaryToText(current.session.last_summary),
+        lastSummary: lastResultAiText,
         history,
         skills,
       });
@@ -1338,11 +1856,45 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
+  // 本人による「解決した」。設計 §4-4 の本人確認。
+  app.post(
+    '/resolve/sessions/:id/resolve',
+    { preHandler: authenticateUi, bodyLimit: 4 * 1024 },
+    async (request) => {
+      const email = requireEmail(request);
+      enforceRateLimit(`resolve-manual:${email}`, 20, '操作が多すぎます。');
+      const { id: sessionId } = SessionIdParamsSchema.parse(request.params);
+      const input = ManualCloseSchema.parse(request.body ?? {});
+      if (await isEstopOn(email)) {
+        throw new ApiError(409, 'ESTOP_ACTIVE', '緊急停止中です。解除してからやり直してください。');
+      }
+      await manualCloseSession(email, sessionId, 'resolved', input.reason);
+      const session = await loadSession(email, sessionId);
+      return { ok: true, session: sessionDto(session) };
+    },
+  );
+
+  // 本人による「担当者へ」。監査に理由を残してエスカレーションする。
+  app.post(
+    '/resolve/sessions/:id/escalate',
+    { preHandler: authenticateUi, bodyLimit: 4 * 1024 },
+    async (request) => {
+      const email = requireEmail(request);
+      enforceRateLimit(`resolve-manual:${email}`, 20, '操作が多すぎます。');
+      const { id: sessionId } = SessionIdParamsSchema.parse(request.params);
+      const input = ManualCloseSchema.parse(request.body ?? {});
+      await manualCloseSession(email, sessionId, 'escalated', input.reason);
+      const session = await loadSession(email, sessionId);
+      return { ok: true, session: sessionDto(session) };
+    },
+  );
+
   // セッション詳細（状態 + ステップ概要）。
   app.get('/resolve/sessions/:id', { preHandler: authenticateUi }, async (request) => {
     const email = requireEmail(request);
     enforceRateLimit(`resolve-session-get:${email}`, 120, '状態確認が多すぎます。');
     const { id: sessionId } = SessionIdParamsSchema.parse(request.params);
+    await sweepResolveTimeouts();
     const session = await loadSession(email, sessionId);
     const steps = await loadStepsForSession(session.id);
     return {
