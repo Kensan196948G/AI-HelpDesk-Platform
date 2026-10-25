@@ -249,7 +249,7 @@ AI 運用アシスタント
 | D1 | 自動導入のトリガ | 即時 / 担当者受諾時 | 担当者受諾時 | **未決** |
 | D2 | 導入同意 | 都度同意 / 包括同意 | 都度同意（初回のみ記憶） | **未決** |
 | D3 | `FULLINSTALL_ENABLED` | 有効化 / 現状維持 | Phase 0 の実測後に判断 | **未決** |
-| D4 | RSP 連携方式 | push / pull | pull（資格情報を持たせない） | **未決** |
+| D4 | RSP 連携方式 | push / pull | **push（専用サービス API）**（§15 の実測を踏まえ推奨を変更） | **未決** |
 | D5 | 同一 UI の深さ | ディープリンク / iframe | Phase 1 はディープリンク | **未決** |
 | D6 | 遠隔操作の範囲・録画 | 閲覧のみ / 操作可、録画要否 | 操作可・録画必須（要運用合意） | **未決** |
 | D7 | マッピングの正 | hostname / asset_tag / 利用者→貸与端末 | hostname 第一、利用者→貸与端末を補完 | **未決** |
@@ -272,3 +272,59 @@ AI 運用アシスタント
 2. Phase 0: 1 台で `check-connectivity` を実測（RSP の認証経路を含む）
 3. RSP 側 API 追加要否の確認（pull 方式の実装コスト）
 4. Phase 1 の画面設計（ケース内の遠隔対応パネル）
+
+
+## 15. Phase 0 実測結果（2026-10-25）
+
+### 15-1. 実測できたこと
+
+| 項目 | 結果 |
+|---|---|
+| RSP API 到達性 | `http://127.0.0.1:8130/health` = **200** |
+| `check-connectivity` の認証 | 認証なしで `POST /api/v1/devices/{id}/check-connectivity` → **401 `AUTH_REQUIRED`** |
+| 認可 | `require_operator`（`System Admin` / `Remote Operator` の Entra ロール） |
+| 既存のサービス間認証 | `X-RSP-Service-Key` + IP allowlist（`service_commands`）、`X-Service-Token`（`api_tokens`） |
+
+**結論**: `check-connectivity` は operator 専用のため、AI HelpDesk からは直接呼べない。
+1 台の実測（`triggered_deploy` の確認）は operator 認証が必要で、本セッションでは未実施。
+
+### 15-2. 1 台実測の実施方法（いずれか）
+
+- RSP UI に operator でログインし、対象 1 台で「接続確認」を実行して JSON を記録する
+- または §15-3 のサービス API を追加して AI HelpDesk から実行する
+
+### 15-3. RSP 側 API 追加の要否
+
+| 方式 | RSP 側の追加 | AI HelpDesk 側の追加 | 認証 | 評価 |
+|---|---|---|---|---|
+| **push（推奨）** | `POST /api/v1/service/devices/{device_id}/ensure-agent` を新設。`check-connectivity` と同じ処理を service key + IP allowlist で公開 | サービスキーで呼ぶだけ | `X-RSP-Service-Key` + loopback/IP allowlist（既存パターン） | 追加は小さい。監査・レート制限も RSP 側に集約 |
+| pull | RSP ワーカーが AI HelpDesk の依頼キューを取得 | 依頼キュー API + サービス認証 | AI HelpDesk 側のサービス公開が必要 | RSP に AI HelpDesk の資格情報を持たせる必要があり、経路が増える |
+
+**推奨: push**。`service_commands` と同じ `X-RSP-Service-Key` + IP allowlist の仕組みを再利用でき、RSP が実行主体のまま、AI HelpDesk は資格情報を MeshCentral/WinRM に持たない。
+
+#### 追加 API の案
+
+```
+POST /api/v1/service/devices/{device_id}/ensure-agent
+  Header: X-RSP-Service-Key
+  Response: {
+    installed: bool,          # mesh_node_id の有無
+    triggered_deploy: bool,   # 未導入かつ WinRM 疎通ありでキュー投入した
+    winrm_ok: bool, ping_ok: bool,
+    agent_online: bool,
+    mesh_deploy_status: string
+  }
+```
+
+- 冪等: 導入済みなら 200 で `installed=true, triggered_deploy=false`
+- 危険操作なし（読み取り + キュー投入のみ。実インストールは既存ワーカー）
+- 監査: 呼び出し元（`service:ai-helpdesk`）を `operator_email` 相当に記録
+
+### 15-4. Phase 0 受入の達成状況
+
+| 受入 | 状態 |
+|---|---|
+| 1 台で端末マッピングが一意に決まる | 未実施（operator 認証待ち） |
+| 未導入 → `triggered_deploy=true` / 導入済み → `false` の実測 | 未実施（同上） |
+| RSP API 追加要否の判断材料 | **達成**（§15-3） |
+| 誤端末を防ぐ確認フロー | 設計済み（§8） |
