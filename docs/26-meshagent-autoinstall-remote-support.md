@@ -324,7 +324,27 @@ POST /api/v1/service/devices/{device_id}/ensure-agent
 
 | 受入 | 状態 |
 |---|---|
-| 1 台で端末マッピングが一意に決まる | 未実施（operator 認証待ち） |
-| 未導入 → `triggered_deploy=true` / 導入済み → `false` の実測 | 未実施（同上） |
+| 1 台で端末マッピングが一意に決まる | 未実施（RSP DB から直接選定。マッピング API は未実装） |
+| 導入済み → `triggered_deploy=false` の実測 | **達成**（§15-5） |
+| 未導入 → `triggered_deploy=true` の実測 | 未実施（実インストールを伴うため、対象端末の合意が必要） |
 | RSP API 追加要否の判断材料 | **達成**（§15-3） |
 | 誤端末を防ぐ確認フロー | 設計済み（§8） |
+
+
+### 15-5. ensure-agent 実測結果（2026-10-25 19:30）
+
+RSP 側の実装を main にマージ（`cf15774`）し、`rsp-api.service` を再起動して実測した。
+
+| 項目 | 結果 |
+|---|---|
+| 対象端末 | `202010001M`（`mesh_node_id` あり・`agent_status=online`） |
+| `POST /api/v1/service/devices/{id}/ensure-agent`（サービスキーあり） | **200** |
+| `agent_installed` / `agent_online` | `true` / `true` |
+| `ping_ok` / `winrm_ok` | `true` / `true` |
+| `triggered_deploy` | **`false`**（導入済みのため skip = 冪等） |
+| サービスキーなし | **401 `INVALID_SERVICE_KEY`** |
+
+- 呼び出しは AI HelpDesk と同じサービス認証（`X-RSP-Service-Key` + loopback）で実施
+- **未導入端末の `triggered_deploy=true` は実測していない**（実際の展開キュー投入を伴うため）。
+  実測する場合は、対象端末の合意と `FULLINSTALL_ENABLED` の状態を確認してから行う。
+- RSP 側 PR: `#145`（PyJWT 2.15.0 更新と Trivy DB の GHCR 切替を含む）
