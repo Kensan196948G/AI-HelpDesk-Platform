@@ -69,6 +69,8 @@ const EnvSchema = z.object({
 
   // Phase 1 遠隔対応: RSP サービス認証（サーバ間のみ。ブラウザへ返さない）
   RSP_SERVICE_KEY: optionalText,
+  // 担当者に返す RSP の公開 URL（ブラウザのリンク用。サーバ間接続には RSP_BASE_URL）
+  RSP_PUBLIC_URL: z.string().url().default('https://rsp.mirai-remotetools.com'),
 
   // Mirai-Info の社員名簿を読むための接続先（未設定なら Unix ソケット + OS ユーザー）。
   MIRAI_INFO_DATABASE_URL: optionalText,

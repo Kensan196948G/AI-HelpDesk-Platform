@@ -173,7 +173,7 @@ export async function remoteSupportRoutes(app: FastifyInstance): Promise<void> {
       },
       link: linkDto(link),
       install: installDto(install),
-      rspPublicUrl: config.RSP_BASE_URL ?? null,
+      rspPublicUrl: config.RSP_PUBLIC_URL ?? null,
     };
   });
 
@@ -314,7 +314,7 @@ export async function remoteSupportRoutes(app: FastifyInstance): Promise<void> {
         ok: true,
         link: linkDto(link),
         install: installDto(install),
-        rspPublicUrl: config.RSP_BASE_URL ?? null,
+        rspPublicUrl: config.RSP_PUBLIC_URL ?? null,
       };
     },
   );
