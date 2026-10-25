@@ -1,0 +1,13 @@
+[Unit]
+Description=AI HelpDesk preview DB backup (daily)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/kensan/Projects/Mirai-Admin-Platform/AI-HelpDesk-Platform
+Environment=AIHD_ENV_FILE=%h/.config/ai-helpdesk/api.conf
+Environment=AIHD_BACKUP_KEEP_DAYS=14
+ExecStart=/bin/bash scripts/backup-db.sh
+NoNewPrivileges=true
+PrivateTmp=true

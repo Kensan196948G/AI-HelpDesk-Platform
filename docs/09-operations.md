@@ -59,6 +59,30 @@ psql "postgresql://.../aihd_restore" -v ON_ERROR_STOP=1 -f "$HOME/aihd-backup-YY
 - DB は追加のみの Migration。ロールバックはアプリ側の `git revert` を優先する。
 - 破壊的操作（DROP / TRUNCATE / 大量 DELETE）はユーザー承認後に限定実行する。
 
+### 4-1. 日次バックアップ（自動・2026-10-25 追加）
+
+```bash
+# 手動実行（同じ処理を timer が毎日 02:30 JST に実行する）
+scripts/backup-db.sh
+
+# timer の登録（初回のみ・冪等）
+scripts/install-backup-timer.sh
+systemctl --user list-timers ai-helpdesk-backup.timer
+```
+
+| 項目 | 内容 |
+|---|---|
+| 保存先 | `~/backups/ai-helpdesk/ai_helpdesk_preview-YYYYmmdd-HHMMSS.dump`（ディレクトリ 0700 / ファイル 0600） |
+| 形式 | `pg_dump --format=custom`（PG16 のバイナリを使用） |
+| 検証 | 取得直後に `pg_restore --list` で読めることを確認。失敗時は終了コード 1 |
+| 保持 | 14 日（`AIHD_BACKUP_KEEP_DAYS`）。対象 DB 名の dump だけを削除 |
+| ログ | `~/backups/ai-helpdesk/backup.log`（DB 名・ファイル名・サイズのみ。接続文字列は出さない） |
+| 認証 | `~/.config/ai-helpdesk/api.conf` を読む（0600）。環境変数 `AIHD_ENV_FILE` で変更可 |
+| 失敗時 | systemd の `ai-helpdesk-backup.service` が failed になる。`journalctl --user -u ai-helpdesk-backup.service` を確認 |
+
+- 復元は従来どおり**新規 DB**に対して行う（`pg_restore -d aihd_restore <dump>`）。既存 DB へは上書きしない。
+- disk 使用量は 1 回あたり約 85KB（2026-10-25 実測）。保持 14 日でも数 MB。
+
 ## 5. インシデント対応（個人利用 MVP）
 
 | 症状 | 確認 | 対応 |
