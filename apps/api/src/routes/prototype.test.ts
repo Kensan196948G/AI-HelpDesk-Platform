@@ -52,6 +52,8 @@ describe('prototype UI integration', () => {
     expect(html).toContain('ensureCaseUsers');
     expect(html).not.toContain('DEPTS[USERS[c.userId].dept].name');
     expect(html).not.toContain('USERS[c.userId].device');
+    // 実在社員（TIPS 未定義）でも AI相談の挨拶が落ちない
+    expect(html).toContain('(TIPS[u.id]||[]).map(');
   });
 
   it('UI 状態を PostgreSQL に保存・取得できる', async () => {

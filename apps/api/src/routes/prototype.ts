@@ -67,6 +67,9 @@ export function patchCaseUserResolution(html: string): string {
   // 本文が空の案件（作成直後・受付直後）でも一覧が落ちないようにする。
   out = out.split('c.subject||c.body.slice(0,30)').join("c.subject||(c.body||'').slice(0,30)");
   out = out.split('c.subject||c.body.slice(0,40)').join("c.subject||(c.body||'').slice(0,40)");
+  // 「AI相談」の挨拶はデモ利用者（u1〜u5）向けの TIPS を持つ。実在社員（emp:MK...）で
+  // 開くと TIPS が無く TypeError になるため、無い場合は空のリストにする。
+  out = out.split('TIPS[u.id].map(').join('(TIPS[u.id]||[]).map(');
   return out;
 }
 
