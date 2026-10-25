@@ -113,8 +113,11 @@
 - **接続元の扱い**: `trustProxy` はループバック（cloudflared）のみ。レート制限のキーは Tunnel 経由なら `CF-Connecting-IP`。
   利用者が送る `X-Forwarded-For` の左端は使わない。レート制限のバケットは上限 1 万件で期限切れを掃除する。
 - **AI 回答のレート制限**: `/api/ai/answer` は利用者（Access メール）単位で 1 分 20 回（超過は 429）。外部 AI の費用を抑える。
-- 残存リスク: `REQUIRE_PROXY_SECRET=false`（proxy secret 未導入）、DNS キャッシュ、エージェント用 bypass パス。
-  JWT は enforce だが、多層防御としては proxy secret の付与方法（cloudflared / Worker）が未設計。
+- **proxy secret（2026-10-25 追加）**: cloudflared と API の間にローカル・プロキシ
+  （`127.0.0.1:18949`）を置き、`X-Proxy-Secret` を付与する。API は
+  `REQUIRE_PROXY_SECRET=true` で秘密のない直接アクセスを 401 `PROXY_REQUIRED` にする。
+  秘密は `api.conf`（0600）に置き、リポジトリ・ログには出さない。Access JWT の `enforce` と併用する。
+- 残存リスク: DNS キャッシュ、エージェント用 bypass パス、同一ユーザー権限のプロセス（`api.conf` を読める場合は秘密も読める）。
 - 12h の自動ログオフは Access のセッション期限に依存する。
 
 ## 7-2. DeepSeek API（DeepSeek-V4.1-Flash）

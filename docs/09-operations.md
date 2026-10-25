@@ -15,6 +15,12 @@ systemctl --user start ai-helpdesk-api.service
 systemctl --user stop ai-helpdesk-api.service
 systemctl --user restart ai-helpdesk-api.service
 systemctl --user status ai-helpdesk-api.service
+
+# ローカル・プロキシ（Tunnel → 18949 → API 18950 / X-Proxy-Secret）
+systemctl --user status ai-helpdesk-proxy.service
+systemctl --user restart ai-helpdesk-proxy.service
+scripts/install-proxy-service.sh        # 初回登録（冪等）
+curl -fsS http://127.0.0.1:18949/api/health
 ```
 
 ## 2. ログ
