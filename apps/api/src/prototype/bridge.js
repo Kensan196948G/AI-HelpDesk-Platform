@@ -11,6 +11,19 @@
     helpdesk: 'mirai-wizard-v31-helpdesk',
   };
   const last = Object.create(null);
+  const lastFailAt = Object.create(null);
+
+  /** 保存失敗・AI 失敗を利用者に知らせる（同じ失敗を 30 秒おきに 1 回だけ）。 */
+  function notifyFailure(name, message) {
+    const now = Date.now();
+    if (lastFailAt[name] && now - lastFailAt[name] < 30_000) return;
+    lastFailAt[name] = now;
+    try {
+      if (typeof toast === 'function') toast(message, 'bad');
+    } catch (error) {
+      // 画面がまだ初期化されていない場合は無視する。
+    }
+  }
 
   function current(name) {
     try {
@@ -43,8 +56,9 @@
       });
       if (!response.ok) throw new Error('state save HTTP ' + response.status);
     } catch (error) {
-      // 次の interval / 変更イベントで再試行する
+      // 次の interval / 変更イベントで再試行する。失敗は黙って続けず、利用者に知らせる。
       delete last[name];
+      notifyFailure('state', '状態を保存できませんでした。接続が戻るまで再試行します。');
     }
   }
 
@@ -163,6 +177,10 @@
           } catch (error) {
             // ignore
           }
+          notifyFailure(
+            'ai',
+            'AIに接続できませんでした。承認済みナレッジ（画面内のルール）で回答します。',
+          );
           originalKb(chat, text, atts, user);
         });
     };

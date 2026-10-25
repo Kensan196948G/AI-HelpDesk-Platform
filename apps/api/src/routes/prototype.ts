@@ -8,6 +8,7 @@ import { authenticateUi } from '../auth/ui.js';
 import { config, repoRoot } from '../config.js';
 import { sql } from '../db.js';
 import { ApiError, badRequest } from '../errors.js';
+import { jsonbValue } from '../lib/jsonb-value.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
 
 const PROTOTYPE_FILE = 'Mirai_AIHelpdesk_Cowork_StepWizard_V3.1_PCinfo_Offline.html';
@@ -40,6 +41,33 @@ export function patchStateLoad(html: string): string {
   const marker = 'if(o&&o.v===31){S=o}';
   if (!html.includes(marker)) return html;
   return html.replace(marker, () => `if(o&&o.v===31){S=o;${STATE_DEFAULTS_PATCH}}`);
+}
+
+/**
+ * 依頼者以外の「操作する人」で案件を開くと、画面が `USERS[c.userId]` を解決できず
+ * `asideHtml` で TypeError になる（2026-10-25 に実ブラウザで再現）。
+ * 社員名簿から案件の依頼者を解決し、解決できない場合も表示を壊さないようにする。
+ */
+export const ENSURE_CASE_USERS =
+  'function ensureCaseUsers(){try{(S.cases||[]).forEach(function(c){var id=String((c&&c.userId)||"");if(id.indexOf("emp:")===0&&!USERS[id]){var m=/^emp:([a-z]+):(.+)$/.exec(id);if(m)ensureRealUser(m[2],m[1]);}});}catch(e){}}';
+
+export function patchCaseUserResolution(html: string): string {
+  let out = html;
+  if (out.includes('function renderView(){syncHd();')) {
+    out = out.replace(
+      'function renderView(){syncHd();',
+      `${ENSURE_CASE_USERS}\nfunction renderView(){ensureCaseUsers();syncHd();`,
+    );
+  }
+  // 名簿が未読込・名簿外でも所属と端末で落ちないようにする。
+  out = out
+    .split('DEPTS[USERS[c.userId].dept].name')
+    .join("((USERS[c.userId]&&DEPTS[USERS[c.userId].dept])||{}).name||'所属不明'");
+  out = out.split('USERS[c.userId].device').join("((USERS[c.userId]||{}).device||'（未設定）')");
+  // 本文が空の案件（作成直後・受付直後）でも一覧が落ちないようにする。
+  out = out.split('c.subject||c.body.slice(0,30)').join("c.subject||(c.body||'').slice(0,30)");
+  out = out.split('c.subject||c.body.slice(0,40)').join("c.subject||(c.body||'').slice(0,40)");
+  return out;
 }
 
 const StateParamsSchema = z.object({ name: z.enum(['cowork', 'helpdesk']) });
@@ -153,6 +181,7 @@ function renderPrototype(boot: {
   );
   // 古い・欠けた状態を読み込んでも白画面にならないよう、欠落キーを補完する。
   html = patchStateLoad(html);
+  html = patchCaseUserResolution(html);
   // 最初のアプリ <script> の直前に、サーバー保持の状態を localStorage へ入れる。
   // 置換文字列は `$'` `$&` `$$` を特殊パターンとして解釈するため、利用者データを含む文字列は関数で渡す。
   html = html.replace('<script>', () => `${bootScript}<script>`);
@@ -200,7 +229,7 @@ export async function prototypeRoutes(app: FastifyInstance): Promise<void> {
       }
       await sql`
         INSERT INTO prototype_states (user_email, name, data)
-        VALUES (${request.uiEmail}, ${name}, ${JSON.stringify(data)}::jsonb)
+        VALUES (${request.uiEmail}, ${name}, ${jsonbValue(data)})
         ON CONFLICT (user_email, name)
         DO UPDATE SET data = EXCLUDED.data, updated_at = now()
       `;
