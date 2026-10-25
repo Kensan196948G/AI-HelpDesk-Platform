@@ -16,14 +16,27 @@
     caseId: null,
     session: null,
     step: null,
-    mode: 'idle', // idle | proposed | executing | result | stopped | escalated | error
+    // idle | proposed | executing | result | awaiting | stopped | resolved | escalated | error
+    mode: 'idle',
     busy: false,
     error: null,
     pollTimer: null,
     lastKey: '',
     adminItems: null,
     adminLoaded: false,
+    // 確認待ちカードの説明文に使う「最後に実行した Skill」の表示名（取得できたときだけ入る）。
+    awaitingTitle: '',
+    // 修復ステップ done 後の script 形態 verify 追撃待ち（session だけ executing の中間状態）。
+    verifyWait: false,
+    verifyTimedOut: false,
+    verifyWaitTicks: 0,
+    verifyWaitStartedAt: 0,
+    verifySkillTitle: '',
   };
+
+  // verify 追撃待ちのポーリング上限（1.5 秒間隔なので 30 回で約 45 秒。時間でも打ち切る）。
+  const VERIFY_WAIT_MAX_TICKS = 30;
+  const VERIFY_WAIT_MAX_MS = 60_000;
 
   function esc(value) {
     return String(value ?? '').replace(
@@ -108,6 +121,29 @@
     STATE.busy = true;
     STATE.error = null;
     try {
+      // 再読み込み後でも、最終判断待ちのまま残っているセッションへ復帰する。
+      // 復帰できなければ（解決済み・期限切れ・他人のセッション等）通常の新規開始へ進む。
+      const pendingId = pendingSessionId(c.id);
+      if (pendingId) {
+        try {
+          const pending = await api(`/api/resolve/sessions/${pendingId}`);
+          const session = pending?.session;
+          if (
+            session?.status === 'waiting_continue' &&
+            session?.lastSummary?.outcome === 'verified' &&
+            !awaitingBlockedByVerify(session)
+          ) {
+            STATE.caseId = c.id;
+            STATE.busy = false;
+            await showAwaitingDecision(session);
+            return;
+          }
+        } catch (error) {
+          // 404/403 は復帰対象が消えているだけなので控えを捨てる。それ以外は下の新規開始で表面化する。
+          if (error.status !== 404 && error.status !== 403) throw error;
+        }
+        forgetPending(pendingId, c.id);
+      }
       let data;
       try {
         data = await api('/api/resolve/sessions', { caseId: c.id, deviceId: deviceId() });
@@ -121,6 +157,7 @@
       STATE.session = data.session;
       STATE.step = data.step;
       STATE.mode = data.step ? 'proposed' : 'stopped';
+      clearVerifyWait();
       STATE.busy = false;
       render(true);
     } catch (error) {
@@ -167,33 +204,77 @@
     }
   }
 
+  function clearVerifyWait() {
+    STATE.verifyWait = false;
+    STATE.verifyTimedOut = false;
+    STATE.verifyWaitTicks = 0;
+    STATE.verifyWaitStartedAt = 0;
+    STATE.verifySkillTitle = '';
+  }
+
   function poll() {
     stopPolling();
+    clearVerifyWait();
     STATE.pollTimer = setInterval(async () => {
-      if (!STATE.step || STATE.mode !== 'executing') {
+      // 通常は「親ステップ実行中」。修復ステップ done 後は session だけ executing になる
+      // （script 形態 verify の追撃）ため、その間も親ステップを追い続ける。
+      const waitingVerify = STATE.mode === 'result' && STATE.verifyWait === true;
+      if (!STATE.step || (STATE.mode !== 'executing' && !waitingVerify)) {
         stopPolling();
         return;
+      }
+      // 追撃待ちの上限。超えたら待機をやめて操作を人に返す（409 は既存のエラー表示に任せる）。
+      if (waitingVerify) {
+        STATE.verifyWaitTicks += 1;
+        if (
+          STATE.verifyWaitTicks >= VERIFY_WAIT_MAX_TICKS ||
+          Date.now() - STATE.verifyWaitStartedAt >= VERIFY_WAIT_MAX_MS
+        ) {
+          stopPolling();
+          STATE.verifyWait = false;
+          STATE.verifyTimedOut = true;
+          render(true);
+          return;
+        }
       }
       try {
         const data = await api(`/api/resolve/steps/${STATE.step.id}`);
         // 手動クローズ後に古いポーリング応答が返った場合は状態を巻き戻さない。
-        if (STATE.mode !== 'executing') return;
+        const stillWaiting = STATE.mode === 'result' && STATE.verifyWait === true;
+        if (STATE.mode !== 'executing' && !stillWaiting) return;
         STATE.session = data.session;
         STATE.step = data.step;
         const status = data.step?.status;
         if (status === 'done') {
-          STATE.mode = 'result';
-          stopPolling();
+          // 追撃中は親ステップが done のままセッションだけ executing。ここで止めると
+          // 「継続」が 409 STEP_NOT_CONTINUABLE になるため、executing が終わるまで待つ。
+          if (data.session?.status === 'executing') {
+            STATE.mode = 'result';
+            STATE.verifyWait = true;
+            STATE.verifyTimedOut = false;
+            if (!STATE.verifyWaitStartedAt) STATE.verifyWaitStartedAt = Date.now();
+            STATE.verifySkillTitle = String(
+              data.activeStep?.skill?.title || data.activeStep?.skillId || '',
+            );
+          } else {
+            // 追撃が終わったら通常の結果表示＋継続 Y/N に戻す（自動 continue はしない）。
+            STATE.mode = 'result';
+            clearVerifyWait();
+            stopPolling();
+          }
         } else if (status === 'failed') {
           STATE.mode = 'escalated';
+          clearVerifyWait();
           stopPolling();
         } else if (status === 'rejected' || status === 'cancelled') {
           STATE.mode = 'stopped';
+          clearVerifyWait();
           stopPolling();
         }
         render(true);
       } catch (error) {
         stopPolling();
+        clearVerifyWait();
         STATE.mode = 'error';
         STATE.error = String(error.message || error);
         render(true);
@@ -202,13 +283,26 @@
   }
 
   async function continueLoop(decision) {
-    if (!STATE.step || STATE.busy) return;
+    // 追撃（verify）の完了待ち中は継続できない（押下自体も disabled にしている）。
+    if (!STATE.step || STATE.busy || STATE.verifyWait) return;
     STATE.busy = true;
     STATE.error = null;
     try {
       const data = await api(`/api/resolve/steps/${STATE.step.id}/continue`, { decision });
+      // verify.ok で止まったセッションは次提案を返さない（step:null + awaitingResolution）。
+      // ただし verify が未達・評価不能なら確認待ちにせず、従来どおりの分岐に任せる。
+      if (
+        data.awaitingResolution === true &&
+        !awaitingBlockedByVerify(data.session ?? STATE.session)
+      ) {
+        STATE.busy = false;
+        await showAwaitingDecision(data.session ?? STATE.session);
+        return;
+      }
       STATE.session = data.session;
       STATE.step = data.step;
+      // 追撃待ちを抜けたので、待機・打ち切り表示の内部状態は持ち越さない。
+      clearVerifyWait();
       if (data.step) {
         STATE.mode = 'proposed';
       } else if (data.session?.status === 'stopped') {
@@ -219,6 +313,12 @@
       STATE.busy = false;
       render(true);
     } catch (error) {
+      // 2 回目以降の continue は 409 AWAITING_DECISION。エラーにせず同じ確認待ちカードへ合流する。
+      if (error?.code === 'AWAITING_DECISION' && !awaitingBlockedByVerify(STATE.session)) {
+        STATE.busy = false;
+        await showAwaitingDecision(STATE.session);
+        return;
+      }
       STATE.busy = false;
       STATE.error = String(error.message || error);
       render(true);
@@ -234,7 +334,149 @@
       const data = await api(`/api/resolve/sessions/${STATE.session.id}/${action}`, {});
       STATE.session = data.session;
       STATE.mode = action === 'resolve' ? 'resolved' : 'escalated';
+      clearVerifyWait();
+      // 確定したので、再読み込み復帰用の控えは残さない。
+      forgetPending(data.session?.id);
       stopPolling();
+    } catch (error) {
+      STATE.error = String(error.message || error);
+      toast?.(`操作できませんでした: ${STATE.error}`, 'bad');
+    } finally {
+      STATE.busy = false;
+      render(true);
+    }
+  }
+
+  /*
+   * 確認待ち（awaitingResolution）
+   *
+   * verify.ok で停止したセッションは `waiting_continue` のまま「解決した / 担当者へ」の
+   * 最終判断を待つ。サーバは continue に対して 1 回目 200 + awaitingResolution、
+   * 2 回目以降 409 AWAITING_DECISION を返すため、どちらも同じカードへ合流させる。
+   */
+
+  /** verify が「未達（ok:false）」または「評価不能（evaluated:false）」なら確認待ちにしない。 */
+  function awaitingBlockedByVerify(session) {
+    const verify = session?.lastSummary?.verify;
+    if (!verify || typeof verify !== 'object') return false;
+    return verify.ok === false || verify.evaluated === false;
+  }
+
+  /**
+   * 確認待ちセッションの説明文。verify.description を最優先し、
+   * 無ければ最後に実行した Skill 名、結果サマリ、最後に固定文言へフォールバックする。
+   */
+  function awaitingDescription() {
+    const summary = STATE.session?.lastSummary || {};
+    const verify = summary.verify && typeof summary.verify === 'object' ? summary.verify : null;
+    const verifyDescription =
+      verify && typeof verify.description === 'string' ? verify.description.trim() : '';
+    if (verifyDescription) return verifyDescription;
+    if (STATE.awaitingTitle) return `実行した対処: ${STATE.awaitingTitle}`;
+    if (typeof summary.summary === 'string' && summary.summary.trim()) {
+      return summary.summary.trim();
+    }
+    return '対象の操作は正常に完了しています。';
+  }
+
+  // 再読み込み後に確認待ちセッションへ復帰するための控え（案件ごと・セッション ID のみ）。
+  function pendingKey(caseId) {
+    return `aihd.resolve.awaiting.${caseId}`;
+  }
+
+  function rememberPending(sessionId) {
+    const caseId = STATE.caseId || currentCase()?.id;
+    if (!caseId || !sessionId) return;
+    try {
+      window.localStorage?.setItem(pendingKey(caseId), String(sessionId));
+    } catch {
+      // 保存できなくてもカード表示自体は成立する（再読み込み復帰だけが効かなくなる）。
+    }
+  }
+
+  /**
+   * 控えを消す。sessionId を渡した場合は、控えがそのセッションと一致するときだけ消す
+   * （別セッションの控えを誤って消さない）。caseId は開始直後など STATE より確実なときだけ渡す。
+   */
+  function forgetPending(sessionId, caseIdOverride) {
+    const caseId = caseIdOverride || STATE.caseId || currentCase()?.id;
+    if (!caseId) return;
+    try {
+      if (sessionId && pendingSessionId(caseId) !== String(sessionId)) return;
+      window.localStorage?.removeItem(pendingKey(caseId));
+    } catch {
+      // localStorage が使えない環境では何もしない。
+    }
+  }
+
+  function pendingSessionId(caseId) {
+    try {
+      return window.localStorage?.getItem(pendingKey(caseId)) || '';
+    } catch {
+      return '';
+    }
+  }
+
+  /**
+   * 確認待ちカードを表示する。呼び出し前に busy を解除しておくこと。
+   * 最後に実行した Skill 名を取るためにセッション詳細を取り直すが、
+   * 取得できなくてもカードは出したままにする（状態は壊さない）。
+   */
+  async function showAwaitingDecision(session) {
+    stopPolling();
+    STATE.step = null;
+    if (session) STATE.session = session;
+    STATE.mode = 'awaiting';
+    STATE.error = null;
+    STATE.awaitingTitle = '';
+    clearVerifyWait();
+    rememberPending(STATE.session?.id);
+    render(true);
+    const sessionId = STATE.session?.id;
+    if (!sessionId) return;
+    try {
+      const data = await api(`/api/resolve/sessions/${sessionId}`);
+      // 応答が遅れて届いた場合に、別のモードへ上書きしない。
+      if (STATE.mode !== 'awaiting') return;
+      if (data?.session) STATE.session = data.session;
+      const steps = Array.isArray(data?.steps) ? data.steps : [];
+      const lastDone = [...steps].reverse().find((step) => step?.status === 'done');
+      STATE.awaitingTitle = String(lastDone?.skillTitle || lastDone?.skillId || '');
+      const status = STATE.session?.status;
+      if (status === 'resolved') STATE.mode = 'resolved';
+      else if (status === 'escalated') STATE.mode = 'escalated';
+      else if (status === 'stopped' || status === 'expired') STATE.mode = 'stopped';
+      if (STATE.mode !== 'awaiting') forgetPending(sessionId);
+      render(true);
+    } catch {
+      // 付加情報が取れなくても確認待ちカードは表示済み。ここでは状態を変えない。
+    }
+  }
+
+  /** 確認待ちカードの「解決した / 担当者へ引き継ぐ」。 */
+  async function decideAwaiting(action) {
+    if (!STATE.session?.id || STATE.busy) return;
+    if (action !== 'resolve' && action !== 'escalate') return;
+    STATE.busy = true;
+    STATE.error = null;
+    render(true);
+    try {
+      const reason =
+        action === 'resolve'
+          ? '利用者が解決確認カードで「解決した」を選択'
+          : '利用者が解決確認カードで「担当者へ引き継ぐ」を選択';
+      const data = await api(`/api/resolve/sessions/${STATE.session.id}/${action}`, { reason });
+      if (data?.session) STATE.session = data.session;
+      forgetPending(STATE.session.id);
+      // セッション状態を取り直してから既存の完了表示へ合流する（失敗しても表示は続行）。
+      try {
+        const latest = await api(`/api/resolve/sessions/${STATE.session.id}`);
+        if (latest?.session) STATE.session = latest.session;
+      } catch {
+        // 取得できなくても POST の応答で表示は成立する。
+      }
+      stopPolling();
+      STATE.mode = action === 'resolve' ? 'resolved' : 'escalated';
     } catch (error) {
       STATE.error = String(error.message || error);
       toast?.(`操作できませんでした: ${STATE.error}`, 'bad');
@@ -285,11 +527,16 @@
 
   async function stop() {
     if (!STATE.session?.id || STATE.busy) return;
+    // 追撃（verify）の完了待ち中は中止できない（押下自体も disabled にしている）。
+    if (STATE.verifyWait) return;
     STATE.busy = true;
     try {
       const data = await api(`/api/resolve/sessions/${STATE.session.id}/stop`, {});
       STATE.session = data.session;
       STATE.mode = 'stopped';
+      clearVerifyWait();
+      // 停止したセッションは最終判断待ちではないので、復帰用の控えを消す。
+      forgetPending(data.session?.id);
       stopPolling();
     } catch (error) {
       STATE.error = String(error.message || error);
@@ -307,6 +554,8 @@
     STATE.mode = 'idle';
     STATE.busy = false;
     STATE.error = null;
+    STATE.awaitingTitle = '';
+    clearVerifyWait();
     render(true);
   }
 
@@ -333,6 +582,10 @@
       busy: STATE.busy,
       error: STATE.error,
       session: STATE.session?.status,
+      awaitingTitle: STATE.awaitingTitle,
+      verifyWait: STATE.verifyWait,
+      verifyTimedOut: STATE.verifyTimedOut,
+      verifySkillTitle: STATE.verifySkillTitle,
     });
     const panel = document.getElementById('aihdResolvePanel');
     if (!panel) return;
@@ -354,6 +607,8 @@
       '</span></div>';
 
     let body = '';
+    // 確認待ちカードのボタンは押下中に無効化する（二重送信防止）。他モードの markup は変えない。
+    const awaitingDisabled = STATE.busy ? ' disabled' : '';
     if (STATE.mode === 'idle') {
       body =
         '<div class="u-small u-muted" style="margin-top:6px">PCの状態を読み取るだけで、変更は行いません。実行のたびに Y/N を確認します。</div>' +
@@ -396,17 +651,44 @@
         '<button class="u-btn" data-aihd-resolve="stop">中止</button>' +
         '<button class="u-btn" data-aihd-resolve="escalate">担当者へ</button></div>';
     } else if (STATE.mode === 'result' && STATE.step) {
+      // script 形態 verify の追撃実行中（親 done・session executing）は待機表示にし、
+      // 継続 Y/N と中止を無効化する（409 STEP_NOT_CONTINUABLE を押させる前に防ぐ）。
+      const waitingVerify = STATE.verifyWait === true;
+      const verifyHold = waitingVerify ? ' disabled' : '';
       body =
         '<div style="margin-top:8px"><b>結果</b></div>' +
         '<pre class="u-small" style="white-space:pre-wrap;background:#f5f7fa;border:1px solid #d9e2ec;border-radius:6px;padding:8px;max-height:320px;overflow:auto">' +
         esc(resultText(STATE.step)) +
         '</pre>' +
+        (waitingVerify
+          ? '<div class="u-small" style="margin-top:6px;color:#8a5a00">原因の対処を確認しています…' +
+            (STATE.verifySkillTitle ? `（${esc(STATE.verifySkillTitle)}）` : '') +
+            '</div>'
+          : '') +
+        (STATE.verifyTimedOut === true
+          ? '<div class="u-small" style="margin-top:6px;color:#b42318">確認が完了しませんでした。時間をおいて「続ける」を押すか、担当者へ引き継いでください。</div>'
+          : '') +
         '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">' +
-        '<button class="u-btn pri" data-aihd-resolve="continue" data-decision="Y">続ける（Y）</button>' +
-        '<button class="u-btn" data-aihd-resolve="continue" data-decision="N">やめる（N）</button>' +
+        `<button class="u-btn pri" data-aihd-resolve="continue" data-decision="Y"${verifyHold}>続ける（Y）</button>` +
+        `<button class="u-btn" data-aihd-resolve="continue" data-decision="N"${verifyHold}>やめる（N）</button>` +
         '<button class="u-btn pri" data-aihd-resolve="resolve">解決した</button>' +
         '<button class="u-btn" data-aihd-resolve="escalate">担当者へ</button>' +
-        '<button class="u-btn" data-aihd-resolve="stop">中止</button></div>';
+        `<button class="u-btn" data-aihd-resolve="stop"${verifyHold}>中止</button></div>`;
+    } else if (STATE.mode === 'awaiting') {
+      // 説明文そのものは innerHTML に入れず、描画後に textContent で差し込む（XSS 対策）。
+      body =
+        '<div style="margin-top:8px;padding:10px;border:1px solid #bfe3c6;background:#f3fbf5;border-radius:8px">' +
+        '<div><b>原因の対処まで完了しました</b></div>' +
+        '<div class="u-small" style="margin-top:6px;white-space:pre-wrap" data-aihd-awaiting-desc></div>' +
+        '<div style="margin-top:6px">解決しましたか？</div>' +
+        '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">' +
+        '<button class="u-btn pri" data-aihd-resolve="decide" data-decision="resolve"' +
+        awaitingDisabled +
+        '>解決した</button>' +
+        '<button class="u-btn" data-aihd-resolve="decide" data-decision="escalate"' +
+        awaitingDisabled +
+        '>担当者へ引き継ぐ</button>' +
+        '</div></div>';
     } else if (STATE.mode === 'stopped') {
       body =
         '<div style="margin-top:8px">解決ループを停止しました。必要ならやり直せます。</div>' +
@@ -437,6 +719,11 @@
       (body || '') +
       adminPanelHtml() +
       (STATE.busy ? '<div class="u-small u-muted" style="margin-top:6px">処理中…</div>' : '');
+
+    // 説明文は innerHTML に混ぜず textContent で入れる（端末結果由来の文字列を HTML として
+    // 解釈させない）。確認待ち以外のモードでは該当要素が無いので何もしない。
+    const awaitingDescNode = panel.querySelector?.('[data-aihd-awaiting-desc]');
+    if (awaitingDescNode) awaitingDescNode.textContent = awaitingDescription();
   }
 
   function adminPanelHtml() {
@@ -499,6 +786,7 @@
     else if (action === 'stop') void stop();
     else if (action === 'resolve') void manualClose('resolve');
     else if (action === 'escalate') void manualClose('escalate');
+    else if (action === 'decide') void decideAwaiting(decision);
     else if (action === 'admin-approve')
       void adminApprove(Number(button.getAttribute('data-index') || '0'));
   });

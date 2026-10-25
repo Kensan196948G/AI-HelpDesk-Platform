@@ -20,7 +20,12 @@ import {
   computeApprovalHash,
   newNonce,
 } from './approval.js';
-import { type Proposal, type ProposalHistoryEntry, proposeNext } from './proposer.js';
+import {
+  escalationReasonForDecision,
+  type Proposal,
+  type ProposalHistoryEntry,
+  proposeNext,
+} from './proposer.js';
 import {
   listApprovedSkills,
   normalizeJsonValue,
@@ -29,6 +34,12 @@ import {
   toSkillRecord,
   validateParams,
 } from './skills.js';
+import {
+  evaluateFollowupVerify,
+  evaluateVerify,
+  type FollowupVerifyOutcome,
+  type VerifyOutcome,
+} from './verify.js';
 
 const SESSION_TTL_SQL = sql`now() + interval '30 minutes'`;
 const SESSION_MAX_STEPS = 6;
@@ -92,6 +103,10 @@ interface StepRow {
   result_summary: unknown;
   result_full: unknown;
   result_ai: unknown;
+  /** サーバが評価した verify の結果（migration 017）。ok=null は評価不能。 */
+  verify_result: unknown;
+  /** 親ステップ ID（migration 018）。script 形態 verify の追撃実行だけに入る。 */
+  verify_for_step_id: string | null;
   error: string | null;
   created_at: Date | string;
   executed_at: Date | string | null;
@@ -346,6 +361,17 @@ async function loadLastResultAi(sessionId: string): Promise<unknown | null> {
   return rows[0]?.result_ai ?? null;
 }
 
+/** 直近の done ステップの verify 評価結果を、AI の終了宣言の材料として読む。 */
+async function loadLastVerifyResult(sessionId: string): Promise<unknown | null> {
+  const rows = await sql<{ verify_result: unknown }[]>`
+    SELECT verify_result FROM resolution_steps
+    WHERE session_id = ${sessionId} AND status = 'done' AND verify_result IS NOT NULL
+    ORDER BY seq DESC
+    LIMIT 1
+  `;
+  return rows[0]?.verify_result ?? null;
+}
+
 function stepDto(row: StepRow, session: SessionRow) {
   const skill = skillFromStep(row);
   return {
@@ -383,6 +409,8 @@ function stepDto(row: StepRow, session: SessionRow) {
     resultFull: jsonObjectOrNull(row.result_full),
     // fieldsToAi を適用した AI 入力用の結果（生ログは含めない）。
     resultAi: jsonObjectOrNull(row.result_ai),
+    // サーバが評価した verify（ok=null は評価不能。成功と見なさない）。
+    verifyResult: jsonObjectOrNull(row.verify_result),
     timeoutSec: row.timeout_sec === null ? DEFAULT_STEP_TIMEOUT_SEC : Number(row.timeout_sec),
     deadlineAt: toIsoOrNull(row.deadline_at),
     requiresAdminApproval: Number(row.risk_level) >= 4,
@@ -407,6 +435,7 @@ function stepSummaryDto(row: StepRow) {
     status: row.status,
     commandId: row.command_id,
     resultSummary: jsonObjectOrNull(row.result_summary),
+    verifyResult: jsonObjectOrNull(row.verify_result),
     error: row.error,
     createdAt: toIso(row.created_at),
     executedAt: toIsoOrNull(row.executed_at),
@@ -609,6 +638,247 @@ async function insertProposedStep(
 }
 
 /**
+ * 変更系（修復）Skill か。
+ *
+ * rollback の有無だけでは判定できない。Phase 2 で追加した読み取り専用の
+ * `bitlocker.status` は「元に戻すものが無い」ことを説明するため rollback に
+ * 説明文を持つ（script: null）。これを変更系と誤認すると、状態を読んだだけで
+ * 「解決候補」になってしまう（2026-10-25 の実測で 16 件中 3 件がこれだった）。
+ *
+ * そのため **リスク 2 以上 かつ rollback 定義あり** を変更系とする。
+ * 読み取り専用 5 件はすべてリスク 1、修復 4 件（spooler.restart / spooler.queue.purge /
+ * service.start / temp.cleanup）はリスク 2 以上である。
+ * なお dns.flush と defender.quickscan はリスク 1 のため、verify が通っても
+ * 「解決」とは見なさない（状態を変えるが、問題の解決を意味しない）。
+ */
+export function isChangeSkillRow(
+  row: { rollback: unknown; risk_level?: unknown } | undefined,
+): boolean {
+  if (!row) return false;
+  const hasRollback = row.rollback !== null && row.rollback !== undefined;
+  const riskLevel = typeof row.risk_level === 'number' ? row.risk_level : Number(row.risk_level);
+  return hasRollback && Number.isFinite(riskLevel) && riskLevel >= 2;
+}
+
+/**
+ * verify の評価対象を result_summary から取り出す。
+ * verify.resultField は端末スクリプトが返す JSON のトップレベルキーなので、
+ * result_summary.normalized のキーを優先しつつ、result_summary のトップレベル
+ * （ok / exitCode 等）も見えるようにする（ドットパスは解釈しない）。
+ */
+function verifyTargetFromSummary(summary: Record<string, unknown>): unknown {
+  const normalized = jsonObjectOrNull(summary.normalized);
+  return normalized ? { ...summary, ...normalized } : summary;
+}
+
+/** verify.ok で停止したセッションか（last_summary.outcome === 'verified'）。 */
+function isVerifiedSession(session: { last_summary: unknown }): boolean {
+  return jsonObjectOrNull(session.last_summary)?.outcome === 'verified';
+}
+
+/**
+ * verify の args に含まれる `{{name}}` を親ステップの params で埋める。
+ * `service.start` の verify.args は `['-Service', '{{name}}']` のように
+ * 親のパラメータを参照するため、追撃 enqueue 前に解決する。
+ */
+function fillParamTemplates(token: string, sourceParams: Record<string, unknown>): string {
+  return token.replace(/\{\{\s*([A-Za-z0-9_]+)\s*\}\}/g, (match, key: string) => {
+    const value = sourceParams[key];
+    if (typeof value === 'string') return value;
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+    return match;
+  });
+}
+
+/**
+ * verify.args（PowerShell 形式のフラグ列）を params オブジェクトへ変換する。
+ *
+ * 例: `['-Service', 'Spooler']` → `{ service: 'Spooler' }`
+ * - 先頭の `-` を除いて小文字化したキーに、次の要素を値として入れる。
+ * - 値が無い・次の要素もフラグ・フラグ以外の要素がある場合は null（安全側で追撃しない）。
+ */
+function argsToParams(
+  args: unknown,
+  sourceParams: Record<string, unknown>,
+): Record<string, unknown> | null {
+  const list = normalizeJsonValue(args);
+  if (!Array.isArray(list)) return {};
+  const params: Record<string, unknown> = {};
+  let index = 0;
+  while (index < list.length) {
+    const flag = list[index];
+    if (typeof flag !== 'string') return null;
+    const resolvedFlag = fillParamTemplates(flag, sourceParams);
+    if (!resolvedFlag.startsWith('-')) return null;
+    const key = resolvedFlag.replace(/^-+/, '').toLowerCase();
+    if (!key) return null;
+    const rawValue = list[index + 1];
+    if (typeof rawValue !== 'string') return null;
+    const value = fillParamTemplates(rawValue, sourceParams);
+    // `-Flag -Next` のような値なしフラグは、この変換では扱わない。
+    if (value.startsWith('-')) return null;
+    params[key] = value;
+    index += 2;
+  }
+  return params;
+}
+
+/**
+ * 追撃ステップの結果を親ステップの verify_result へ反映する（Phase 6a）。
+ *
+ * - 親 Skill の verify.expect をサブセット一致で評価する。
+ * - 承認後に Skill 定義が変わっていたら（content_hash 不一致）評価しない（fail-closed）。
+ * - 評価できたら親の verify_result を更新し、監査 `resolution.verify_result` を残す。
+ * - 追撃の追撃は作らない（この関数は enqueue を行わない）。
+ */
+async function applyVerifyFollowupOutcome(
+  tx: any,
+  input: {
+    session: SessionRow;
+    step: StepRow;
+    summary: Record<string, unknown>;
+    actorEmail: string;
+  },
+): Promise<FollowupVerifyOutcome | null> {
+  const parentId = input.step.verify_for_step_id;
+  if (!parentId) return null;
+  const parentRows = await tx<StepRow[]>`
+    SELECT * FROM resolution_steps WHERE id = ${parentId} FOR UPDATE
+  `;
+  const parent = parentRows[0];
+  if (!parent) return null;
+  const skillRows = await tx<{ verify: unknown; content_hash: string | null }[]>`
+    SELECT verify, content_hash FROM skills
+    WHERE id = ${parent.skill_id} AND version = ${parent.skill_version} AND status = 'approved'
+    LIMIT 1
+  `;
+  const skill = skillRows[0];
+  if (!skill || skill.content_hash !== parent.skill_content_hash) return null;
+
+  const outcome = evaluateFollowupVerify(skill.verify, verifyTargetFromSummary(input.summary));
+  if (!outcome) return null;
+
+  await tx`
+    UPDATE resolution_steps SET verify_result = ${jsonbValue(outcome)} WHERE id = ${parent.id}
+  `;
+  await appendResolveAudit(tx, {
+    action: 'resolution.verify_result',
+    sessionId: input.session.id,
+    actorEmail: input.actorEmail,
+    stepId: input.step.id,
+    detail: { parentStepId: parent.id, ok: outcome.ok },
+  });
+  return outcome;
+}
+
+/**
+ * script 形態 verify の追撃ステップを自動承認で積む（Phase 6a）。
+ *
+ * 前提（呼び出し側で確認済み）: 親が変更系・verify が requires_followup・
+ * このステップ自身が追撃ではないこと。
+ *
+ * - `verify.script` と完全一致する script_path を持つ **approved / risk_level=1** の
+ *   Skill を 1 件だけ探す。無ければ何もしない（従来どおり requires_followup のまま）。
+ * - risk 2 以上の自動承認は行わない（設計 §4-3 の人間承認を迂回しない）。
+ * - args → params 変換と `validateParams` を通せない場合は追撃しない。
+ * - 追撃ステップは status='approved' / approved_by='system:verify' で INSERT し、
+ *   通常の承認パスと同じ形で device_commands を enqueue する。
+ */
+async function enqueueVerifyFollowup(
+  tx: any,
+  input: {
+    session: SessionRow;
+    step: StepRow;
+    verify: unknown;
+    actorEmail: string;
+  },
+): Promise<{ stepId: string; seq: number } | null> {
+  const verify = jsonObjectOrNull(input.verify);
+  const scriptPath = typeof verify?.script === 'string' ? verify.script.trim() : '';
+  if (!scriptPath) return null;
+
+  // 同一親に追撃は 1 回だけ（部分 UNIQUE インデックスと合わせて二重 enqueue を防ぐ）。
+  const existing = await tx<{ id: string }[]>`
+    SELECT id FROM resolution_steps WHERE verify_for_step_id = ${input.step.id} LIMIT 1
+  `;
+  if (existing[0]) return null;
+
+  const skillRows = await tx<
+    {
+      id: string;
+      version: string;
+      content_hash: string;
+      params_schema: unknown;
+      risk_level: number;
+      timeout_sec: number;
+    }[]
+  >`
+    SELECT id, version, content_hash, params_schema, risk_level, timeout_sec
+    FROM skills
+    WHERE status = 'approved'
+      AND risk_level = 1
+      AND script_path = ${scriptPath}
+      AND content_hash IS NOT NULL
+      AND 'windows' = ANY(os)
+    ORDER BY id ASC, version DESC
+    LIMIT 1
+  `;
+  const skill = skillRows[0];
+  if (!skill) return null;
+
+  const params = argsToParams(verify?.args, jsonObject(input.step.params));
+  if (!params) return null;
+  if (!validateParams(skill.params_schema, params).ok) return null;
+
+  const seq = Number(input.session.step_count) + 1;
+  const nonce = newNonce();
+  const timeoutSec =
+    Number(skill.timeout_sec) > 0 ? Number(skill.timeout_sec) : DEFAULT_STEP_TIMEOUT_SEC;
+  // 追撃の追撃は作らない（ON CONFLICT DO NOTHING で seq 競合時も何もしない）。
+  const inserted = await tx<{ id: string }[]>`
+    INSERT INTO resolution_steps (
+      session_id, seq, skill_id, skill_version, skill_content_hash, params, rationale,
+      risk_level, status, nonce, approval_expires_at, approved_by, approved_at,
+      verify_for_step_id, timeout_sec, deadline_at
+    ) VALUES (
+      ${input.session.id}, ${seq}, ${skill.id}, ${skill.version}, ${skill.content_hash},
+      ${jsonbValue(params)}, ${`verify の追撃確認（${input.step.skill_id}）`},
+      ${Number(skill.risk_level)}, 'approved', ${nonce}, ${STEP_APPROVAL_TTL_SQL},
+      ${'system:verify'}, now(), ${input.step.id}, ${timeoutSec},
+      now() + make_interval(secs => ${timeoutSec})
+    )
+    ON CONFLICT DO NOTHING
+    RETURNING id
+  `;
+  const followupStepId = inserted[0]?.id;
+  if (!followupStepId) return null;
+
+  const commandRows = await tx<{ id: string }[]>`
+    INSERT INTO device_commands (
+      user_email, device_id, op_id, params, skill_id, skill_version,
+      skill_content_hash, session_id, step_id
+    ) VALUES (
+      ${input.session.user_email}, ${input.session.device_id}, ${skill.id},
+      ${jsonbValue(params)}, ${skill.id}, ${skill.version},
+      ${skill.content_hash}, ${input.session.id}, ${followupStepId}
+    )
+    RETURNING id
+  `;
+  const commandId = commandRows[0]?.id;
+  if (!commandId) throw new Error('followup device command insert failed');
+  await tx`UPDATE resolution_steps SET command_id = ${commandId} WHERE id = ${followupStepId}`;
+
+  await appendResolveAudit(tx, {
+    action: 'resolution.verify_enqueued',
+    sessionId: input.session.id,
+    actorEmail: input.actorEmail,
+    stepId: followupStepId,
+    detail: { parentStepId: input.step.id, verifySkillId: skill.id, scriptPath },
+  });
+  return { stepId: followupStepId, seq };
+}
+
+/**
  * 端末コマンドの結果を取り込み、step / session を完了状態へ進める。
  * GET から何度呼ばれても二重更新しない（条件付き UPDATE + RETURNING で判定）。
  */
@@ -670,8 +940,16 @@ async function applyCommandOutcome(email: string, stepId: string): Promise<void>
     if (command.status === 'done' && (step.status === 'approved' || step.status === 'executing')) {
       // fieldsToAi の厳密適用には、このステップの Skill の outputPolicy が要る。
       // 承認後に Skill 定義が変わっていたら、そのポリシーは使わない（content_hash で束縛）。
-      const policyRows = await tx<{ output_policy: unknown; content_hash: string | null }[]>`
-        SELECT output_policy, content_hash FROM skills
+      const policyRows = await tx<
+        {
+          output_policy: unknown;
+          content_hash: string | null;
+          verify: unknown;
+          rollback: unknown;
+          risk_level: number;
+        }[]
+      >`
+        SELECT output_policy, content_hash, verify, rollback, risk_level FROM skills
         WHERE id = ${step.skill_id} AND version = ${step.skill_version} AND status = 'approved'
         LIMIT 1
       `;
@@ -685,19 +963,71 @@ async function applyCommandOutcome(email: string, stepId: string): Promise<void>
         true,
         policyMatches ? policyRow?.output_policy : null,
       );
+      // verify はサーバが決定的に評価する（AI には判定させない）。ok=null も「評価不能」の
+      // 情報として必ず保存する。script 形態の verify は追加実行が要るため評価不能のまま。
+      const verifyResult = evaluateVerify(
+        policyRow?.verify ?? null,
+        verifyTargetFromSummary(summary),
+      );
+      // 「解決候補」として止めるのは変更系（修復）ステップの成功だけ。
+      // 読み取りステップの verify 成功や、未評価（null）では止めない。
+      let verified = isChangeSkillRow(policyRow) && verifyResult.ok === true;
+      let verifyForSummary: VerifyOutcome | FollowupVerifyOutcome = verifyResult;
+      // 追撃ステップ（verify_for_step_id 付き）の完了時は、親の verify.expect を
+      // サブセット一致で評価して親の verify_result を更新する（Phase 6a）。
+      if (step.verify_for_step_id) {
+        const parentOutcome = await applyVerifyFollowupOutcome(tx, {
+          session,
+          step,
+          summary,
+          actorEmail: email,
+        });
+        if (parentOutcome?.ok === true) {
+          verified = true;
+          verifyForSummary = parentOutcome;
+        }
+      }
+      // 停止時は結果サマリを残したまま outcome=verified を付ける（UI の既存表示を壊さない）。
+      const lastSummary = verified
+        ? {
+            ...summary,
+            outcome: 'verified' as const,
+            stepId: step.id,
+            skillId: step.skill_id,
+            verify: verifyForSummary,
+          }
+        : summary;
       const updated = await tx<{ id: string }[]>`
         UPDATE resolution_steps
         SET status = 'done', executed_at = COALESCE(executed_at, now()),
             result_summary = ${jsonbValue(summary)}, result_full = ${jsonbValue(full)},
-            result_ai = ${jsonbValue(ai)},
+            result_ai = ${jsonbValue(ai)}, verify_result = ${jsonbValue(verifyResult)},
             error = ${command.error ? redactPII(command.error).text.slice(0, 2000) : null}
         WHERE id = ${step.id} AND status IN ('approved', 'executing')
         RETURNING id
       `;
       if (!updated[0]) return;
+      // 親が変更系で verify が requires_followup のときだけ、読み取り Skill の
+      // 追撃ステップを自動承認で積む（追撃の追撃は作らない）。
+      // 承認後に Skill 定義が変わっていたら（content_hash 不一致）は積まない（fail-closed）。
+      const followup =
+        verifyResult.reason === 'requires_followup' &&
+        !step.verify_for_step_id &&
+        !sessionExpired(session) &&
+        policyMatches &&
+        isChangeSkillRow(policyRow)
+          ? await enqueueVerifyFollowup(tx, {
+              session,
+              step,
+              verify: policyRow?.verify ?? null,
+              actorEmail: email,
+            })
+          : null;
       await tx`
         UPDATE resolution_sessions
-        SET status = 'waiting_continue', last_summary = ${jsonbValue(summary)}, updated_at = now()
+        SET status = ${followup ? 'executing' : 'waiting_continue'},
+            step_count = ${followup ? followup.seq : Number(session.step_count)},
+            last_summary = ${jsonbValue(lastSummary)}, updated_at = now()
         WHERE id = ${session.id} AND status = 'executing'
       `;
       await appendResolveAudit(tx, {
@@ -705,7 +1035,13 @@ async function applyCommandOutcome(email: string, stepId: string): Promise<void>
         sessionId: session.id,
         actorEmail: email,
         stepId: step.id,
-        detail: { commandId: step.command_id, ok: true },
+        detail: {
+          commandId: step.command_id,
+          ok: true,
+          verifyOk: verifyResult.ok,
+          verifyEvaluated: verifyResult.evaluated,
+          ...(verified ? { awaitingResolution: true } : {}),
+        },
       });
       return;
     }
@@ -752,6 +1088,77 @@ async function applyCommandOutcome(email: string, stepId: string): Promise<void>
         detail: { commandId: step.command_id, ok: false, consecutiveFailures },
       });
     }
+  });
+}
+
+/**
+ * verify.ok で停止したセッションの continue を処理する（AI も次提案も呼ばない）。
+ *
+ * - 1 回目: 200 `{ ok: true, awaitingResolution: true, session, step: null }` を返せるよう、
+ *   last_summary に `awaitingDecision: true` を記録する。
+ * - 2 回目以降: 409 `AWAITING_DECISION`。利用者が「解決した」(/resolve) か
+ *   「担当者へ」(/escalate) を選ぶまでループを再開しない。
+ *
+ * resolved への自動遷移は決して行わない（利用者の確認が必須。docs/30 §4）。
+ */
+async function awaitResolutionDecision(
+  email: string,
+  sessionId: string,
+  stepId: string,
+): Promise<{ awaiting: true } | { failure: ApiError }> {
+  return sql.begin(async (tx) => {
+    const sessionRows = await tx<SessionRow[]>`
+      SELECT * FROM resolution_sessions
+      WHERE id = ${sessionId} AND user_email = ${email}
+      FOR UPDATE
+    `;
+    const session = sessionRows[0];
+    if (!session) return { failure: notFound('解決セッションが見つかりません。') };
+    if (session.status !== 'waiting_continue') {
+      return {
+        failure: new ApiError(
+          409,
+          'STEP_NOT_CONTINUABLE',
+          'このセッションは継続待ちではありません。',
+        ),
+      };
+    }
+    const summary = jsonObjectOrNull(session.last_summary);
+    if (!summary || summary.outcome !== 'verified') {
+      // 直前に状態が変わった（競合）。ここから提案を続けることはしない。
+      return {
+        failure: new ApiError(
+          409,
+          'AWAITING_DECISION',
+          '実行結果の確認が完了しています。「解決した」か「担当者へ」を選んでください。',
+        ),
+      };
+    }
+    if (summary.awaitingDecision === true) {
+      return {
+        failure: new ApiError(
+          409,
+          'AWAITING_DECISION',
+          'このセッションは最終判断待ちです。「解決した」か「担当者へ」を選んでください。',
+        ),
+      };
+    }
+    await tx`
+      UPDATE resolution_sessions
+      SET last_summary = ${jsonbValue({ ...summary, awaitingDecision: true })}, updated_at = now()
+      WHERE id = ${session.id}
+    `;
+    await appendResolveAudit(tx, {
+      action: 'resolution.awaiting_decision',
+      sessionId: session.id,
+      actorEmail: email,
+      stepId,
+      detail: {
+        reason: 'verify_ok',
+        ...(typeof summary.skillId === 'string' ? { skillId: summary.skillId } : {}),
+      },
+    });
+    return { awaiting: true as const };
   });
 }
 
@@ -1305,7 +1712,9 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
         history: [],
         skills,
       });
-      if (!proposal) {
+      if (!proposal || proposal.decision) {
+        // 初回提案で AI が終了宣言（stop / escalate）を返した場合も、新規セッションは
+        // 作らない（自動で escalated にしない。従来どおり「適用できる Skill が無い」）。
         throw new ApiError(
           409,
           'NO_SKILL',
@@ -1686,8 +2095,35 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
     if (current.step.command_id) {
       await applyCommandOutcome(email, stepId);
     }
+    // script 形態 verify の追撃（Migration 018）は「親ステップが done のまま
+    // セッションだけ executing」という中間状態を作る。クライアントは親ステップを
+    // ポーリングし続けるため、ここでセッションの実行中ステップも同期する。
+    // これをしないと追撃コマンドの結果が反映されず、セッションが executing で固まる
+    // （2026-10-26 の 1 ケース実測で確認）。
+    const activeRows = await sql<{ id: string }[]>`
+      SELECT id FROM resolution_steps
+      WHERE session_id = ${current.session.id}
+        AND status IN ('proposed', 'approved', 'executing')
+      ORDER BY seq DESC
+      LIMIT 1
+    `;
+    const activeId = activeRows[0]?.id;
+    if (activeId && activeId !== stepId) {
+      try {
+        await applyCommandOutcome(email, activeId);
+      } catch {
+        // 追撃の同期失敗で親の状態取得まで壊さない（次回のポーリングで再試行される）。
+      }
+    }
     const { step, session } = await loadStepAndSession(email, stepId);
-    return { ok: true, step: stepDto(step, session), session: sessionDto(session) };
+    const active = activeId ? await loadStepAndSession(email, activeId).catch(() => null) : null;
+    return {
+      ok: true,
+      step: stepDto(step, session),
+      session: sessionDto(session),
+      // 実行中の追撃ステップ（無ければ null）。UI の「確認中」表示とハーネスの追従に使う。
+      activeStep: active ? stepDto(active.step, active.session) : null,
+    };
   });
 
   // 結果後 Y/N。Y は次提案、N は停止。
@@ -1742,11 +2178,26 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
         return { ok: true, session: sessionDto(session), step: null };
       }
 
-      // 次提案の材料（case 本文・直近結果・実行履歴）。提案生成は DB ロックの外で行う。
+      // verify.ok で停止したセッションでは、AI も次提案も呼ばずに最終判断を待つ。
+      // （resolved への自動遷移はしない。利用者の /resolve か /escalate が必須）
+      if (isVerifiedSession(current.session)) {
+        const awaiting = await awaitResolutionDecision(email, current.session.id, current.step.id);
+        if (isFailure(awaiting)) throw awaiting.failure;
+        const session = await loadSession(email, current.session.id);
+        return {
+          ok: true,
+          awaitingResolution: true,
+          session: sessionDto(session),
+          step: null,
+        };
+      }
+
+      // 次提案の材料（case 本文・直近結果・verify・実行履歴）。提案生成は DB ロックの外で行う。
       const ownedCase = await findOwnedCase(email, current.session.case_id);
-      const [skills, history] = await Promise.all([
+      const [skills, history, lastVerify] = await Promise.all([
         listApprovedSkills(),
         loadProposalHistory(current.session.id),
+        loadLastVerifyResult(current.session.id),
       ]);
       // AI に渡すのは fieldsToAi 適用後の result_ai だけ。旧データ（result_ai なし）は
       // 未フィルターの last_summary へ退避せず、何も渡さない（fail-closed）。
@@ -1755,6 +2206,7 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
       const proposal = await proposeNext({
         text: caseText(ownedCase),
         lastSummary: lastResultAiText,
+        lastVerify,
         history,
         skills,
       });
@@ -1788,6 +2240,17 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
               409,
               'STEP_NOT_CONTINUABLE',
               'このセッションは継続待ちではありません。',
+            ),
+          };
+        }
+        // verify.ok で停止したセッションでは提案しない（直前に確定した場合の防御。
+        // 正常系は事前チェックで AI を呼ばずに返している）。
+        if (isVerifiedSession(session)) {
+          return {
+            failure: new ApiError(
+              409,
+              'AWAITING_DECISION',
+              '実行結果の確認が完了しています。「解決した」か「担当者へ」を選んでください。',
             ),
           };
         }
@@ -1846,6 +2309,24 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
           };
         }
 
+        // AI の終了宣言（stop / escalate）。既存の no_progress / step_limit の後、
+        // 次提案より前に評価する。未検証のまま resolved にはしない（必ず escalated）。
+        const decisionReason = escalationReasonForDecision(proposal?.decision);
+        if (decisionReason) {
+          await tx`
+            UPDATE resolution_sessions SET status = 'escalated', updated_at = now()
+            WHERE id = ${session.id}
+          `;
+          await appendResolveAudit(tx, {
+            action: 'resolution.escalated',
+            sessionId: session.id,
+            actorEmail: email,
+            stepId: current.step.id,
+            detail: { reason: decisionReason },
+          });
+          return { escalated: true as const, reason: decisionReason };
+        }
+
         if (!proposal) {
           await tx`
             UPDATE resolution_sessions SET status = 'escalated', updated_at = now()
@@ -1902,12 +2383,21 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
       if (isFailure(outcome)) throw outcome.failure;
       const session = await loadSession(email, current.session.id);
       if ('escalated' in outcome) {
-        // これ以上安全に試せる Skill が無い / 進捗なし。セッションを escalated にして理由を返す。
+        // これ以上安全に試せる Skill が無い / 進捗なし / AI の終了宣言。
+        // セッションを escalated にして理由を返す（resolved にはしない）。
+        const reasonCode =
+          outcome.reason === 'no_progress'
+            ? 'NO_PROGRESS'
+            : outcome.reason === 'no_skill'
+              ? 'NO_SKILL'
+              : outcome.reason === 'ai_stop'
+                ? 'AI_STOP'
+                : 'AI_ESCALATED';
         return {
           ok: true,
           session: sessionDto(session),
           step: null,
-          reason: outcome.reason === 'no_progress' ? 'NO_PROGRESS' : 'NO_SKILL',
+          reason: reasonCode,
         };
       }
       const { step } = await loadStepAndSession(email, outcome.nextStepId);
