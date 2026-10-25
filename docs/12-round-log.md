@@ -296,3 +296,15 @@
    `self-evolution policy gate: DEPLOY is critical risk` で拒否される。
 
 詳細: [13-blocked-report.md](13-blocked-report.md)
+
+## Round 28 — 全機能検証と修正・反映（2026-10-25）
+
+- Agent Team（API / UI / 基盤 / 品質）+ 独立レビュー 2 回で、公開中システムの全機能を検証した。
+- 結果: API 47/47・237 チェック（232 PASS）、UI 34 画面（修正前 27 PASS）、公開経路 PASS、201 tests PASS、CI 緑。
+- 検出した Critical 2 件（状態キー欠落による白画面・担当者視点で案件が開けない）と High 4 件、
+  Medium（JSONB 二重エンコード）を PR #31 / #32 / #33 で修正し、CI 緑・レビュー後に main へマージ。
+- 稼働サービスへ反映（build → restart → migration 010）し、欠落状態の補完と E2E 残骸の削除を実施。
+- 反映後の再検証: 統合の流れ / ナレッジ検索 / AI窓口の利用状況 / AI相談 / 一覧が例外 0 で描画、
+  AI 回答は deepseek-flash + KB-2026-0001、公開 URL は Access 302、5xx 0。
+- 詳細: [24-verification-20261025.md](24-verification-20261025.md)
+- 残課題: 引継ぎメモの分野・担当者表示、記入例の内容、JWT/proxy secret の多層防御、DB バックアップ。
