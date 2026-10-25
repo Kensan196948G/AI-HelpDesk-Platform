@@ -464,7 +464,18 @@ Phase 1 は「担当者が明示的に導入を依頼し、状態を見て、RSP
 | UI | 実装 | `remote-support-bridge.js`（ケース画面のパネル。担当者以外は非表示） |
 | 監査 | 実装 | `remote_support.link_saved` / `remote_support.ensure_requested` |
 | テスト | 実装 | 4 件（403・コンテキスト・検索→リンク→導入・リンク前 409）。全体 **284 件 PASS** |
-| 設定 | 必要 | `RSP_SERVICE_KEY`（サーバのみ）。`RSP_BASE_URL` は既存設定を利用 |
+| 設定 | 必要 | `RSP_SERVICE_KEY`（サーバのみ）、`RSP_BASE_URL`（サーバ間）、`RSP_PUBLIC_URL`（ブラウザのリンク） |
 
 - 未実施: 実ブラウザでの担当者目視、未導入端末の実インストール（D3 の canary 有効化待ち）
 - 端末マッピングは hostname 完全一致。0 件・複数件は担当者が選択する
+
+
+### 16-10. Phase 1 実測（2026-10-25 20:20）
+
+- プレビュー環境: migration 015 適用、`RSP_SERVICE_KEY` / `RSP_BASE_URL` 設定、API 再ビルド・再起動（health 200）
+- test DB + 実 RSP + ローカル認証（`sato@example.com`）で縦串を実測:
+  1. `GET /api/remote-support/session` = 200（escalated セッション）
+  2. `POST /api/remote-support/lookup`（`202010001M`）= 200 / 1 件（RSP 実データ）
+  3. `POST /api/remote-support/link` = 200（`WEB-VERIFY01` → RSP 端末）
+  4. `POST /api/remote-support/ensure` = 200 / `status=installed` / `triggeredDeploy=false`（skip）
+- 未実施: 実ブラウザでの担当者目視、未導入端末の `triggeredDeploy=true`（対象端末と時間帯の指定待ち）
