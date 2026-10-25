@@ -67,6 +67,9 @@ const EnvSchema = z.object({
   // 既定は空＝誰も承認できない（fail-closed）。比較は canonicalEmail を通す。
   RESOLVE_ADMIN_ALLOWLIST: z.string().default(''),
 
+  // Phase 1 遠隔対応: RSP サービス認証（サーバ間のみ。ブラウザへ返さない）
+  RSP_SERVICE_KEY: optionalText,
+
   // Mirai-Info の社員名簿を読むための接続先（未設定なら Unix ソケット + OS ユーザー）。
   MIRAI_INFO_DATABASE_URL: optionalText,
   // DeepSeek API（MVP / Staging のみ）
