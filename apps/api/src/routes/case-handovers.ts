@@ -18,6 +18,7 @@ import {
   flushHandoverNotifications,
   resolveConfiguredRecipients,
 } from '../lib/handover-notify.js';
+import { jsonbValue } from '../lib/jsonb-value.js';
 import { getMailTransport } from '../lib/mailer.js';
 import {
   type EmployeeRow,
@@ -251,7 +252,7 @@ export async function caseHandoverRoutes(app: FastifyInstance): Promise<void> {
           ${assigneeHint},
           ${recipient?.employeeNo ?? null},
           ${recipient?.name ?? null},
-          ${JSON.stringify(snapshot)}::jsonb
+          ${jsonbValue(snapshot)}
         )
         RETURNING id
       `;
@@ -386,7 +387,7 @@ export async function caseHandoverRoutes(app: FastifyInstance): Promise<void> {
         const data = name === 'cowork' ? merged.cowork : merged.helpdesk;
         await tx`
             INSERT INTO prototype_states (user_email, name, data)
-            VALUES (${email}, ${name}, ${JSON.stringify(data)}::jsonb)
+            VALUES (${email}, ${name}, ${jsonbValue(data)})
             ON CONFLICT (user_email, name)
             DO UPDATE SET data = EXCLUDED.data, updated_at = now()
           `;
@@ -556,7 +557,7 @@ export async function caseHandoverRoutes(app: FastifyInstance): Promise<void> {
       appendChat(snapshot, { role: 'ai', text: answer.answer });
       await sql`
         UPDATE case_handovers
-        SET snapshot = ${JSON.stringify(snapshot)}::jsonb,
+        SET snapshot = ${jsonbValue(snapshot)},
             updated_at = now()
         WHERE id = ${row.id}
       `;

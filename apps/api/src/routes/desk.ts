@@ -9,6 +9,7 @@ import { signalAfterResolution } from '../domain/signal.js';
 import { conflict, notFound } from '../errors.js';
 import { appendAudit } from '../lib/audit-log.js';
 import { loadCaseDetail } from '../lib/case-loader.js';
+import { jsonbValue } from '../lib/jsonb-value.js';
 import { nextKbNo } from '../lib/numbers.js';
 import { caseSummary, knowledgeDto, resolutionDto, ticketDto } from '../lib/serializers.js';
 
@@ -171,10 +172,10 @@ export async function deskRoutes(app: FastifyInstance): Promise<void> {
           VALUES (
             ${ticket.case_id}, ${user.id}, 'user', 'resolution',
             ${`解決記録を登録しました（所要時間 ${input.durationMin}分）。`},
-            ${JSON.stringify({
+            ${jsonbValue({
               resolutionId: resolution.id,
               piiFindings: [...cause.findings, ...steps.findings],
-            })}::jsonb
+            })}
           )
         `;
       await appendAudit(tx, {
@@ -253,7 +254,7 @@ export async function deskRoutes(app: FastifyInstance): Promise<void> {
           VALUES (
             ${id}, ${user.id}, 'system', 'knowledge',
             ${`ナレッジ下書き「${title.text}」を作成しました。`},
-            ${JSON.stringify({
+            ${jsonbValue({
               kbNo,
               knowledgeId: inserted[0].id,
               piiFindings: [
@@ -262,7 +263,7 @@ export async function deskRoutes(app: FastifyInstance): Promise<void> {
                 ...cause.findings,
                 ...steps.findings,
               ],
-            })}::jsonb
+            })}
           )
         `;
         await appendAudit(tx, {

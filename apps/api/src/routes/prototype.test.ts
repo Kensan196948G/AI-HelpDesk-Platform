@@ -1,9 +1,16 @@
 import { runInNewContext } from 'node:vm';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { config } from '../config.js';
+import { sql } from '../db.js';
 import { resetRateLimits } from '../lib/rate-limit.js';
 import { buildServer } from '../server.js';
-import { patchStateLoad, STATE_DEFAULTS_PATCH } from './prototype.js';
+import {
+  ENSURE_CASE_USERS,
+  patchCaseUserResolution,
+  patchStateLoad,
+  STATE_DEFAULTS_PATCH,
+} from './prototype.js';
 
 let app: FastifyInstance;
 
@@ -41,6 +48,10 @@ describe('prototype UI integration', () => {
     expect(html).toContain('信号の色の割合');
     // 古い・欠けた状態で白画面にならないための補完パッチが入っている
     expect(html).toContain(STATE_DEFAULTS_PATCH);
+    // 依頼者以外の「操作する人」でも案件を開ける（名簿解決＋表示フォールバック）
+    expect(html).toContain('ensureCaseUsers');
+    expect(html).not.toContain('DEPTS[USERS[c.userId].dept].name');
+    expect(html).not.toContain('USERS[c.userId].device');
   });
 
   it('UI 状態を PostgreSQL に保存・取得できる', async () => {
@@ -126,6 +137,23 @@ describe('prototype UI integration', () => {
     expect(response.body.split('window.__AIHD_BOOT__=').length).toBe(2);
   });
 
+  it('状態は JSONB オブジェクトとして保存する（二重エンコードしない）', async () => {
+    const put = await app.inject({
+      method: 'PUT',
+      url: '/api/state/cowork',
+      payload: { data: { v: 31, jsonbProbe: 'object' } },
+    });
+    expect(put.statusCode, put.body).toBe(200);
+
+    const rows = await sql<{ type: string | null; probe: string | null }[]>`
+      SELECT jsonb_typeof(data) AS type, data->>'jsonbProbe' AS probe
+      FROM prototype_states
+      WHERE user_email = ${config.DEV_AUTH_EMAIL.toLowerCase()} AND name = 'cowork'
+    `;
+    expect(rows[0]?.type).toBe('object');
+    expect(rows[0]?.probe).toBe('object');
+  });
+
   it('AI 回答は利用者単位でレート制限する（1 分 20 回）', async () => {
     resetRateLimits();
     const statuses: number[] = [];
@@ -193,5 +221,48 @@ describe('保存済み状態の欠落キー補完', () => {
     const state: Record<string, unknown> = { v: 31, chats: [] };
     expect(() => runInNewContext(STATE_DEFAULTS_PATCH, { S: state })).not.toThrow();
     expect(state.devices).toEqual({});
+  });
+
+  it('依頼者以外の操作でも落ちないよう、依頼者の解決と表示フォールバックを差し込む', () => {
+    const html =
+      '<script>function renderView(){syncHd();var a=DEPTS[USERS[c.userId].dept].name;var b=USERS[c.userId].device;</script>';
+    const once = patchCaseUserResolution(html);
+    expect(once).toContain('function ensureCaseUsers(');
+    expect(once).toContain('function renderView(){ensureCaseUsers();syncHd();');
+    expect(once).not.toContain('DEPTS[USERS[c.userId].dept].name');
+    expect(once).not.toContain('USERS[c.userId].device');
+    expect(once).toContain("'所属不明'");
+    expect(patchCaseUserResolution(once)).toBe(once);
+    // 対象コードが無い HTML は変更しない
+    expect(patchCaseUserResolution('<div>no marker</div>')).toBe('<div>no marker</div>');
+  });
+
+  it('案件の依頼者は emp:MK0200 / emp:staff:MK1073 のどちらでも名簿から解決する', () => {
+    const calls: Array<[string, string]> = [];
+    const USERS: Record<string, unknown> = {};
+    const context = {
+      S: {
+        cases: [
+          { id: 'C1', userId: 'emp:MK0200' },
+          { id: 'C2', userId: 'emp:staff:MK1073' },
+          { id: 'C3', userId: 'u1' },
+        ],
+      },
+      USERS,
+      ensureRealUser: (empNo: string, role: string) => {
+        calls.push([empNo, role]);
+        const id = `emp:${empNo}`;
+        USERS[id] = { employeeNo: empNo };
+        return id;
+      },
+    };
+    runInNewContext(`${ENSURE_CASE_USERS};ensureCaseUsers();`, context);
+    expect(calls).toEqual([
+      ['MK0200', 'employee'],
+      ['MK1073', 'staff'],
+    ]);
+    // 画面が使う ID（emp:staff:MK1073）にも同じ社員を紐づける
+    expect(USERS['emp:MK0200']).toBeDefined();
+    expect(USERS['emp:staff:MK1073']).toBeDefined();
   });
 });

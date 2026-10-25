@@ -5,6 +5,7 @@ import {
   mergeDeviceInventories,
 } from '../domain/device.js';
 import { asJsonObject } from './json.js';
+import { jsonbValue } from './jsonb-value.js';
 
 interface StoredRow {
   data: unknown;
@@ -103,7 +104,7 @@ export async function storeDeviceInventory(
       user_email, source, device_id, hostname, os, data, collected_at, updated_at
     ) VALUES (
       ${email}, ${inventory.source}, ${inventory.deviceId}, ${inventory.hostname ?? null},
-      ${inventory.os ?? null}, ${JSON.stringify(inventory)}::jsonb, ${inventory.collectedAt}, now()
+      ${inventory.os ?? null}, ${jsonbValue(inventory)}, ${inventory.collectedAt}, now()
     )
     ON CONFLICT (user_email, source, device_id) DO UPDATE SET
       hostname = EXCLUDED.hostname,

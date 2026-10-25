@@ -1179,7 +1179,9 @@
           }
         }) || null;
     }
-    if (!target) target = candidates[0] || null;
+    // 対象が特定できないときに「他の案件の引継ぎ」を更新しない（取り違え防止）。
+    // 以前は candidates[0] へフォールバックしていたため、古い案件の handoverId を
+    // PATCH して 404 になる事例があった（2026-10-25 実測）。
     if (!target || !target.handoverId) return;
     try {
       await ahJsonFetch('/api/case-handovers/' + encodeURIComponent(target.handoverId), {
