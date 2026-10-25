@@ -61,7 +61,7 @@
 - #20 / #21（Preview API / DB）: 公開 URL は Access 302、オリジン API は `/api/health` / `/api/state` を実測。
   DB は migration 010 適用・状態修復後に再確認済み。
 - #17（既知問題）: Critical 2 / High 4 を修正（引継ぎメモの分野・担当者名、記入例、依頼者 ID 表示を含む）。
-  Access JWT は enforce へ移行、DB は日次バックアップを追加、disk は 87% → 82% に整理。
-  未対応は proxy secret・uv キャッシュ等。
+  Access JWT は enforce へ移行、Tunnel と API の間に X-Proxy-Secret 付与プロキシを追加、
+  DB は日次バックアップを追加、disk は 87% → 81% に整理。
 - #15: テストは **201 件**に増加。
 - 総合: 個人利用 MVP の主要価値は公開 URL 上で操作可能。未対応の High 2 件は次ラウンドで修正する。
