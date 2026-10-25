@@ -6,6 +6,7 @@ import { allowlistSize, getAllowlist } from './auth/allowlist.js';
 import { requireCloudflareAccess } from './auth/ui.js';
 import { config } from './config.js';
 import { ApiError, forbidden } from './errors.js';
+import { remoteSupportRoutes } from './remote-support/routes.js';
 import { resolveRoutes } from './resolve/routes.js';
 import { ensureSkillCatalog } from './resolve/skills.js';
 import { auditRoutes } from './routes/audit.js';
@@ -207,6 +208,7 @@ export async function buildServer(options?: { logger?: boolean }): Promise<Fasti
   await app.register(auditRoutes, { prefix: '/api' });
   await app.register(dashboardRoutes, { prefix: '/api' });
   await app.register(resolveRoutes, { prefix: '/api' });
+  await app.register(remoteSupportRoutes, { prefix: '/api' });
   await app.register(healthRoutes, { prefix: '/api' });
 
   return app;

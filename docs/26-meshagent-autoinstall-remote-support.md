@@ -451,3 +451,20 @@ Phase 1 は「担当者が明示的に導入を依頼し、状態を見て、RSP
 
 - RSP 側: PR #146（`01ba8b7`）を main にマージし、`rsp-api.service` を再起動
 - AI HelpDesk 側の Phase 1 実装はこの API をサーバ間通信で利用する
+
+
+### 16-9. 実装状況（2026-10-25 / Phase 1）
+
+| 項目 | 状態 | 実体 |
+|---|---|---|
+| migration | 実装 | `015_remote_support.sql`（`device_mesh_links` / `mesh_install_requests`） |
+| RSP クライアント | 実装 | `apps/api/src/remote-support/rsp.ts`（lookup / ensure、8 秒タイムアウト） |
+| API | 実装 | `GET /api/remote-support/session`、`POST /api/remote-support/lookup`、`POST /api/remote-support/link`、`POST /api/remote-support/ensure` |
+| 認可 | 実装 | `users.role` が helpdesk / approver のみ。他は 403 |
+| UI | 実装 | `remote-support-bridge.js`（ケース画面のパネル。担当者以外は非表示） |
+| 監査 | 実装 | `remote_support.link_saved` / `remote_support.ensure_requested` |
+| テスト | 実装 | 4 件（403・コンテキスト・検索→リンク→導入・リンク前 409）。全体 **284 件 PASS** |
+| 設定 | 必要 | `RSP_SERVICE_KEY`（サーバのみ）。`RSP_BASE_URL` は既存設定を利用 |
+
+- 未実施: 実ブラウザでの担当者目視、未導入端末の実インストール（D3 の canary 有効化待ち）
+- 端末マッピングは hostname 完全一致。0 件・複数件は担当者が選択する
