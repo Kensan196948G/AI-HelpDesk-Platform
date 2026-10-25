@@ -63,6 +63,9 @@ describe('prototype UI integration', () => {
     expect(html).toContain('おすすめの担当：${staff(t.suggest).name}');
     expect(html).toContain("t.cat==='device'&&/印刷|プリンタ|複合機|プリント/.test(s)");
     expect(html).toContain('if(/印刷|プリンタ|複合機|プリント/.test(s))');
+    expect(html).toContain('function personLabel(v)');
+    expect(html).toContain('esc(personLabel(t.requester))');
+    expect(html).toContain('${personLabel(t.requester)}（受付：');
   });
 
   it('UI 状態を PostgreSQL に保存・取得できる', async () => {
