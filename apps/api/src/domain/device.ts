@@ -182,6 +182,8 @@ const GB = 1024 ** 3;
 
 /**
  * 「未取得」で終わらせず、状態を具体的に示す表示。
+ * これらは「不明」であって「注意」ではないため、注意レベルは ok とする
+ * （気になる点に数えると、引継ぎ文の語でセキュリティ事象と誤判定され、赤信号・誤った担当へ振り分けられる）。
  * 空欄や「未取得」は“未記載”に見えるため、なし / 未導入 / 未検出 のいずれかで埋める。
  */
 const NA_TEXT = {
@@ -264,7 +266,8 @@ function vpnLabel(
         : hasAgent
           ? NA_TEXT.notDetected
           : NA_TEXT.agentMissing,
-      level: anyAdapter ? 'ok' : 'warn',
+      // アダプタ情報が無い（未導入・未検出）のは「不明」であり「注意」ではない。
+      level: 'ok',
     };
   }
   const connected = vpn.some((adapter) => (adapter.status ?? '').toLowerCase() === 'up');
@@ -305,7 +308,7 @@ function diskLabel(
   }
   return {
     value: hasAgent ? NA_TEXT.notDetected : NA_TEXT.agentMissing,
-    level: 'warn',
+    level: 'ok',
     note: hasAgent
       ? '端末上でディスク情報を検出できませんでした'
       : '端末エージェントを導入すると端末全体の空き容量を取得できます',
@@ -344,7 +347,7 @@ function securityItems(
       key: 'antivirus',
       k: 'ウイルス対策',
       v: antivirusValue,
-      lv: antivirus ? (antivirus.enabled === false ? 'ng' : 'ok') : 'warn',
+      lv: antivirus?.enabled === false ? 'ng' : 'ok',
       note: antivirus ? '' : unavailableNote,
       tag: 'ウイルス|不審|感染|セキュリティ',
     },
@@ -356,7 +359,7 @@ function securityItems(
           ? '無効'
           : join([encryption.detail, '有効'], '有効')
         : unavailable,
-      lv: encryption ? (encryption.enabled === false ? 'warn' : 'ok') : 'warn',
+      lv: encryption?.enabled === false ? 'warn' : 'ok',
       note: encryption ? '' : unavailableNote,
       tag: '紛失|盗難',
     },
@@ -368,11 +371,7 @@ function securityItems(
           ? `更新 ${update.pending}件が再起動待ち`
           : join([update.detail, '最新'], '最新')
         : unavailable,
-      lv: update
-        ? typeof update.pending === 'number' && update.pending > 0
-          ? 'warn'
-          : 'ok'
-        : 'warn',
+      lv: typeof update?.pending === 'number' && update.pending > 0 ? 'warn' : 'ok',
       note: update ? '' : unavailableNote,
       tag: '遅い|更新|再起動|不具合',
     },
@@ -443,7 +442,7 @@ export function buildDeviceSnapshotItems(inventory: DeviceInventoryData): Device
       key: 'os',
       k: 'OS',
       v: join([inventory.os, inventory.platform, inventory.arch], NA_TEXT.notDetected),
-      lv: inventory.os ? 'ok' : 'warn',
+      lv: 'ok',
       note: inventory.os ? '' : 'ブラウザの User-Agent から推定しています',
       tag: '',
     },
@@ -491,7 +490,7 @@ export function buildDeviceSnapshotItems(inventory: DeviceInventoryData): Device
       key: 'domain_join',
       k: 'ドメイン・Entra ID',
       v: hw.domainJoined?.trim() || (hasAgent ? NA_TEXT.notDetected : NA_TEXT.agentMissing),
-      lv: hw.domainJoined ? 'ok' : 'warn',
+      lv: 'ok',
       note: hw.domainJoined
         ? ''
         : hasAgent
@@ -558,7 +557,7 @@ export function buildDeviceSnapshotItems(inventory: DeviceInventoryData): Device
         : hasAgent
           ? NA_TEXT.notDetected
           : NA_TEXT.agentMissing,
-      lv: hw.sharedFolder ? (hw.sharedFolder.accessible ? 'ok' : 'ng') : 'warn',
+      lv: hw.sharedFolder && !hw.sharedFolder.accessible ? 'ng' : 'ok',
       note: hw.sharedFolder
         ? ''
         : hasAgent
