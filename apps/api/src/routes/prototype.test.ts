@@ -54,6 +54,11 @@ describe('prototype UI integration', () => {
     expect(html).not.toContain('USERS[c.userId].device');
     // 実在社員（TIPS 未定義）でも AI相談の挨拶が落ちない
     expect(html).toContain('(TIPS[u.id]||[]).map(');
+    // 引継ぎメモ: 旧カテゴリ名の解決・社員番号→氏名・印刷の記入例優先
+    expect(html).toContain("'IT端末':'device'");
+    expect(html).toContain('window.__AIHD_EMPLOYEES__.all');
+    expect(html).toContain('おすすめの担当：${staff(t.suggest).name}');
+    expect(html).toContain('!/印刷|プリンタ|複合機/.test(s)');
   });
 
   it('UI 状態を PostgreSQL に保存・取得できる', async () => {
