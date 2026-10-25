@@ -14,6 +14,7 @@ import { appendAudit } from '../lib/audit-log.js';
 import { loadCaseDetail } from '../lib/case-loader.js';
 import { loadClientInventory } from '../lib/device-inventory.js';
 import { asJsonArray } from '../lib/json.js';
+import { jsonbValue } from '../lib/jsonb-value.js';
 import { findApprovedKnowledge } from '../lib/knowledge-search.js';
 import { nextCaseNo, nextIncNo } from '../lib/numbers.js';
 import { caseSummary } from '../lib/serializers.js';
@@ -93,11 +94,11 @@ export async function caseRoutes(app: FastifyInstance): Promise<void> {
         INSERT INTO case_messages (case_id, author_id, role, kind, content, metadata)
         VALUES (
           ${caseId}, ${user.id}, 'user', 'consultation', ${body.text},
-          ${JSON.stringify({
+          ${jsonbValue({
             subject: subject.text,
             piiFindings: [...subject.findings, ...body.findings],
             pcEnabled,
-          })}::jsonb
+          })}
         )
       `;
 
@@ -105,8 +106,8 @@ export async function caseRoutes(app: FastifyInstance): Promise<void> {
         await tx`
           INSERT INTO pc_snapshots (case_id, collected_at, items, concerns, shared, source)
           VALUES (
-            ${caseId}, ${pc.collectedAt}, ${JSON.stringify(pc.items)}::jsonb,
-            ${JSON.stringify(pc.concerns)}::jsonb, false, ${pc.source}
+            ${caseId}, ${pc.collectedAt}, ${jsonbValue(pc.items)},
+            ${jsonbValue(pc.concerns)}, false, ${pc.source}
           )
         `;
       }
@@ -141,7 +142,7 @@ export async function caseRoutes(app: FastifyInstance): Promise<void> {
         INSERT INTO case_messages (case_id, author_id, role, kind, content, metadata)
         VALUES (
           ${caseId}, null, 'assistant', 'ai_assessment', ${assessment.answer},
-          ${JSON.stringify({
+          ${jsonbValue({
             intent: assessment.intent.id,
             steps: assessment.steps,
             sources: assessment.sources,
@@ -149,7 +150,7 @@ export async function caseRoutes(app: FastifyInstance): Promise<void> {
             security: assessment.security,
             pcSummary: assessment.pcSummary,
             ruleBased: true,
-          })}::jsonb
+          })}
         )
       `;
 
@@ -312,7 +313,7 @@ export async function caseRoutes(app: FastifyInstance): Promise<void> {
           case_id, tkt_no, inc_no, status, handoff_memo, shared_fields
         ) VALUES (
           ${id}, ${found.case_no}, ${incNo}, 'queued', ${handoffMemo},
-          ${JSON.stringify(sharedFields)}::jsonb
+          ${jsonbValue(sharedFields)}
         )
         RETURNING *
       `;
@@ -334,7 +335,7 @@ export async function caseRoutes(app: FastifyInstance): Promise<void> {
         VALUES (
           ${id}, ${user.id}, 'system', 'handoff',
           ${`担当者へ引き継ぎました（${found.case_no} / ${incNo}）。`},
-          ${JSON.stringify({ tktNo: found.case_no, incNo, sharedFields })}::jsonb
+          ${jsonbValue({ tktNo: found.case_no, incNo, sharedFields })}
         )
       `;
       await appendAudit(tx, {

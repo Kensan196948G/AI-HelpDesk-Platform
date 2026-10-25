@@ -15,6 +15,7 @@ import {
   resolveBrowserDeviceId,
   storeDeviceInventory,
 } from '../lib/device-inventory.js';
+import { jsonbValue } from '../lib/jsonb-value.js';
 import { checkRateLimit, clientAddress } from '../lib/rate-limit.js';
 
 const Int = (min: number, max: number) => z.number().int().min(min).max(max);
@@ -311,7 +312,7 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
         ${request.uiEmail},
         ${inventory?.deviceId ?? null},
         ${input.opId},
-        ${JSON.stringify(input.params ?? {})}::jsonb
+        ${jsonbValue(input.params ?? {})}
       )
       RETURNING id, op_id, status, device_id, created_at
     `;
@@ -347,7 +348,7 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
     const rows = await sql<{ id: string }[]>`
       UPDATE device_commands
       SET status = ${input.ok ? 'done' : 'failed'},
-          result = ${JSON.stringify(input.result ?? null)}::jsonb,
+          result = ${jsonbValue(input.result ?? null)},
           error = ${input.error ?? null},
           completed_at = now()
       WHERE id = ${id} AND user_email = ${email} AND status = 'delivered'

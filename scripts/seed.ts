@@ -326,14 +326,14 @@ try {
       INSERT INTO pc_snapshots (id, case_id, collected_at, items, concerns, shared, source)
       VALUES (
         ${'b0000001-0000-4000-8000-000000000001'}, ${C.one}, now() - interval '2 days',
-        ${JSON.stringify(caseOnePc.items)}::jsonb, ${JSON.stringify(caseOnePc.concerns)}::jsonb, true, 'demo'
+        ${sql.json(caseOnePc.items)}, ${sql.json(caseOnePc.concerns)}, true, 'demo'
       ) ON CONFLICT (case_id) DO NOTHING
     `;
     await tx`
       INSERT INTO pc_snapshots (id, case_id, collected_at, items, concerns, shared, source)
       VALUES (
         ${'b0000002-0000-4000-8000-000000000002'}, ${C.two}, now() - interval '3 hours',
-        ${JSON.stringify(caseTwoPc.items)}::jsonb, ${JSON.stringify(caseTwoPc.concerns)}::jsonb, true, 'demo'
+        ${sql.json(caseTwoPc.items)}, ${sql.json(caseTwoPc.concerns)}, true, 'demo'
       ) ON CONFLICT (case_id) DO NOTHING
     `;
 
@@ -344,7 +344,7 @@ try {
         ${'d0000001-0000-4000-8000-000000000001'}, ${C.one}, 'TKT-2026-0001', 'INC-2026-0001',
         ${U.sato}, 'resolved',
         '推定分野: ID・アクセス権 / 共有フォルダ。推奨: 共有フォルダの ACL を確認し、所属グループを追加。',
-        ${JSON.stringify(['consultation', 'ai', 'device', 'pc'])}::jsonb,
+        ${sql.json(['consultation', 'ai', 'device', 'pc'])},
         now() - interval '2 days', now() - interval '1 day'
       ) ON CONFLICT (case_id) DO NOTHING
     `;
@@ -355,7 +355,7 @@ try {
         ${'d0000002-0000-4000-8000-000000000002'}, ${C.two}, 'TKT-2026-0002', 'INC-2026-0002',
         ${U.sato}, 'assigned',
         '推定分野: ネットワーク / VPN。推奨: VPN 仮想アダプタと接続先を確認。',
-        ${JSON.stringify(['consultation', 'ai', 'device', 'pc'])}::jsonb,
+        ${sql.json(['consultation', 'ai', 'device', 'pc'])},
         now() - interval '3 hours', now() - interval '2 hours'
       ) ON CONFLICT (case_id) DO NOTHING
     `;
@@ -366,7 +366,7 @@ try {
         ${'d0000003-0000-4000-8000-000000000003'}, ${C.three}, 'TKT-2026-0003', 'INC-2026-0003',
         ${U.takahashi}, 'assigned',
         'セキュリティ事象の可能性。AI は判断せず、初動手順のみ案内済み。',
-        ${JSON.stringify(['consultation', 'ai'])}::jsonb,
+        ${sql.json(['consultation', 'ai'])},
         now() - interval '90 minutes', now() - interval '80 minutes'
       ) ON CONFLICT (case_id) DO NOTHING
     `;
@@ -502,7 +502,7 @@ try {
         INSERT INTO audit_log (actor_id, action, target_type, target_id, detail, prev_hash, hash)
         VALUES (
           null, ${auditPayload.action}, ${auditPayload.targetType}, ${auditPayload.targetId},
-          ${JSON.stringify(auditPayload.detail)}::jsonb, ${GENESIS_HASH}, ${auditHash}
+          ${sql.json(auditPayload.detail)}, ${GENESIS_HASH}, ${auditHash}
         )
       `;
     }

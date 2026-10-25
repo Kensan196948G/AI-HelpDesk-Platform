@@ -14,6 +14,7 @@ import {
   reportPdfFilename,
 } from '../domain/final-report.js';
 import { ApiError, badRequest } from '../errors.js';
+import { jsonbValue } from '../lib/jsonb-value.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
 
 const BodySchema = z.object({ report: FinalReportSchema });
@@ -89,7 +90,7 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
           ${request.uiEmail},
           ${masked.case.id},
           ${masked.kind},
-          ${JSON.stringify(masked)}::jsonb,
+          ${jsonbValue(masked)},
           ${rendered.html},
           ${rendered.filename},
           ${sha256}

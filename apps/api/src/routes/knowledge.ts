@@ -5,6 +5,7 @@ import { sql } from '../db.js';
 import { redactPII } from '../domain/pii.js';
 import { badRequest, conflict, notFound } from '../errors.js';
 import { appendAudit } from '../lib/audit-log.js';
+import { jsonbValue } from '../lib/jsonb-value.js';
 import { caseSummary, knowledgeDto } from '../lib/serializers.js';
 
 const ListQuerySchema = z.object({
@@ -194,7 +195,7 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
       await tx`
           INSERT INTO knowledge_reviews (knowledge_id, reviewer_id, decision, comment, checklist)
           VALUES (${id}, ${user.id}, ${input.decision}, ${input.comment ?? ''},
-            ${JSON.stringify(input.checklist)}::jsonb)
+            ${jsonbValue(input.checklist)})
         `;
       if (input.decision === 'approved') {
         await tx`

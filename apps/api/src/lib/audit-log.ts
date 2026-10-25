@@ -1,4 +1,5 @@
 import { computeAuditHash, GENESIS_HASH } from '../domain/audit.js';
+import { jsonbValue } from './jsonb-value.js';
 
 export interface AuditInput {
   actorId: string | null;
@@ -29,6 +30,6 @@ export async function appendAudit(tx: any, input: AuditInput): Promise<void> {
   await tx`
     INSERT INTO audit_log (actor_id, action, target_type, target_id, detail, prev_hash, hash)
     VALUES (${input.actorId}, ${input.action}, ${input.targetType}, ${input.targetId},
-      ${JSON.stringify(detail)}::jsonb, ${prevHash}, ${hash})
+      ${jsonbValue(detail)}, ${prevHash}, ${hash})
   `;
 }
