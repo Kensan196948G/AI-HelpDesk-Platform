@@ -55,10 +55,14 @@ describe('prototype UI integration', () => {
     // 実在社員（TIPS 未定義）でも AI相談の挨拶が落ちない
     expect(html).toContain('(TIPS[u.id]||[]).map(');
     // 引継ぎメモ: 旧カテゴリ名の解決・社員番号→氏名・印刷の記入例優先
-    expect(html).toContain("'IT端末':'device'");
+    expect(html).toContain(
+      "const cat=k=>CATS.find(c=>c.k===k)||CATS.find(c=>c.k===({IT端末:'device'",
+    );
+    expect(html).toContain('if(!n)return {name:');
     expect(html).toContain('window.__AIHD_EMPLOYEES__.all');
     expect(html).toContain('おすすめの担当：${staff(t.suggest).name}');
-    expect(html).toContain('!/印刷|プリンタ|複合機/.test(s)');
+    expect(html).toContain("t.cat==='device'&&/印刷|プリンタ|複合機|プリント/.test(s)");
+    expect(html).toContain('if(/印刷|プリンタ|複合機|プリント/.test(s))');
   });
 
   it('UI 状態を PostgreSQL に保存・取得できる', async () => {
@@ -271,5 +275,39 @@ describe('保存済み状態の欠落キー補完', () => {
     // 画面が使う ID（emp:staff:MK1073）にも同じ社員を紐づける
     expect(USERS['emp:MK0200']).toBeDefined();
     expect(USERS['emp:staff:MK1073']).toBeDefined();
+  });
+
+  it('配信 HTML の cat / staff が旧カテゴリ名と社員番号を解決する', async () => {
+    const response = await app.inject({ method: 'GET', url: '/' });
+    const html = response.body;
+    const catLine = html.match(/const cat=k=>[^\n]+/)?.[0];
+    const staffLine = html.match(/const staff=n=>\{[\s\S]*?\};\n/)?.[0];
+    expect(catLine).toBeTruthy();
+    expect(staffLine).toBeTruthy();
+    const sandbox: Record<string, unknown> = {
+      CATS: [
+        { k: 'account', label: 'アカウント・認証', team: '高橋' },
+        { k: 'mail', label: 'メール・Teams', team: '高橋' },
+        { k: 'network', label: 'ネットワーク・VPN', team: '鈴木' },
+        { k: 'device', label: 'PC・周辺機器', team: '田中' },
+        { k: 'file', label: 'ファイル共有・業務アプリ', team: '田中' },
+        { k: 'security', label: 'セキュリティ', team: '伊藤' },
+        { k: 'other', label: 'その他', team: '佐藤' },
+      ],
+      STAFF: [{ name: '田中', role: '端末・業務アプリ' }],
+      window: {
+        __AIHD_EMPLOYEES__: { all: [{ employeeNo: 'MK1073', name: '佐藤 奨太' }] },
+      },
+    };
+    runInNewContext(
+      `${catLine};${staffLine};globalThis.__r={it:cat('IT端末').label,unknown:cat('謎').label,undefinedName:staff(undefined).name,mk:staff('MK1073').name,named:staff('田中').name};`,
+      sandbox,
+    );
+    const r = sandbox.__r as Record<string, string>;
+    expect(r.it).toBe('PC・周辺機器');
+    expect(r.unknown).toBe('その他');
+    expect(r.undefinedName).toBe('（未定）');
+    expect(r.mk).toBe('佐藤 奨太');
+    expect(r.named).toBe('田中');
   });
 });

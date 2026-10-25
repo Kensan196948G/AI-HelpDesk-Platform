@@ -80,15 +80,20 @@ export function patchCaseUserResolution(html: string): string {
   out = out
     .split("const staff=n=>STAFF.find(s=>s.name===n)||{name:n,role:''};")
     .join(
-      "const staff=n=>{const t=STAFF.find(s=>s.name===n)||STAFF.find(s=>s.employeeNo===n);if(t)return t;try{const e=(window.__AIHD_EMPLOYEES__&&window.__AIHD_EMPLOYEES__.all||[]).find(x=>x.employeeNo===n);if(e)return {name:e.name,role:'ヘルプデスク担当'};}catch(_){}return {name:n,role:''};};",
+      "const staff=n=>{if(!n)return {name:'（未定）',role:''};const t=STAFF.find(s=>s.name===n)||STAFF.find(s=>s.employeeNo===n);if(t)return t;try{const e=(window.__AIHD_EMPLOYEES__&&window.__AIHD_EMPLOYEES__.all||[]).find(x=>x.employeeNo===n);if(e)return {name:e.name,role:'ヘルプデスク担当'};}catch(_){}return {name:n,role:''};};",
     );
   out = out
     .split('おすすめの担当：${t.suggest}（${staff(t.suggest).role}）')
     .join('おすすめの担当：${staff(t.suggest).name}（${staff(t.suggest).role}）');
   // 解決記録の記入例: 印刷の相談に共有フォルダの例が入らないよう、印刷を優先する。
   out = out
+    .split('if(/印刷|プリンタ|複合機/.test(s))')
+    .join('if(/印刷|プリンタ|複合機|プリント/.test(s))');
+  out = out
     .split('if(/共有フォルダ|アクセス権|アクセスでき/.test(s))')
-    .join('if(!/印刷|プリンタ|複合機/.test(s)&&/共有フォルダ|アクセス権|アクセスでき/.test(s))');
+    .join(
+      "if(!(/印刷|プリンタ|複合機|プリント/.test(t.subject)||(t.cat==='device'&&/印刷|プリンタ|複合機|プリント/.test(s)))&&/共有フォルダ|アクセス権|アクセスでき/.test(s))",
+    );
   return out;
 }
 
