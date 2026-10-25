@@ -345,3 +345,20 @@
 - 独立レビュー（High 4 / Medium 6）対応: AI 要約の fieldsToAi 迂回、期限後コマンド配信、
   リスク 5 の実行、lock 順逆転、管理者の二重承認、理由の PII、既存データ backfill（014）を修正。
   残: Skill 実出力名と fieldsToAi の不一致（`approved.json` 再承認が必要）、UI の同時操作競合。
+
+### Round 30 追補 — プレビュー反映と実測（2026-10-25 16:36）
+
+- プレビュー DB（`ai_helpdesk_preview`）は 010 までだったため、バックアップ
+  （`/tmp/aihd_preview_before_phasec_20261025_163642.dump`）の後に 011〜014 を適用。
+- API を再ビルド（`npm run build`）し、`ai-helpdesk-api.service` を再起動。
+  `/api/health` 200、起動ログで `env=production` / DB 接続 OK を確認。
+- 起動後、5 Skill すべて `approved`（`approved.json` の新ハッシュと一致）を DB で確認。
+- 同一ビルドのローカル隔離インスタンス（test DB・local 認証）で実測:
+  - セッション開始 → `os.info` 提案（approvalChallenge あり）
+  - 手動「解決した」= 200
+  - 管理者以外の `/api/resolve/admin/pending` = 403
+  - 端末トークン未登録のまま承認 = 409 `DEVICE_OFFLINE`
+  - 配信 HTML に Phase C の UI マーカー（`data-aihd-resolve` 等）23 箇所
+- 自動ブラウザ操作は環境制約で未実施: ヘッドレス Chrome はこの環境のネットワーク分離で
+  localhost に到達できず（`fetch` が Failed to fetch）、Playwright のブラウザキャッシュも不完全、
+  X サーバも無い。UI の目視確認は Access 認証済みブラウザで行う必要がある。

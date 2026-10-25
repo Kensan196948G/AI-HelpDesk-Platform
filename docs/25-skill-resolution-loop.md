@@ -424,9 +424,9 @@ Phase B の独立レビューで指摘された High 3 件を、Phase C 着手�
 - 独立レビュー対応: AI 要約の fieldsToAi 迂回、期限後コマンド配信、リスク 5 の実行、
   session/step のロック順逆転（デッドロック）、複数管理者の上書き、手動理由の PII、
   既存データの期限 backfill（migration 014）を修正。
-- 既知の制約: 一部 Skill の実出力キー（osName / volumes / name）が `fieldsToAi`
-  （os / disks / service）と一致せず、厳密適用後は AI 入力が空になる。Skill 定義の変更は
-  `approved.json` の再承認が必要なため、人間の承認後に名前を揃える。
+- 2026-10-25 人間承認: 上記の実出力キー不一致を解消した。`os.info` は osName/version/
+  buildNumber/architecture、`disk.space` は volumes、`spooler.status`/`service.status` は
+  name/status/startType を `fieldsToAi` とし、`approved.json` を再生成した（kensan1969@gmail.com）。
 - 未実施: Windows 実機での PowerShell 実行とロールバック確認、管理画面（別画面）への承認導線統合、
   fieldsToAi のドット記法拡張
 - 注記: 本ブランチは `feat/resolve-loop-poc`（Phase B）から分岐。`main` は設計書（572ecb3）のみで、
