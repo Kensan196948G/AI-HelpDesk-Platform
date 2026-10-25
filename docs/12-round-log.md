@@ -314,3 +314,6 @@
   DB 日次バックアップ（PG16 dump・検証・14 日保持・systemd timer）を追加。再反映（`754a757`）。
 - 追加対応（2026-10-25）: `ACCESS_JWT_MODE=enforce` へ移行（公開 Access 経由 200 / ローカル偽ヘッダー 401）。
   npm/npx/pip/trivy/pnpm のキャッシュを整理し disk 87% → 82%（約 43GB 解放）。
+- 追加対応（2026-10-25）: Tunnel と API の間に `X-Proxy-Secret` 付与プロキシ（PR #41、127.0.0.1:18949）を導入。
+  直接アクセスは 401 `PROXY_REQUIRED`、公開経路はプロキシ経由で動作。uv キャッシュは使用中 archive のみ残して
+  9.9GB → 488MB に削減（chroma-mcp は停止せず）。disk 87% → 81%。

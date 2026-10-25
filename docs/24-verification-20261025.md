@@ -42,14 +42,15 @@
 | Medium | チケット一覧で依頼者が内部 ID（`emp:MK...`）表示 | **PR #37**: 社員名簿から「部署 氏名」へ解決（名簿外は社員番号） |
 | Medium | preview DB のバックアップなし | **PR #38**: 日次バックアップ（PG16 dump・検証・14 日保持・systemd timer） |
 | Medium | Access JWT を検証していない（`ACCESS_JWT_MODE=off`） | **2026-10-25 設定変更**: `report` で実 JWT の検証成功を確認後、**`enforce` へ移行**（ローカル偽ヘッダーは 401） |
+| Medium | `REQUIRE_PROXY_SECRET=false`（proxy secret 未導入） | **PR #41 + 設定**: Tunnel と API の間にローカル・プロキシ（18949）を置き、秘密のない直接アクセスを **401 `PROXY_REQUIRED`** に |
+| Medium | `~/.cache/uv` 9.9GB（常駐プロセスがロック） | **2026-10-25 整理**: 稼働中プロセスの archive だけ残し、未使用 1,795 件を削除（**9.9GB → 488MB**、停止不要） |
 | Medium | disk 使用率 87% | **2026-10-25 整理**: npm/npx/pip/trivy/pnpm のキャッシュを削除し **82%**（約 43GB 解放） |
 
 ### 未対応（既知の課題）
 
 | 重大度 | 内容 | 推奨 |
 |---|---|---|
-| Medium | `REQUIRE_PROXY_SECRET=false`（JWT は enforce 済み。proxy secret は未設定） | 付与方法を設計（cloudflared / Worker） |
-| Low | `~/.cache/uv` 9.9GB が常駐プロセス（chroma-mcp）にロックされ削除できない | メンテナンス時にプロセス停止 → `uv cache clean` |
+| Low | proxy secret の限界: 同一ユーザー権限で `api.conf` を読めるプロセスは秘密も読める | 専用ユーザー/権限分離、または Cloudflare Worker + Secret への移行 |
 | Low | Playwright の旧ブラウザ・他プロジェクトのキャッシュ・/tmp に大きめの残骸 | 利用状況を確認して個別に整理（誤削除防止のため今回は未実施） |
 | Low | 氏名は保存前マスクの対象外（設計は「名宛てとして保持」） | 要件と設計のどちらを正とするか決定 |
 | Medium | 本番モードで MVP リレーショナル API はログイン経路がなく到達不能（設計の不一致） | 内部専用と明記、または Access 連携セッションを実装 |
@@ -69,7 +70,11 @@
 | 9 | DB 日次バックアップを登録（PR #38、12:49 に手動実行 → timer 有効化） |
 | 10 | `ACCESS_JWT_MODE=enforce` へ移行（12:56、再起動） |
 | 11 | キャッシュ整理（npm / npx / pip / trivy / pnpm）で disk 87% → 82% |
-| 12 | 反映後に再検証（下記） |
+| 12 | `PROXY_SECRET` を api.conf に設定し、`ai-helpdesk-proxy.service` を起動（13:20） |
+| 13 | Tunnel ingress を `127.0.0.1:18949` へ変更し cloudflared 再起動（13:20） |
+| 14 | `REQUIRE_PROXY_SECRET=true` で API 再起動（13:20） |
+| 15 | 未使用の uv キャッシュを削除（chroma-mcp は停止せず、使用中 archive のみ保持。13:22） |
+| 16 | 反映後に再検証（下記） |
 
 - 状態修復前: cowork 8 キー / 案件 4（E2E 1 含む）/ チャット 5（E2E 1）/ チケット 1（E2E）/ devices 0
 - 状態修復後: cowork 14 キー / 案件 3 / チャット 4 / チケット 0 / devices 11 / E2E 文字列なし
@@ -94,7 +99,9 @@
 | Access JWT（report） | 起動ログ `mode:report`、JWT なしリクエストは警告を出して 200（公開は Access 302） |
 | DB バックアップ | `ai_helpdesk_preview-20261025-124925.dump` 85,289 bytes / systemd 実行 `Result=success` / 次回 2026-10-26 02:32 JST |
 | Access JWT（enforce） | 公開 Access 経由 `POST /api/device/browser` 200 / ローカル email ヘッダーのみ **401** / 公開未認証 302 / ログ `mode:enforce`（成功・失敗） |
-| disk | **87% → 82%**（772GB → 729GB 使用 / 空き 125GB → 169GB、約 43GB 解放） |
+| proxy secret | 直接 18950 → **401 `PROXY_REQUIRED`** / プロキシ経由 18949（JWT なし）→ 401 `UNAUTHORIZED` / 両方の `/api/health` 200 / 公開 302 |
+| 公開経路（bypass） | `POST https://.../api/device/agent` がオリジンまで到達し、API の 401（デバイストークン）を返す＝Tunnel → プロキシ → API の経路を実測 |
+| disk | **87% → 81%**（772GB → 722GB 使用 / 空き 125GB → 176GB、約 50GB 解放。uv は 9.9GB → 488MB） |
 
 稼働中インスタンス（公開 URL のオリジン）:
 
@@ -117,8 +124,8 @@
 
 ## 7. 次にやるべきこと
 
-1. `REQUIRE_PROXY_SECRET` の付与方法（cloudflared / Worker）を設計し、多層防御を完成させる。
-2. disk の追加整理（uv キャッシュ 9.9GB は chroma-mcp 停止時、Playwright 旧版・他プロジェクトのキャッシュは利用確認後）。
-3. 氏名マスクの方針決定（要件と設計の突合）。
-4. Windows 実機での端末エージェント配布・定期実行の確認（未実施）。
-5. 引継ぎ担当者のラベル（部署）と、記入例の AI 化は次段階の改善候補。
+1. 認証済みの実ブラウザ要求をログで確認（プロキシ切替後の初回）。
+2. proxy secret の限界を踏まえた権限分離、または Cloudflare Worker + Secret への移行検討。
+3. disk の追加整理（Playwright 旧版・他プロジェクトのキャッシュは利用確認後）。
+4. 氏名マスクの方針決定（要件と設計の突合）。
+5. Windows 実機での端末エージェント配布・定期実行の確認（未実施）。
