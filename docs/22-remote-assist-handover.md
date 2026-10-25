@@ -315,7 +315,21 @@ API:
 | 承認なしの `completed` | OK（409 `APPROVAL_REQUIRED`） |
 | **別の DX 担当者 C** が承認 | OK（`completed` / `self_approved=false`） |
 
-再現: `AIHD_E2E_ALLOW=1` とサービス用 `DATABASE_URL` を設定して `node scripts/e2e/two-account-handover.mjs`（実在社員の状態はバックアップ後に復元する）。
+再現: **preview ではなく検証用 DB** を対象に、次のように実行する（実在社員の状態は退避し、1 トランザクションで復元・内容一致まで検証する）。
+
+```bash
+# 1) 検証用サービス（例: 127.0.0.1:18952 / DB ai_helpdesk_verify_api）を起動しておく
+set -a; . ~/.config/ai-helpdesk/api.conf; set +a   # DATABASE_URL などの取得元
+AIHD_E2E_ALLOW=1 \
+AIHD_E2E_CONFIRM_DB=ai_helpdesk_verify_api \
+AIHD_E2E_BASE=http://127.0.0.1:18952 \
+DATABASE_URL=postgresql://.../ai_helpdesk_verify_api \
+node scripts/e2e/two-account-handover.mjs
+```
+
+- スクリプトは起動時に (1) `GET /api/state` で A/B/C の**正規化後メール**を取得し、(2) 一意なトークンを API 経由で書き込んで **API と `DATABASE_URL` が同じ DB を指すことを確認**してから本処理に入る。
+- `ai_helpdesk_preview`（本番相当）は既定で拒否する。意図して実行する場合だけ `AIHD_E2E_ALLOW_PREVIEW=1` を付ける（事前バックアップ必須）。
+- 既知の限界: 補完パッチは `null` 値までは補わない（欠落キーのみ）。`estop` 欠落時の既定は `false`。
 
 ### 9-6. 引継ぎのメール通知（2026-10-24 追加）
 
