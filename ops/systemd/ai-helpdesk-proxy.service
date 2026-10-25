@@ -1,0 +1,20 @@
+[Unit]
+Description=AI HelpDesk local proxy (adds X-Proxy-Secret)
+After=network-online.target ai-helpdesk-api.service
+Wants=ai-helpdesk-api.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/kensan/Projects/Mirai-Admin-Platform/AI-HelpDesk-Platform
+EnvironmentFile=%h/.config/ai-helpdesk/api.conf
+Environment=SIDECAR_PORT=18949
+Environment=API_PORT=18950
+ExecStart=/home/kensan/.nvm/versions/node/v22.22.3/bin/node scripts/proxy-sidecar.mjs
+Restart=always
+RestartSec=2
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+
+[Install]
+WantedBy=default.target

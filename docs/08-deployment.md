@@ -91,6 +91,33 @@ powershell -ExecutionPolicy Bypass -File .\scripts\windows\install-collector-tas
 - 検証: PowerShell 構文・`-DryRun`・API送信（35項目）を Linux の pwsh で確認済み。Windows実機では CIM / Defender の取得を確認済み。BitLocker は実行ユーザーの権限で未検出になるため、管理者PowerShellで `-Elevated` を付けて再登録する。
 - **方式の限界**: ブラウザだけではインストールソフト・Windows 11 Pro のエディションは取得できない。PC側で CLI を動かす必要がある（常駐でなくてよい）。サーバーから WinRM で取りに行く方式は、NAT / Cloudflare 配下のクライアントには届かないため、本環境では採用しない。
 
+### 0-2. ローカル・プロキシ（X-Proxy-Secret / 2026-10-25 追加）
+
+cloudflared は任意のリクエストヘッダを付与できないため、Tunnel と API の間に
+小さなローカル・プロキシを置き、`X-Proxy-Secret` を付与する（多層防御の 1 層）。
+
+```
+Browser → Cloudflare Access → Tunnel (cloudflared)
+  → 127.0.0.1:18949（ai-helpdesk-proxy.service / scripts/proxy-sidecar.mjs）
+  → 127.0.0.1:18950（ai-helpdesk-api.service / REQUIRE_PROXY_SECRET=true）
+```
+
+| 項目 | 内容 |
+|---|---|
+| サービス | `ai-helpdesk-proxy.service`（systemd user / Restart=always） |
+| 秘密 | `~/.config/ai-helpdesk/api.conf` の `PROXY_SECRET`（0600）。リポジトリ・ログに出さない |
+| API 設定 | `REQUIRE_PROXY_SECRET=true`（`/api/health`・`/api/device/agent`・`/api/device/command` は除外） |
+| Tunnel | ingress の `service` を `http://127.0.0.1:18949` に変更 |
+| 防御 | 直接 18950 を叩いても秘密が無ければ **401 `PROXY_REQUIRED`**。Access JWT は `enforce` で併用 |
+| 設定 | `scripts/install-proxy-service.sh`（初回のみ・冪等） |
+
+- 秘密の生成例: `openssl rand -hex 24` → `PROXY_SECRET=` に設定（16 文字以上）。
+- 変更手順: プロキシ起動 → Tunnel ingress を 18949 へ → cloudflared 再起動 → API を
+  `REQUIRE_PROXY_SECRET=true` で再起動。各段階で `/api/health`（プロキシ経由）を確認する。
+- ロールバック: ingress を `http://127.0.0.1:18950` に戻し、`REQUIRE_PROXY_SECRET=false` で API 再起動。
+  プロキシは停止してよい（API へ直接戻る）。
+- 実測（2026-10-25）: 直接アクセスは 401 `PROXY_REQUIRED`、プロキシ経由は Access JWT 検証後に 200。
+
 ## 1. 目標構成
 
 ```
