@@ -408,7 +408,9 @@ Phase 1 は「担当者が明示的に導入を依頼し、状態を見て、RSP
 ### 16-5. RSP 側の追加（Phase 1）
 
 - `ensure-agent` は実装済み（§15-5）
-- 端末検索用に `GET /api/v1/service/devices?hostname=` を追加（サービスキー + IP allowlist）
+- 端末検索用に `GET /api/v1/service/devices?hostname=` を追加済み（RSP #146, `01ba8b7`）。
+  完全一致（大小文字無視）で候補配列を返し、PII は返さない。実測: `202010001M` = 1件、
+  `202010001m` = 1件、未知 hostname = 0件。
 - ディープリンク生成は RSP の既存 `create_remote_session_url` を利用（Phase 2 でセッション作成 API）
 
 ### 16-6. 設定
@@ -437,3 +439,15 @@ Phase 1 は「担当者が明示的に導入を依頼し、状態を見て、RSP
 - RSP で開く: ディープリンクが開き、対象端末が一致している
 - 監査: 誰が・いつ・どのケースで・どの端末に対して要求/起動したかが残る
 - テスト: 上記を mock RSP で自動テスト + 実機 1 台で手動確認（Phase 0 の実測を再利用）
+
+
+### 15-6. hostname 検索 API の実測（2026-10-25 20:05）
+
+| 入力 | 結果 |
+|---|---|
+| `202010001M` | 200 / count=1 / `agent_installed=true` / `agent_online=true` |
+| `202010001m` | 200 / count=1（大小文字を無視） |
+| `NO-SUCH-HOST-XYZ` | 200 / count=0 |
+
+- RSP 側: PR #146（`01ba8b7`）を main にマージし、`rsp-api.service` を再起動
+- AI HelpDesk 側の Phase 1 実装はこの API をサーバ間通信で利用する
