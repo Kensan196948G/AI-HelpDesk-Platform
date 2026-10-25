@@ -165,6 +165,10 @@ AI は Skill ID とパラメータだけを提案し、コマンド文字列は�
 
 - 承認ハッシュ: `stableStringify(payload)` → SHA-256（hex）。`payload` は `sessionId, stepId, seq, skillId,
   skillVersion, skillContentHash, params, deviceId, userEmail, riskLevel, nonce, expiresAt` の 12 キー。
+- Skill は `scripts/skills/approved.json`（人間レビュー済みの定義ハッシュ）と一致するものだけが approved。
+  deviceId は本人の `device_inventories` と照合し、デバイストークンは `x-device-id` にバインドする。
+- 停止・期限切れ時は未実行 step を cancelled、queued コマンドを expired にし、停止後の結果では状態を進めない。
+  estop 中はセッション開始・承認を 409 `ESTOP_ACTIVE` で拒否する。
 - 実行は `device_commands`（`skill_id` / `session_id` / `step_id` 付き）に登録し、端末エージェントが
   `GET /api/device/command` で取得して実行する。Phase B は読み取り専用 Skill のみ。
 - エラー: `APPROVAL_MISMATCH` / `APPROVAL_EXPIRED` / `SESSION_EXPIRED` / `STEP_NOT_APPROVABLE` /

@@ -10,6 +10,7 @@ import { computeApprovalHash } from './approval.js';
 const EMAIL = 'resolve-test@example.com';
 const OTHER_EMAIL = 'resolve-other@example.com';
 const DEVICE = 'WEB-AB12CD34';
+const OTHER_DEVICE = 'WEB-AB12CD34';
 const CASE_PRINT = 'CASE-RESOLVE-PRINT';
 const CASE_DISK = 'CASE-RESOLVE-DISK';
 const CASE_NET = 'CASE-RESOLVE-NET';
@@ -123,6 +124,12 @@ beforeAll(async () => {
         content_hash = COALESCE(content_hash, ${`sha256:${'a'.repeat(64)}`})
   `;
 
+  await sql`
+    INSERT INTO device_inventories (user_email, source, device_id, data)
+    VALUES (${EMAIL}, 'browser', ${DEVICE}, '{}'::jsonb),
+           (${OTHER_EMAIL}, 'browser', ${OTHER_DEVICE}, '{}'::jsonb)
+    ON CONFLICT (user_email, source, device_id) DO NOTHING
+  `;
   await sql`DELETE FROM device_commands WHERE user_email IN (${EMAIL}, ${OTHER_EMAIL}) AND session_id IS NOT NULL`;
   await sql`DELETE FROM resolution_sessions WHERE user_email IN (${EMAIL}, ${OTHER_EMAIL})`;
   await sql`DELETE FROM prototype_states WHERE user_email IN (${EMAIL}, ${OTHER_EMAIL}) AND name = 'cowork'`;
@@ -566,3 +573,53 @@ async function createOtherSessionWithStep(): Promise<{ sessionId: string; stepId
   expect(stepId).toBeTruthy();
   return { sessionId: sessionId as string, stepId: stepId as string };
 }
+
+describe('ハードニング（端末バインド・estop・停止）', () => {
+  it('本人の端末在庫に無い deviceId ではセッションを開始できない', async () => {
+    const response = await post('/api/resolve/sessions', {
+      caseId: CASE_PRINT,
+      deviceId: 'WEB-NOT-OWNED',
+    });
+    expect(response.statusCode, response.body).toBe(404);
+  });
+
+  it('緊急停止中はセッションを開始できない', async () => {
+    await sql`
+      UPDATE prototype_states
+      SET data = jsonb_set((data #>> '{}')::jsonb, '{estop}', 'true'::jsonb)
+      WHERE user_email = ${EMAIL} AND name = 'cowork'
+    `;
+    const response = await post('/api/resolve/sessions', { caseId: CASE_PRINT, deviceId: DEVICE });
+    expect(response.statusCode, response.body).toBe(409);
+    expect(response.json().error.code).toBe('ESTOP_ACTIVE');
+    await sql`
+      UPDATE prototype_states
+      SET data = jsonb_set((data #>> '{}')::jsonb, '{estop}', 'false'::jsonb)
+      WHERE user_email = ${EMAIL} AND name = 'cowork'
+    `;
+  });
+
+  it('停止すると未配信コマンドが expired になり、結果が届いても進まない', async () => {
+    const started = await startSession(CASE_PRINT);
+    const approved = await approveWithChallenge(started);
+    expect(approved.statusCode, approved.body).toBe(200);
+    const commandId = await commandIdFor(started.step.id);
+
+    const stopped = await post(`/api/resolve/sessions/${started.session.id}/stop`, {});
+    expect(stopped.statusCode, stopped.body).toBe(200);
+    const commandRows = await sql<{ status: string }[]>`
+      SELECT status FROM device_commands WHERE id = ${commandId}
+    `;
+    expect(commandRows[0]?.status).toBe('expired');
+
+    await sql`
+      UPDATE device_commands
+      SET status = 'done', result = ${jsonbValue({ ok: true, summary: 'late' })}, completed_at = now()
+      WHERE id = ${commandId}
+    `;
+    const step = await getStep(started.step.id);
+    expect(step.statusCode, step.body).toBe(200);
+    expect(step.json().session.status).toBe('stopped');
+    expect(step.json().step.status).toBe('cancelled');
+  });
+});

@@ -204,6 +204,50 @@ function requireAllowedService(params) {
   return service;
 }
 
+const APPROVAL_MANIFEST = path.join(import.meta.dirname, 'skills', 'approved.json');
+
+/**
+ * サーバが承認した Skill 定義（id@version / contentHash / scriptHash）を読む。
+ * 端末側でも manifest とローカルスクリプトの SHA-256 を照合し、
+ * 一致しない Skill は実行しない（サーバ侵害時の多層防御）。
+ */
+function loadApprovalManifest() {
+  try {
+    if (!existsSync(APPROVAL_MANIFEST)) return new Map();
+    const parsed = JSON.parse(readFileSync(APPROVAL_MANIFEST, 'utf8'));
+    const entries = Array.isArray(parsed?.skills) ? parsed.skills : [];
+    return new Map(entries.map((entry) => [`${entry.id}@${entry.version}`, entry]));
+  } catch (error) {
+    log('approval manifest read failed', String(error.message || error));
+    return new Map();
+  }
+}
+
+const APPROVED_SKILLS = loadApprovalManifest();
+
+function scriptSha256(skillId) {
+  const entry = SKILL_SCRIPTS.get(skillId);
+  if (!entry) return null;
+  const scriptPath = path.join(SKILLS_DIR, entry.file);
+  if (!existsSync(scriptPath)) return null;
+  return `sha256:${createHash('sha256').update(readFileSync(scriptPath)).digest('hex')}`;
+}
+
+function verifySkillApproval(command) {
+  const skillId = String(command.skill_id || '');
+  const version = String(command.skill_version || '');
+  const key = `${skillId}@${version}`;
+  const approved = APPROVED_SKILLS.get(key);
+  if (!approved) throw new Error(`承認されていない Skill です: ${key}`);
+  if (command.skill_content_hash && approved.contentHash !== command.skill_content_hash) {
+    throw new Error(`Skill 定義のハッシュが一致しません: ${key}`);
+  }
+  const localHash = scriptSha256(skillId);
+  if (!localHash || approved.scriptHash !== localHash) {
+    throw new Error(`Skill スクリプトのハッシュが一致しません: ${key}`);
+  }
+}
+
 /** mock モード: skill ごとの固定 JSON を返す（実行なし）。 */
 function runMockSkill(skillId, params) {
   const startedAt = Date.now();
@@ -302,6 +346,7 @@ function runPowerShellSkill(skillId, params) {
 
 /** skill_id 付き command の実行。結果は §8-3 の報告形に合わせる。 */
 function executeSkill(command) {
+  verifySkillApproval(command);
   const skillId = String(command.skill_id);
   const params = asParams(command.params);
   log('skill', command.id, skillId, command.skill_version ?? '-', mockMode ? '(mock)' : '');

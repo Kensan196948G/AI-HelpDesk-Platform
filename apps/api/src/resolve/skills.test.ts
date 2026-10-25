@@ -1,5 +1,14 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { computeScriptHash, SKILL_CATALOG, validateParams } from './skills.js';
+import {
+  APPROVAL_MANIFEST_PATH,
+  computeScriptHash,
+  computeSkillDefinitionHash,
+  readApprovalManifest,
+  SKILL_CATALOG,
+  validateParams,
+} from './skills.js';
 
 describe('Skill カタログ定義', () => {
   it('Phase B の 5 Skill がすべて読み取り専用・Windows・リスク 1 で定義されている', () => {
@@ -58,5 +67,36 @@ describe('validateParams', () => {
     expect(validateParams(serviceParams, { service: 1 }).ok).toBe(false);
     expect(validateParams(serviceParams, { service: 'Spooler', command: 'rm -rf' }).ok).toBe(false);
     expect(validateParams(serviceParams, ['Spooler']).ok).toBe(false);
+  });
+
+  it('Skill 定義のハッシュは引数・リスク・スキーマの変更で変わる', () => {
+    const base = SKILL_CATALOG[0];
+    const hash = 'sha256:' + 'a'.repeat(64);
+    const initial = computeSkillDefinitionHash(base, hash);
+    expect(computeSkillDefinitionHash({ ...base }, hash)).toBe(initial);
+    expect(computeSkillDefinitionHash({ ...base, args: ['-Changed'] }, hash)).not.toBe(initial);
+    expect(computeSkillDefinitionHash({ ...base, riskLevel: 3 }, hash)).not.toBe(initial);
+    expect(
+      computeSkillDefinitionHash(
+        { ...base, paramsSchema: { type: 'object', properties: { x: { type: 'string' } } } },
+        hash,
+      ),
+    ).not.toBe(initial);
+  });
+
+  it('承認 manifest が全 Skill のスクリプトと定義に一致する', () => {
+    const manifest = readApprovalManifest(process.cwd());
+    expect(manifest.skills.length).toBe(SKILL_CATALOG.length);
+    for (const skill of SKILL_CATALOG) {
+      const entry = manifest.skills.find(
+        (item) => item.id === skill.id && item.version === skill.version,
+      );
+      expect(entry, `${skill.id}@${skill.version}`).toBeTruthy();
+      const script = readFileSync(path.join(process.cwd(), skill.scriptPath));
+      const scriptHash = computeScriptHash(script);
+      expect(entry?.scriptHash).toBe(scriptHash);
+      expect(entry?.contentHash).toBe(computeSkillDefinitionHash(skill, scriptHash));
+    }
+    expect(APPROVAL_MANIFEST_PATH).toBe('scripts/skills/approved.json');
   });
 });

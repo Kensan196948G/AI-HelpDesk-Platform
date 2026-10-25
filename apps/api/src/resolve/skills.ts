@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { repoRoot } from '../config.js';
 import { sql } from '../db.js';
+import { stableStringify } from '../domain/audit.js';
 import { jsonbValue } from '../lib/jsonb-value.js';
 
 /** Phase B の Skill カタログ定義（スクリプト実体は scripts/skills/windows/ 配下）。 */
@@ -224,9 +225,65 @@ export const SKILL_CATALOG: SkillDefinition[] = [
   },
 ];
 
-/** スクリプト内容の SHA-256（`sha256:<hex>` 形式。設計 §6 の contentHash）。 */
+/** スクリプト内容の SHA-256（`sha256:<hex>` 形式）。 */
 export function computeScriptHash(content: string | Buffer): string {
   return `sha256:${createHash('sha256').update(content).digest('hex')}`;
+}
+
+/** 人間がレビューして承認した Skill の記録（リポジトリで管理する）。 */
+export interface ApprovedSkillEntry {
+  id: string;
+  version: string;
+  scriptHash: string;
+  contentHash: string;
+  approvedBy: string;
+  approvedAt: string;
+  note?: string;
+}
+
+export interface ApprovalManifest {
+  version: number;
+  skills: ApprovedSkillEntry[];
+}
+
+export const APPROVAL_MANIFEST_PATH = 'scripts/skills/approved.json';
+
+/**
+ * Skill 定義全体の SHA-256。スクリプトだけでなく、引数・リスク・パラメータスキーマ・
+ * verify/rollback・出力ポリシーまで含める。1 つでも変われば承認は無効になる。
+ */
+export function computeSkillDefinitionHash(skill: SkillDefinition, scriptHash: string): string {
+  const definition = {
+    id: skill.id,
+    version: skill.version,
+    title: skill.title,
+    summary: skill.summary,
+    symptoms: skill.symptoms,
+    os: skill.os,
+    riskLevel: skill.riskLevel,
+    requires: skill.requires,
+    paramsSchema: skill.paramsSchema,
+    scriptPath: skill.scriptPath,
+    args: skill.args,
+    verify: skill.verify,
+    rollback: skill.rollback,
+    timeoutSec: skill.timeoutSec,
+    resultSchema: skill.resultSchema,
+    outputPolicy: skill.outputPolicy,
+    scriptHash,
+  };
+  return `sha256:${createHash('sha256').update(stableStringify(definition)).digest('hex')}`;
+}
+
+export function readApprovalManifest(repoRootPath: string): ApprovalManifest {
+  const file = path.join(repoRootPath, APPROVAL_MANIFEST_PATH);
+  if (!existsSync(file)) return { version: 1, skills: [] };
+  try {
+    const parsed = JSON.parse(readFileSync(file, 'utf8')) as ApprovalManifest;
+    return Array.isArray(parsed.skills) ? parsed : { version: 1, skills: [] };
+  } catch {
+    return { version: 1, skills: [] };
+  }
 }
 
 /** jsonb 列が文字列で保存されていても（旧データ）オブジェクトとして読む。 */
@@ -348,17 +405,32 @@ export function validateParams(
  *   （再承認が必要。無変更の再起動で承認を失わない）。
  */
 export async function ensureSkillCatalog(): Promise<void> {
+  const manifest = readApprovalManifest(repoRoot);
+  const approved = new Map(manifest.skills.map((entry) => [`${entry.id}@${entry.version}`, entry]));
   for (const skill of SKILL_CATALOG) {
     const absolutePath = path.join(repoRoot, skill.scriptPath);
-    let contentHash: string | null = null;
+    let scriptHash: string | null = null;
+    let definitionHash: string | null = null;
     try {
-      contentHash = computeScriptHash(readFileSync(absolutePath));
+      scriptHash = computeScriptHash(readFileSync(absolutePath));
+      definitionHash = computeSkillDefinitionHash(skill, scriptHash);
     } catch {
-      contentHash = null;
+      scriptHash = null;
+      definitionHash = null;
     }
-    const status = contentHash ? 'approved' : 'draft';
-    const approvedBy = contentHash ? 'system:catalog' : null;
-    const approvedAt = contentHash ? new Date() : null;
+    // 人間が承認した manifest と完全一致したときだけ approved にする。
+    // スクリプト・引数・リスク・スキーマ等が変われば自動的に draft へ戻る。
+    const entry = approved.get(`${skill.id}@${skill.version}`);
+    const isApproved = Boolean(
+      entry &&
+        scriptHash &&
+        definitionHash &&
+        entry.scriptHash === scriptHash &&
+        entry.contentHash === definitionHash,
+    );
+    const status = isApproved ? 'approved' : 'draft';
+    const approvedBy = isApproved ? entry!.approvedBy : null;
+    const approvedAt = isApproved ? new Date(entry!.approvedAt) : null;
 
     await sql`
       INSERT INTO skills (
@@ -375,7 +447,7 @@ export async function ensureSkillCatalog(): Promise<void> {
         ${skill.timeoutSec},
         ${skill.resultSchema === null ? null : jsonbValue(skill.resultSchema)},
         ${skill.outputPolicy === null ? null : jsonbValue(skill.outputPolicy)},
-        ${status}, ${contentHash}, ${approvedBy}, ${approvedAt}
+        ${status}, ${definitionHash}, ${approvedBy}, ${approvedAt}
       )
       ON CONFLICT (id, version) DO UPDATE SET
         title = EXCLUDED.title,
@@ -393,18 +465,9 @@ export async function ensureSkillCatalog(): Promise<void> {
         result_schema = EXCLUDED.result_schema,
         output_policy = EXCLUDED.output_policy,
         content_hash = EXCLUDED.content_hash,
-        status = CASE
-          WHEN skills.content_hash IS DISTINCT FROM EXCLUDED.content_hash THEN EXCLUDED.status
-          ELSE skills.status
-        END,
-        approved_by = CASE
-          WHEN skills.content_hash IS DISTINCT FROM EXCLUDED.content_hash THEN EXCLUDED.approved_by
-          ELSE skills.approved_by
-        END,
-        approved_at = CASE
-          WHEN skills.content_hash IS DISTINCT FROM EXCLUDED.content_hash THEN EXCLUDED.approved_at
-          ELSE skills.approved_at
-        END
+        status = EXCLUDED.status,
+        approved_by = EXCLUDED.approved_by,
+        approved_at = EXCLUDED.approved_at
     `;
   }
 }

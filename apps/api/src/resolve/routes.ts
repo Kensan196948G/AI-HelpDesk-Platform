@@ -492,6 +492,13 @@ async function applyCommandOutcome(email: string, stepId: string): Promise<void>
     `;
     const session = sessionRows[0];
     if (!session) return;
+    // 停止・期限切れ・解決済みのセッションでは、結果が届いても状態を進めない（H-3）。
+    if (['stopped', 'expired', 'resolved', 'escalated'].includes(session.status)) {
+      if (step.status === 'approved' || step.status === 'executing' || step.status === 'proposed') {
+        await tx`UPDATE resolution_steps SET status = 'cancelled' WHERE id = ${step.id}`;
+      }
+      return;
+    }
 
     const commandRows = await tx<
       { id: string; status: string; result: unknown; error: string | null }[]
@@ -661,6 +668,56 @@ async function loadProposalHistory(sessionId: string): Promise<ProposalHistoryEn
   return rows.map((row) => ({ skillId: row.skill_id, params: jsonObject(row.params) }));
 }
 
+/** 緊急停止（画面の estop）を cowork 状態から読む。読めない場合は安全側で false。 */
+async function isEstopOn(email: string): Promise<boolean> {
+  const rows = await sql<{ data: unknown }[]>`
+    SELECT data FROM prototype_states
+    WHERE user_email = ${email} AND name = 'cowork'
+    LIMIT 1
+  `;
+  const raw = rows[0]?.data;
+  let state: unknown = raw;
+  if (typeof raw === 'string') {
+    try {
+      state = JSON.parse(raw) as unknown;
+    } catch {
+      return false;
+    }
+  }
+  return Boolean(
+    state && typeof state === 'object' && (state as { estop?: unknown }).estop === true,
+  );
+}
+
+/** セッションの deviceId が本人の端末在庫に存在するか（端末バインド）。 */
+async function ownsDevice(email: string, deviceId: string): Promise<boolean> {
+  const rows = await sql<{ n: number }[]>`
+    SELECT 1 AS n FROM device_inventories
+    WHERE user_email = ${email} AND device_id = ${deviceId}
+    LIMIT 1
+  `;
+  return Boolean(rows[0]);
+}
+
+/**
+ * セッションを停止/期限切れにし、未実行の step と queued の端末コマンドを無効化する。
+ * 承認済みでも、端末がまだ取得していないコマンドは実行させない（H-3）。
+ */
+async function cancelSessionWork(
+  tx: any,
+  sessionId: string,
+  stepStatus: 'cancelled' | 'failed' = 'cancelled',
+): Promise<void> {
+  await tx`
+    UPDATE resolution_steps SET status = ${stepStatus}
+    WHERE session_id = ${sessionId} AND status IN ('proposed', 'approved', 'executing')
+  `;
+  await tx`
+    UPDATE device_commands SET status = 'expired', completed_at = now()
+    WHERE session_id = ${sessionId} AND status = 'queued'
+  `;
+}
+
 export async function resolveRoutes(app: FastifyInstance): Promise<void> {
   // TODO(Phase B): 緊急停止（estop）は既存 helpdesk の状態（prototype_states.helpdesk）を
   // 参照できないため未接続。Phase C で estop と接続し、ON のときはセッション開始・承認・
@@ -711,6 +768,12 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
         '解決ループの開始が多すぎます。少し待ってから再試行してください。',
       );
       const input = CreateSessionSchema.parse(request.body);
+      if (await isEstopOn(email)) {
+        throw new ApiError(409, 'ESTOP_ACTIVE', '緊急停止中です。解除してからやり直してください。');
+      }
+      if (!(await ownsDevice(email, input.deviceId))) {
+        throw notFound('対象の端末が見つかりません。PC情報を取得してからやり直してください。');
+      }
       const ownedCase = await findOwnedCase(email, input.caseId);
       if (!ownedCase) throw notFound('案件が見つかりません。');
 
@@ -787,6 +850,9 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
       );
       const { id: stepId } = StepIdParamsSchema.parse(request.params);
       const input = ApproveSchema.parse(request.body);
+      if (await isEstopOn(email)) {
+        throw new ApiError(409, 'ESTOP_ACTIVE', '緊急停止中です。解除してからやり直してください。');
+      }
 
       const outcome = await sql.begin(async (tx) => {
         const stepRows = await tx<StepRow[]>`
@@ -945,14 +1011,15 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
 
         const commandRows = await tx<CommandRow[]>`
           INSERT INTO device_commands (
-            user_email, device_id, op_id, params, skill_id, skill_version, session_id, step_id
+            user_email, device_id, op_id, params, skill_id, skill_version,
+            skill_content_hash, session_id, step_id
           ) VALUES (
             ${session.user_email}, ${session.device_id}, ${step.skill_id},
             ${jsonbValue(params)}, ${step.skill_id}, ${step.skill_version},
-            ${session.id}, ${step.id}
+            ${step.skill_content_hash}, ${session.id}, ${step.id}
           )
           RETURNING id, op_id, params, status, device_id, skill_id, skill_version,
-                    session_id, step_id, created_at
+                    skill_content_hash, session_id, step_id, created_at
         `;
         const command = commandRows[0];
         if (!command) throw new Error('device command insert failed');
@@ -1055,10 +1122,7 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
             UPDATE resolution_sessions SET status = 'stopped', updated_at = now()
             WHERE id = ${session.id}
           `;
-          await tx`
-            UPDATE resolution_steps SET status = 'cancelled'
-            WHERE session_id = ${session.id} AND status = 'proposed'
-          `;
+          await cancelSessionWork(tx, session.id);
           await appendResolveAudit(tx, {
             action: 'resolution.stopped',
             sessionId: session.id,
@@ -1261,10 +1325,7 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
           UPDATE resolution_sessions SET status = 'stopped', updated_at = now()
           WHERE id = ${session.id}
         `;
-        await tx`
-          UPDATE resolution_steps SET status = 'cancelled'
-          WHERE session_id = ${session.id} AND status = 'proposed'
-        `;
+        await cancelSessionWork(tx, session.id);
         await appendResolveAudit(tx, {
           action: 'resolution.stopped',
           sessionId: session.id,

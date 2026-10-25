@@ -385,3 +385,24 @@ Phase B の実測（隔離 DB + mock エージェント）:
 - `network.adapters` 提案 → Y → `done` → 結果表示 → 継続 Y → `os.info` 提案 → Y → `done` → 継続 N → `stopped`
 - 画面の pageerror / HTTP 4xx は 0。
 
+## 18. ハードニング（独立レビュー H-1/H-2/H-3 対応 / 2026-10-25）
+
+Phase B の独立レビューで指摘された High 3 件を、Phase C 着手前に修正した。
+
+| ID | 指摘 | 対応 |
+|---|---|---|
+| H-1 | Skill が起動時に自動 approved。content_hash が .ps1 のみ。agent が version/hash を検証しない | `scripts/skills/approved.json` に**人間レビュー済みの定義ハッシュ**を保存。スクリプト・引数・リスク・paramsSchema・verify/rollback・出力ポリシーをすべて含む `contentHash` とし、manifest と一致する Skill だけを approved にする。変更があれば自動的に draft。agent も manifest とローカル `sha256` を照合し、不一致は実行しない |
+| H-2 | 端末バインドが無い（deviceId 任意、x-device-id 無視、同一ユーザーの別端末で実行可能） | セッション開始時に `device_inventories` で本人の端末か確認。デバイストークンに `device_id` を TOFU バインドし、以後の `x-device-id` と一致しない場合は 403。GET /device/command は端末一致のコマンドだけ配信。結果報告も端末一致を検証 |
+| H-3 | 承認後の停止が実行キューを止めない | stop / expire で `proposed/approved/executing` の step を `cancelled`、`queued` の device_command を `expired` に更新。agent は停止済みセッションのコマンドを取得できない。停止後に結果が届いても session/step を進めない |
+
+追加:
+- estop（画面の緊急停止）が ON の間はセッション開始・承認を 409 `ESTOP_ACTIVE` で拒否。
+- `escalate` 用の状態は `failed` 時に設定（手動 resolve は Phase C で追加）。
+- テスト: 65 件（resolve + device）に増加。全体 **261 件**。
+
+残り（Phase C で対応）:
+- Windows 実機での PowerShell 実行
+- 端末オフライン/結果タイムアウトの自動失敗
+- リスク 4 以上の IT 管理者承認 UI
+- 手動「解決した」「担当者へ」操作
+- 出力ポリシー（fieldsToAi）の厳密適用（現状は PII 伏せ字 + サイズ制限）
