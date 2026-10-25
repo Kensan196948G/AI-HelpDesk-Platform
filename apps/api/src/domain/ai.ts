@@ -63,7 +63,12 @@ const INTENTS: Array<{ id: IntentId; label: string; keywords: string[] }> = [
     label: '音声・会議',
     keywords: ['音', 'Teams', '聞こえない', 'スピーカー', 'ヘッドセット', 'マイク'],
   },
-  { id: 'storage', label: '容量・性能', keywords: ['容量', '空き', '遅い', '重い', '保存'] },
+  {
+    id: 'storage',
+    label: '容量・性能',
+    // 利用者は「遅い」ではなく「遅く」「もっさり」と書くことが多い（2026-10-25 実測: 30 件中 2 件がこれで KB に到達しなかった）。
+    keywords: ['容量', '空き', '遅い', '重い', '保存', 'もっさり', '固まる', 'ファン'],
+  },
   {
     id: 'login',
     label: 'ログイン・アカウント',
@@ -78,13 +83,32 @@ const INTENTS: Array<{ id: IntentId; label: string; keywords: string[] }> = [
   { id: 'other', label: 'その他', keywords: [] },
 ];
 
+/**
+ * 日本語の活用差を吸収するための表層形（MVP・形態素解析なし）。
+ *
+ * 「遅い」で登録した語は、利用者が「遅く」と書くと部分一致しない。
+ * 形容詞の連用形（い → く）だけを追加して、この取りこぼしを減らす。
+ * 2 文字未満の語は誤爆するため生成しない。
+ */
+export function keywordForms(keyword: string): string[] {
+  const base = keyword.trim().toLowerCase();
+  if (base.length < 2) return [base];
+  const forms = new Set<string>([base]);
+  if (base.endsWith('い')) {
+    const ku = `${base.slice(0, -1)}く`;
+    if (ku.length >= 2) forms.add(ku);
+  }
+  return [...forms];
+}
+
 export function detectIntent(subject: string, body: string): Intent {
   const text = `${subject}\n${body}`.toLowerCase();
   let best: Intent = { id: 'other', label: 'その他', keywords: [] };
   let bestScore = 0;
   for (const candidate of INTENTS) {
     const score = candidate.keywords.reduce(
-      (total, keyword) => total + (text.includes(keyword.toLowerCase()) ? 1 : 0),
+      (total, keyword) =>
+        total + (keywordForms(keyword).some((form) => text.includes(form)) ? 1 : 0),
       0,
     );
     if (score > bestScore) {
