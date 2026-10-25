@@ -105,10 +105,16 @@ export const SKILL_CATALOG: SkillDefinition[] = [
     verify: null,
     rollback: null,
     timeoutSec: 60,
-    resultSchema: { os: 'string', version: 'string', build: 'string', uptimeSeconds: 'number' },
+    // 実スクリプト（os-info.ps1）の出力キーに合わせる。computerName は端末識別子なので AI へ渡さない。
+    resultSchema: {
+      osName: 'string',
+      version: 'string',
+      buildNumber: 'string',
+      architecture: 'string',
+    },
     outputPolicy: {
       maxBytes: 8192,
-      fieldsToAi: ['os', 'version', 'build', 'uptimeSeconds'],
+      fieldsToAi: ['osName', 'version', 'buildNumber', 'architecture'],
       maskPii: true,
     },
   },
@@ -127,14 +133,13 @@ export const SKILL_CATALOG: SkillDefinition[] = [
     verify: null,
     rollback: null,
     timeoutSec: 60,
+    // 実スクリプト（disk-space.ps1）は volumes を返す。
     resultSchema: {
-      disks: [
-        { mount: 'string', totalBytes: 'number', freeBytes: 'number', usedPercent: 'number' },
-      ],
+      volumes: [{ deviceId: 'string', freeGB: 'number', totalGB: 'number' }],
     },
     outputPolicy: {
       maxBytes: 8192,
-      fieldsToAi: ['disks'],
+      fieldsToAi: ['volumes'],
       maskPii: true,
     },
   },
@@ -153,16 +158,16 @@ export const SKILL_CATALOG: SkillDefinition[] = [
     verify: null,
     rollback: null,
     timeoutSec: 60,
+    // 実スクリプト（spooler-status.ps1）は name / displayName / status / startType を返す。
     resultSchema: {
-      service: 'string',
+      name: 'string',
+      displayName: 'string',
       status: 'string',
       startType: 'string',
-      printerCount: 'number',
-      jobCount: 'number',
     },
     outputPolicy: {
       maxBytes: 8192,
-      fieldsToAi: ['service', 'status', 'startType', 'printerCount', 'jobCount'],
+      fieldsToAi: ['name', 'status', 'startType'],
       maskPii: true,
     },
   },
@@ -192,10 +197,16 @@ export const SKILL_CATALOG: SkillDefinition[] = [
     verify: null,
     rollback: null,
     timeoutSec: 60,
-    resultSchema: { service: 'string', status: 'string', startType: 'string' },
+    // 実スクリプト（service-status.ps1）は name / displayName / status / startType を返す。
+    resultSchema: {
+      name: 'string',
+      displayName: 'string',
+      status: 'string',
+      startType: 'string',
+    },
     outputPolicy: {
       maxBytes: 8192,
-      fieldsToAi: ['service', 'status', 'startType'],
+      fieldsToAi: ['name', 'status', 'startType'],
       maskPii: true,
     },
   },
@@ -214,8 +225,16 @@ export const SKILL_CATALOG: SkillDefinition[] = [
     verify: null,
     rollback: null,
     timeoutSec: 60,
+    // 実スクリプト（network-adapters.ps1）の adapters[] のキーに合わせる。
     resultSchema: {
-      adapters: [{ name: 'string', status: 'string', type: 'string', hasIpv4: 'boolean' }],
+      adapters: [
+        {
+          name: 'string',
+          status: 'string',
+          linkSpeed: 'string',
+          interfaceDescription: 'string',
+        },
+      ],
     },
     outputPolicy: {
       maxBytes: 8192,

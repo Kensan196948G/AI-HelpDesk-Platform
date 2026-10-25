@@ -38,6 +38,20 @@ const COWORK_FIXTURE = {
       body: 'プリンタで印刷できません。印刷キューに残ってしまいます。',
       urg: '通常',
     },
+    {
+      id: 'CASE-PHASEC-OS',
+      userId: 'u1',
+      subject: 'Windows のバージョンを知りたい',
+      body: 'OS のバージョンとビルド番号を確認したいです。',
+      urg: '通常',
+    },
+    {
+      id: 'CASE-PHASEC-DISK',
+      userId: 'u1',
+      subject: '空き容量不足',
+      body: 'Cドライブの空き容量が少なく、ファイルを保存できません。',
+      urg: '通常',
+    },
   ],
 };
 
@@ -49,8 +63,8 @@ async function get(url: string) {
   return app.inject({ method: 'GET', url });
 }
 
-async function startSession() {
-  const response = await post('/api/resolve/sessions', { caseId: CASE_ID, deviceId: DEVICE });
+async function startSession(caseId: string = CASE_ID) {
+  const response = await post('/api/resolve/sessions', { caseId, deviceId: DEVICE });
   expect(response.statusCode, response.body).toBe(200);
   return response.json();
 }
@@ -241,7 +255,7 @@ describe('outputPolicy.fieldsToAi の厳密適用', () => {
       exitCode: 0,
       stdoutSummary: 'Spooler は実行中です',
       normalized: {
-        service: 'Spooler',
+        name: 'Spooler',
         status: 'running',
         extraField: 'これは AI に渡してはいけない',
         nested: { detail: 'x' },
@@ -252,7 +266,7 @@ describe('outputPolicy.fieldsToAi の厳密適用', () => {
     const step = result.json().step;
 
     // AI 向け（resultAi）は fieldsToAi のみ。
-    expect(step.resultAi.normalized).toEqual({ service: 'Spooler', status: 'running' });
+    expect(step.resultAi.normalized).toEqual({ name: 'Spooler', status: 'running' });
     expect(step.resultAi.normalized.extraField).toBeUndefined();
     expect(step.resultAi.normalized.nested).toBeUndefined();
     expect(step.resultAi.summary).toBe('Spooler は実行中です');
@@ -272,7 +286,7 @@ describe('outputPolicy.fieldsToAi の厳密適用', () => {
       await markCommandDone(started.step.id, {
         exitCode: 0,
         stdoutSummary: 'ok',
-        normalized: { service: 'Spooler' },
+        normalized: { name: 'Spooler' },
       });
       const result = await get(`/api/resolve/steps/${started.step.id}`);
       expect(result.json().step.resultAi.normalized).toBeNull();
@@ -280,7 +294,7 @@ describe('outputPolicy.fieldsToAi の厳密適用', () => {
       await sql`
         UPDATE skills SET output_policy = ${jsonbValue({
           maxBytes: 8192,
-          fieldsToAi: ['service', 'status', 'startType', 'printerCount', 'jobCount'],
+          fieldsToAi: ['name', 'status', 'startType'],
           maskPii: true,
         })}
         WHERE id = ${started.step.skillId} AND version = ${started.step.skillVersion}
@@ -470,16 +484,16 @@ describe('レビュー指摘の回帰テスト', () => {
     await markCommandDone(started.step.id, {
       exitCode: 0,
       stdoutSummary: JSON.stringify({
-        service: 'Spooler',
+        name: 'Spooler',
         status: 'running',
         hiddenField: '漏れてはいけない',
       }),
-      normalized: { service: 'Spooler', status: 'running', extraField: 'x' },
+      normalized: { name: 'Spooler', status: 'running', extraField: 'x' },
     });
     const result = await get(`/api/resolve/steps/${started.step.id}`);
     expect(result.statusCode, result.body).toBe(200);
     const ai = result.json().step.resultAi;
-    expect(ai.summary).toBe(JSON.stringify({ service: 'Spooler', status: 'running' }));
+    expect(ai.summary).toBe(JSON.stringify({ name: 'Spooler', status: 'running' }));
     expect(JSON.stringify(ai)).not.toContain('hiddenField');
     expect(JSON.stringify(ai)).not.toContain('漏れてはいけない');
     expect(JSON.stringify(ai)).not.toContain('extraField');
@@ -500,7 +514,7 @@ describe('レビュー指摘の回帰テスト', () => {
       await markCommandDone(started.step.id, {
         exitCode: 0,
         stdoutSummary: 'ok',
-        normalized: { service: 'Spooler' },
+        normalized: { name: 'Spooler' },
       });
       const result = await get(`/api/resolve/steps/${started.step.id}`);
       expect(result.json().step.resultAi.normalized).toBeNull();
@@ -581,5 +595,56 @@ describe('レビュー指摘の回帰テスト', () => {
     expect(rows[0]?.reason).toBeTruthy();
     expect(rows[0]?.reason).not.toContain('leak@example.com');
     expect(rows[0]?.reason).toContain('[メールアドレス]');
+  });
+});
+
+describe('実スクリプト出力との整合（fieldsToAi）', () => {
+  it('os.info は実出力キーだけを AI に渡し、computerName を落とす', async () => {
+    const started = await startSession('CASE-PHASEC-OS');
+    expect(started.step.skillId).toBe('os.info');
+    const approved = await approve(started.step.id, challengeHash(started));
+    expect(approved.statusCode, approved.body).toBe(200);
+
+    const normalized = {
+      osName: 'Windows 11 Pro',
+      version: '10.0.22631',
+      buildNumber: '22631',
+      architecture: '64-bit',
+      computerName: 'PC-SECRET',
+    };
+    await markCommandDone(started.step.id, {
+      exitCode: 0,
+      stdoutSummary: JSON.stringify(normalized),
+      normalized,
+    });
+    const result = await get(`/api/resolve/steps/${started.step.id}`);
+    expect(result.statusCode, result.body).toBe(200);
+    const ai = result.json().step.resultAi;
+    expect(ai.normalized).toEqual({
+      osName: 'Windows 11 Pro',
+      version: '10.0.22631',
+      buildNumber: '22631',
+      architecture: '64-bit',
+    });
+    expect(JSON.stringify(ai)).not.toContain('PC-SECRET');
+  });
+
+  it('disk.space は volumes を AI に渡す', async () => {
+    const started = await startSession('CASE-PHASEC-DISK');
+    expect(started.step.skillId).toBe('disk.space');
+    const approved = await approve(started.step.id, challengeHash(started));
+    expect(approved.statusCode, approved.body).toBe(200);
+
+    const normalized = {
+      volumes: [{ deviceId: 'C:', freeGB: 118.42, totalGB: 475.9 }],
+    };
+    await markCommandDone(started.step.id, {
+      exitCode: 0,
+      stdoutSummary: JSON.stringify(normalized),
+      normalized,
+    });
+    const result = await get(`/api/resolve/steps/${started.step.id}`);
+    const ai = result.json().step.resultAi;
+    expect(ai.normalized.volumes).toEqual([{ deviceId: 'C:', freeGB: 118.42, totalGB: 475.9 }]);
   });
 });

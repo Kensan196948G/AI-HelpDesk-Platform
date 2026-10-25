@@ -5,46 +5,46 @@
       "id": "os.info",
       "version": "1.0.0",
       "scriptHash": "sha256:3eb14a4ff13d60373a2bd05ab0db2fd9f33226991368337487dbb2066cae1bb6",
-      "contentHash": "sha256:ad14a73020e686dcc8d0c25cf02be0b1717aa827b4d32033aa0dcb208b1769e1",
+      "contentHash": "sha256:d7ac254f6ad7196644755863303d963653cd4e25b6c0f3eb05c398fb386b156b",
       "approvedBy": "kensan1969@gmail.com",
-      "approvedAt": "2026-10-25T06:13:25.940Z",
-      "note": "2026-10-25 Phase B 読み取り専用レビュー"
+      "approvedAt": "2026-10-25T07:34:15.761Z",
+      "note": "2026-10-25 Phase C: fieldsToAi を実出力キーへ整合（人間承認）"
     },
     {
       "id": "disk.space",
       "version": "1.0.0",
       "scriptHash": "sha256:a07b9aae1957bb32bc7da3dbc61a9d6c502a8343a50f4b116ff52318d6eb277d",
-      "contentHash": "sha256:4cebd8e738fae7acd03666b619da370218d0ad662b9c9f5a57e021659a55fc61",
+      "contentHash": "sha256:1810ec9b7e7d9612654f698741f078b7f3125bffa16f3ab12fe51701af3024a5",
       "approvedBy": "kensan1969@gmail.com",
-      "approvedAt": "2026-10-25T06:13:25.940Z",
-      "note": "2026-10-25 Phase B 読み取り専用レビュー"
+      "approvedAt": "2026-10-25T07:34:15.761Z",
+      "note": "2026-10-25 Phase C: fieldsToAi を実出力キーへ整合（人間承認）"
     },
     {
       "id": "spooler.status",
       "version": "1.0.0",
       "scriptHash": "sha256:38efeb36160b873cecf8d15358ff02b000b792284a3b5b8d19016e13a37d166c",
-      "contentHash": "sha256:419accacc5d672c0350c4af39113a9faf9bd82c90db381c9027acb068695ed73",
+      "contentHash": "sha256:62d6e79f5cf510464fffc2616ce0f4cd22d33954681b7da006bff876863ed828",
       "approvedBy": "kensan1969@gmail.com",
-      "approvedAt": "2026-10-25T06:13:25.940Z",
-      "note": "2026-10-25 Phase B 読み取り専用レビュー"
+      "approvedAt": "2026-10-25T07:34:15.761Z",
+      "note": "2026-10-25 Phase C: fieldsToAi を実出力キーへ整合（人間承認）"
     },
     {
       "id": "service.status",
       "version": "1.0.0",
       "scriptHash": "sha256:b577fb8e6f5aa7588ce93d37ffb7eee91c1624a70db921c6cb21ad68f9c01ab3",
-      "contentHash": "sha256:a1a512e28a55f5dba41e4d9617229c3c99efbd4819589c6a513077699627f484",
+      "contentHash": "sha256:5c154948fdfc704f00c8acbd16741dabe4220a3e6ca00739f61211d6d7ac3f1d",
       "approvedBy": "kensan1969@gmail.com",
-      "approvedAt": "2026-10-25T06:13:25.940Z",
-      "note": "2026-10-25 Phase B 読み取り専用レビュー"
+      "approvedAt": "2026-10-25T07:34:15.761Z",
+      "note": "2026-10-25 Phase C: fieldsToAi を実出力キーへ整合（人間承認）"
     },
     {
       "id": "network.adapters",
       "version": "1.0.0",
       "scriptHash": "sha256:13698d5c0cf06aed87f5f5ba4342747a42cca58045df78f8581917300c4fa941",
-      "contentHash": "sha256:07aa42b2c179520b5179baef1de2e2f64c53993b83a16d1e8276d6b8af5658bf",
+      "contentHash": "sha256:d148bd14a65beb2120718f56ef0a649cc7292836b5991852718a7943006c769c",
       "approvedBy": "kensan1969@gmail.com",
-      "approvedAt": "2026-10-25T06:13:25.940Z",
-      "note": "2026-10-25 Phase B 読み取り専用レビュー"
+      "approvedAt": "2026-10-25T07:34:15.761Z",
+      "note": "2026-10-25 Phase C: fieldsToAi を実出力キーへ整合（人間承認）"
     }
   ]
 }

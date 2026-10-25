@@ -178,30 +178,30 @@ N のレスポンス: `{ "ok": true, "step": {status:"rejected"...}, "session": 
 
 ## 7. エラーコード
 
-| HTTP | code                   | 意味                                        |
-| ---- | ---------------------- | ------------------------------------------- |
-| 400  | `VALIDATION_ERROR`     | 入力不正                                    |
-| 400  | `APPROVAL_MISMATCH`    | 承認ハッシュ不一致・欠落                    |
-| 409  | `APPROVAL_EXPIRED`     | 承認チャレンジの 5 分期限切れ               |
-| 409  | `SESSION_EXPIRED`      | セッションの 30 分期限切れ                  |
-| 409  | `STEP_NOT_APPROVABLE`  | 承認待ちでない（nonce 再利用含む）          |
-| 409  | `STEP_NOT_CONTINUABLE` | 結果未完了・継続待ちでない                  |
-| 409  | `STEP_LIMIT`           | ステップ上限（6 回）                        |
-| 409  | `SKILL_NOT_ALLOWED`    | Skill が未承認・内容変更                    |
-| 409  | `NO_SKILL`             | 提案できる承認済み Skill が無い             |
-| 409  | `PARAM_INVALID`        | Skill パラメータ不正                        |
-| 429  | `RATE_LIMITED`         | レート制限（sessions 20/分、approve 10/分） |
-| 404  | `NOT_FOUND`            | 案件・セッション・ステップが無い/他者のもの |
-| 403  | `FORBIDDEN`            | IT 管理者以外が承認待ち/承認を操作          |
-| 403  | `SELF_APPROVAL_FORBIDDEN` | 依頼者本人による管理者承認               |
-| 409  | `ADMIN_APPROVAL_REQUIRED` | リスク 4 以上で管理者承認が無い           |
-| 409  | `ADMIN_APPROVAL_EXPIRED`  | 管理者承認の 5 分期限切れ                 |
-| 409  | `ADMIN_ALREADY_DECIDED`   | 別の管理者が承認/却下済み                 |
-| 400  | `ADMIN_APPROVAL_MISMATCH` | 管理者承認ハッシュ不一致                  |
-| 409  | `SKILL_RISK_FORBIDDEN`    | リスク 5（禁止）の Skill                  |
-| 409  | `DEVICE_OFFLINE`          | 端末の最終応答が閾値超過                  |
-| 409  | `SESSION_TERMINAL`        | 終端状態への手動クローズ                  |
-| 409  | `ADMIN_APPROVAL_NOT_REQUIRED` | リスク 4 未満に管理者承認を要求        |
+| HTTP | code                          | 意味                                        |
+| ---- | ----------------------------- | ------------------------------------------- |
+| 400  | `VALIDATION_ERROR`            | 入力不正                                    |
+| 400  | `APPROVAL_MISMATCH`           | 承認ハッシュ不一致・欠落                    |
+| 409  | `APPROVAL_EXPIRED`            | 承認チャレンジの 5 分期限切れ               |
+| 409  | `SESSION_EXPIRED`             | セッションの 30 分期限切れ                  |
+| 409  | `STEP_NOT_APPROVABLE`         | 承認待ちでない（nonce 再利用含む）          |
+| 409  | `STEP_NOT_CONTINUABLE`        | 結果未完了・継続待ちでない                  |
+| 409  | `STEP_LIMIT`                  | ステップ上限（6 回）                        |
+| 409  | `SKILL_NOT_ALLOWED`           | Skill が未承認・内容変更                    |
+| 409  | `NO_SKILL`                    | 提案できる承認済み Skill が無い             |
+| 409  | `PARAM_INVALID`               | Skill パラメータ不正                        |
+| 429  | `RATE_LIMITED`                | レート制限（sessions 20/分、approve 10/分） |
+| 404  | `NOT_FOUND`                   | 案件・セッション・ステップが無い/他者のもの |
+| 403  | `FORBIDDEN`                   | IT 管理者以外が承認待ち/承認を操作          |
+| 403  | `SELF_APPROVAL_FORBIDDEN`     | 依頼者本人による管理者承認                  |
+| 409  | `ADMIN_APPROVAL_REQUIRED`     | リスク 4 以上で管理者承認が無い             |
+| 409  | `ADMIN_APPROVAL_EXPIRED`      | 管理者承認の 5 分期限切れ                   |
+| 409  | `ADMIN_ALREADY_DECIDED`       | 別の管理者が承認/却下済み                   |
+| 400  | `ADMIN_APPROVAL_MISMATCH`     | 管理者承認ハッシュ不一致                    |
+| 409  | `SKILL_RISK_FORBIDDEN`        | リスク 5（禁止）の Skill                    |
+| 409  | `DEVICE_OFFLINE`              | 端末の最終応答が閾値超過                    |
+| 409  | `SESSION_TERMINAL`            | 終端状態への手動クローズ                    |
+| 409  | `ADMIN_APPROVAL_NOT_REQUIRED` | リスク 4 未満に管理者承認を要求             |
 
 ## 8. Phase C で追加した API
 
