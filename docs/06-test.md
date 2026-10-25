@@ -139,3 +139,20 @@ Tests       74 passed (74)
 - WebUI の E2E（Y/N 承認後）
 - Cloudflare Preview 上の実操作（policy gate により Blocker）
 - 負荷試験・長時間運用・バックアップ復元の実地試験
+
+## 9. 2026-10-25 再検証（全機能）
+
+| チェック | 結果 |
+|---|---|
+| TypeCheck | ✅ 成功 |
+| Lint | ✅ error 0（warnings 113 / infos 33） |
+| Test | ✅ **35 files / 201 tests passed**（3 回連続で同一結果・flaky なし） |
+| Build | ✅ 成功 |
+| Secret scan | ✅ 検出 0 |
+| Dependency audit（runtime） | ✅ 0 vulnerabilities |
+| Migration | ✅ 2 回目 no-op（冪等）。`010_jsonb_objects.sql` を追加 |
+| Seed 再実行 | ✅ 行数増加なし |
+| CI（main） | ✅ `verify` 成功 |
+
+追加したテスト: 状態の欠落キー補完（4）、JSONB 保存形式（1）、案件依頼者の名簿解決（1）。
+詳細: [24-verification-20261025.md](24-verification-20261025.md)
