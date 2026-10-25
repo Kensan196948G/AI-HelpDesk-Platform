@@ -8,11 +8,11 @@
 ## 1. 結論
 
 主要機能は稼働している。ただし検証で **Critical 2 件・High 4 件・Medium 3 件**を検出したため、
-修正 4 PR（#31 / #32 / #33 / #35）を作成し、CI 緑・独立レビュー後に `main` へマージした。
+修正 5 PR（#31 / #32 / #33 / #35 / #37）と運用 PR #38 を作成し、CI 緑・独立レビュー後に `main` へマージした。
 さらに稼働サービス（旧コード・状態破損）へ反映し、反映後の再検証まで完了した。
 
 - 反映後の公開 URL: **正常**（Access 302 / アプリ 200 / 5xx 0）
-- 稼働コード: `92c7676`（`/api/health` の `commit` で確認）
+- 稼働コード: `754a757`（`/api/health` の `commit` で確認）
 - 画面状態: 欠落キーを補完し、検証用の残骸（E2E）を削除済み
 
 ## 2. 検証結果（反映前）
@@ -39,14 +39,16 @@
 | Medium | 実在社員の「AI相談」で `TIPS[u.id].map()` が TypeError | **PR #33**: TIPS 未定義時は空リスト |
 | High | 引継ぎメモの推定分野が誤り（印刷→セキュリティ）、担当者名が `MK1073（）` | **PR #35**: 旧カテゴリ名を CATS キーへ対応付け、社員番号を名簿から氏名へ解決 |
 | High | 「デモ用の記入例」が案件種別と無関係で、承認ナレッジ・最終報告書まで汚染 | **PR #35**: 印刷・プリンタ・複合機・プリントを優先判定（件名または category=device のとき） |
+| Medium | チケット一覧で依頼者が内部 ID（`emp:MK...`）表示 | **PR #37**: 社員名簿から「部署 氏名」へ解決（名簿外は社員番号） |
+| Medium | preview DB のバックアップなし | **PR #38**: 日次バックアップ（PG16 dump・検証・14 日保持・systemd timer） |
+| Medium | Access JWT を検証していない（`ACCESS_JWT_MODE=off`） | **2026-10-25 設定変更**: `report` モードで検証開始（失敗はログのみ、次段階で enforce） |
 
 ### 未対応（既知の課題）
 
 | 重大度 | 内容 | 推奨 |
 |---|---|---|
-| Medium | チケット一覧の依頼者欄に内部 ID（`emp:MK...`）を表示 | 氏名表示へ |
-| Medium | `ACCESS_JWT_MODE=off` / `REQUIRE_PROXY_SECRET=false`（公開は Access で遮断済みだが多層防御なし） | `ACCESS_JWT_MODE=report` → `enforce`、proxy secret の付与方法を設計 |
-| Medium | preview DB のバックアップなし／disk 87% | `pg_dump` の日次タイマー、不要ファイル整理 |
+| Medium | `REQUIRE_PROXY_SECRET=false`（JWT は report モードで検証開始。proxy secret は未設定） | 付与方法を設計（cloudflared/Worker）。JWT は report のログを確認して enforce へ |
+| Medium | disk 87% | 不要ファイル整理（バックアップは約 85KB/回で影響小） |
 | Low | 氏名は保存前マスクの対象外（設計は「名宛てとして保持」） | 要件と設計のどちらを正とするか決定 |
 | Medium | 本番モードで MVP リレーショナル API はログイン経路がなく到達不能（設計の不一致） | 内部専用と明記、または Access 連携セッションを実装 |
 
@@ -60,7 +62,10 @@
 | 4 | `npx tsx scripts/migrate.ts` で `010_jsonb_objects.sql` を適用（12 列を object 化） |
 | 5 | 状態修復: 欠落 6 キー（`stats` / `faqCandidates` / `faqs` / `devices` / `estop` / `failNext`）を補完し、E2E 残骸（`CASE-E2E-039186` / `chat-e2e` / `TKT-E2E-1`）を削除 |
 | 6 | H1/H3 修正（PR #35）を再反映（12:06、build → restart。DB 変更なし） |
-| 7 | 反映後に再検証（下記） |
+| 7 | 依頼者 ID 表示の修正（PR #37）を反映（12:47、build → restart） |
+| 8 | `ACCESS_JWT_MODE=report` / `ACCESS_TEAM_DOMAIN` / `ACCESS_AUD` を設定（12:47、再起動） |
+| 9 | DB 日次バックアップを登録（PR #38、12:49 に手動実行 → timer 有効化） |
+| 10 | 反映後に再検証（下記） |
 
 - 状態修復前: cowork 8 キー / 案件 4（E2E 1 含む）/ チャット 5（E2E 1）/ チケット 1（E2E）/ devices 0
 - 状態修復後: cowork 14 キー / 案件 3 / チャット 4 / チケット 0 / devices 11 / E2E 文字列なし
@@ -81,12 +86,15 @@
 | AI 回答 API | `provider=deepseek` / `model=deepseek-flash` / 根拠 `KB-2026-0001` |
 | 引継ぎメモの分野・担当（H1） | `cat('IT端末')` → PC・周辺機器 / `staff('MK1073')` → 佐藤 奨太（ヘルプデスク担当）/ `staff(undefined)` → （未定） |
 | 記入例（H3） | 印刷+共有 → 印刷スプーラの例 / 共有のみ → 共有フォルダの例 / 共有本文に偶発「印刷」→ 共有の例 |
+| 依頼者表示（M3） | `personLabel('emp:MK0200')` → DX推進部 加藤 里美 / 名簿外 → 社員番号 / 通常の氏名は変化なし |
+| Access JWT（report） | 起動ログ `mode:report`、JWT なしリクエストは警告を出して 200（公開は Access 302） |
+| DB バックアップ | `ai_helpdesk_preview-20261025-124925.dump` 85,289 bytes / systemd 実行 `Result=success` / 次回 2026-10-26 02:32 JST |
 
 稼働中インスタンス（公開 URL のオリジン）:
 
 | 項目 | 結果 |
 |---|---|
-| `/api/health` | `ok:true` / `db:ok` / `commit:92c7676` |
+| `/api/health` | `ok:true` / `db:ok` / `commit:754a757` |
 | `/api/state` | 14 キー・案件 3・チャット 4・チケット 0・E2E なし |
 | `GET /`（Access ヘッダー付き） | 200 / 7xx KB / 修正マーカー入り |
 | 公開 URL | 302 → Cloudflare Access ログイン |
@@ -103,8 +111,9 @@
 
 ## 7. 次にやるべきこと
 
-1. `ACCESS_JWT_MODE=report` から段階的に JWT 検証を有効化し、proxy secret の付与方法を設計。
-2. preview DB の日次バックアップと disk 使用率の整理。
+1. `ACCESS_JWT_MODE=report` のログで誤検知がないことを確認し、`enforce` へ段階移行する。
+   `REQUIRE_PROXY_SECRET` は付与方法（cloudflared / Worker）を設計してから有効化する。
+2. disk 使用率の整理（87%）。不要な node_modules / 旧バックアップ等を確認する。
 3. 氏名マスクの方針決定（要件と設計の突合）。
 4. Windows 実機での端末エージェント配布・定期実行の確認（未実施）。
 5. 引継ぎ担当者のラベル（部署）と、記入例の AI 化は次段階の改善候補。

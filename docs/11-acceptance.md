@@ -60,7 +60,7 @@
   白画面・例外は修正後に 0（詳細: [24-verification-20261025.md](24-verification-20261025.md)）。
 - #20 / #21（Preview API / DB）: 公開 URL は Access 302、オリジン API は `/api/health` / `/api/state` を実測。
   DB は migration 010 適用・状態修復後に再確認済み。
-- #17（既知問題）: Critical 2 / High 4 を修正（引継ぎメモの分野・担当者名、記入例を含む）。
-  未対応は「JWT/proxy secret の多層防御」「DB バックアップ」等。
+- #17（既知問題）: Critical 2 / High 4 を修正（引継ぎメモの分野・担当者名、記入例、依頼者 ID 表示を含む）。
+  Access JWT は report モードで検証開始、DB は日次バックアップを追加。未対応は proxy secret・disk 整理等。
 - #15: テストは **201 件**に増加。
 - 総合: 個人利用 MVP の主要価値は公開 URL 上で操作可能。未対応の High 2 件は次ラウンドで修正する。
