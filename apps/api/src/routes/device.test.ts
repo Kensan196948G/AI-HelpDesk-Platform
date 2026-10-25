@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { sql } from '../db.js';
 import { browserInputToInventory } from '../domain/device.js';
 import { storeDeviceInventory } from '../lib/device-inventory.js';
+import { jsonbValue } from '../lib/jsonb-value.js';
 import { buildServer } from '../server.js';
 
 const EMAIL = 'dev@example.com';
@@ -409,5 +410,284 @@ describe('device command channel', () => {
     });
     expect(res.statusCode).toBe(403);
     expect(res.json().error.code).toBe('DEVICE_MISMATCH');
+  });
+});
+
+// ── 権限分離（Migration 016 / docs/25 §12・§17-2） ─────────────────────
+// 昇格必須（skills.requires->>'elevation' = 'true'）のコマンドを standard トークンへ
+// 配信しないこと、結果送信も権限一致を要求することをサーバ側で証明する。
+const adminToken = `aihd_admin_test_${Math.random().toString(36).slice(2)}_${Date.now()}`;
+
+describe('device command privilege 分離', () => {
+  const asStandard = { 'x-device-token': agentToken, 'x-device-id': AGENT_DEVICE };
+  const asAdmin = { 'x-device-token': adminToken, 'x-device-id': AGENT_DEVICE };
+
+  /** queued を消してテスト間の干渉を防ぐ。 */
+  async function resetCommands(): Promise<void> {
+    await sql`DELETE FROM device_commands WHERE user_email = ${EMAIL}`;
+  }
+
+  async function insertCommand(options: {
+    opId: string;
+    skillId?: string | null;
+    skillVersion?: string | null;
+    sessionId?: string | null;
+    stepId?: string | null;
+  }): Promise<string> {
+    const rows = await sql<{ id: string }[]>`
+      INSERT INTO device_commands
+        (user_email, device_id, op_id, params, skill_id, skill_version, session_id, step_id)
+      VALUES
+        (${EMAIL}, ${AGENT_DEVICE}, ${options.opId}, '{}'::jsonb,
+         ${options.skillId ?? null}, ${options.skillVersion ?? null},
+         ${options.sessionId ?? null}, ${options.stepId ?? null})
+      RETURNING id
+    `;
+    const id = rows[0]?.id;
+    if (!id) throw new Error('device_command insert failed');
+    return id;
+  }
+
+  /** queued を順に取り出して skill_id の集合を返す（204 まで）。 */
+  async function drain(headers: Record<string, string>): Promise<string[]> {
+    const delivered: string[] = [];
+    for (let i = 0; i < 10; i += 1) {
+      const res = await app.inject({ method: 'GET', url: '/api/device/command', headers });
+      if (res.statusCode === 204) break;
+      expect(res.statusCode, res.body).toBe(200);
+      delivered.push(String(res.json().command.skill_id ?? '(none)'));
+    }
+    return delivered;
+  }
+
+  beforeAll(async () => {
+    await resetCommands();
+    // 標準トークンは上の beforeAll で privilege 未指定（= 既定 standard）のまま。
+    await sql`DELETE FROM device_tokens WHERE user_email = ${EMAIL} AND privilege = 'admin'`;
+    const hash = createHash('sha256').update(adminToken).digest('hex');
+    await sql`
+      INSERT INTO device_tokens (token_hash, user_email, label, privilege)
+      VALUES (${hash}, ${EMAIL}, 'test-admin', 'admin')
+    `;
+  });
+
+  afterAll(async () => {
+    await resetCommands();
+    await sql`DELETE FROM device_tokens WHERE user_email = ${EMAIL} AND privilege = 'admin'`;
+    await sql`DELETE FROM skills WHERE id LIKE 'test.elev.%'`;
+  });
+
+  it('device_tokens.privilege は standard 既定で、CHECK で 2 値に限定される', async () => {
+    const rows = await sql<{ privilege: string }[]>`
+      SELECT privilege FROM device_tokens WHERE token_hash = ${createHash('sha256').update(agentToken).digest('hex')}
+    `;
+    expect(rows[0]?.privilege).toBe('standard');
+
+    const badHash = createHash('sha256').update(`${adminToken}-bad`).digest('hex');
+    await expect(
+      sql`
+        INSERT INTO device_tokens (token_hash, user_email, label, privilege)
+        VALUES (${badHash}, ${EMAIL}, 'bad', 'root')
+      `,
+    ).rejects.toThrow(/device_tokens_privilege_check/);
+    await sql`DELETE FROM device_tokens WHERE token_hash = ${badHash}`;
+  });
+
+  it('standard には昇格必須コマンドが配信されず、admin だけが受信する', async () => {
+    await resetCommands();
+    const standardId = await insertCommand({ opId: 'SPOOLER_RESTART' });
+    const elevatedId = await insertCommand({
+      opId: 'spooler.restart',
+      skillId: 'spooler.restart',
+      skillVersion: '1.0.0',
+    });
+
+    // admin は昇格必須だけを受け取る（skill_id なしの既存経路は標準専用）。
+    const adminFirst = await app.inject({
+      method: 'GET',
+      url: '/api/device/command',
+      headers: asAdmin,
+    });
+    expect(adminFirst.statusCode, adminFirst.body).toBe(200);
+    expect(adminFirst.json().command.id).toBe(elevatedId);
+    expect(adminFirst.json().command.skill_id).toBe('spooler.restart');
+
+    // standard は昇格必須を受け取らず、昇格不要の 1 件だけを受け取る。
+    const standard = await app.inject({
+      method: 'GET',
+      url: '/api/device/command',
+      headers: asStandard,
+    });
+    expect(standard.statusCode, standard.body).toBe(200);
+    expect(standard.json().command.id).toBe(standardId);
+    expect(standard.json().command.skill_id).toBeNull();
+
+    // 昇格必須コマンドは standard に 1 件も配信されていない（空になる）。
+    const again = await app.inject({
+      method: 'GET',
+      url: '/api/device/command',
+      headers: asStandard,
+    });
+    expect(again.statusCode).toBe(204);
+  });
+
+  it('解決ループ由来の昇格必須コマンド（session/step 付き）は standard に配信されない', async () => {
+    await resetCommands();
+    const sessionId = randomUUID();
+    const stepId = randomUUID();
+    await sql`
+      INSERT INTO resolution_sessions (id, user_email, case_id, device_id, status, expires_at)
+      VALUES (${sessionId}, ${EMAIL}, 'CASE-PRIV-TEST', ${AGENT_DEVICE}, 'waiting_execute',
+              now() + interval '30 minutes')
+    `;
+    await sql`
+      INSERT INTO resolution_steps
+        (id, session_id, seq, skill_id, skill_version, skill_content_hash, params,
+         rationale, risk_level, status, nonce, approval_expires_at, deadline_at)
+      VALUES
+        (${stepId}, ${sessionId}, 1, 'spooler.queue.purge', '1.0.0', 'sha256:unknown',
+         '{}'::jsonb, 'test', 3, 'approved', 'test-nonce-priv',
+         now() + interval '5 minutes', now() + interval '60 seconds')
+    `;
+    try {
+      const id = await insertCommand({
+        opId: 'spooler.queue.purge',
+        skillId: 'spooler.queue.purge',
+        skillVersion: '1.0.0',
+        sessionId,
+        stepId,
+      });
+
+      const standard = await app.inject({
+        method: 'GET',
+        url: '/api/device/command',
+        headers: asStandard,
+      });
+      expect(standard.statusCode, standard.body).toBe(204);
+
+      const admin = await app.inject({
+        method: 'GET',
+        url: '/api/device/command',
+        headers: asAdmin,
+      });
+      expect(admin.statusCode, admin.body).toBe(200);
+      expect(admin.json().command.id).toBe(id);
+      expect(admin.json().command.session_id).toBe(sessionId);
+      expect(admin.json().command.step_id).toBe(stepId);
+    } finally {
+      await sql`DELETE FROM device_commands WHERE session_id = ${sessionId}`;
+      await sql`DELETE FROM resolution_sessions WHERE id = ${sessionId}`;
+    }
+  });
+
+  it('requires.elevation の型ゆれ（boolean / 文字列）を同じ昇格必須として扱う', async () => {
+    await resetCommands();
+    // jsonb へは jsonbValue（= sql.json）でオブジェクトを渡す。文字列を ::jsonb で
+    // キャストすると JSON 文字列として二重エンコードされ、elevation が「無い」扱いに
+    // なる（その場合は standard へ倒れる = fail-closed。下の double ケースで固定する）。
+    const cases: { id: string; requires: Record<string, unknown> }[] = [
+      { id: 'test.elev.bool', requires: { elevation: true } },
+      { id: 'test.elev.string', requires: { elevation: 'true' } },
+      { id: 'test.elev.false', requires: { elevation: false } },
+      { id: 'test.elev.missing', requires: { userConfirm: true } },
+      { id: 'test.elev.double', requires: { elevation: true } },
+    ];
+    try {
+      for (const item of cases) {
+        // double だけは二重エンコードを再現する（文字列として渡す）。
+        const requires =
+          item.id === 'test.elev.double' ? JSON.stringify(item.requires) : item.requires;
+        await sql`
+          INSERT INTO skills (id, version, title, script_path, requires, status)
+          VALUES (${item.id}, '1.0.0', 'test', 'scripts/skills/windows/os-info.ps1',
+                  ${jsonbValue(requires)}, 'draft')
+          ON CONFLICT (id, version) DO UPDATE SET requires = EXCLUDED.requires
+        `;
+        await insertCommand({ opId: item.id, skillId: item.id, skillVersion: '1.0.0' });
+      }
+
+      const standardSkills = await drain(asStandard);
+      expect(standardSkills.sort()).toEqual([
+        'test.elev.double',
+        'test.elev.false',
+        'test.elev.missing',
+      ]);
+      const adminSkills = await drain(asAdmin);
+      expect(adminSkills.sort()).toEqual(['test.elev.bool', 'test.elev.string']);
+    } finally {
+      await sql`DELETE FROM device_commands WHERE user_email = ${EMAIL}`;
+      await sql`DELETE FROM skills WHERE id LIKE 'test.elev.%'`;
+    }
+  });
+
+  it('standard が昇格必須コマンドの結果を送ると 403（状態は変わらない）', async () => {
+    await resetCommands();
+    const id = await insertCommand({
+      opId: 'spooler.restart',
+      skillId: 'spooler.restart',
+      skillVersion: '1.0.0',
+    });
+    await sql`UPDATE device_commands SET status = 'delivered' WHERE id = ${id}`;
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/device/command/${id}/result`,
+      headers: asStandard,
+      payload: { ok: true, result: { restarted: true } },
+    });
+    expect(res.statusCode, res.body).toBe(403);
+    expect(res.json().error.code).toBe('PRIVILEGE_MISMATCH');
+
+    const rows = await sql<{ status: string }[]>`
+      SELECT status FROM device_commands WHERE id = ${id}
+    `;
+    expect(rows[0]?.status).toBe('delivered');
+
+    // 正しい権限（admin）なら同じコマンドの結果を報告できる。
+    const ok = await app.inject({
+      method: 'POST',
+      url: `/api/device/command/${id}/result`,
+      headers: asAdmin,
+      payload: { ok: true, result: { restarted: true } },
+    });
+    expect(ok.statusCode, ok.body).toBe(200);
+    expect(ok.json().command.status).toBe('done');
+  });
+
+  it('admin が昇格不要コマンドの結果を送っても 403', async () => {
+    await resetCommands();
+    const id = await insertCommand({ opId: 'SPOOLER_RESTART' });
+    await sql`UPDATE device_commands SET status = 'delivered' WHERE id = ${id}`;
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/device/command/${id}/result`,
+      headers: asAdmin,
+      payload: { ok: true },
+    });
+    expect(res.statusCode, res.body).toBe(403);
+    expect(res.json().error.code).toBe('PRIVILEGE_MISMATCH');
+  });
+
+  it('他ユーザーのコマンドは従来どおり 404（権限エラーで存在を漏らさない）', async () => {
+    await resetCommands();
+    const id = await insertCommand({
+      opId: 'spooler.restart',
+      skillId: 'spooler.restart',
+      skillVersion: '1.0.0',
+    });
+    await sql`UPDATE device_commands SET status = 'delivered' WHERE id = ${id}`;
+    await sql`UPDATE device_commands SET user_email = 'other-priv@example.com' WHERE id = ${id}`;
+    try {
+      const res = await app.inject({
+        method: 'POST',
+        url: `/api/device/command/${id}/result`,
+        headers: asStandard,
+        payload: { ok: true },
+      });
+      expect(res.statusCode).toBe(404);
+      expect(res.json().error.code).toBe('NOT_FOUND');
+    } finally {
+      await sql`DELETE FROM device_commands WHERE id = ${id}`;
+    }
   });
 });

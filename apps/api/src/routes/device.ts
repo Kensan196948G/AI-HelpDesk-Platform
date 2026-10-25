@@ -222,15 +222,26 @@ function deviceTokenFrom(request: FastifyRequest): string | null {
   return trimmed;
 }
 
+/**
+ * 端末エージェントの権限区分（Migration 016）。
+ * - standard: 昇格不要のコマンドだけを配信する（既存トークンの既定）。
+ * - admin   : 昇格必須（skills.requires->>'elevation' = 'true'）のコマンドだけを配信する。
+ *
+ * 分離はサーバ側で強制する（エージェント側の制限は二重防御であり、単独で信頼しない）。
+ */
+type DevicePrivilege = 'standard' | 'admin';
+
 interface DeviceIdentity {
   email: string;
   deviceId: string | null;
+  privilege: DevicePrivilege;
 }
 
 /**
  * 端末エージェントのトークンを検証する。
  * `requireDevice` のときは `x-device-id` を必須にし、トークンへ端末をバインドする（TOFU）。
  * 以後は同じトークンで別の端末IDを名乗れない（端末バインド）。
+ * `privilege` はトークンに保存された権限区分を返す（想定外の値は standard に倒す）。
  */
 async function authenticateDeviceToken(
   request: FastifyRequest,
@@ -239,14 +250,16 @@ async function authenticateDeviceToken(
   const token = deviceTokenFrom(request);
   if (!token) throw unauthorized('端末エージェントのデバイストークンが必要です。');
   const tokenHash = createHash('sha256').update(token).digest('hex');
-  const rows = await sql<{ user_email: string; device_id: string | null }[]>`
-    SELECT user_email, device_id
+  const rows = await sql<{ user_email: string; device_id: string | null; privilege: string }[]>`
+    SELECT user_email, device_id, privilege
     FROM device_tokens
     WHERE token_hash = ${tokenHash} AND revoked_at IS NULL
     LIMIT 1
   `;
   const row = rows[0];
   if (!row) throw unauthorized('デバイストークンが無効です。');
+  // CHECK 制約で 2 値に限定済みだが、防御的に未知の値は standard へ倒す（fail-closed）。
+  const privilege: DevicePrivilege = row.privilege === 'admin' ? 'admin' : 'standard';
   const rawHeader = request.headers['x-device-id'];
   const header = Array.isArray(rawHeader) ? rawHeader[0] : rawHeader;
   const claimed = typeof header === 'string' ? header.trim().slice(0, 120) : '';
@@ -270,7 +283,7 @@ async function authenticateDeviceToken(
     }
   }
   await sql`UPDATE device_tokens SET last_used_at = now() WHERE token_hash = ${tokenHash}`;
-  return { email: row.user_email, deviceId };
+  return { email: row.user_email, deviceId, privilege };
 }
 
 async function snapshotResponse(email: string, browserDeviceId?: string) {
@@ -356,8 +369,19 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
   );
 
   // 端末エージェントが次のコマンドを取得する（1件だけ・配信済みに更新）。
+  //
+  // 権限分離（Migration 016 / docs/25 §12・§17-2）:
+  //   昇格必須かどうかは device_commands.skill_id + skill_version から
+  //   skills.requires->>'elevation' を EXISTS で参照して判定する。
+  //     - skill_id IS NULL（既存 SPOOLER_RESTART 等）は昇格不要として standard に配信する。
+  //     - requires->>'elevation' は bool の true も文字列 "true" も 'true' になる。
+  //       値が無い/NULL の場合は EXISTS が false になり standard 扱い（fail-closed）。
+  //   `EXISTS(...) = (privilege = 'admin')` により、
+  //     standard → 昇格不要求のコマンドだけ / admin → 昇格必須のコマンドだけ を満たす。
   app.get('/device/command', async (request, reply) => {
-    const { email, deviceId } = await authenticateDeviceToken(request, { requireDevice: true });
+    const { email, deviceId, privilege } = await authenticateDeviceToken(request, {
+      requireDevice: true,
+    });
     const rows = await sql<{ id: string }[]>`
       UPDATE device_commands
       SET status = 'delivered', delivered_at = now(),
@@ -366,6 +390,14 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
         SELECT dc.id FROM device_commands dc
         WHERE dc.user_email = ${email} AND dc.status = 'queued'
           AND (dc.device_id IS NULL OR dc.device_id = ${deviceId})
+          AND (
+            EXISTS (
+              SELECT 1 FROM skills sk
+              WHERE sk.id = dc.skill_id
+                AND sk.version = dc.skill_version
+                AND sk.requires->>'elevation' = 'true'
+            ) = (${privilege}::text = 'admin')
+          )
           AND (
             dc.session_id IS NULL OR EXISTS (
               SELECT 1 FROM resolution_sessions s
@@ -395,18 +427,37 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // 端末エージェントの実行結果。
+  // 配信時と同じ判定で「そのコマンドの要求権限」を求め、トークンの privilege と
+  // 一致しなければ 403 にする（配信時の取り違え・別エージェントによる横取りを防ぐ）。
   app.post('/device/command/:id/result', async (request) => {
-    const { email, deviceId } = await authenticateDeviceToken(request, { requireDevice: true });
+    const { email, deviceId, privilege } = await authenticateDeviceToken(request, {
+      requireDevice: true,
+    });
     const { id } = CommandIdSchema.parse(request.params);
     const input = CommandResultSchema.parse(request.body);
-    const existing = await sql<{ device_id: string | null }[]>`
-      SELECT device_id FROM device_commands
-      WHERE id = ${id} AND user_email = ${email}
+    const existing = await sql<{ device_id: string | null; requires_elevation: boolean }[]>`
+      SELECT dc.device_id,
+        EXISTS (
+          SELECT 1 FROM skills sk
+          WHERE sk.id = dc.skill_id
+            AND sk.version = dc.skill_version
+            AND sk.requires->>'elevation' = 'true'
+        ) AS requires_elevation
+      FROM device_commands dc
+      WHERE dc.id = ${id} AND dc.user_email = ${email}
       LIMIT 1
     `;
     if (!existing[0]) throw new ApiError(404, 'NOT_FOUND', '対象のコマンドが見つかりません。');
     if (existing[0].device_id && existing[0].device_id !== deviceId) {
       throw new ApiError(403, 'DEVICE_MISMATCH', 'コマンドの対象端末と一致しません。');
+    }
+    const required: DevicePrivilege = existing[0].requires_elevation ? 'admin' : 'standard';
+    if (required !== privilege) {
+      throw new ApiError(
+        403,
+        'PRIVILEGE_MISMATCH',
+        'このコマンドの要求権限とエージェントの権限が一致しません。',
+      );
     }
     const rows = await sql<{ id: string }[]>`
       UPDATE device_commands
