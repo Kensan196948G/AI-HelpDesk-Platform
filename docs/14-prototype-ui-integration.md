@@ -43,8 +43,9 @@
   既存の値は上書きしない。既定値に `freshState()` は使わず（サンプル案件・FAQ・監査ログを
   生成してしまうため）、キーごとの空の既定値と `seedDevices()`（端末）を使う。
 - DOM / CSS / 画面遷移は変更しない。元 HTML の当該 1 行に文字列置換で追記するだけ。
-- 状態を書き込む検証スクリプトは、`EMAIL_ALIASES` の正規化後メールでバックアップ・復元し、
-  復元後の内容一致を検証すること（`scripts/e2e/two-account-handover.mjs`）。
+- 状態を書き込む検証スクリプトは、`GET /api/state` が返す**正規化後メール**を正本にしてバックアップ・復元し、
+  復元後の内容一致を検証すること。API と DB の一致確認、preview の既定拒否、復元のトランザクション化も行う
+  （`scripts/e2e/two-account-handover.mjs`）。
 
 ### 2-2. 認証は Cloudflare Access のみ
 

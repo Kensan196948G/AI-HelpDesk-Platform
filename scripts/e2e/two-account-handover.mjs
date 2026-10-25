@@ -10,6 +10,7 @@
  *
  * 注意: これは稼働中 DB を一時的に書き換える。必ず検証用 DB（例 ai_helpdesk_verify）で
  * 実行し、preview で実行する場合は事前にバックアップを取ること。
+ * 同じ DB に対して同時に 2 つ実行しないこと（排他はしていない）。
  */
 import postgres from 'postgres';
 
@@ -28,7 +29,7 @@ const dbName = (() => {
     return '';
   }
 })();
-if (dbName === 'ai_helpdesk_preview' && process.env.AIHD_E2E_ALLOW_PREVIEW !== '1') {
+if (/^ai_helpdesk_preview/.test(dbName.trim().toLowerCase()) && process.env.AIHD_E2E_ALLOW_PREVIEW !== '1') {
   console.error(
     'preview（本番相当）DB への書き込みは既定で拒否します。\n' +
       '意図して実行する場合だけ AIHD_E2E_ALLOW_PREVIEW=1 を設定してください。',
@@ -328,7 +329,7 @@ try {
     await app`SELECT status, approved_by, self_approved FROM case_handovers WHERE id = ${handoverId}`;
   if (
     row[0]?.status === 'completed' &&
-    row[0]?.approved_by === C.email &&
+    row[0]?.approved_by === C_KEY &&
     row[0]?.self_approved === false
   ) {
     ok('DB: completed / 承認者=C / 自己承認ではない');
