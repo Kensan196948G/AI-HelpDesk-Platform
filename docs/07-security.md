@@ -106,11 +106,15 @@
   `aud`・`iss`・`exp`/`nbf`（±60 秒）と、JWT の email とヘッダー email の一致を確認する。
   同一ホスト上のプロセスや SSRF から 127.0.0.1 へ偽の email ヘッダーを送るなりすましを防ぐ。
   段階導入: `report`（失敗をログに出すだけ）で実ログインの成功ログ「Cloudflare Access JWT を検証しました。」を確認してから `enforce` にする。
+  **2026-10-25 に `enforce` へ移行済み**（report で公開 Access 経由の実 JWT 検証成功を確認後）。
+  実測: 公開経由 `POST /api/device/browser` は 200、ローカルで email ヘッダーだけの要求は 401、
+  未認証の公開アクセスは Access の 302。
 - **本番で認証なしの起動を拒否**: `NODE_ENV=production` で `AUTH_MODE=local`（既定値を含む）なら起動しない。
 - **接続元の扱い**: `trustProxy` はループバック（cloudflared）のみ。レート制限のキーは Tunnel 経由なら `CF-Connecting-IP`。
   利用者が送る `X-Forwarded-For` の左端は使わない。レート制限のバケットは上限 1 万件で期限切れを掃除する。
 - **AI 回答のレート制限**: `/api/ai/answer` は利用者（Access メール）単位で 1 分 20 回（超過は 429）。外部 AI の費用を抑える。
-- 残存リスク: `ACCESS_JWT_MODE=off` の間は Access ヘッダーの信頼、DNS キャッシュ、エージェント用 bypass パス。
+- 残存リスク: `REQUIRE_PROXY_SECRET=false`（proxy secret 未導入）、DNS キャッシュ、エージェント用 bypass パス。
+  JWT は enforce だが、多層防御としては proxy secret の付与方法（cloudflared / Worker）が未設計。
 - 12h の自動ログオフは Access のセッション期限に依存する。
 
 ## 7-2. DeepSeek API（DeepSeek-V4.1-Flash）
