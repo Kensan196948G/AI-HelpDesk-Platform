@@ -37,6 +37,9 @@ describe('prototype UI integration', () => {
     expect(html).toContain('__AIHD_DEVICE_DEBUG__');
     // 最終報告書 / 遠隔支援コンソール（assist-bridge.js）
     expect(html).toContain('__AIHD_ASSIST_BRIDGE__');
+    // 解決ループ（読み取り診断）のブリッジ
+    expect(html).toContain('__AIHD_RESOLVE_BRIDGE__');
+    expect(html).toContain('解決ループ（読み取り診断）');
     expect(html).toContain('最終報告書');
     expect(html).toContain('遠隔支援');
     // RSP / MeshCentral の導線（B さんの GUI / PowerShell 操作基盤）

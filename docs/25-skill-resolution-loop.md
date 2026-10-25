@@ -368,3 +368,66 @@
 - 既存 `device_commands` との互換（移行 or 併存）
 - 高リスク Skill の承認者ロール定義（既存 `itadmin` を利用）
 - 画面の配置（案件チャット下 / 別ツール）の最終確認
+
+## 17. 実装状況（2026-10-25 / Phase B）
+
+| 項目 | 状態 |
+|---|---|
+| DB | `011_resolution_loop.sql`（skills / resolution_sessions / resolution_steps、device_commands・device_tokens 拡張） |
+| API | `/api/resolve/*` 7 本。承認ハッシュ・Y/N 二段階・状態機械 |
+| Skill | 読み取り専用 5 件（os.info / disk.space / spooler.status / service.status / network.adapters）。起動時に `.ps1` の SHA-256 を計算して upsert |
+| 端末 | `endpoint-command-agent.mjs` が許可済み `.ps1` を引数配列で実行。`--mock`/非 Windows は fixture |
+| UI | `resolve-bridge.js`（案件ウィザード下にカード）。実行前 Y/N → 結果 → 継続 Y/N → 停止 |
+| テスト | 新規 46 件（resolve）+ device 13 件、全体 **253 件**。UI E2E で 2 ステップのループを実測 |
+| 未実施 | Windows 実機の PowerShell 実行、estop 連携、端末オフライン検知、承認期限切れ後の再提案 |
+
+Phase B の実測（隔離 DB + mock エージェント）:
+- `network.adapters` 提案 → Y → `done` → 結果表示 → 継続 Y → `os.info` 提案 → Y → `done` → 継続 N → `stopped`
+- 画面の pageerror / HTTP 4xx は 0。
+
+## 18. ハードニング（独立レビュー H-1/H-2/H-3 対応 / 2026-10-25）
+
+Phase B の独立レビューで指摘された High 3 件を、Phase C 着手前に修正した。
+
+| ID | 指摘 | 対応 |
+|---|---|---|
+| H-1 | Skill が起動時に自動 approved。content_hash が .ps1 のみ。agent が version/hash を検証しない | `scripts/skills/approved.json` に**人間レビュー済みの定義ハッシュ**を保存。スクリプト・引数・リスク・paramsSchema・verify/rollback・出力ポリシーをすべて含む `contentHash` とし、manifest と一致する Skill だけを approved にする。変更があれば自動的に draft。agent も manifest とローカル `sha256` を照合し、不一致は実行しない |
+| H-2 | 端末バインドが無い（deviceId 任意、x-device-id 無視、同一ユーザーの別端末で実行可能） | セッション開始時に `device_inventories` で本人の端末か確認。デバイストークンに `device_id` を TOFU バインドし、以後の `x-device-id` と一致しない場合は 403。GET /device/command は端末一致のコマンドだけ配信。結果報告も端末一致を検証 |
+| H-3 | 承認後の停止が実行キューを止めない | stop / expire で `proposed/approved/executing` の step を `cancelled`、`queued` の device_command を `expired` に更新。agent は停止済みセッションのコマンドを取得できない。停止後に結果が届いても session/step を進めない |
+
+追加:
+- estop（画面の緊急停止）が ON の間はセッション開始・承認を 409 `ESTOP_ACTIVE` で拒否。
+- `escalate` 用の状態は `failed` 時に設定（手動 resolve は Phase C で追加）。
+- テスト: 65 件（resolve + device）に増加。全体 **261 件**。
+
+残り（Phase C で対応）:
+- Windows 実機での PowerShell 実行
+- 端末オフライン/結果タイムアウトの自動失敗
+- リスク 4 以上の IT 管理者承認 UI
+- 手動「解決した」「担当者へ」操作
+- 出力ポリシー（fieldsToAi）の厳密適用（現状は PII 伏せ字 + サイズ制限）
+
+
+## 19. 実装状況（2026-10-25 / Phase C 部分）
+
+§18 の「残り」のうち、Windows 実機を除く 4 項目を実装した。
+
+| 項目 | 状態 | 実体 |
+|---|---|---|
+| 端末オフライン / 結果タイムアウト | 実装 | 承認時に `RESOLVE_DEVICE_OFFLINE_SEC`（既定 120 秒）で `DEVICE_OFFLINE`。承認時に `timeout_sec` / `deadline_at` を確定し、`sweepResolveTimeouts()` が期限超過を `failed`（`RESULT_TIMEOUT`）→ セッション `escalated`。期限後の結果は状態を進めない |
+| リスク 4 以上の IT 管理者承認 | 実装 | `RESOLVE_ADMIN_ALLOWLIST`（既定空・fail-closed）。`GET /api/resolve/admin/pending` と `POST /api/resolve/steps/:id/admin-approve`。payload は利用者側と別の 13 キー。自己承認・改ざん・期限切れ（5 分・依頼者側と同一）を拒否。UI に承認待ちと注意表示 |
+| 手動「解決した」「担当者へ」 | 実装 | `POST /api/resolve/sessions/:id/resolve` / `escalate`。監査に `by: manual` と理由。UI に両ボタン |
+| fieldsToAi の厳密適用 | 実装 | 結果取り込み時に `result_ai`（宣言フィールドのみ・既定拒否）を保存し、次提案は `result_ai` だけを使う。画面用 `last_summary` は従来どおり |
+
+- migration: `013_resolution_phase_c.sql`（additive。CHECK 制約は 011 のままで足りる）
+- テスト: **278 件**（+17）。`npm run typecheck` / `npm run lint` 緑
+- 独立レビュー対応: AI 要約の fieldsToAi 迂回、期限後コマンド配信、リスク 5 の実行、
+  session/step のロック順逆転（デッドロック）、複数管理者の上書き、手動理由の PII、
+  既存データの期限 backfill（migration 014）を修正。
+- 2026-10-25 人間承認: 上記の実出力キー不一致を解消した。`os.info` は osName/version/
+  buildNumber/architecture、`disk.space` は volumes、`spooler.status`/`service.status` は
+  name/status/startType を `fieldsToAi` とし、`approved.json` を再生成した（kensan1969@gmail.com）。
+- 未実施: Windows 実機での PowerShell 実行とロールバック確認、管理画面（別画面）への承認導線統合、
+  fieldsToAi のドット記法拡張
+- 注記: 本ブランチは `feat/resolve-loop-poc`（Phase B）から分岐。`main` は設計書（572ecb3）のみで、
+  Phase B の実装 2 コミットはまだ main にマージされていない。

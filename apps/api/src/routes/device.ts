@@ -222,20 +222,55 @@ function deviceTokenFrom(request: FastifyRequest): string | null {
   return trimmed;
 }
 
-async function authenticateDeviceToken(request: FastifyRequest): Promise<string> {
+interface DeviceIdentity {
+  email: string;
+  deviceId: string | null;
+}
+
+/**
+ * 端末エージェントのトークンを検証する。
+ * `requireDevice` のときは `x-device-id` を必須にし、トークンへ端末をバインドする（TOFU）。
+ * 以後は同じトークンで別の端末IDを名乗れない（端末バインド）。
+ */
+async function authenticateDeviceToken(
+  request: FastifyRequest,
+  options: { requireDevice?: boolean } = {},
+): Promise<DeviceIdentity> {
   const token = deviceTokenFrom(request);
   if (!token) throw unauthorized('端末エージェントのデバイストークンが必要です。');
   const tokenHash = createHash('sha256').update(token).digest('hex');
-  const rows = await sql<{ user_email: string }[]>`
-    SELECT user_email
+  const rows = await sql<{ user_email: string; device_id: string | null }[]>`
+    SELECT user_email, device_id
     FROM device_tokens
     WHERE token_hash = ${tokenHash} AND revoked_at IS NULL
     LIMIT 1
   `;
   const row = rows[0];
   if (!row) throw unauthorized('デバイストークンが無効です。');
+  const rawHeader = request.headers['x-device-id'];
+  const header = Array.isArray(rawHeader) ? rawHeader[0] : rawHeader;
+  const claimed = typeof header === 'string' ? header.trim().slice(0, 120) : '';
+  if (options.requireDevice && !claimed) {
+    throw new ApiError(400, 'DEVICE_ID_REQUIRED', '端末ID（x-device-id）が必要です。');
+  }
+  let deviceId = row.device_id;
+  if (claimed) {
+    if (!deviceId) {
+      await sql`
+        UPDATE device_tokens SET device_id = ${claimed}, last_used_at = now()
+        WHERE token_hash = ${tokenHash} AND device_id IS NULL
+      `;
+      deviceId = claimed;
+    } else if (deviceId !== claimed) {
+      throw new ApiError(
+        403,
+        'DEVICE_MISMATCH',
+        'このデバイストークンは別の端末に紐づいています。',
+      );
+    }
+  }
   await sql`UPDATE device_tokens SET last_used_at = now() WHERE token_hash = ${tokenHash}`;
-  return row.user_email;
+  return { email: row.user_email, deviceId };
 }
 
 async function snapshotResponse(email: string, browserDeviceId?: string) {
@@ -322,18 +357,37 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
 
   // 端末エージェントが次のコマンドを取得する（1件だけ・配信済みに更新）。
   app.get('/device/command', async (request, reply) => {
-    const email = await authenticateDeviceToken(request);
+    const { email, deviceId } = await authenticateDeviceToken(request, { requireDevice: true });
     const rows = await sql<{ id: string }[]>`
       UPDATE device_commands
-      SET status = 'delivered', delivered_at = now()
+      SET status = 'delivered', delivered_at = now(),
+          device_id = COALESCE(device_id, ${deviceId})
       WHERE id = (
-        SELECT id FROM device_commands
-        WHERE user_email = ${email} AND status = 'queued'
-        ORDER BY created_at
+        SELECT dc.id FROM device_commands dc
+        WHERE dc.user_email = ${email} AND dc.status = 'queued'
+          AND (dc.device_id IS NULL OR dc.device_id = ${deviceId})
+          AND (
+            dc.session_id IS NULL OR EXISTS (
+              SELECT 1 FROM resolution_sessions s
+              WHERE s.id = dc.session_id
+                AND s.status IN ('waiting_execute', 'executing', 'waiting_continue')
+                -- 期限切れの解決ステップは配信しない（配信と期限判定を同一 UPDATE で原子的に行う）。
+                AND (
+                  dc.step_id IS NULL OR EXISTS (
+                    SELECT 1 FROM resolution_steps st
+                    WHERE st.id = dc.step_id
+                      AND st.status IN ('approved', 'executing')
+                      AND (st.deadline_at IS NULL OR st.deadline_at > now())
+                  )
+                )
+            )
+          )
+        ORDER BY dc.created_at
         LIMIT 1
       )
       AND status = 'queued'
-      RETURNING id, op_id, params, created_at
+      RETURNING id, op_id, params, created_at, skill_id, skill_version,
+                skill_content_hash, session_id, step_id, device_id
     `;
     if (!rows[0]) return reply.code(204).send();
     const command = rows[0] as { params?: unknown };
@@ -342,9 +396,18 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
 
   // 端末エージェントの実行結果。
   app.post('/device/command/:id/result', async (request) => {
-    const email = await authenticateDeviceToken(request);
+    const { email, deviceId } = await authenticateDeviceToken(request, { requireDevice: true });
     const { id } = CommandIdSchema.parse(request.params);
     const input = CommandResultSchema.parse(request.body);
+    const existing = await sql<{ device_id: string | null }[]>`
+      SELECT device_id FROM device_commands
+      WHERE id = ${id} AND user_email = ${email}
+      LIMIT 1
+    `;
+    if (!existing[0]) throw new ApiError(404, 'NOT_FOUND', '対象のコマンドが見つかりません。');
+    if (existing[0].device_id && existing[0].device_id !== deviceId) {
+      throw new ApiError(403, 'DEVICE_MISMATCH', 'コマンドの対象端末と一致しません。');
+    }
     const rows = await sql<{ id: string }[]>`
       UPDATE device_commands
       SET status = ${input.ok ? 'done' : 'failed'},
@@ -377,7 +440,7 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
     if (!checkRateLimit(`device-agent:${clientAddress(request)}`, 30, 60_000)) {
       throw new ApiError(429, 'RATE_LIMITED', '端末エージェントのリクエストが多すぎます。');
     }
-    const email = await authenticateDeviceToken(request);
+    const { email } = await authenticateDeviceToken(request);
     const input = AgentInputSchema.parse(request.body);
     const inventory = agentInputToInventory(input);
     const linkedDeviceId = input.browserDeviceId

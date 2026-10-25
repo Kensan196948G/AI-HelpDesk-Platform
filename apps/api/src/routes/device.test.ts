@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { sql } from '../db.js';
@@ -8,6 +8,7 @@ import { buildServer } from '../server.js';
 
 const EMAIL = 'dev@example.com';
 const agentToken = `aihd_test_${Math.random().toString(36).slice(2)}_${Date.now()}`;
+const AGENT_DEVICE = 'route-browser-1';
 
 let app: FastifyInstance;
 
@@ -106,7 +107,7 @@ describe('device routes', () => {
     const response = await app.inject({
       method: 'POST',
       url: '/api/device/agent',
-      headers: { 'x-device-token': agentToken },
+      headers: { 'x-device-token': agentToken, 'x-device-id': AGENT_DEVICE },
       payload: agentPayload,
     });
     expect(response.statusCode, response.body).toBe(200);
@@ -136,7 +137,7 @@ describe('device routes', () => {
     const response = await app.inject({
       method: 'POST',
       url: '/api/device/agent',
-      headers: { 'x-device-token': agentToken },
+      headers: { 'x-device-token': agentToken, 'x-device-id': AGENT_DEVICE },
       payload: {
         ...agentPayload,
         deviceId: 'route-server-ubuntu',
@@ -236,6 +237,7 @@ describe('device command channel', () => {
 
   beforeAll(async () => {
     await sql`DELETE FROM device_commands WHERE user_email = ${EMAIL}`;
+    await sql`DELETE FROM device_inventories WHERE user_email = ${EMAIL}`;
   });
 
   it('UI がコマンドを登録できる（許可リスト）', async () => {
@@ -255,14 +257,20 @@ describe('device command channel', () => {
     const res = await app.inject({
       method: 'GET',
       url: '/api/device/command',
-      headers: { 'x-device-token': agentToken },
+      headers: { 'x-device-token': agentToken, 'x-device-id': AGENT_DEVICE },
     });
     expect(res.statusCode, res.body).toBe(200);
-    expect(res.json().command.id).toBe(commandId);
+    const command = res.json().command;
+    expect(command.id).toBe(commandId);
+    // 既存の SPOOLER_RESTART は解決ループの skill 情報を持たない（null で返る）。
+    expect(command.skill_id).toBeNull();
+    expect(command.skill_version).toBeNull();
+    expect(command.session_id).toBeNull();
+    expect(command.step_id).toBeNull();
     const again = await app.inject({
       method: 'GET',
       url: '/api/device/command',
-      headers: { 'x-device-token': agentToken },
+      headers: { 'x-device-token': agentToken, 'x-device-id': AGENT_DEVICE },
     });
     expect(again.statusCode).toBe(204);
   });
@@ -271,7 +279,7 @@ describe('device command channel', () => {
     const res = await app.inject({
       method: 'POST',
       url: `/api/device/command/${commandId}/result`,
-      headers: { 'x-device-token': agentToken },
+      headers: { 'x-device-token': agentToken, 'x-device-id': AGENT_DEVICE },
       payload: { ok: true, result: { platform: 'win32' } },
     });
     expect(res.statusCode, res.body).toBe(200);
@@ -310,9 +318,96 @@ describe('device command channel', () => {
     const res = await app.inject({
       method: 'POST',
       url: `/api/device/command/${id}/result`,
-      headers: { 'x-device-token': agentToken },
+      headers: { 'x-device-token': agentToken, 'x-device-id': AGENT_DEVICE },
       payload: { ok: true },
     });
     expect(res.statusCode).toBe(404);
+  });
+
+  it('Skill コマンドは skill_id / skill_version / session_id / step_id を返す', async () => {
+    // 先行テストが残した queued 行の影響を受けないように消してから検証する。
+    await sql`DELETE FROM device_commands WHERE user_email = ${EMAIL} AND status = 'queued'`;
+    const sessionId = randomUUID();
+    const stepId = randomUUID();
+    await sql`
+      INSERT INTO resolution_sessions (id, user_email, case_id, device_id, status, expires_at)
+      VALUES (${sessionId}, ${EMAIL}, 'CASE-DEVICE-TEST', ${AGENT_DEVICE}, 'waiting_execute', now() + interval '30 minutes')
+      ON CONFLICT (id) DO NOTHING
+    `;
+    // 解決ループのコマンドは step の期限を満たすときだけ配信される（Phase C）。
+    await sql`
+      INSERT INTO resolution_steps
+        (id, session_id, seq, skill_id, skill_version, skill_content_hash, params,
+         rationale, risk_level, status, nonce, approval_expires_at, deadline_at)
+      VALUES
+        (${stepId}, ${sessionId}, 1, 'os.info', '1.0.0', 'sha256:unknown', '{}'::jsonb,
+         'test', 1, 'approved', 'test-nonce', now() + interval '5 minutes',
+         now() + interval '60 seconds')
+      ON CONFLICT (id) DO NOTHING
+    `;
+    await sql`
+      INSERT INTO device_commands
+        (user_email, device_id, op_id, params, skill_id, skill_version, session_id, step_id)
+      VALUES
+        (${EMAIL}, 'route-browser-1', 'os.info', '{}'::jsonb, 'os.info', '1.0.0',
+         ${sessionId}, ${stepId})
+    `;
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/device/command',
+      headers: { 'x-device-token': agentToken, 'x-device-id': AGENT_DEVICE },
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    const command = res.json().command;
+    expect(command.op_id).toBe('os.info');
+    expect(command.skill_id).toBe('os.info');
+    expect(command.skill_version).toBe('1.0.0');
+    expect(command.session_id).toBe(sessionId);
+    expect(command.step_id).toBe(stepId);
+    expect(command.params).toEqual({});
+  });
+
+  it('端末IDが一致しないコマンドは取得できない', async () => {
+    await sql`DELETE FROM device_commands WHERE user_email = ${EMAIL} AND status = 'queued'`;
+    await sql`
+      INSERT INTO device_commands (user_email, device_id, op_id, params)
+      VALUES (${EMAIL}, 'other-device', 'SPOOLER_RESTART', '{}'::jsonb)
+    `;
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/device/command',
+      headers: { 'x-device-token': agentToken, 'x-device-id': AGENT_DEVICE },
+    });
+    expect(res.statusCode).toBe(204);
+  });
+
+  it('トークンに紐づく端末IDと異なる名乗りは 403', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/device/command',
+      headers: { 'x-device-token': agentToken, 'x-device-id': 'forged-device' },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error.code).toBe('DEVICE_MISMATCH');
+  });
+
+  it('別端末宛コマンドの結果報告は 403', async () => {
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/device/command',
+      payload: { opId: 'SPOOLER_RESTART' },
+    });
+    const id = created.json().command.id;
+    await sql`
+      UPDATE device_commands SET status = 'delivered', device_id = 'other-device' WHERE id = ${id}
+    `;
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/device/command/${id}/result`,
+      headers: { 'x-device-token': agentToken, 'x-device-id': AGENT_DEVICE },
+      payload: { ok: true },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error.code).toBe('DEVICE_MISMATCH');
   });
 });

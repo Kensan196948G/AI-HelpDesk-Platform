@@ -61,6 +61,12 @@ const EnvSchema = z.object({
   // 同一人物のメール別名（カンマ区切り `alias=primary`）。状態・権限は primary に正規化する。
   EMAIL_ALIASES: z.string().default(''),
 
+  // 解決ループ（Phase C）: 端末オフライン判定の閾値（秒）。設計 §4-3 の「2 分応答なし」。
+  RESOLVE_DEVICE_OFFLINE_SEC: z.coerce.number().int().positive().default(120),
+  // リスク 4 以上の Skill を承認できる IT 管理者（カンマ区切り）。
+  // 既定は空＝誰も承認できない（fail-closed）。比較は canonicalEmail を通す。
+  RESOLVE_ADMIN_ALLOWLIST: z.string().default(''),
+
   // Mirai-Info の社員名簿を読むための接続先（未設定なら Unix ソケット + OS ユーザー）。
   MIRAI_INFO_DATABASE_URL: optionalText,
   // DeepSeek API（MVP / Staging のみ）

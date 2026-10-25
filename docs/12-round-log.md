@@ -320,3 +320,45 @@
 - 最終確認（2026-10-25 14:09）: 公開 URL 再読み込みで、認証済みブラウザから 11 リクエスト（GET /・名簿・
   device/browser・state PUT）がすべて 200。`mode:enforce` の JWT 検証成功を確認し、proxy secret 経路の
   多層防御が実ブラウザで成立することを実測した。
+
+## Round 29 — 解決ループ / Skills Phase B（2026-10-25）
+
+- 設計（Phase A）: docs/25-skill-resolution-loop.md。Y/N 二段階、承認ハッシュ、停止条件、Skill スキーマ、API/DB、脅威モデル。
+- Phase B（読み取り専用ループPoC）を実装:
+  - DB 011（skills / resolution_sessions / resolution_steps、device_commands・device_tokens 拡張）
+  - `/api/resolve/*` 7 本、承認ハッシュ（stableStringify + SHA-256）、状態機械、PII 伏せ字、監査
+  - 読み取り専用 Skill 5 件（PowerShell + `--mock` fixture）、端末エージェントの許可スクリプト実行
+  - UI `resolve-bridge.js`（カード、実行前 Y/N、結果、継続 Y/N、中止）
+- 検証: 新規 46 件 + device 13 件、全体 253 件 PASS。UI E2E で network.adapters → os.info の 2 ステップを実測（pageerror 0）。
+- 未実施: Windows 実機、estop 連携、端末オフライン、承認期限切れ再提案。
+
+## Round 30 — 解決ループ / Skills Phase C（部分）（2026-10-25）
+
+- Phase C のうち Windows 実機を除く 4 項目を実装（migration 013、`/api/resolve/*`、UI、テスト 12 件追加）。
+- 端末オフライン（`RESOLVE_DEVICE_OFFLINE_SEC`、既定 120 秒）と結果タイムアウト
+  （承認時に deadline 確定 → スイープで `failed` / `RESULT_TIMEOUT` → `escalated`）をサーバで強制。
+- リスク 4 以上は IT 管理者の承認を必須化（別 payload・自己承認不可・期限 10 分）。
+  `RESOLVE_ADMIN_ALLOWLIST` は既定空（fail-closed）。
+- 手動「解決した」「担当者へ」を API / UI に追加。監査に理由を記録。
+- `outputPolicy.fieldsToAi` を結果取り込み時に厳密適用し、AI には `result_ai` のみ渡す。
+- 検証: 278 tests PASS、typecheck / lint 緑。未実施: Windows 実機実行、管理画面への承認導線統合。
+- 独立レビュー（High 4 / Medium 6）対応: AI 要約の fieldsToAi 迂回、期限後コマンド配信、
+  リスク 5 の実行、lock 順逆転、管理者の二重承認、理由の PII、既存データ backfill（014）を修正。
+  残: Skill 実出力名と fieldsToAi の不一致（`approved.json` 再承認が必要）、UI の同時操作競合。
+
+### Round 30 追補 — プレビュー反映と実測（2026-10-25 16:36）
+
+- プレビュー DB（`ai_helpdesk_preview`）は 010 までだったため、バックアップ
+  （`/tmp/aihd_preview_before_phasec_20261025_163642.dump`）の後に 011〜014 を適用。
+- API を再ビルド（`npm run build`）し、`ai-helpdesk-api.service` を再起動。
+  `/api/health` 200、起動ログで `env=production` / DB 接続 OK を確認。
+- 起動後、5 Skill すべて `approved`（`approved.json` の新ハッシュと一致）を DB で確認。
+- 同一ビルドのローカル隔離インスタンス（test DB・local 認証）で実測:
+  - セッション開始 → `os.info` 提案（approvalChallenge あり）
+  - 手動「解決した」= 200
+  - 管理者以外の `/api/resolve/admin/pending` = 403
+  - 端末トークン未登録のまま承認 = 409 `DEVICE_OFFLINE`
+  - 配信 HTML に Phase C の UI マーカー（`data-aihd-resolve` 等）23 箇所
+- 自動ブラウザ操作は環境制約で未実施: ヘッドレス Chrome はこの環境のネットワーク分離で
+  localhost に到達できず（`fetch` が Failed to fetch）、Playwright のブラウザキャッシュも不完全、
+  X サーバも無い。UI の目視確認は Access 認証済みブラウザで行う必要がある。

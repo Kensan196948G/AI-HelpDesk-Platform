@@ -1,0 +1,650 @@
+import type { FastifyInstance } from 'fastify';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { config } from '../config.js';
+import { sql } from '../db.js';
+import { jsonbValue } from '../lib/jsonb-value.js';
+import { resetRateLimits } from '../lib/rate-limit.js';
+import { buildServer } from '../server.js';
+import {
+  type AdminApprovalPayload,
+  buildAdminApprovalPayload,
+  computeAdminApprovalHash,
+  computeApprovalHash,
+} from './approval.js';
+
+/**
+ * Phase C の受入テスト:
+ * - 端末オフライン / 結果タイムアウトの自動失敗
+ * - リスク 4 以上の IT 管理者承認（自己承認・改ざん・期限切れ）
+ * - 手動「解決した」「担当者へ」
+ * - outputPolicy.fieldsToAi の厳密適用
+ */
+const EMAIL = 'phasec-test@example.com';
+const ADMIN = 'phasec-admin@example.com';
+const DEVICE = 'WEB-PHASEC1';
+const CASE_ID = 'CASE-PHASEC';
+
+let app: FastifyInstance;
+let originalDevEmail: string;
+let originalAdminAllowlist: string;
+
+const COWORK_FIXTURE = {
+  v: 31,
+  cases: [
+    {
+      id: CASE_ID,
+      userId: 'u1',
+      subject: '印刷できない',
+      body: 'プリンタで印刷できません。印刷キューに残ってしまいます。',
+      urg: '通常',
+    },
+    {
+      id: 'CASE-PHASEC-OS',
+      userId: 'u1',
+      subject: 'Windows のバージョンを知りたい',
+      body: 'OS のバージョンとビルド番号を確認したいです。',
+      urg: '通常',
+    },
+    {
+      id: 'CASE-PHASEC-DISK',
+      userId: 'u1',
+      subject: '空き容量不足',
+      body: 'Cドライブの空き容量が少なく、ファイルを保存できません。',
+      urg: '通常',
+    },
+  ],
+};
+
+async function post(url: string, payload: Record<string, unknown> = {}) {
+  return app.inject({ method: 'POST', url, payload });
+}
+
+async function get(url: string) {
+  return app.inject({ method: 'GET', url });
+}
+
+async function startSession(caseId: string = CASE_ID) {
+  const response = await post('/api/resolve/sessions', { caseId, deviceId: DEVICE });
+  expect(response.statusCode, response.body).toBe(200);
+  return response.json();
+}
+
+function challengeHash(body: any): string {
+  return computeApprovalHash(body.step.approvalChallenge.payload);
+}
+
+async function approve(stepId: string, approvalHash: string, decision: 'Y' | 'N' = 'Y') {
+  return post(`/api/resolve/steps/${stepId}/approve`, { decision, approvalHash });
+}
+
+async function commandIdFor(stepId: string): Promise<string> {
+  const rows = await sql<{ command_id: string | null }[]>`
+    SELECT command_id FROM resolution_steps WHERE id = ${stepId}
+  `;
+  const commandId = rows[0]?.command_id;
+  expect(commandId).toBeTruthy();
+  return commandId as string;
+}
+
+async function markCommandDone(stepId: string, result: unknown) {
+  const commandId = await commandIdFor(stepId);
+  await sql`
+    UPDATE device_commands
+    SET status = 'done', result = ${jsonbValue(result)}, completed_at = now()
+    WHERE id = ${commandId}
+  `;
+}
+
+async function stepRow(stepId: string) {
+  const rows = await sql<Record<string, any>[]>`
+    SELECT * FROM resolution_steps WHERE id = ${stepId} LIMIT 1
+  `;
+  return rows[0];
+}
+
+/** リスク 4 以上の Skill を提案させた状態を作る（Skill カタログは変更しない）。 */
+async function makeRisk4(stepId: string) {
+  await sql`
+    UPDATE resolution_steps
+    SET risk_level = 4,
+        admin_nonce = COALESCE(admin_nonce, 'admin-nonce'),
+        admin_expires_at = now() + interval '10 minutes'
+    WHERE id = ${stepId}
+  `;
+}
+
+beforeAll(async () => {
+  originalDevEmail = config.DEV_AUTH_EMAIL;
+  originalAdminAllowlist = config.RESOLVE_ADMIN_ALLOWLIST;
+  config.DEV_AUTH_EMAIL = EMAIL;
+  config.RESOLVE_ADMIN_ALLOWLIST = '';
+
+  app = await buildServer({ logger: false });
+  await app.ready();
+
+  await sql`
+    UPDATE skills
+    SET status = 'approved',
+        approved_by = 'test',
+        approved_at = now(),
+        content_hash = COALESCE(content_hash, ${`sha256:${'b'.repeat(64)}`})
+  `;
+  await sql`
+    INSERT INTO device_inventories (user_email, source, device_id, data)
+    VALUES (${EMAIL}, 'browser', ${DEVICE}, '{}'::jsonb)
+    ON CONFLICT (user_email, source, device_id) DO NOTHING
+  `;
+  await sql`
+    INSERT INTO device_tokens (token_hash, user_email, label, device_id, last_used_at)
+    VALUES (${`phasec-token-${EMAIL}`}, ${EMAIL}, 'test', ${DEVICE}, now())
+    ON CONFLICT (token_hash) DO UPDATE
+      SET device_id = EXCLUDED.device_id, revoked_at = NULL, last_used_at = now()
+  `;
+  await sql`DELETE FROM device_commands WHERE user_email = ${EMAIL} AND session_id IS NOT NULL`;
+  await sql`DELETE FROM resolution_sessions WHERE user_email = ${EMAIL}`;
+  await sql`DELETE FROM prototype_states WHERE user_email = ${EMAIL} AND name = 'cowork'`;
+  await sql`
+    INSERT INTO prototype_states (user_email, name, data)
+    VALUES (${EMAIL}, 'cowork', ${jsonbValue(COWORK_FIXTURE)})
+    ON CONFLICT (user_email, name) DO UPDATE SET data = EXCLUDED.data, updated_at = now()
+  `;
+});
+
+beforeEach(() => {
+  resetRateLimits();
+  config.DEV_AUTH_EMAIL = EMAIL;
+  config.RESOLVE_ADMIN_ALLOWLIST = '';
+});
+
+afterAll(async () => {
+  await sql`DELETE FROM device_commands WHERE user_email = ${EMAIL} AND session_id IS NOT NULL`;
+  await sql`DELETE FROM resolution_sessions WHERE user_email = ${EMAIL}`;
+  await sql`DELETE FROM device_tokens WHERE user_email = ${EMAIL}`;
+  await sql`DELETE FROM prototype_states WHERE user_email = ${EMAIL} AND name = 'cowork'`;
+  config.DEV_AUTH_EMAIL = originalDevEmail;
+  config.RESOLVE_ADMIN_ALLOWLIST = originalAdminAllowlist;
+  await app.close();
+});
+
+describe('手動「解決した」「担当者へ」', () => {
+  it('解決した で resolved になり、二重操作は 409', async () => {
+    const started = await startSession();
+    const resolved = await post(`/api/resolve/sessions/${started.session.id}/resolve`, {
+      reason: '自分で直せた',
+    });
+    expect(resolved.statusCode, resolved.body).toBe(200);
+    expect(resolved.json().session.status).toBe('resolved');
+
+    const again = await post(`/api/resolve/sessions/${started.session.id}/resolve`);
+    expect(again.statusCode).toBe(409);
+    expect(again.json().error.code).toBe('SESSION_TERMINAL');
+  });
+
+  it('担当者へ で escalated になり、未実行ステップは cancelled', async () => {
+    const started = await startSession();
+    const escalated = await post(`/api/resolve/sessions/${started.session.id}/escalate`, {
+      reason: '実機確認が必要',
+    });
+    expect(escalated.statusCode, escalated.body).toBe(200);
+    expect(escalated.json().session.status).toBe('escalated');
+    expect((await stepRow(started.step.id)).status).toBe('cancelled');
+  });
+
+  it('他人のセッションは操作できない（404）', async () => {
+    const started = await startSession();
+    const rows = await sql<{ id: string }[]>`
+      SELECT id FROM resolution_sessions WHERE id = ${started.session.id}
+    `;
+    expect(rows[0]?.id).toBe(started.session.id);
+    // DEV_AUTH_EMAIL を別の利用者へ切り替えると、対象は本人のものではない。
+    config.DEV_AUTH_EMAIL = ADMIN;
+    const response = await post(`/api/resolve/sessions/${started.session.id}/resolve`);
+    expect(response.statusCode).toBe(404);
+  });
+});
+
+describe('端末オフライン / 結果タイムアウト', () => {
+  it('最終応答が閾値より古いと承認は 409 DEVICE_OFFLINE', async () => {
+    const started = await startSession();
+    await sql`
+      UPDATE device_tokens SET last_used_at = now() - interval '10 minutes'
+      WHERE user_email = ${EMAIL} AND device_id = ${DEVICE}
+    `;
+    const response = await approve(started.step.id, challengeHash(started));
+    expect(response.statusCode, response.body).toBe(409);
+    expect(response.json().error.code).toBe('DEVICE_OFFLINE');
+    await sql`
+      UPDATE device_tokens SET last_used_at = now()
+      WHERE user_email = ${EMAIL} AND device_id = ${DEVICE}
+    `;
+  });
+
+  it('期限を過ぎた実行は failed になり、遅延した結果は状態を進めない', async () => {
+    const started = await startSession();
+    const approved = await approve(started.step.id, challengeHash(started));
+    expect(approved.statusCode, approved.body).toBe(200);
+    const stepAfterApprove = approved.json().step;
+    expect(stepAfterApprove.timeoutSec).toBeGreaterThan(0);
+    expect(stepAfterApprove.deadlineAt).toBeTruthy();
+
+    await sql`
+      UPDATE resolution_steps SET deadline_at = now() - interval '1 second'
+      WHERE id = ${started.step.id}
+    `;
+    const timedOut = await get(`/api/resolve/steps/${started.step.id}`);
+    expect(timedOut.statusCode, timedOut.body).toBe(200);
+    expect(timedOut.json().step.status).toBe('failed');
+    expect(timedOut.json().step.error).toBe('RESULT_TIMEOUT');
+    expect(timedOut.json().session.status).toBe('escalated');
+
+    // 期限後に結果が届いても done にはならない。
+    await markCommandDone(started.step.id, { exitCode: 0, normalized: { service: 'Spooler' } });
+    const afterLateResult = await get(`/api/resolve/steps/${started.step.id}`);
+    expect(afterLateResult.json().step.status).toBe('failed');
+    expect(afterLateResult.json().session.status).toBe('escalated');
+  });
+});
+
+describe('outputPolicy.fieldsToAi の厳密適用', () => {
+  it('宣言されたフィールドだけが resultAi に入り、画面用 summary は従来どおり', async () => {
+    const started = await startSession();
+    const approved = await approve(started.step.id, challengeHash(started));
+    expect(approved.statusCode, approved.body).toBe(200);
+
+    await markCommandDone(started.step.id, {
+      exitCode: 0,
+      stdoutSummary: 'Spooler は実行中です',
+      normalized: {
+        name: 'Spooler',
+        status: 'running',
+        extraField: 'これは AI に渡してはいけない',
+        nested: { detail: 'x' },
+      },
+    });
+    const result = await get(`/api/resolve/steps/${started.step.id}`);
+    expect(result.statusCode, result.body).toBe(200);
+    const step = result.json().step;
+
+    // AI 向け（resultAi）は fieldsToAi のみ。
+    expect(step.resultAi.normalized).toEqual({ name: 'Spooler', status: 'running' });
+    expect(step.resultAi.normalized.extraField).toBeUndefined();
+    expect(step.resultAi.normalized.nested).toBeUndefined();
+    expect(step.resultAi.summary).toBe('Spooler は実行中です');
+    // 画面向け summary は既存どおり（fieldsToAi で削らない）。
+    expect(step.resultSummary.normalized.extraField).toBe('これは AI に渡してはいけない');
+  });
+
+  it('outputPolicy が無い Skill では normalized を AI に渡さない（fail-closed）', async () => {
+    const started = await startSession();
+    const approved = await approve(started.step.id, challengeHash(started));
+    expect(approved.statusCode, approved.body).toBe(200);
+    await sql`
+      UPDATE skills SET output_policy = NULL
+      WHERE id = ${started.step.skillId} AND version = ${started.step.skillVersion}
+    `;
+    try {
+      await markCommandDone(started.step.id, {
+        exitCode: 0,
+        stdoutSummary: 'ok',
+        normalized: { name: 'Spooler' },
+      });
+      const result = await get(`/api/resolve/steps/${started.step.id}`);
+      expect(result.json().step.resultAi.normalized).toBeNull();
+    } finally {
+      await sql`
+        UPDATE skills SET output_policy = ${jsonbValue({
+          maxBytes: 8192,
+          fieldsToAi: ['name', 'status', 'startType'],
+          maskPii: true,
+        })}
+        WHERE id = ${started.step.skillId} AND version = ${started.step.skillVersion}
+      `;
+    }
+  });
+});
+
+describe('リスク 4 以上の IT 管理者承認', () => {
+  it('承認が無いと実行できず、管理者の承認後に本人 Y で実行できる', async () => {
+    const started = await startSession();
+    await makeRisk4(started.step.id);
+
+    const blocked = await approve(started.step.id, challengeHash(started));
+    expect(blocked.statusCode).toBe(403);
+    expect(blocked.json().error.code).toBe('ADMIN_APPROVAL_REQUIRED');
+
+    // 管理者として承認待ちを取得し、payload からハッシュを作る。
+    config.DEV_AUTH_EMAIL = ADMIN;
+    config.RESOLVE_ADMIN_ALLOWLIST = ADMIN;
+    const pending = await get('/api/resolve/admin/pending');
+    expect(pending.statusCode, pending.body).toBe(200);
+    const item = pending
+      .json()
+      .items.find((candidate: any) => candidate.stepId === started.step.id);
+    expect(item, pending.body).toBeTruthy();
+    const adminHash = computeAdminApprovalHash(item.adminApprovalChallenge.payload);
+    const adminApproved = await post(`/api/resolve/steps/${started.step.id}/admin-approve`, {
+      decision: 'Y',
+      approvalHash: adminHash,
+    });
+    expect(adminApproved.statusCode, adminApproved.body).toBe(200);
+
+    // 依頼者に戻って Y。管理者承認が揃っているので実行できる。
+    // risk_level を書き換えたため、承認 payload は取り直す（ハッシュは step の現在値に束縛）。
+    config.DEV_AUTH_EMAIL = EMAIL;
+    const refreshed = await get(`/api/resolve/steps/${started.step.id}`);
+    expect(refreshed.statusCode, refreshed.body).toBe(200);
+    const approved = await approve(started.step.id, challengeHash(refreshed.json()));
+    expect(approved.statusCode, approved.body).toBe(200);
+    const row = await stepRow(started.step.id);
+    expect(row.status).toBe('approved');
+    expect(row.admin_approved_by).toBe(ADMIN);
+    expect(row.admin_approval_hash).toBe(adminHash);
+  });
+
+  it('自己承認は 403（依頼者を許可リストに入れても承認できない）', async () => {
+    const started = await startSession();
+    await makeRisk4(started.step.id);
+    config.RESOLVE_ADMIN_ALLOWLIST = EMAIL;
+    const payload = {
+      decision: 'Y' as const,
+      approvalHash: '0'.repeat(64),
+    };
+    const response = await post(`/api/resolve/steps/${started.step.id}/admin-approve`, payload);
+    expect(response.statusCode).toBe(403);
+    expect(response.json().error.code).toBe('SELF_APPROVAL_FORBIDDEN');
+  });
+
+  it('改ざんされた承認ハッシュは 400、期限切れは 409', async () => {
+    const started = await startSession();
+    await makeRisk4(started.step.id);
+    config.DEV_AUTH_EMAIL = ADMIN;
+    config.RESOLVE_ADMIN_ALLOWLIST = ADMIN;
+
+    const tampered = await post(`/api/resolve/steps/${started.step.id}/admin-approve`, {
+      decision: 'Y',
+      approvalHash: 'f'.repeat(64),
+    });
+    expect(tampered.statusCode).toBe(400);
+    expect(tampered.json().error.code).toBe('ADMIN_APPROVAL_MISMATCH');
+
+    await sql`
+      UPDATE resolution_steps SET admin_expires_at = now() - interval '1 second'
+      WHERE id = ${started.step.id}
+    `;
+    const expired = await post(`/api/resolve/steps/${started.step.id}/admin-approve`, {
+      decision: 'Y',
+      approvalHash: 'f'.repeat(64),
+    });
+    expect(expired.statusCode).toBe(409);
+    expect(expired.json().error.code).toBe('ADMIN_APPROVAL_EXPIRED');
+  });
+
+  it('管理者以外は承認待ちを取得できない（403）', async () => {
+    const pending = await get('/api/resolve/admin/pending');
+    expect(pending.statusCode).toBe(403);
+    expect(pending.json().error.code).toBe('FORBIDDEN');
+  });
+});
+
+describe('承認 payload の互換性', () => {
+  it('依頼者向け approvalChallenge は 12 キーのまま（管理者承認を混ぜない）', async () => {
+    const started = await startSession();
+    const payload = started.step.approvalChallenge.payload as Record<string, unknown>;
+    expect(Object.keys(payload).sort()).toEqual(
+      [
+        'deviceId',
+        'expiresAt',
+        'nonce',
+        'params',
+        'riskLevel',
+        'seq',
+        'sessionId',
+        'skillContentHash',
+        'skillId',
+        'skillVersion',
+        'stepId',
+        'userEmail',
+      ].sort(),
+    );
+    const adminPayload = buildAdminPayloadForTest(payload);
+    expect(Object.keys(adminPayload)).toContain('adminEmail');
+  });
+});
+
+/** 管理者 payload の形（adminEmail 追加）を型で確認するための小道具。 */
+function buildAdminPayloadForTest(base: Record<string, unknown>): AdminApprovalPayload {
+  return {
+    stepId: String(base.stepId),
+    sessionId: String(base.sessionId),
+    seq: Number(base.seq),
+    skillId: String(base.skillId),
+    skillVersion: String(base.skillVersion),
+    skillContentHash: String(base.skillContentHash),
+    params: (base.params as Record<string, unknown>) ?? {},
+    deviceId: String(base.deviceId),
+    userEmail: String(base.userEmail),
+    riskLevel: Number(base.riskLevel),
+    adminEmail: ADMIN,
+    nonce: String(base.nonce),
+    expiresAt: String(base.expiresAt),
+  };
+}
+
+describe('レビュー指摘の回帰テスト', () => {
+  it('リスク 5 は管理者承認があっても実行できない', async () => {
+    const started = await startSession();
+    await sql`UPDATE resolution_steps SET risk_level = 5 WHERE id = ${started.step.id}`;
+    const row = await stepRow(started.step.id);
+    const sessionRows = await sql<Record<string, any>[]>`
+      SELECT * FROM resolution_sessions WHERE id = ${row.session_id} LIMIT 1
+    `;
+    // 管理者承認自体は有効なハッシュとして用意し、リスク 5 の拒否だけを検証する。
+    const adminPayload = buildAdminApprovalPayload({
+      stepId: row.id,
+      sessionId: row.session_id,
+      seq: Number(row.seq),
+      skillId: row.skill_id,
+      skillVersion: row.skill_version,
+      skillContentHash: row.skill_content_hash,
+      params: row.params,
+      deviceId: sessionRows[0]?.device_id ?? DEVICE,
+      userEmail: sessionRows[0]?.user_email ?? EMAIL,
+      riskLevel: 5,
+      adminEmail: ADMIN,
+      nonce: row.admin_nonce,
+      expiresAt: row.admin_expires_at,
+    });
+    await sql`
+      UPDATE resolution_steps
+      SET admin_approval_hash = ${computeAdminApprovalHash(adminPayload)},
+          admin_approved_by = ${ADMIN}
+      WHERE id = ${started.step.id}
+    `;
+    config.RESOLVE_ADMIN_ALLOWLIST = ADMIN;
+    const refreshed = await get(`/api/resolve/steps/${started.step.id}`);
+    const response = await approve(started.step.id, challengeHash(refreshed.json()));
+    expect(response.statusCode, response.body).toBe(409);
+    expect(response.json().error.code).toBe('SKILL_RISK_FORBIDDEN');
+
+    const second = await startSession();
+    await sql`UPDATE resolution_steps SET risk_level = 5 WHERE id = ${second.step.id}`;
+    config.DEV_AUTH_EMAIL = ADMIN;
+    const admin = await post(`/api/resolve/steps/${second.step.id}/admin-approve`, {
+      decision: 'Y',
+      approvalHash: 'f'.repeat(64),
+    });
+    expect(admin.statusCode).toBe(409);
+    expect(admin.json().error.code).toBe('SKILL_RISK_FORBIDDEN');
+  });
+
+  it('構造化された stdoutSummary は fieldsToAi で作り直し、除外フィールドを AI に渡さない', async () => {
+    const started = await startSession();
+    const approved = await approve(started.step.id, challengeHash(started));
+    expect(approved.statusCode, approved.body).toBe(200);
+    await markCommandDone(started.step.id, {
+      exitCode: 0,
+      stdoutSummary: JSON.stringify({
+        name: 'Spooler',
+        status: 'running',
+        hiddenField: '漏れてはいけない',
+      }),
+      normalized: { name: 'Spooler', status: 'running', extraField: 'x' },
+    });
+    const result = await get(`/api/resolve/steps/${started.step.id}`);
+    expect(result.statusCode, result.body).toBe(200);
+    const ai = result.json().step.resultAi;
+    expect(ai.summary).toBe(JSON.stringify({ name: 'Spooler', status: 'running' }));
+    expect(JSON.stringify(ai)).not.toContain('hiddenField');
+    expect(JSON.stringify(ai)).not.toContain('漏れてはいけない');
+    expect(JSON.stringify(ai)).not.toContain('extraField');
+  });
+
+  it('承認後に Skill 定義が変わっていたら AI 入力を作らない（fail-closed）', async () => {
+    const started = await startSession();
+    const approved = await approve(started.step.id, challengeHash(started));
+    expect(approved.statusCode, approved.body).toBe(200);
+    const before = await sql<{ content_hash: string | null }[]>`
+      SELECT content_hash FROM skills WHERE id = ${started.step.skillId} LIMIT 1
+    `;
+    await sql`
+      UPDATE skills SET content_hash = ${`sha256:${'c'.repeat(64)}`}
+      WHERE id = ${started.step.skillId}
+    `;
+    try {
+      await markCommandDone(started.step.id, {
+        exitCode: 0,
+        stdoutSummary: 'ok',
+        normalized: { name: 'Spooler' },
+      });
+      const result = await get(`/api/resolve/steps/${started.step.id}`);
+      expect(result.json().step.resultAi.normalized).toBeNull();
+      expect(result.json().step.resultAi.summary).toBe('');
+    } finally {
+      await sql`
+        UPDATE skills SET content_hash = ${before[0]?.content_hash}
+        WHERE id = ${started.step.skillId}
+      `;
+    }
+  });
+
+  it('別の管理者が後から承認しても上書きできない（ADMIN_ALREADY_DECIDED）', async () => {
+    const ADMIN2 = 'phasec-admin2@example.com';
+    const started = await startSession();
+    await makeRisk4(started.step.id);
+
+    config.DEV_AUTH_EMAIL = ADMIN;
+    config.RESOLVE_ADMIN_ALLOWLIST = ADMIN;
+    const pending = await get('/api/resolve/admin/pending');
+    const item = pending
+      .json()
+      .items.find((candidate: any) => candidate.stepId === started.step.id);
+    expect(item).toBeTruthy();
+    const first = await post(`/api/resolve/steps/${started.step.id}/admin-approve`, {
+      decision: 'Y',
+      approvalHash: computeAdminApprovalHash(item.adminApprovalChallenge.payload),
+    });
+    expect(first.statusCode, first.body).toBe(200);
+
+    // 承認済みは一覧から消える。
+    const after = await get('/api/resolve/admin/pending');
+    expect(
+      after.json().items.find((candidate: any) => candidate.stepId === started.step.id),
+    ).toBeUndefined();
+
+    // 2 人目は有効なハッシュを作れても上書きできない。
+    config.DEV_AUTH_EMAIL = ADMIN2;
+    config.RESOLVE_ADMIN_ALLOWLIST = `${ADMIN},${ADMIN2}`;
+    const row = await stepRow(started.step.id);
+    const sessionRows = await sql<Record<string, any>[]>`
+      SELECT * FROM resolution_sessions WHERE id = ${row.session_id} LIMIT 1
+    `;
+    const payload = buildAdminApprovalPayload({
+      stepId: row.id,
+      sessionId: row.session_id,
+      seq: Number(row.seq),
+      skillId: row.skill_id,
+      skillVersion: row.skill_version,
+      skillContentHash: row.skill_content_hash,
+      params: row.params,
+      deviceId: sessionRows[0]?.device_id ?? DEVICE,
+      userEmail: sessionRows[0]?.user_email ?? EMAIL,
+      riskLevel: Number(row.risk_level),
+      adminEmail: ADMIN2,
+      nonce: row.admin_nonce,
+      expiresAt: row.admin_expires_at,
+    });
+    const second = await post(`/api/resolve/steps/${started.step.id}/admin-approve`, {
+      decision: 'Y',
+      approvalHash: computeAdminApprovalHash(payload),
+    });
+    expect(second.statusCode).toBe(409);
+    expect(second.json().error.code).toBe('ADMIN_ALREADY_DECIDED');
+  });
+
+  it('手動クローズの理由は PII を伏せ字にして監査へ書く', async () => {
+    const started = await startSession();
+    const response = await post(`/api/resolve/sessions/${started.session.id}/escalate`, {
+      reason: '連絡先は leak@example.com です',
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    const rows = await sql<{ reason: string | null }[]>`
+      SELECT detail->>'reason' AS reason FROM audit_log
+      WHERE action = 'resolution.escalated' AND target_id = ${started.session.id}
+      ORDER BY id DESC LIMIT 1
+    `;
+    expect(rows[0]?.reason).toBeTruthy();
+    expect(rows[0]?.reason).not.toContain('leak@example.com');
+    expect(rows[0]?.reason).toContain('[メールアドレス]');
+  });
+});
+
+describe('実スクリプト出力との整合（fieldsToAi）', () => {
+  it('os.info は実出力キーだけを AI に渡し、computerName を落とす', async () => {
+    const started = await startSession('CASE-PHASEC-OS');
+    expect(started.step.skillId).toBe('os.info');
+    const approved = await approve(started.step.id, challengeHash(started));
+    expect(approved.statusCode, approved.body).toBe(200);
+
+    const normalized = {
+      osName: 'Windows 11 Pro',
+      version: '10.0.22631',
+      buildNumber: '22631',
+      architecture: '64-bit',
+      computerName: 'PC-SECRET',
+    };
+    await markCommandDone(started.step.id, {
+      exitCode: 0,
+      stdoutSummary: JSON.stringify(normalized),
+      normalized,
+    });
+    const result = await get(`/api/resolve/steps/${started.step.id}`);
+    expect(result.statusCode, result.body).toBe(200);
+    const ai = result.json().step.resultAi;
+    expect(ai.normalized).toEqual({
+      osName: 'Windows 11 Pro',
+      version: '10.0.22631',
+      buildNumber: '22631',
+      architecture: '64-bit',
+    });
+    expect(JSON.stringify(ai)).not.toContain('PC-SECRET');
+  });
+
+  it('disk.space は volumes を AI に渡す', async () => {
+    const started = await startSession('CASE-PHASEC-DISK');
+    expect(started.step.skillId).toBe('disk.space');
+    const approved = await approve(started.step.id, challengeHash(started));
+    expect(approved.statusCode, approved.body).toBe(200);
+
+    const normalized = {
+      volumes: [{ deviceId: 'C:', freeGB: 118.42, totalGB: 475.9 }],
+    };
+    await markCommandDone(started.step.id, {
+      exitCode: 0,
+      stdoutSummary: JSON.stringify(normalized),
+      normalized,
+    });
+    const result = await get(`/api/resolve/steps/${started.step.id}`);
+    const ai = result.json().step.resultAi;
+    expect(ai.normalized.volumes).toEqual([{ deviceId: 'C:', freeGB: 118.42, totalGB: 475.9 }]);
+  });
+});
