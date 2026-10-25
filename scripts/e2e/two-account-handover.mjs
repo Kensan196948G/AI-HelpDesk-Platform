@@ -29,7 +29,10 @@ const dbName = (() => {
     return '';
   }
 })();
-if (/^ai_helpdesk_preview/.test(dbName.trim().toLowerCase()) && process.env.AIHD_E2E_ALLOW_PREVIEW !== '1') {
+if (
+  /^ai_helpdesk_preview/.test(dbName.trim().toLowerCase()) &&
+  process.env.AIHD_E2E_ALLOW_PREVIEW !== '1'
+) {
   console.error(
     'preview（本番相当）DB への書き込みは既定で拒否します。\n' +
       '意図して実行する場合だけ AIHD_E2E_ALLOW_PREVIEW=1 を設定してください。',
