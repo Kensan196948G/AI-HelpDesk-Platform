@@ -317,3 +317,6 @@
 - 追加対応（2026-10-25）: Tunnel と API の間に `X-Proxy-Secret` 付与プロキシ（PR #41、127.0.0.1:18949）を導入。
   直接アクセスは 401 `PROXY_REQUIRED`、公開経路はプロキシ経由で動作。uv キャッシュは使用中 archive のみ残して
   9.9GB → 488MB に削減（chroma-mcp は停止せず）。disk 87% → 81%。
+- 最終確認（2026-10-25 14:09）: 公開 URL 再読み込みで、認証済みブラウザから 11 リクエスト（GET /・名簿・
+  device/browser・state PUT）がすべて 200。`mode:enforce` の JWT 検証成功を確認し、proxy secret 経路の
+  多層防御が実ブラウザで成立することを実測した。
