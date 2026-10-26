@@ -44,6 +44,8 @@
     admin_rejected: '管理者が却下',
   };
 
+  let railObserver = null;
+
   const HW = {
     open: false,
     selected: null,
@@ -1266,8 +1268,53 @@ body.ahd-hw-open{overflow:hidden}
     }
   }
 
+  function railAllowed() {
+    try {
+      return me().role !== 'employee';
+    } catch {
+      return false;
+    }
+  }
+
+  /** 左ナビ（#uxRail）に「引継ぎ」を追加する。uxShell の再描画で消えるため監視して戻す。 */
+  function syncRailItem() {
+    const rail = document.getElementById('uxRail');
+    if (!rail) return;
+    const existing = document.getElementById('ahd-hw-rail');
+    if (!railAllowed()) {
+      if (existing) existing.remove();
+      return;
+    }
+    let button = existing;
+    if (!button) {
+      button = document.createElement('button');
+      button.id = 'ahd-hw-rail';
+      button.type = 'button';
+      button.title = '引継ぎワークスペース（3ペイン）';
+      button.innerHTML = '<svg class="ico" aria-hidden="true"><use href="#i-headset"/></svg>引継ぎ';
+      button.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        openWorkspace();
+      });
+      const spacer = rail.querySelector('.sp');
+      rail.insertBefore(button, spacer || null);
+    }
+    button.classList.toggle('on', HW.open);
+  }
+
+  function installRailObserver() {
+    const rail = document.getElementById('uxRail');
+    if (!rail || railObserver) return;
+    railObserver = new MutationObserver(() => {
+      syncRailItem();
+    });
+    railObserver.observe(rail, { childList: true });
+  }
+
   function updateLauncher() {
     launcher.hidden = HW.open || !helpdeskActive();
+    syncRailItem();
   }
 
   function openWorkspace() {
@@ -1377,6 +1424,8 @@ body.ahd-hw-open{overflow:hidden}
     if (HW.open) scheduleRender();
   });
 
+  installRailObserver();
+  syncRailItem();
   setInterval(updateLauncher, 800);
   updateLauncher();
 })();
