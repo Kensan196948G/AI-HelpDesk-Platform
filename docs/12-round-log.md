@@ -362,3 +362,41 @@
 - 自動ブラウザ操作は環境制約で未実施: ヘッドレス Chrome はこの環境のネットワーク分離で
   localhost に到達できず（`fetch` が Failed to fetch）、Playwright のブラウザキャッシュも不完全、
   X サーバも無い。UI の目視確認は Access 認証済みブラウザで行う必要がある。
+
+## Round 31 — RSP実行セッション（AI提案 → 担当者が実行 → 報告書・ナレッジ下書き）（2026-10-26）
+
+ユーザー承認（2026-10-26）: 出力取り込みは **c) 両方（自動優先・手動フォールバック）**、
+ナレッジは **a) 下書き＋承認**。設計は [35-terminal-session.md](35-terminal-session.md)。
+
+- 追加した流れ: 担当者が引継ぎを claim → 同意（画面共有・操作支援）→ 実行セッション開始 →
+  AI が次の一手を 1 コマンド提案 → 担当者が RSP のターミナルで実行 → 実行コマンド・出力・判定を記録 →
+  次の一手 … → 解決として終了 → 報告書（引継ぎメモ＋全ステップ）→ ナレッジ下書き。
+- **サーバはコマンドを実行しない**。提案（AI）と実行（担当者）を別レコードで保存し、実行記録に SHA-256 を付ける。
+  設計 §3-1 の「AI はコマンド文字列を生成しない」は承認済み Skill の実行経路の話であり、
+  本経路は「AI の提案を人が実行して記録する」別経路として [34](34-operator-skill-rsp-session.md) に明記した。
+- DB: `019_terminal_sessions.sql`（terminal_sessions / terminal_steps、追加のみ）。
+  1 引継ぎ 1 active セッション（部分 UNIQUE）、TTL 30 分（最大 120 分）、20 ステップ、出力 20,000 文字。
+- API: `/api/terminal/*` 9 本（取得・作成・提案・記録・自動取込の可否・終了・報告書・ナレッジ下書き）。
+  claim 済み担当者のみ操作可、参照は operator・依頼者・DX 推進部。監査は 7 アクション。
+  提案は 10 回/分、記録は 30 回/分。レート制限・期限切れは遅延評価で `expired`。
+- AI: `proposePowerShell`（`apps/api/src/ai/deepseek.ts`）。JSON のみを要求し、`risk`・`verify`・`rollback`・
+  `warnings` を返す。危険時は `command` を空にして理由を返す指示。**サーバは実行しない**。
+- 出力の自動取込: RSP にターミナルログ API が無いため **未対応** を `supported:false` と理由で返し、
+  画面は手動貼り付けに落とす（自動扱いにしない）。差し替え点は `apps/api/src/terminal/capture.ts` の 1 箇所。
+- 保存時の扱い: コマンド・出力は `redactPII` で伏せ字化し、出力は上限で切り詰めて明示。実行記録の
+  SHA-256 はマスク後の `{sessionId, stepId, seq, command, output, outputSource, exitStatus}`。
+- 報告書: 既存 `final_reports` にサーバ側で組み立てて保存。`FinalReportSchema` に `terminal` 節を追加し、
+  提案・実行・出力・判定・ハッシュ・未記録を載せる。`?inline=1` でブラウザ内表示（`previewUrl`）。
+- ナレッジ: `status='draft'` で作成し**自動公開しない**。再実行しても重複作成しない。
+  Access 利用者が `users` に居ない場合はログイン不能な行（scrypt 形式でない `password_hash`）を
+  作成者として登録する。承認は既存の `POST /knowledge/:id/review`（承認者ロール）。
+  引継ぎのグループ承認は引継ぎ自体の承認で、ナレッジ状態は変えない（画面にも明記）。
+- UI: `handover-workspace-bridge.js` の右ペインに「RSP実行セッション」。同意・残り時間・提案・コピー・
+  記録・終了・報告書・ナレッジ下書き・再読み込み復元。既存 HTML / CSS / 画面遷移は変更しない。
+- 検証: `npm test` **49 files / 406 tests passed**、`npm run typecheck` 成功。変更ファイルの lint は error 0
+  （リポジトリ全体では既存 `scripts/e2e/handover-notify.mjs` の format 1 件が残る。本次の変更対象外）。
+- 実ブラウザ検証（隔離 local サーバ・モック AI・Playwright Firefox 1600×1000）:
+  同意→開始→提案→コピー→記録×2→解決終了→報告書→ナレッジ下書き→再読み込み復元まで成功、5xx なし。
+  証跡: `docs/evidence/terminal-session/`（01〜14＋報告書 HTML＋README）。
+- 既知の制約: RSP ログの自動取込は未対応（API 仕様待ち）／「中止」はブラウザ未操作（close API は共通）／
+  コピーは Clipboard 権限の無いヘッドレスでスタブ確認／承認者は既存のナレッジ承認画面（承認者ロール）で行う。

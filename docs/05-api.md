@@ -137,7 +137,7 @@
 | Method | Path | 権限 | 説明 |
 |---|---|---|---|
 | POST | `/api/reports/final` | Access 認証 | 画面の構造化データから Standalone HTML と SHA-256 を生成・保存。10 回/分 |
-| GET | `/api/reports/final/:id/html` | Access 認証（作成者のみ） | Standalone HTML（`Content-Disposition: attachment`） |
+| GET | `/api/reports/final/:id/html` | Access 認証（作成者のみ） | Standalone HTML（`attachment`。`?inline=1` でブラウザ内表示） |
 | GET | `/api/reports/final/:id/pdf` | Access 認証（作成者のみ） | 保存済み HTML をヘッドレス Chrome で PDF 化。10 回/分 |
 | POST | `/api/ai/remote-prompt` | Access 認証 | STEP 5 の担当者向け「A さんへの案内文」の下書き。実行はしない。20 回/分 |
 
@@ -174,6 +174,33 @@ AI は Skill ID とパラメータだけを提案し、コマンド文字列は�
 - エラー: `APPROVAL_MISMATCH` / `APPROVAL_EXPIRED` / `SESSION_EXPIRED` / `STEP_NOT_APPROVABLE` /
   `STEP_NOT_CONTINUABLE` / `STEP_LIMIT` / `SKILL_NOT_ALLOWED` / `PARAM_INVALID` / `NO_SKILL` / `RATE_LIMITED`。
 - 上限: 最大 6 ステップ・30 分・同一 Skill+params の再実行禁止。失敗は安全側で `escalated`。
+
+## 6-5. RSP実行セッション（2026-10-26 追加）
+
+設計: [35-terminal-session.md](35-terminal-session.md)。すべて Access 認証（`authenticateUi`）。
+AI は 1 コマンドを「提案」するだけで、**サーバは実行しない**。担当者が RSP のターミナルで実行し、
+実行したコマンドと出力を記録する（提案と実行は別物）。
+
+| Method | Path | 権限 | 説明 |
+|---|---|---|---|
+| GET | `/api/terminal/sessions?caseId=` | 参照可 | その案件の最新セッション・ステップ（無ければ `session:null`） |
+| POST | `/api/terminal/sessions` | claim 済み担当者 | `{caseId, consent:{screenShare,remoteControl}, ttlMinutes?}`。同意必須・同時 1 件 |
+| GET | `/api/terminal/sessions/:id` | 参照可 | セッションとステップ |
+| POST | `/api/terminal/sessions/:id/steps` | 担当者 | `{intent, lastOutput?}`。AI が次の一手を提案（10 回/分） |
+| POST | `/api/terminal/steps/:id/record` | 担当者 | `{command, output?, outputSource, exitStatus, note?}`。1 ステップ 1 回 |
+| GET | `/api/terminal/sessions/:id/capture` | 参照可 | 出力の自動取込の可否（現状 `supported:false` と理由） |
+| POST | `/api/terminal/sessions/:id/close` | 担当者/依頼者 | `{reason:'resolved'|'stopped'|'escalated', note?}` |
+| POST | `/api/terminal/sessions/:id/report` | 担当者 | 報告書をサーバで組み立て `final_reports` に保存。`files.html.previewUrl`（inline）を開く |
+| POST | `/api/terminal/sessions/:id/knowledge-draft` | 担当者 | `{title?, cause?}`。ナレッジは **status `draft`**（自動公開しない） |
+
+- 出力とコマンドは保存前に伏せ字化（`redactPII`）し、出力は 20,000 文字で切り詰め（切り詰めを明示）。
+  実行記録の SHA-256 はマスク後の `{sessionId, stepId, seq, command, output, outputSource, exitStatus}`。
+- 上限: 20 ステップ / 出力 20,000 文字 / TTL 30 分（最大 120 分）。期限切れは参照時に `closed`/`expired` へ。
+- エラー: `NOT_CLAIMED_OPERATOR` / `CONSENT_REQUIRED` / `SESSION_ACTIVE` / `SESSION_CLOSED` /
+  `STEP_LIMIT` / `STEP_RECORDED` / `CAPTURE_UNAVAILABLE` / `NO_RECORDED_STEPS` / `AI_UNAVAILABLE` / `RATE_LIMITED`。
+- 自動取込は RSP のログ/API が未提供のため未対応。差し替え点は `apps/api/src/terminal/capture.ts`。
+- SessionDTO / StepDTO の形は [35-terminal-session.md](35-terminal-session.md) §3・§4 を参照。作成済みの
+  ナレッジは `session.knowledge = {id, kbNo, status, title}`、報告書は `session.report = {id, sha256}` で返す。
 
 ## 7. セキュリティ上の前提
 

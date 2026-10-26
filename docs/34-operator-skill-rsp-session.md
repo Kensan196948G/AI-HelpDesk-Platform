@@ -39,6 +39,11 @@
 5. まず**読み取り専用Skill（risk 1）**でPoC。修復系は別フェーズ。
    リスク4以上は従来どおりIT管理者の別承認を必須とし、担当者の自己承認で通さない。
 
+> 関連: 承認済みSkillの実行（本節）と、担当者がRSPで手動実行する
+> **RSP実行セッション**（[35-terminal-session.md](35-terminal-session.md)）は別経路。
+> 後者ではAIが「提案」としてコマンド文字列を出すが、**サーバは実行しない**。
+> 担当者が確認してRSPで実行し、実行したコマンドと出力を記録する（提案と実行は別物）。
+
 ### 3-2. セッションの委任
 
 `resolution_sessions` に次の列を追加する（additive migration）。
@@ -148,6 +153,7 @@ node scripts/poc/rsp-session-state.mjs
 | 3 | 修復Skill（risk 2〜3）とverify/rollbackの実機確認 | フェーズ2の後 |
 | 4 | RSP都度セッションのモックPoC（状態・同意・TTL・監査） | フェーズ2と並行可 |
 | 5 | RSP実接続（API/資格情報の確認後） | 未定 |
+| 6 | RSP実行セッション（AI提案→担当者が実行→報告書・ナレッジ下書き） | **実装済み**（[35](35-terminal-session.md)） |
 
 ## 6. 未決事項
 
