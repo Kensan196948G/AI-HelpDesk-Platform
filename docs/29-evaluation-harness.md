@@ -251,3 +251,44 @@ jobs:
 npm run eval:answer        # dry-run（接続先とケース数を確認）
 npm run eval:answer:run    # 実行（未達で exit 4）
 ```
+
+---
+
+## 8. UI 実ブラウザ E2E（2026-10-26 実施）
+
+### 8-1. 環境
+
+| 項目 | 値 |
+|---|---|
+| ブラウザ | Firefox 153 (Playwright MCP / `@playwright/mcp@0.0.79 --browser firefox --headless`) |
+| 対象 | ローカル検証インスタンス（`AUTH_MODE=local`・test DB・Access なし） |
+| 目的 | `resolve-bridge.js` の新 UI（確認待ちカード / 解決ボタン）を実画面で確認する |
+
+**この環境で使えた経路と使えなかった経路**
+
+| 経路 | 結果 |
+|---|---|
+| Playwright MCP（firefox） | ✅ 利用可（firefox-1539 を導入して解決） |
+| Chrome DevTools MCP | ❌ X server 必須（headful） |
+| headless Chrome 単体 | ❌ ローカル HTML でも応答なし（ブラウザの通信が制約下にある） |
+
+### 8-2. 確認したこと
+
+| # | 手順 | 実測結果 |
+|---|---|---|
+| 1 | UI を開く | タイトル「みらいAI窓口 × ヘルプデスク ステップ受付 V3.1」、コンソールエラーは favicon の CSP のみ |
+| 2 | 案件を開き「読み取り診断を開始」 | 解決ループが起動し `ステップ 1/6・waiting_execute`、提案「OS の基本情報を確認する」＋実行 Y/N を表示 |
+| 3 | **確認待ち状態**（`waiting_continue` + `lastSummary.outcome='verified'`）で復帰 | 見出し「**原因の対処まで完了しました**」、説明「再起動後に Spooler が Running であること」、**「解決しましたか？」**、ボタン「解決した」「担当者へ引き継ぐ」 |
+| 4 | 「解決した」を押下 | `POST /api/resolve/sessions/:id/resolve` が成功し、表示が「**ステップ 1/6・resolved**」「解決済みにしました。必要ならナレッジ化してください。」「もう一度開始」に遷移 |
+| 5 | サーバ状態 | `resolution_sessions.status = resolved` を DB で確認 |
+
+### 8-3. わかった制約
+
+- 承認（実行 Y）は**端末がオンライン扱い**でないと通らない（`DEVICE_OFFLINE`）。E2E では「確認待ち」状態を DB にシードして復帰させた（端末実行を伴う経路は `run-loop-eval.mjs` の mock エージェントで別途検証済み）。
+- 409 `AWAITING_DECISION` の UI 合流は、確認待ち中に Y/N が無効化されるため**画面からは発火しない**（サーバ側の 409 は統合テストで担保）。
+- スクリーンショットは MCP の出力ディレクトリに保存される（リポジトリには含めない）。
+
+### 8-4. CI 化（未設置）
+
+`.github/workflows/**` は DSH のポリシーゲート（DEPLOY=critical）で書けないため、workflow は人間が設置する。
+CI では `npx playwright install --with-deps firefox` の後、本シナリオを Playwright テストとして実行できる（§7 の評価ジョブと同じ構成）。
