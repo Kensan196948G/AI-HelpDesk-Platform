@@ -1085,7 +1085,9 @@
 #ahd-hw.hw-embedded .hw-mark{display:none}
 #ahd-hw.hw-embedded .hw-title{font-size:12.5px}
 #ahd-hw.hw-embedded .hw-sub{max-width:50%}
+#ahd-hw.hw-embedded .hw-close{display:none}
 #ahd-hw.hw-embedded .hw-top-note{display:none}
+#ahd-hw:focus{outline:none}
 #ahd-hw.hw-embedded .hw-grid{padding:8px;gap:8px}
 #ahd-hw.hw-embedded .hw-ev{padding:7px}
 #ahd-hw[hidden]{display:none!important}
@@ -1262,6 +1264,7 @@ body.ahd-hw-open{overflow:hidden}
   const root = document.createElement('div');
   root.id = 'ahd-hw';
   root.hidden = true;
+  root.tabIndex = -1;
   root.setAttribute('role', 'dialog');
   root.setAttribute('aria-modal', 'true');
   root.setAttribute('aria-label', '引継ぎワークスペース');
@@ -1369,7 +1372,8 @@ body.ahd-hw-open{overflow:hidden}
     renderAll();
     loadInbox();
     const closeButton = root.querySelector('.hw-close');
-    if (closeButton) closeButton.focus();
+    if (HW.embedded) root.focus();
+    else if (closeButton) closeButton.focus();
   }
 
   function close() {
