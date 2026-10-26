@@ -158,7 +158,12 @@ export async function latestHandoverForCase(caseId: string): Promise<HandoverRow
     SELECT id, case_id, owner_email, assignee_hint, recipient_no, recipient_name,
              status, snapshot, claimed_by, approved_by, approved_at, self_approved, created_at
     FROM case_handovers
-    WHERE case_id = ${caseId}
+    WHERE (
+        case_id = ${caseId}
+        -- 画面の案件ID（cowork）だけでなく、ヘルプデスクのチケット/INC番号でも引ける。
+        OR snapshot #>> '{inc,id}' = ${caseId}
+        OR snapshot #>> '{ticket,id}' = ${caseId}
+      )
       AND status IN ('pending', 'claimed', 'resolved')
     ORDER BY created_at DESC
     LIMIT 1

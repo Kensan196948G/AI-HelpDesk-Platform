@@ -430,6 +430,14 @@ describe('RSP実行セッション API', () => {
     expect(JSON.stringify(context)).not.toContain('10.1.2.3');
     expect(JSON.stringify(context)).not.toContain('SN123456');
 
+    // 画面に出る INC 番号（ヘルプデスクのチケット）でも同じ案件を引ける。
+    const byInc = await app.inject({
+      method: 'GET',
+      url: `/api/terminal/context?caseId=INC-${CASE_A}`,
+    });
+    expect(byInc.statusCode, byInc.body).toBe(200);
+    expect(byInc.json().case.id).toBe(CASE_A);
+
     // 統合キー未設定なら 401（fail-closed）。
     const key = 'k'.repeat(48);
     const unset = await app.inject({
