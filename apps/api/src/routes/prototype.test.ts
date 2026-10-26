@@ -39,6 +39,9 @@ describe('prototype UI integration', () => {
     expect(html).toContain('__AIHD_ASSIST_BRIDGE__');
     // 解決ループ（読み取り診断）のブリッジ
     expect(html).toContain('__AIHD_RESOLVE_BRIDGE__');
+    // 引継ぎワークスペース（3ペイン）のブリッジ
+    expect(html).toContain('__AIHD_HW_BRIDGE__');
+    expect(html).toContain('引継ぎワークスペース');
     expect(html).toContain('解決ループ（読み取り診断）');
     expect(html).toContain('最終報告書');
     expect(html).toContain('遠隔支援');
