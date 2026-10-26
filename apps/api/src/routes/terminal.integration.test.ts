@@ -498,4 +498,49 @@ describe('RSP実行セッション API', () => {
     `;
     expect((audit[0]?.detail as { via?: string })?.via).toBe('rsp');
   });
+
+  it('本番相当: 統合リクエストはプロキシ秘密なしで通り、公開経路のなりすましは拒否される', async () => {
+    await setupClaimedHandover(CASE_B);
+    const key = 'k'.repeat(48);
+    config.RSP_INTEGRATION_KEY = key;
+    const originalRequireProxy = config.REQUIRE_PROXY_SECRET;
+    const originalProxySecret = config.PROXY_SECRET;
+    config.REQUIRE_PROXY_SECRET = true;
+    config.PROXY_SECRET = 'p'.repeat(32);
+    try {
+      const integration = await app.inject({
+        method: 'GET',
+        url: `/api/terminal/context?caseId=${CASE_B}`,
+        headers: { 'x-helpdesk-service-key': key, 'x-operator-email': OPERATOR },
+      });
+      expect(integration.statusCode, integration.body).toBe(200);
+
+      const spoof = await app.inject({
+        method: 'GET',
+        url: `/api/terminal/context?caseId=${CASE_B}`,
+        headers: {
+          'x-helpdesk-service-key': key,
+          'x-operator-email': OPERATOR,
+          'x-proxy-secret': config.PROXY_SECRET,
+        },
+      });
+      expect(spoof.statusCode).toBe(403);
+
+      const noProxy = await app.inject({
+        method: 'GET',
+        url: `/api/terminal/context?caseId=${CASE_B}`,
+      });
+      expect(noProxy.statusCode).toBe(401);
+
+      const viaProxy = await app.inject({
+        method: 'GET',
+        url: `/api/terminal/context?caseId=${CASE_B}`,
+        headers: { 'x-proxy-secret': config.PROXY_SECRET },
+      });
+      expect(viaProxy.statusCode, viaProxy.body).toBe(200);
+    } finally {
+      config.REQUIRE_PROXY_SECRET = originalRequireProxy;
+      config.PROXY_SECRET = originalProxySecret;
+    }
+  });
 });

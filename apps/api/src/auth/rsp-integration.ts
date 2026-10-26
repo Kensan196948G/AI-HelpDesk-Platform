@@ -65,6 +65,11 @@ export async function authenticateTerminal(request: FastifyRequest): Promise<voi
     throw unauthorized('操作者のメールが不正です。');
   }
 
+  // 公開プロキシ経由のリクエストでは統合ヘッダーを信用しない（サーバ間のみ）。
+  if (request.headers['x-proxy-secret'] !== undefined) {
+    throw forbidden('RSP 連携は公開経路から利用できません。');
+  }
+
   // サーバ間呼び出しのみ許可する（公開経路はプロキシ経由で別ヘッダーが付く）。
   const address = request.socket.remoteAddress ?? '';
   if (!LOOPBACK_ADDRESSES.has(address)) {
