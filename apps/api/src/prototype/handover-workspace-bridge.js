@@ -57,6 +57,9 @@
     inbox: [],
     inboxState: 'idle',
     inboxLoading: false,
+    ai: {},
+    aiBusy: {},
+    aiDraft: {},
     scrollTop: 0,
     timer: null,
   };
@@ -182,7 +185,10 @@
     const proposals = chat
       ? Object.values(cw.proposals || {}).filter((p) => p && p.chatId === chat.id)
       : [];
-    return { ticket: cwTicket, chat, proposals };
+    const cwCase = chat
+      ? (Array.isArray(cw.cases) ? cw.cases : []).find((c) => c.chatId === chat.id)
+      : null;
+    return { ticket: cwTicket, chat, proposals, caseId: cwCase ? cwCase.id : null };
   }
 
   function htmlToText(html) {
@@ -634,13 +640,13 @@
 
   function actionHTML(t, kids) {
     if (!canWork()) {
-      return '<section class="hw-action readonly"><div class="hw-action-h"><b>閲覧のみ</b><span class="hw-chip">権限分離</span></div><p class="hw-note">承認者・監査担当は、担当開始・解決記録を登録できません。内容の確認と監査の参照のみ行えます。</p></section>';
+      return '<section class="hw-action readonly"><div class="hw-action-h"><b>閲覧のみ</b><span class="hw-tag display">表示</span><span class="hw-chip">権限分離</span></div><p class="hw-note">承認者・監査担当は、担当開始・解決記録を登録できません。内容の確認と監査の参照のみ行えます。</p></section>';
     }
     if (t.status === 'escalated') {
       const names = staffNames();
       const selected = names.includes(t.suggest) ? t.suggest : names[0] || '';
       return (
-        '<section class="hw-action"><div class="hw-action-h"><b>次の一手：担当を決めて対応を開始</b>' +
+        '<section class="hw-action"><div class="hw-action-h"><b>次の一手：担当を決めて対応を開始</b><span class="hw-tag input">入力</span>' +
         (t.suggest ? '<span class="hw-chip">AIのおすすめ ' + esc(t.suggest) + '</span>' : '') +
         '</div><div class="hw-form-row"><label>担当者<select id="hw-assignee">' +
         (names.length
@@ -662,7 +668,7 @@
     }
     if (t.status === 'in_progress') {
       return (
-        '<section class="hw-action"><div class="hw-action-h"><b>次の一手：解決を記録</b><span class="hw-chip">担当 ' +
+        '<section class="hw-action"><div class="hw-action-h"><b>次の一手：解決を記録</b><span class="hw-tag input">入力</span><span class="hw-chip">担当 ' +
         esc(t.assignee || '-') +
         '</span></div><div class="hw-form-row"><label>原因<textarea id="hw-cause" rows="2" placeholder="事実のみ（推測を書かない）"></textarea></label></div><div class="hw-form-row"><label>対応手順（1行に1手順）<textarea id="hw-steps" rows="4" placeholder="第三者が再現できる粒度で"></textarea></label></div><div class="hw-form-row two"><label>所要時間（分）<input id="hw-min" type="number" min="0" value="30"></label><label>備考<input id="hw-note" placeholder="任意"></label></div>' +
         (kids.length
@@ -678,7 +684,7 @@
     if (t.status === 'resolved') {
       const r = t.resolution || {};
       return (
-        '<section class="hw-action ok"><div class="hw-action-h"><b>解決済み</b><span class="hw-chip ok">' +
+        '<section class="hw-action ok"><div class="hw-action-h"><b>解決済み</b><span class="hw-tag display">表示</span><span class="hw-chip ok">' +
         esc(fmtTs(t.resolvedAt)) +
         ' / ' +
         esc(r.by || t.assignee || '') +
@@ -700,6 +706,134 @@
       );
     }
     return '<section class="hw-action"><b>AIで解決済みの案件です。</b></section>';
+  }
+
+  function aiItemHTML(item) {
+    const sources = (Array.isArray(item.sources) ? item.sources : [])
+      .map((source) => source && (source.kbNo || source.id || ''))
+      .filter(Boolean);
+    return (
+      '<div class="hw-ai-qa"><div class="hw-ai-q">Q. ' +
+      esc(item.q) +
+      '</div><div class="hw-ai-answer' +
+      (item.error ? ' bad' : '') +
+      '">' +
+      esc(item.a) +
+      '</div><div class="hw-ai-meta">' +
+      sources.map((source) => '<span class="hw-chip">' + esc(source) + '</span>').join('') +
+      (item.model ? '<span class="hw-chip">' + esc(item.model) + '</span>' : '') +
+      (item.confidence ? '<span class="hw-chip">確信度 ' + esc(item.confidence) + '</span>' : '') +
+      '<span class="hw-chip">' +
+      (item.mode === 'case' ? '案件コンテキスト' : 'ナレッジ') +
+      '</span></div></div>'
+    );
+  }
+
+  function aiHTML(t) {
+    if (!canWork()) return '';
+    const cw = cowork(t);
+    const caseId = cw ? cw.caseId : null;
+    const busy = Boolean(HW.aiBusy[t.id]);
+    const items = (HW.ai[t.id] || []).slice(-5);
+    const note = caseId
+      ? 'Aさんが共有したPC情報と、ここまでのAI一次対応の履歴を根拠に回答します。引継ぎ記録がある場合は、質問と回答をその記録に保存します。'
+      : 'AI窓口から引き継がれた案件ではないため、承認済みナレッジを根拠に回答します。質問は案件記録に保存されません。';
+    return (
+      '<section class="hw-action hw-ai"><div class="hw-action-h"><b>AI に聞く</b><span class="hw-tag input">入力</span><span class="hw-chip info">' +
+      (caseId ? '案件コンテキスト' : 'ナレッジ検索') +
+      '</span></div><p class="hw-ai-note">' +
+      esc(note) +
+      '</p><div class="hw-form-row"><label>質問<textarea id="hw-ai-input" rows="2" placeholder="例：この状態で次に確認すべきことは？">' +
+      esc(HW.aiDraft[t.id] || '') +
+      '</textarea></label></div><div class="hw-form-row end"><button type="button" class="hw-btn pri" data-hw="ai"' +
+      (busy ? ' disabled' : '') +
+      '>' +
+      (busy ? '回答中…' : 'AI に聞く') +
+      '</button></div>' +
+      items.map(aiItemHTML).join('') +
+      '</section>'
+    );
+  }
+
+  async function askAi(t) {
+    if (!canWork() || HW.aiBusy[t.id]) return;
+    const input = $('#hw-ai-input');
+    const text = input ? input.value.trim() : '';
+    if (!text) {
+      hwToast('聞きたいことを入力してください');
+      return;
+    }
+    const cw = cowork(t);
+    const caseId = cw ? cw.caseId : null;
+    HW.aiDraft[t.id] = text;
+    HW.aiBusy[t.id] = true;
+    const button = root.querySelector('[data-hw="ai"]');
+    if (button) {
+      button.disabled = true;
+      button.textContent = '回答中…';
+    }
+    let mode = caseId ? 'case' : 'kb';
+    let data = null;
+    let error = null;
+    const ask = async (url, payload) => {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const body = await response.json().catch(() => null);
+      return { response, body };
+    };
+    const fallbackText =
+      '【案件】' +
+      String(t.subject || '').slice(0, 200) +
+      '\n' +
+      String(t.body || '').slice(0, 800) +
+      '\n\n【担当者の質問】' +
+      text;
+    try {
+      let result;
+      if (caseId) {
+        result = await ask('/api/ai/answer-case', { caseId, text });
+        if (result.response.status === 404 || result.response.status >= 500) {
+          mode = 'kb';
+          result = await ask('/api/ai/answer', { text: fallbackText });
+        }
+      } else {
+        result = await ask('/api/ai/answer', { text: fallbackText });
+      }
+      if (!result.response.ok) {
+        throw new Error(
+          result.body && result.body.error
+            ? result.body.error.message
+            : 'HTTP ' + result.response.status,
+        );
+      }
+      data = result.body || {};
+    } catch (err) {
+      error = String(err && err.message ? err.message : err).slice(0, 180);
+    }
+    HW.ai[t.id] = HW.ai[t.id] || [];
+    HW.ai[t.id].push({
+      q: text,
+      a: error
+        ? '回答できませんでした：' + error
+        : data && data.answer
+          ? data.answer
+          : '回答が空でした。',
+      sources: (data && data.sources) || [],
+      model: (data && data.model) || '',
+      confidence: (data && data.confidence) || '',
+      mode,
+      error: Boolean(error),
+      at: Date.now(),
+    });
+    if (HW.ai[t.id].length > 8) HW.ai[t.id] = HW.ai[t.id].slice(-8);
+    HW.aiBusy[t.id] = false;
+    HW.aiDraft[t.id] = '';
+    if (current() && current().id === t.id) renderAll();
+    if (error) hwToast('AI の回答に失敗しました：' + error, 'bad');
+    else hwToast('AI が回答しました。', 'ok');
   }
 
   function caseHTML(t) {
@@ -737,15 +871,16 @@
           '）から引き継がれた案件です。</b> 本人が共有に同意した情報だけを表示しています。</div>'
         : '') +
       actionHTML(t, kids) +
-      '<section class="hw-sec"><h3>AIによる引継ぎメモ</h3><pre class="hw-memo">' +
+      aiHTML(t) +
+      '<section class="hw-sec"><h3>AIによる引継ぎメモ <span class="hw-tag display">表示</span></h3><pre class="hw-memo">' +
       esc((t.handover && t.handover.summary) || '（引継ぎメモはありません）') +
-      '</pre></section><section class="hw-sec"><h3>問い合わせ内容</h3><div class="hw-body">' +
+      '</pre></section><section class="hw-sec"><h3>問い合わせ内容 <span class="hw-tag display">表示</span></h3><div class="hw-body">' +
       esc(t.body || '') +
       '</div></section><section class="hw-sec"><h3>' +
       (cw ? 'AI相談の会話（共有範囲）' : 'AI一次対応の記録') +
-      '</h3>' +
+      ' <span class="hw-tag display">表示</span></h3>' +
       (cw ? chatHTML(cw) : aiLogHTML(t)) +
-      '</section><section class="hw-sec"><h3>対応タイムライン</h3>' +
+      '</section><section class="hw-sec"><h3>対応タイムライン <span class="hw-tag display">表示</span></h3>' +
       historyHTML(t) +
       '</section><div class="hw-endnote">担当開始・解決記録は既存の「③ 引継ぎ・④ 解決記録」と同じ処理を呼び出します。画面を閉じても既存の操作は変わりません。</div></div>'
     );
@@ -1139,6 +1274,15 @@
 #ahd-hw .hw-chip.warn{background:var(--u-y-soft,#fdf2d2)}
 #ahd-hw .hw-chip.bad{background:var(--u-r-soft,#fbe2e1)}
 #ahd-hw .hw-chip.info{background:var(--u-teal-soft,#dcf3f1)}
+#ahd-hw .hw-tag{display:inline-flex;align-items:center;font-size:8.6px;font-weight:800;line-height:1.7;padding:0 4px;border-radius:3px;border:1px solid transparent;letter-spacing:.03em;white-space:nowrap}
+#ahd-hw .hw-tag.display{background:var(--u-surface2,#efede6);color:var(--u-muted,#5f6874);border-color:var(--u-line,#e1ddd2)}
+#ahd-hw .hw-tag.input{background:var(--u-safety-soft,#fff5d3);color:var(--u-ink,#1b222b);border-color:var(--u-y,#e0a800)}
+#ahd-hw .hw-ai-note{margin:0 0 7px;font-size:9.8px;color:var(--u-muted,#5f6874);line-height:1.55}
+#ahd-hw .hw-ai-qa{margin-top:7px;border-top:1px dashed var(--u-line,#e1ddd2);padding-top:6px}
+#ahd-hw .hw-ai-q{font-size:10.2px;font-weight:700;color:var(--u-ink,#1b222b);margin-bottom:3px}
+#ahd-hw .hw-ai-answer{background:var(--u-surface,#fff);border:1px solid var(--u-line,#e1ddd2);border-left:3px solid var(--u-teal,#0f9d9a);border-radius:6px;padding:6px 8px;font-size:10.8px;line-height:1.65;white-space:pre-wrap;word-break:break-word}
+#ahd-hw .hw-ai-answer.bad{border-left-color:var(--u-r,#c9302c);background:var(--u-r-soft,#fbe2e1)}
+#ahd-hw .hw-ai-meta{display:flex;gap:3px;flex-wrap:wrap;margin-top:4px}
 #ahd-hw .hw-inbox{border:1px solid var(--u-y,#e0a800);background:var(--u-safety-soft,#fff5d3);border-radius:9px;padding:7px;margin-bottom:2px}
 #ahd-hw .hw-inbox-h{display:flex;justify-content:space-between;font-size:10.2px;font-weight:700}
 #ahd-hw .hw-inbox-h span{background:var(--u-surface,#fff);border-radius:999px;padding:0 6px}
@@ -1163,7 +1307,7 @@
 #ahd-hw .hw-alert{border-left:3px solid var(--u-teal,#0f9d9a);background:var(--u-teal-soft,#dcf3f1);padding:7px 9px;border-radius:7px;font-size:10.8px;line-height:1.6;margin-bottom:8px}
 #ahd-hw .hw-alert.bad{border-color:var(--u-r,#c9302c);background:var(--u-r-soft,#fbe2e1)}
 #ahd-hw .hw-alert.info{border-color:var(--u-navy,#16314f);background:#e4ebf4}
-#ahd-hw .hw-action{border:1px solid var(--u-line,#e1ddd2);background:var(--u-surface,#fff);border-radius:10px;padding:9px 11px;margin-bottom:10px}
+#ahd-hw .hw-action{border:1px solid var(--u-line,#e1ddd2);background:var(--u-surface2,#efede6);border-radius:10px;padding:9px 11px;margin-bottom:10px}
 #ahd-hw .hw-action.ok{border-color:#a9d9bd;background:var(--u-g-soft,#e1f4e8)}
 #ahd-hw .hw-action.readonly{background:var(--u-surface2,#efede6)}
 #ahd-hw .hw-action-h{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:11.6px;margin-bottom:6px}
@@ -1172,7 +1316,8 @@
 #ahd-hw .hw-form-row.end{justify-content:flex-end;margin-bottom:0}
 #ahd-hw .hw-form-row label{display:flex;flex-direction:column;gap:2px;font-size:9.8px;font-weight:700;color:var(--u-muted,#5f6874);flex:1 1 100%}
 #ahd-hw .hw-form-row.two label{flex:1 1 110px}
-#ahd-hw .hw-form-row input,#ahd-hw .hw-form-row select,#ahd-hw .hw-form-row textarea{border:1px solid var(--u-line,#e1ddd2);border-radius:7px;padding:5px 7px;font:11.2px var(--u-font,sans-serif);background:var(--u-surface,#fff);color:var(--u-ink,#1b222b);width:100%}
+#ahd-hw .hw-form-row input,#ahd-hw .hw-form-row select,#ahd-hw .hw-form-row textarea{border:1.5px solid #b9b2a3;border-radius:7px;padding:5px 7px;font:11.2px var(--u-font,sans-serif);background:var(--u-surface,#fff);color:var(--u-ink,#1b222b);width:100%;box-shadow:inset 0 1px 2px rgba(20,30,40,.07)}
+#ahd-hw .hw-form-row input:focus,#ahd-hw .hw-form-row select:focus,#ahd-hw .hw-form-row textarea:focus{border-color:var(--u-teal,#0f9d9a);box-shadow:0 0 0 2px rgba(15,157,154,.18);outline:none}
 #ahd-hw .hw-form-row textarea{resize:vertical;line-height:1.5}
 #ahd-hw .hw-form-row select{min-width:120px}
 #ahd-hw .hw-check{display:flex;gap:6px;align-items:flex-start;font-size:10.2px;margin:4px 0;cursor:pointer}
@@ -1241,11 +1386,13 @@ body.ahd-hw-open{overflow:hidden}
 :root[data-theme="dark"] #ahd-hw .hw-prio.p3{background:#1d2b3d}
 :root[data-theme="dark"] #ahd-hw .hw-alert.info{background:#1d2b3d}
 :root[data-theme="dark"] #ahd-hw .hw-btn.pri{background:var(--u-teal,#0f9d9a);border-color:var(--u-teal,#0f9d9a)}
+:root[data-theme="dark"] #ahd-hw .hw-form-row input,:root[data-theme="dark"] #ahd-hw .hw-form-row select,:root[data-theme="dark"] #ahd-hw .hw-form-row textarea{border-color:#4a5a6c;background:#141c26}
 @media (prefers-color-scheme:dark){
  :root:not([data-theme="light"]) #ahd-hw .hw-card.on{border-color:var(--u-teal,#0f9d9a);box-shadow:0 0 0 1px var(--u-teal,#0f9d9a) inset}
  :root:not([data-theme="light"]) #ahd-hw .hw-prio.p3{background:#1d2b3d}
  :root:not([data-theme="light"]) #ahd-hw .hw-alert.info{background:#1d2b3d}
  :root:not([data-theme="light"]) #ahd-hw .hw-btn.pri{background:var(--u-teal,#0f9d9a);border-color:var(--u-teal,#0f9d9a)}
+ :root:not([data-theme="light"]) #ahd-hw .hw-form-row input,:root:not([data-theme="light"]) #ahd-hw .hw-form-row select,:root:not([data-theme="light"]) #ahd-hw .hw-form-row textarea{border-color:#4a5a6c;background:#141c26}
 }
 @media(max-width:1320px){#ahd-hw .hw-grid{grid-template-columns:270px minmax(0,1fr) 320px}}
 @media(max-width:1120px){#ahd-hw .hw-grid{grid-template-columns:250px minmax(0,1fr)}#ahd-hw .hw-ev{display:none}}
@@ -1434,12 +1581,20 @@ body.ahd-hw-open{overflow:hidden}
     if (action === 'draft') return openDraft(t);
     if (action === 'legacy') return openLegacy(t);
     if (action === 'cowork') return openCowork(t);
+    if (action === 'ai') return askAi(t);
     if (action === 'kb') return openKb(target.dataset.id);
   });
 
   root.querySelector('#hw-search').addEventListener('input', (event) => {
     HW.query = event.target.value;
     renderList();
+  });
+
+  root.addEventListener('input', (event) => {
+    if (event.target && event.target.id === 'hw-ai-input') {
+      const t = current();
+      if (t) HW.aiDraft[t.id] = event.target.value;
+    }
   });
 
   root.addEventListener(
