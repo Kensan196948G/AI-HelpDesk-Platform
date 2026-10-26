@@ -23,6 +23,7 @@ import { meRoutes } from './routes/me.js';
 import { prototypeRoutes } from './routes/prototype.js';
 import { remoteAssistRoutes } from './routes/remote-assist.js';
 import { reportRoutes } from './routes/reports.js';
+import { terminalRoutes } from './routes/terminal.js';
 
 function secretsMatch(actual: string, expected: string): boolean {
   const a = Buffer.from(actual);
@@ -46,6 +47,7 @@ export async function buildServer(options?: { logger?: boolean }): Promise<Fasti
               'req.headers.authorization',
               'req.headers["x-proxy-secret"]',
               'req.headers["x-device-token"]',
+              'req.headers["x-helpdesk-service-key"]',
               'res.headers["set-cookie"]',
             ],
           },
@@ -88,8 +90,23 @@ export async function buildServer(options?: { logger?: boolean }): Promise<Fasti
     const isDeviceAgent = request.url.startsWith('/api/device/agent');
     // 実端末コマンドの取得・結果報告はデバイストークンで守る（UI の登録/確認は各ルートで認証）。
     const isDeviceCommand = request.url.startsWith('/api/device/command');
+    // RSP → HelpDesk のサーバ間連携（[docs/36-rsp-integration.md]）。
+    // 統合ヘッダーがあり、公開プロキシ経由（X-Proxy-Secret あり）でないリクエストだけ、
+    // ここでの Access/Proxy 検証をルートの authenticateTerminal に委ねる。
+    const isIntegrationPath =
+      request.url.startsWith('/api/terminal/') || request.url.startsWith('/api/reports/final/');
+    const isRspIntegration =
+      isIntegrationPath &&
+      typeof request.headers['x-helpdesk-service-key'] === 'string' &&
+      request.headers['x-proxy-secret'] === undefined;
 
-    if (config.REQUIRE_PROXY_SECRET && !isHealth && !isDeviceAgent && !isDeviceCommand) {
+    if (
+      config.REQUIRE_PROXY_SECRET &&
+      !isHealth &&
+      !isDeviceAgent &&
+      !isDeviceCommand &&
+      !isRspIntegration
+    ) {
       const provided = request.headers['x-proxy-secret'];
       if (
         typeof provided !== 'string' ||
@@ -106,7 +123,8 @@ export async function buildServer(options?: { logger?: boolean }): Promise<Fasti
       config.AUTH_MODE === 'cloudflare-access' &&
       !isHealth &&
       !isDeviceAgent &&
-      !isDeviceCommand
+      !isDeviceCommand &&
+      !isRspIntegration
     ) {
       await requireCloudflareAccess(request);
     }
@@ -203,6 +221,7 @@ export async function buildServer(options?: { logger?: boolean }): Promise<Fasti
   await app.register(employeeRoutes, { prefix: '/api' });
   await app.register(meRoutes, { prefix: '/api' });
   await app.register(reportRoutes, { prefix: '/api' });
+  await app.register(terminalRoutes, { prefix: '/api' });
   await app.register(remoteAssistRoutes, { prefix: '/api' });
   await app.register(knowledgeRoutes, { prefix: '/api' });
   await app.register(auditRoutes, { prefix: '/api' });

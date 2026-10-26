@@ -19,6 +19,7 @@ const BRIDGE_FILES = [
   path.join('apps', 'api', 'src', 'prototype', 'assist-bridge.js'),
   path.join('apps', 'api', 'src', 'prototype', 'resolve-bridge.js'),
   path.join('apps', 'api', 'src', 'prototype', 'remote-support-bridge.js'),
+  path.join('apps', 'api', 'src', 'prototype', 'handover-workspace-bridge.js'),
 ];
 const COWORK_KEY = 'mirai-wizard-v31-cowork';
 const HELPDESK_KEY = 'mirai-wizard-v31-helpdesk';

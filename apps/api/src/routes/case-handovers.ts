@@ -46,7 +46,7 @@ const AnswerBodySchema = z.object({
   text: z.string().trim().min(1).max(2000),
 });
 
-interface HandoverRow {
+export interface HandoverRow {
   id: string;
   case_id: string;
   owner_email: string;
@@ -96,7 +96,7 @@ function isDemoAccount(email: string): boolean {
  * 引継ぎの受信・claim・AI 追加質問・承認を行う。
  * 名簿が取得できない場合は fail-closed。開発/テストは許可する。
  */
-async function requireHelpdesk(email: string): Promise<void> {
+export async function requireHelpdesk(email: string): Promise<void> {
   if (config.AUTH_MODE !== 'cloudflare-access') return;
   if (isDemoAccount(email)) return;
   const employee = await findEmployeeByEmail(email);
@@ -153,12 +153,17 @@ function snapshotSummary(row: HandoverRow, email: string): Record<string, unknow
   };
 }
 
-async function latestHandoverForCase(caseId: string): Promise<HandoverRow | undefined> {
+export async function latestHandoverForCase(caseId: string): Promise<HandoverRow | undefined> {
   const rows = await sql<HandoverRow[]>`
     SELECT id, case_id, owner_email, assignee_hint, recipient_no, recipient_name,
              status, snapshot, claimed_by, approved_by, approved_at, self_approved, created_at
     FROM case_handovers
-    WHERE case_id = ${caseId}
+    WHERE (
+        case_id = ${caseId}
+        -- 画面の案件ID（cowork）だけでなく、ヘルプデスクのチケット/INC番号でも引ける。
+        OR snapshot #>> '{inc,id}' = ${caseId}
+        OR snapshot #>> '{ticket,id}' = ${caseId}
+      )
       AND status IN ('pending', 'claimed', 'resolved')
     ORDER BY created_at DESC
     LIMIT 1
@@ -569,6 +574,7 @@ export async function caseHandoverRoutes(app: FastifyInstance): Promise<void> {
         provider: answer.provider,
         model: answer.model,
         confidence: answer.confidence,
+        prompt: answer.prompt,
       };
     },
   );

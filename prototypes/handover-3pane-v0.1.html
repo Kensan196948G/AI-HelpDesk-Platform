@@ -1,0 +1,1518 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; connect-src 'none'; font-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<title>引継ぎワークスペース（3ペイン）— サンプルプロトタイプ v0.1</title>
+<!--
+  引継ぎ用 3ペイン UI のサンプルプロトタイプ（Standalone HTML / 完全オフライン）
+  作成: 2026-10-26
+  位置づけ:
+    - 製品 UI（Mirai_AIHelpdesk_Cowork_StepWizard_V3.1_PCinfo_Offline.html）の正本は変更しない。
+      これは「引継ぎ後に担当者が使う画面」の検討用サンプルであり、製品には未接続。
+    - 判断17=1（Hermes を入れない。Skill/KB 拡充＋3ペイン UI＋自前コパイロット）に対応。
+    - 判断18=1（risk 2 以上の変更のみ「解決」と扱う）を画面に反映。
+  事実に基づく制約:
+    - Y/N は本人のみ（代理承認なし）。担当者は提案の作成・状況確認までで、代行実行はできない。
+    - AI は Skill と型付きパラメータだけを返す。コマンド文字列は生成しない。
+    - 承認ハッシュは 5 分で失効。実行はハッシュ一致が条件（サーバ側で再計算）。
+    - ハッシュ・監査チェーンの表示はデモ用の擬似値。実装はサーバ側の SHA-256。
+  データはすべてデモ。外部とは通信しない（CSP で遮断）。
+-->
+<style>
+:root{
+  --u-bg:#f4f3ee; --u-surface:#ffffff; --u-surface2:#efede6; --u-warm:#fbfaf6;
+  --u-ink:#1b222b; --u-muted:#5f6874; --u-line:#e1ddd2; --u-line2:rgba(27,34,43,.08);
+  --u-navy:#16314f; --u-navy2:#0f2440; --u-safety:#f5b800; --u-safety-soft:#fff5d3;
+  --u-accent:#ee7d1c; --u-teal:#0f9d9a; --u-teal-soft:#dcf3f1;
+  --u-g:#1f9d55; --u-g-soft:#e1f4e8; --u-y:#e0a800; --u-y-soft:#fdf2d2;
+  --u-r:#c9302c; --u-r-soft:#fbe2e1;
+  --u-proposal:#fffdf5; --u-proposal-line:#e7d9ae;
+  --u-shadow:0 1px 2px rgba(20,30,40,.05),0 10px 28px rgba(20,30,40,.08);
+  --u-shadow-sm:0 1px 2px rgba(20,30,40,.06);
+  --u-radius:14px;
+  --mono:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace;
+  --u-font:"Hiragino Sans","Hiragino Kaku Gothic ProN","BIZ UDPGothic","Noto Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --u-bg:#0f141a; --u-surface:#18202a; --u-surface2:#212a35; --u-warm:#141b23;
+    --u-ink:#e7ecf1; --u-muted:#9fabb8; --u-line:#2c3846; --u-line2:rgba(255,255,255,.08);
+    --u-safety-soft:#35290b; --u-teal-soft:#0f2f2d; --u-g-soft:#11301f;
+    --u-y-soft:#352a0b; --u-r-soft:#3a1616;
+    --u-proposal:#241f10; --u-proposal-line:#4a3d18;
+    --u-shadow:0 1px 2px rgba(0,0,0,.3),0 10px 28px rgba(0,0,0,.3);
+    --u-shadow-sm:0 1px 2px rgba(0,0,0,.35);
+    color-scheme: dark;
+  }
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--u-bg);color:var(--u-ink);font-family:var(--u-font);font-size:13px;line-height:1.6;-webkit-font-smoothing:antialiased}
+button{font-family:inherit}
+code,.mono{font-family:var(--mono)}
+code{background:var(--u-line2);padding:1px 4px;border-radius:4px;font-size:10.8px}
+#app{height:100dvh;display:flex;flex-direction:column;overflow:hidden}
+
+/* ===== 上部バー ===== */
+.topbar{flex:none;height:56px;display:flex;align-items:center;gap:10px;padding:0 14px;background:linear-gradient(180deg,#173352,#122a45);color:#fff;border-bottom:3px solid var(--u-safety)}
+.brand-mark{width:28px;height:28px;border-radius:8px;background:var(--u-safety);color:var(--u-navy);display:grid;place-items:center;font-weight:800;font-size:13px;letter-spacing:-.04em}
+.brand{font-weight:700;font-size:13.5px;letter-spacing:.02em;white-space:nowrap}
+.screen-name{font-size:12px;color:#c7d4e2;white-space:nowrap}
+.top-sep{width:1px;height:20px;background:rgba(255,255,255,.18);margin:0 4px}
+.top-space{flex:1}
+.role-switch{display:flex;gap:2px;background:rgba(255,255,255,.1);padding:3px;border-radius:999px}
+.role-switch button{border:0;background:transparent;color:#d6e2ee;font-size:11.5px;font-weight:600;padding:5px 11px;border-radius:999px;cursor:pointer;transition:background .15s,color .15s}
+.role-switch button.on{background:#fff;color:var(--u-navy)}
+.top-btn{border:1px solid rgba(255,255,255,.3);background:transparent;color:#fff;font-size:11.5px;font-weight:600;padding:5px 10px;border-radius:8px;cursor:pointer}
+.top-btn:hover{background:rgba(255,255,255,.1)}
+.audit-chip{display:flex;align-items:center;gap:6px;font-size:11px;color:#d9e5f1;background:rgba(255,255,255,.08);padding:5px 10px;border-radius:999px;white-space:nowrap}
+.audit-chip .dot{width:7px;height:7px;border-radius:50%;background:#5fdc95;box-shadow:0 0 0 3px rgba(95,220,149,.18)}
+.audit-chip b{color:#fff}
+.user-chip{display:flex;align-items:center;gap:7px;padding-left:4px}
+.user-chip .avatar{width:27px;height:27px;border-radius:50%;background:var(--u-teal);color:#fff;display:grid;place-items:center;font-size:11.5px;font-weight:700}
+.user-chip b{display:block;font-size:11.5px;line-height:1.2}
+.user-chip small{display:block;font-size:10px;color:#b9c9d9;line-height:1.3}
+
+.demo-strip{flex:none;display:flex;align-items:center;justify-content:center;gap:8px;height:27px;background:var(--u-safety-soft);color:#6b4e00;font-size:11px;border-bottom:1px solid var(--u-proposal-line)}
+.demo-strip b{font-weight:700}
+
+/* ===== 3ペイン ===== */
+.workspace{flex:1;min-height:0;display:grid;grid-template-columns:296px minmax(0,1fr) 368px;gap:10px;padding:10px;overflow:hidden}
+.pane{min-height:0;background:var(--u-surface);border:1px solid var(--u-line);border-radius:var(--u-radius);box-shadow:var(--u-shadow-sm);display:flex;flex-direction:column;overflow:hidden}
+.pane-queue{background:var(--u-surface)}
+.pane-head{flex:none;display:flex;align-items:flex-start;justify-content:space-between;gap:8px;padding:12px 14px 8px}
+.pane-head h2{margin:0;font-size:13.5px;font-weight:700;letter-spacing:.02em}
+.pane-sub{margin:2px 0 0;font-size:11px;color:var(--u-muted)}
+.pane-kpi{margin:3px 0 0;font-size:10.8px;color:var(--u-muted)}
+.pane-kpi b{color:var(--u-ink)}
+.icon-btn{flex:none;width:26px;height:26px;border-radius:8px;border:1px solid var(--u-line);background:var(--u-surface);color:var(--u-muted);cursor:pointer;font-size:13px;line-height:1}
+.icon-btn:hover{color:var(--u-ink);border-color:var(--u-muted)}
+.queue-tools{flex:none;padding:0 12px 8px;display:flex;flex-direction:column;gap:7px}
+.seg{display:flex;gap:2px;background:var(--u-surface2);padding:3px;border-radius:9px}
+.seg button{flex:1;border:0;background:transparent;color:var(--u-muted);font-size:11px;font-weight:600;padding:5px 2px;border-radius:7px;cursor:pointer;white-space:nowrap}
+.seg button b{font-weight:700;font-size:10.5px;opacity:.8;margin-left:1px}
+.seg button.on{background:var(--u-surface);color:var(--u-ink);box-shadow:var(--u-shadow-sm)}
+.search{width:100%;height:30px;border:1px solid var(--u-line);background:var(--u-surface);border-radius:8px;padding:0 9px;font-size:11.5px;color:var(--u-ink);font-family:inherit}
+.search::placeholder{color:var(--u-muted)}
+.case-list{flex:1;min-height:0;overflow:auto;padding:0 10px 10px;display:flex;flex-direction:column;gap:7px;scrollbar-gutter:stable}
+.case-card{position:relative;text-align:left;border:1px solid var(--u-line);background:var(--u-surface);border-radius:11px;padding:9px 10px 9px 14px;cursor:pointer;transition:border-color .12s,background .12s;overflow:hidden}
+.case-card:hover{border-color:#c9c3b4;background:var(--u-warm)}
+.case-card[aria-selected="true"]{border-color:var(--u-navy);box-shadow:0 0 0 1px var(--u-navy) inset}
+.case-card .signal{position:absolute;left:0;top:0;bottom:0;width:4px}
+.s-red{background:var(--u-r)}.s-amber{background:var(--u-y)}.s-blue{background:var(--u-teal)}
+.cc-top{display:flex;align-items:center;justify-content:space-between;gap:6px;font-family:var(--mono);font-size:10px;color:var(--u-muted)}
+.cc-top .done-flag{color:var(--u-g);font-weight:700}
+.case-card h3{margin:2px 0 3px;font-size:12.3px;font-weight:650;line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.cc-meta{font-size:10.8px;color:var(--u-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cc-chips{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px}
+.cc-foot{display:flex;align-items:center;gap:5px;margin-top:6px;font-size:10.6px;color:var(--u-muted)}
+.avatar-sm{width:17px;height:17px;border-radius:50%;background:var(--u-surface2);color:var(--u-ink);display:inline-grid;place-items:center;font-size:9px;font-weight:700;border:1px solid var(--u-line)}
+.pane-foot{flex:none;padding:8px 12px;border-top:1px solid var(--u-line);font-size:10px;color:var(--u-muted);line-height:1.5;background:var(--u-warm)}
+
+.chip{display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:650;padding:1.5px 6px;border-radius:999px;background:var(--u-surface2);color:var(--u-muted);border:1px solid transparent;white-space:nowrap}
+.chip.ok{background:var(--u-g-soft);color:#15713d}
+.chip.warn{background:var(--u-y-soft);color:#7a5b00}
+.chip.bad{background:var(--u-r-soft);color:#8f2320}
+.chip.info{background:var(--u-teal-soft);color:#0a6b69}
+.chip.navy{background:#e4ebf4;color:var(--u-navy)}
+.chip.muted{background:transparent;border-color:var(--u-line);color:var(--u-muted)}
+.chip.lv{background:#e4ebf4;color:var(--u-navy)}
+.chip.lv3,.chip.lv4{background:var(--u-r-soft);color:#8f2320}
+.badge{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:6px;background:var(--u-surface2);color:var(--u-muted)}
+.badge.ok{background:var(--u-g-soft);color:#15713d}
+.badge.warn{background:var(--u-y-soft);color:#7a5b00}
+.badge.danger{background:var(--u-r-soft);color:#8f2320}
+.badge.info{background:var(--u-teal-soft);color:#0a6b69}
+
+/* ===== 中央ペイン ===== */
+.pane-case{background:var(--u-warm)}
+.case-head{flex:none;padding:11px 16px 10px;background:var(--u-surface);border-bottom:1px solid var(--u-line)}
+.case-head .top-line{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.signal-dot{width:10px;height:10px;border-radius:50%;flex:none}
+.case-head h1{margin:0;font-size:16.5px;font-weight:700;line-height:1.35;letter-spacing:.01em;flex:1;min-width:200px}
+.state-pill{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px;border:1px solid var(--u-line);color:var(--u-muted);white-space:nowrap}
+.state-pill.open{border-color:#e3b1af;color:#8f2320;background:var(--u-r-soft)}
+.state-pill.active{border-color:#e5c76a;color:#7a5b00;background:var(--u-y-soft)}
+.state-pill.done{border-color:#a9d9bd;color:#15713d;background:var(--u-g-soft)}
+.case-meta{display:flex;flex-wrap:wrap;gap:4px 16px;margin-top:5px;font-size:11.2px;color:var(--u-muted)}
+.case-meta b{color:var(--u-ink);font-weight:650}
+.case-meta .mi{font-size:10px;color:var(--u-muted);margin-right:4px}
+.meters{display:flex;gap:16px;margin-top:9px;flex-wrap:wrap}
+.meter{min-width:104px}
+.meter span{display:flex;justify-content:space-between;font-size:10px;color:var(--u-muted);margin-bottom:3px}
+.meter .bar{height:4px;border-radius:999px;background:var(--u-surface2);overflow:hidden}
+.meter .bar i{display:block;height:100%;background:var(--u-teal);border-radius:999px}
+.meter.warn .bar i{background:var(--u-y)}
+.meter.danger .bar i{background:var(--u-r)}
+.timeline-wrap{flex:1;min-height:0;overflow:auto;padding:14px 16px 6px;scrollbar-gutter:stable}
+.timeline{position:relative;margin:0;padding:0 0 2px 22px;list-style:none}
+.timeline::before{content:"";position:absolute;left:6px;top:5px;bottom:6px;width:2px;background:var(--u-line)}
+.tl-item{position:relative;margin:0 0 12px}
+.tl-dot{position:absolute;left:-22px;top:3px;width:14px;height:14px;border-radius:50%;background:var(--u-muted);box-shadow:0 0 0 3px var(--u-warm)}
+.k-request .tl-dot,.k-memo .tl-dot{background:#98a2ad}
+.k-ai .tl-dot{background:var(--u-teal)}
+.k-exec .tl-dot{background:var(--u-navy)}
+.k-proposal .tl-dot{background:var(--u-y)}
+.k-verify .tl-dot{background:var(--u-g)}
+.k-verify.fail .tl-dot{background:var(--u-r)}
+.k-handoff .tl-dot{background:var(--u-accent)}
+.k-resolve .tl-dot{background:var(--u-g)}
+.tl-head{display:flex;align-items:baseline;gap:7px;flex-wrap:wrap;font-size:10.5px;color:var(--u-muted);margin-bottom:3px}
+.tl-head .time{font-family:var(--mono);font-size:10px;opacity:.85}
+.tl-head .actor{font-weight:700;color:var(--u-ink);font-size:10.8px}
+.tl-card{border:1px solid var(--u-line);border-radius:10px;padding:8px 10px;background:var(--u-surface);font-size:12px;line-height:1.65}
+.tl-card p{margin:0}
+.tl-card .tt{font-weight:700;font-size:12.3px;line-height:1.5}
+.tl-card .tb{margin-top:2px;color:var(--u-ink);opacity:.86}
+.tl-card .refs{display:flex;gap:4px;flex-wrap:wrap;margin-top:5px}
+.k-ai .tl-card{border-left:3px solid var(--u-teal)}
+.k-exec .tl-card{border-left:3px solid var(--u-navy)}
+.k-handoff .tl-card{border-left:3px solid var(--u-accent);background:var(--u-safety-soft)}
+.k-verify .tl-card{border-left:3px solid var(--u-g);background:var(--u-g-soft)}
+.k-handoff .tl-card .tb,.k-verify .tl-card .tb{color:inherit}
+.k-request .tl-card{background:var(--u-surface2);border-color:transparent}
+.k-memo .tl-card{background:var(--u-surface);border-style:dashed}
+.tl-card.proposal-wrap{padding:0;border:0;background:transparent}
+.exec-rows{display:flex;gap:5px;flex-wrap:wrap;margin-top:5px}
+.exec-rows .er{font-size:10.2px;background:var(--u-surface2);border-radius:5px;padding:1px 5px;font-family:var(--mono)}
+.exec-rows .er b{font-family:var(--u-font);font-weight:700}
+.verify-list{display:flex;flex-direction:column;gap:2px;margin-top:4px;font-size:11.3px}
+.verify-list .v{display:flex;gap:6px;align-items:baseline}
+.verify-list .v .mark{font-weight:800;width:12px;flex:none}
+.verify-list .v .mark.y{color:#15713d}
+.verify-list .v .mark.n{color:#8f2320}
+.verify-list .v small{color:var(--u-muted);font-size:10px}
+.note-line{font-size:10.5px;color:var(--u-muted);margin-top:5px;line-height:1.55}
+
+/* 提案カード */
+.proposal{border:1px solid var(--u-proposal-line);background:var(--u-proposal);border-radius:11px;padding:9px 11px}
+.proposal.pending{border-color:var(--u-y);box-shadow:0 0 0 2px rgba(245,184,0,.12)}
+.p-head{display:flex;align-items:flex-start;gap:8px}
+.p-head .risk{flex:none;font-size:10px;font-weight:800;padding:2px 6px;border-radius:5px;background:#e4ebf4;color:var(--u-navy);margin-top:1px}
+.p-head .risk.lv3,.p-head .risk.lv4{background:var(--u-r-soft);color:#8f2320}
+.p-title{flex:1;min-width:0}
+.p-title b{display:block;font-size:12.2px;line-height:1.4}
+.skill-id{display:block;font-size:10px;color:var(--u-muted);margin-top:1px}
+.p-head .pill{flex:none;font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px;background:var(--u-g-soft);color:#15713d;white-space:nowrap}
+.p-head .pill.warn{background:var(--u-y-soft);color:#7a5b00}
+.kv{display:grid;grid-template-columns:62px minmax(0,1fr);gap:3px 9px;margin:7px 0 0}
+.kv dt{font-size:10.2px;color:var(--u-muted);font-weight:650;padding-top:1px}
+.kv dd{margin:0;font-size:11.2px;line-height:1.6;word-break:break-word}
+.kv dd .bad{color:#8f2320}
+.exec-mini{margin-top:7px;padding-top:6px;border-top:1px dashed var(--u-line);font-size:10.4px;color:var(--u-muted);display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.exec-mini .ok{color:#15713d;font-weight:700}
+.exec-mini code{font-size:9.8px}
+.pending-line{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:7px;padding-top:6px;border-top:1px dashed var(--u-line);font-size:10.4px;color:#7a5b00}
+.countdown{font-family:var(--mono);font-weight:700;font-size:12px;color:#7a5b00;background:var(--u-safety-soft);padding:1px 7px;border-radius:6px;white-space:nowrap}
+.countdown.expired{color:#8f2320;background:var(--u-r-soft)}
+
+/* 操作ドック */
+.dock{flex:none;border-top:1px solid var(--u-line);background:var(--u-surface);padding:9px 14px 11px}
+.dock-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:2px}
+.dock-hint{font-size:10.3px;color:var(--u-muted)}
+.dock-top .spacer{flex:1}
+.dock-top .mini-stat{font-size:10.3px;color:var(--u-muted);font-family:var(--mono)}
+.copilot{border:1px solid var(--u-teal-soft);background:var(--u-teal-soft);border-radius:10px;padding:8px 10px;margin:7px 0 2px}
+.copilot .cp-head{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:11px}
+.copilot .cp-head b{font-size:11.5px}
+.copilot .cp-head .tag{font-size:9.3px;background:rgba(15,157,154,.14);color:#0a6b69;padding:0 5px;border-radius:4px;font-weight:700}
+.copilot .cp-head .tools{margin-left:auto;font-size:9.6px;color:#0a6b69}
+.copilot .cp-head code{background:rgba(255,255,255,.5);font-size:9.3px;color:#0a6b69}
+.copilot .cp-body{margin-top:6px;font-size:11.4px;line-height:1.65}
+.copilot .cp-body p{margin:0}
+.copilot .cp-ev{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px;align-items:center;font-size:10px;color:#0a6b69}
+.copilot .cp-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}
+.copilot .cp-note{margin-top:6px;font-size:9.8px;color:#2b6b69}
+.copilot .thinking{color:#0a6b69;font-size:11.3px}
+.copilot .thinking::after{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--u-teal);margin-left:6px;animation:pulse 1s infinite}
+@keyframes pulse{0%,100%{opacity:.25}50%{opacity:1}}
+.composer{display:flex;gap:7px;margin-top:7px;align-items:flex-end}
+.composer textarea{flex:1;min-height:38px;max-height:96px;resize:vertical;border:1px solid var(--u-line);background:var(--u-surface);border-radius:9px;padding:7px 9px;font-size:11.6px;font-family:inherit;color:var(--u-ink);line-height:1.5}
+.composer textarea::placeholder{color:var(--u-muted)}
+.actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;align-items:center}
+.actions .spacer{flex:1}
+.actions .hint{font-size:10px;color:var(--u-muted)}
+.pending-strip{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:var(--u-safety-soft);border:1px solid #e5c76a;border-radius:9px;padding:6px 9px;font-size:10.8px;color:#6b4e00;margin-bottom:7px}
+.pending-strip b{font-size:11px}
+.pending-strip .countdown{font-size:11px}
+.resolved-banner{display:flex;align-items:center;gap:8px;background:var(--u-g-soft);border:1px solid #a9d9bd;color:#15713d;border-radius:9px;padding:8px 10px;font-size:11.5px;font-weight:600;margin-bottom:8px}
+.role-banner{flex:none;background:#e4ebf4;color:var(--u-navy);font-size:11px;padding:7px 16px;border-bottom:1px solid var(--u-line);display:flex;gap:7px;align-items:center}
+
+/* 右ペイン */
+.pane-evidence{background:var(--u-warm);padding:10px;gap:9px;overflow:auto;scrollbar-gutter:stable}
+.ev-card{background:var(--u-surface);border:1px solid var(--u-line);border-radius:11px;overflow:hidden;flex:none}
+.ev-head{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:7px 10px;border-bottom:1px solid var(--u-line);background:var(--u-surface2);font-size:10.8px;font-weight:700;letter-spacing:.02em}
+.ev-head .badge{font-weight:700}
+.ev-body{padding:8px 10px;font-size:11.2px}
+.dev-row{display:flex;justify-content:space-between;gap:8px;padding:3px 0;border-bottom:1px dashed var(--u-line2)}
+.dev-row:last-child{border-bottom:0}
+.dev-row dt{color:var(--u-muted);font-size:10.5px;flex:none}
+.dev-row dd{margin:0;text-align:right;font-size:10.8px;font-weight:600;overflow-wrap:anywhere}
+.share-chips{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px}
+.ev-note{font-size:9.8px;color:var(--u-muted);line-height:1.55;margin-top:6px}
+.audit-row{display:grid;grid-template-columns:36px minmax(0,1fr);gap:6px;padding:4px 0;border-bottom:1px dashed var(--u-line2);font-size:10.2px}
+.audit-row:last-child{border-bottom:0}
+.audit-row .at{font-family:var(--mono);color:var(--u-muted)}
+.audit-row .aa{min-width:0}
+.audit-row .aa b{font-weight:650;display:block;font-size:10.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.audit-row .aa code{font-size:9px;background:none;padding:0;color:var(--u-muted)}
+.ev-actions{display:flex;gap:5px;flex-wrap:wrap;margin-top:7px}
+.kb-line{display:flex;justify-content:space-between;gap:6px;font-size:10.8px;align-items:baseline}
+.kb-line b{font-family:var(--mono);font-size:10.2px}
+.ttl-note{font-size:9.8px;color:var(--u-muted);margin-top:5px}
+.approval-block{margin-top:4px;border-top:1px dashed var(--u-line);padding-top:8px;display:flex;flex-direction:column;gap:6px}
+.approval-block h3{margin:0;font-size:11px;display:flex;justify-content:space-between;align-items:center}
+.ap-item{border:1px solid var(--u-line);border-radius:9px;padding:7px 8px;background:var(--u-surface);font-size:10.6px}
+.ap-item b{font-family:var(--mono);font-size:10px}
+.ap-item p{margin:1px 0 2px;font-size:10.8px;font-weight:600;line-height:1.4}
+.ap-item small{color:var(--u-muted);font-size:9.7px;display:block}
+
+/* ボタン */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:5px;border:1px solid var(--u-line);background:var(--u-surface);color:var(--u-ink);font-size:11.5px;font-weight:650;padding:6px 11px;border-radius:8px;cursor:pointer;transition:background .12s,border-color .12s,transform .05s;line-height:1.3}
+.btn:hover{background:var(--u-surface2)}
+.btn:active{transform:translateY(1px)}
+.btn-sm{font-size:10.6px;padding:4px 8px;border-radius:7px}
+.btn-primary{background:var(--u-navy);border-color:var(--u-navy);color:#fff}
+.btn-primary:hover{background:var(--u-navy2)}
+.btn-ok{background:var(--u-g);border-color:var(--u-g);color:#fff}
+.btn-ok:hover{filter:brightness(.94)}
+.btn-warn{background:var(--u-safety-soft);border-color:#e5c76a;color:#6b4e00}
+.btn-danger{background:var(--u-surface);border-color:#e3b1af;color:#8f2320}
+.btn-ghost{background:transparent;border-color:transparent;color:var(--u-muted)}
+.btn-ghost:hover{background:var(--u-surface2);color:var(--u-ink)}
+.btn[disabled]{opacity:.45;cursor:not-allowed}
+.btn[disabled]:hover{background:var(--u-surface)}
+button:focus-visible,input:focus-visible,textarea:focus-visible,summary:focus-visible{outline:2px solid var(--u-teal);outline-offset:2px}
+
+/* モーダル */
+.modal-backdrop{position:fixed;inset:0;background:rgba(12,22,32,.48);display:grid;place-items:center;padding:22px;z-index:50}
+.modal{width:min(700px,100%);max-height:86vh;background:var(--u-surface);border-radius:16px;box-shadow:0 24px 70px rgba(10,20,30,.35);display:flex;flex-direction:column;overflow:hidden;border:1px solid var(--u-line)}
+.modal.wide{width:min(860px,100%)}
+.modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:13px 18px;border-bottom:1px solid var(--u-line)}
+.modal-head h3{margin:0;font-size:14.5px;line-height:1.4}
+.modal-head p{margin:3px 0 0;font-size:10.8px;color:var(--u-muted)}
+.modal-head .x{border:0;background:transparent;font-size:19px;line-height:1;color:var(--u-muted);cursor:pointer;padding:2px 4px;border-radius:6px}
+.modal-head .x:hover{background:var(--u-surface2);color:var(--u-ink)}
+.modal-body{padding:14px 18px;overflow:auto;font-size:12.3px;line-height:1.7}
+.modal-body h4{margin:14px 0 5px;font-size:12px}
+.modal-body h4:first-child{margin-top:0}
+.modal-body ul{margin:4px 0 0;padding-left:18px}
+.modal-body li{margin:2px 0}
+.modal-foot{display:flex;justify-content:flex-end;gap:7px;padding:11px 18px;border-top:1px solid var(--u-line);background:var(--u-warm)}
+.form-row{margin-bottom:10px;display:flex;flex-direction:column;gap:4px}
+.form-row label{font-size:10.8px;font-weight:700;color:var(--u-muted)}
+.form-row input,.form-row textarea,.form-row select{width:100%;border:1px solid var(--u-line);border-radius:8px;padding:7px 9px;font-family:inherit;font-size:12px;background:var(--u-surface);color:var(--u-ink);line-height:1.55}
+.form-row textarea{resize:vertical}
+.check{display:flex;align-items:flex-start;gap:7px;font-size:11.5px;margin:6px 0;cursor:pointer}
+.check input{margin-top:2px}
+.callout{border-left:3px solid var(--u-teal);background:var(--u-teal-soft);padding:8px 10px;border-radius:7px;font-size:11.5px;line-height:1.65;margin:8px 0}
+.callout.warn{border-color:var(--u-y);background:var(--u-safety-soft)}
+.callout.danger{border-color:var(--u-r);background:var(--u-r-soft)}
+.callout.info{border-color:var(--u-navy);background:#e4ebf4}
+.callout b{font-weight:700}
+.checkline{border:1px solid #a9d9bd;background:var(--u-g-soft);border-radius:8px;padding:7px 9px;font-size:11.3px;color:#15713d}
+.requester-card{border:1px solid var(--u-line);border-radius:12px;padding:12px;background:var(--u-warm)}
+.requester-card .rc-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.requester-card h4{margin:0 0 4px;font-size:13.5px}
+.requester-card .rc-sub{font-size:11px;color:var(--u-muted);margin:0 0 8px}
+.requester-card .rc-actions{display:flex;gap:8px;margin-top:10px}
+.requester-card .rc-actions .btn{flex:1;padding:8px}
+.hashline{margin-top:10px;font-size:10.3px;color:var(--u-muted);word-break:break-all}
+.hashline code{font-size:9.6px}
+.audit-table{width:100%;border-collapse:collapse;font-size:10.4px}
+.audit-table th,.audit-table td{text-align:left;padding:5px 6px;border-bottom:1px solid var(--u-line);vertical-align:top}
+.audit-table th{font-size:9.8px;color:var(--u-muted);font-weight:700;background:var(--u-surface2)}
+.audit-table td code{font-size:9px;word-break:break-all;background:none;padding:0}
+.plain-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.plain-list li{display:flex;gap:7px;align-items:flex-start;font-size:11.6px}
+.plain-list li .n{flex:none;width:17px;height:17px;border-radius:50%;background:var(--u-navy);color:#fff;display:grid;place-items:center;font-size:9.5px;font-weight:700;margin-top:2px}
+.kb-approve-item{display:flex;gap:10px;justify-content:space-between;align-items:flex-start;border:1px solid var(--u-line);border-radius:10px;padding:9px 10px;margin-bottom:8px}
+.kb-approve-item .kbm{min-width:0}
+.kb-approve-item b{font-family:var(--mono);font-size:10.5px}
+.kb-approve-item p{margin:2px 0;font-size:11.8px;font-weight:650;line-height:1.45}
+.kb-approve-item small{font-size:10px;color:var(--u-muted)}
+
+/* トースト */
+#toastRoot{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);display:flex;flex-direction:column;gap:6px;z-index:80;align-items:center}
+.toast{background:var(--u-navy);color:#fff;font-size:11.8px;padding:8px 14px;border-radius:9px;box-shadow:0 8px 24px rgba(10,20,30,.3);animation:tin .18s ease-out;max-width:min(560px,92vw);text-align:center}
+.toast.warn{background:#8a6a00}
+.toast.ok{background:#176d42}
+@keyframes tin{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.empty{padding:26px 12px;text-align:center;color:var(--u-muted);font-size:11px;line-height:1.7}
+body.modal-open{overflow:hidden}
+
+@media (prefers-color-scheme:dark){
+  .chip.ok,.badge.ok,.verify-list .v .mark.y,.resolved-banner,.exec-mini .ok,.checkline{color:#7fe0a6}
+  .chip.warn,.badge.warn,.pending-strip,.countdown,.btn-warn,.state-pill.active{color:#f2d68a}
+  .chip.bad,.badge.danger,.state-pill.open{color:#f09a96}
+  .chip.info{color:#7fe0d8}
+  .chip.navy{color:#a9c8ec;background:#1d2b3d}
+  .state-pill.done{color:#7fe0a6;border-color:#2c6c49}
+  .resolved-banner,.checkline{border-color:#2c6c49}
+  .pending-strip{border-color:#6b5320}
+  .role-banner,.callout.info{background:#1d2b3d;color:#dbe7f5}
+  .demo-strip{color:#f2d68a}
+  .proposal .p-head .risk{color:#a9c8ec;background:#1d2b3d}
+  .proposal .p-head .risk.lv3,.proposal .p-head .risk.lv4{color:#f09a96;background:#3a1616}
+}
+@media (max-width:1400px){
+  .workspace{grid-template-columns:278px minmax(0,1fr) 336px}
+}
+@media (max-width:1220px){
+  .workspace{grid-template-columns:250px minmax(0,1fr) 304px;gap:8px;padding:8px}
+  .case-head h1{font-size:15px}
+  .audit-chip{display:none}
+}
+@media (max-width:1060px){
+  .workspace{grid-template-columns:236px minmax(0,1fr)}
+  .pane-evidence{display:none}
+  .screen-name{display:none}
+}
+@media (max-width:860px){
+  .workspace{grid-template-columns:minmax(0,1fr)}
+  .pane-queue{display:none}
+  .brand{display:none}
+  .user-chip small{display:none}
+}
+@media (prefers-reduced-motion:reduce){
+  *{animation:none!important;transition:none!important}
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <header class="topbar">
+    <span class="brand-mark" aria-hidden="true">み</span>
+    <span class="brand">みらいAI窓口 × ヘルプデスク</span>
+    <span class="top-sep" aria-hidden="true"></span>
+    <span class="screen-name">引継ぎワークスペース</span>
+    <span class="top-space"></span>
+    <div class="role-switch" role="group" aria-label="ロール切替">
+      <button type="button" data-act="role" data-role="helpdesk" class="on">ヘルプデスク</button>
+      <button type="button" data-act="role" data-role="approver">承認者</button>
+    </div>
+    <button type="button" class="top-btn" data-act="help">読み方</button>
+    <div class="audit-chip" title="全案件の監査ログをハッシュチェーンで検証した状態（デモ）">
+      <span class="dot" aria-hidden="true"></span>監査チェーン 検証済み <b>1,284</b>
+    </div>
+    <div class="user-chip">
+      <span class="avatar" aria-hidden="true">田</span>
+      <span><b>田中 美咲</b><small>DX推進部 ／ ヘルプデスク</small></span>
+    </div>
+  </header>
+
+  <div class="demo-strip">
+    <b>サンプルプロトタイプ v0.1</b>
+    <span>デモデータ・製品UIには未接続 ／ 判断17=1（Hermes なし）・判断18=1（risk 2 以上の変更のみ解決）で作成</span>
+  </div>
+
+  <main class="workspace">
+    <aside class="pane pane-queue" aria-label="引継ぎボード">
+      <div class="pane-head">
+        <div>
+          <h2>引継ぎボード</h2>
+          <p class="pane-sub" id="queueCounts">未対応 3 ・ 対応中 2 ・ 完了 0</p>
+          <p class="pane-kpi" id="queueKpi">本日 解決 <b>8</b> ／ 確認完了 <b>3</b>（集計外）</p>
+        </div>
+        <button type="button" class="icon-btn" data-act="refresh" title="最新の状態に更新（デモ）" aria-label="更新">⟳</button>
+      </div>
+      <div class="queue-tools">
+        <div class="seg" id="filters" role="group" aria-label="絞り込み">
+          <button type="button" data-act="filter" data-filter="all" class="on">すべて <b>5</b></button>
+          <button type="button" data-act="filter" data-filter="open">未対応 <b>3</b></button>
+          <button type="button" data-act="filter" data-filter="active">対応中 <b>2</b></button>
+          <button type="button" data-act="filter" data-filter="done">完了 <b>0</b></button>
+        </div>
+        <input id="search" class="search" type="search" placeholder="案件番号・相談者・端末で検索" autocomplete="off">
+      </div>
+      <div class="case-list" id="caseList"></div>
+      <div class="pane-foot">赤 → 黄 → 青の順。引き受け・対応は担当者、承認は本人と承認者。<br>表示はデモデータです。</div>
+    </aside>
+
+    <section class="pane pane-case" id="casePane" aria-label="案件の経過と次の一手"></section>
+
+    <aside class="pane pane-evidence" id="evidencePane" aria-label="端末・検証・監査"></aside>
+  </main>
+</div>
+<div id="modalRoot"></div>
+<div id="toastRoot" aria-live="polite"></div>
+
+<script>
+/* =========================================================================
+   引継ぎワークスペース（3ペイン）— サンプルプロトタイプ
+   - 左: 引継ぎボード / 中: 経過と次の一手 / 右: 端末・verify・監査
+   - Y/N は本人のみ。担当者は提案の作成・状況確認まで（代行実行なし）
+   - 判断18=1: risk 2 以上の変更のみ「解決」。読み取りのみは「確認完了（集計外）」
+   - ハッシュ・監査チェーンはデモ用の擬似値（実装はサーバ側 SHA-256）
+   ========================================================================= */
+'use strict';
+
+const USER = { name: '田中 美咲', dept: 'DX推進部', email: 'tanaka@mirai-const.co.jp' };
+const ROLE_LABEL = { helpdesk: 'ヘルプデスク', approver: '承認者' };
+const READONLY_TOOLS = ['os.info', 'service.status', 'disk.space', 'spooler.status'];
+
+const esc = (s) => String(s).replace(/[&<>"']/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+const nowHHMM = () => new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+const ZERO = '0'.repeat(64);
+
+/** デモ用の擬似ハッシュ（64 hex）。実装はサーバ側の SHA-256。 */
+function H(seed) {
+  let out = '';
+  for (let s = 0; s < 8; s++) {
+    let h = 2166136261 ^ Math.imul(s + 1, 2654435761);
+    for (let i = 0; i < seed.length; i++) { h ^= seed.charCodeAt(i); h = Math.imul(h, 16777619); }
+    h ^= s; h = Math.imul(h ^ (h >>> 13), 1274126177); h ^= h >>> 16;
+    out += (h >>> 0).toString(16).padStart(8, '0');
+  }
+  return out;
+}
+
+/* =========================================================================
+   デモデータ
+   ========================================================================= */
+const CASES = [
+  {
+    id: 'TKT-2026-0413', inc: 'INC-2026-0088', signal: 'amber',
+    title: 'プリンタで印刷できない（キューに残る）',
+    summary: '3F の共有プリンタで印刷できない。印刷キューにジョブが残り、PC を再起動しても改善しない。',
+    requester: { name: '山田 太郎', dept: '工務部' },
+    assignee: '田中 美咲',
+    elapsed: '18分', steps: [4, 6], aiCalls: [5, 20], session: [18, 30],
+    device: {
+      name: 'PC-KEN-0142', model: 'Lenovo ThinkPad T14 Gen 4', os: 'Windows 11 Pro 23H2',
+      cpu: 'Core i5-1335U', mem: '16 GB', disk: 'C: 41.2 GB 空き / 100 GB', sync: '12:11'
+    },
+    outcome: { kind: 'resolvable-change', risk: 3 },
+    kb: { no: 'KB-2026-0003', title: '印刷スプーラの停止・キュー詰まり', match: '92%' },
+    verify: {
+      state: 'ok',
+      items: [
+        { label: 'Spooler が Running', ok: true, at: '12:07', by: 'サーバ' },
+        { label: 'エラージョブ 0 件', ok: true, at: '12:07', by: 'サーバ' },
+        { label: 'テスト印刷（実機）', ok: true, at: '12:11', by: '田中 美咲' }
+      ]
+    },
+    copilot: {
+      lead: 'verify は 2/2 成功し、遠隔支援でテスト印刷も確認できています。変更を伴う対応なので「解決」として記録できます。ナレッジの下書きも同時に作成できます。',
+      evidence: ['verify 2/2（12:07）', 'テスト印刷 成功（12:11）', '変更 2 回・最大 Lv3'],
+      actions: [{ label: '解決を記録', act: 'resolve', primary: true }, { label: 'ナレッジを起案', act: 'kb' }],
+      note: '参照したのは読み取り 4 種とこの案件の記録だけです。AI は実行しません。'
+    },
+    auditSeed: [
+      ['12:03', '山田 太郎', 'case.create'],
+      ['12:03', 'AI', 'ai.answer'],
+      ['12:05', '山田 太郎', 'resolve.approved spooler.restart'],
+      ['12:06', '山田 太郎', 'resolve.approved spooler.queue.purge'],
+      ['12:07', 'サーバ', 'resolve.verified'],
+      ['12:08', '山田 太郎', 'resolve.rejected'],
+      ['12:09', 'AI', 'case.handover'],
+      ['12:11', '田中 美咲', 'case.claimed']
+    ],
+    timeline: [
+      { t: '12:03', kind: 'request', actor: '山田 太郎', title: '相談を作成', body: '3F 共有プリンタで印刷できない。キューに残ったまま。PC の再起動は試した。', chips: ['PC 基本情報を共有', '同意済み'] },
+      { t: '12:03', kind: 'ai', actor: 'AI', title: '一次回答', body: '印刷スプーラの停止が疑われます。読み取りで状態を確認し、必要なら再起動・キュー整理を提案します。', refs: ['KB-2026-0003'] },
+      { t: '12:04', kind: 'exec', actor: '端末エージェント', title: 'spooler.status（読み取り / Lv1）', rows: [['status', 'STOPPED'], ['startType', 'Automatic'], ['queuedJobs', '3']] },
+      { t: '12:05', kind: 'proposal', proposal: {
+        skillId: 'spooler.restart', title: '印刷スプーラを再起動する', version: '1.0.0', risk: 2,
+        params: {}, reversible: true,
+        verifyText: '再起動後に Spooler が Running であること',
+        rollbackText: '再起動のみ。設定は変わらない。',
+        status: 'approved', approvedBy: '山田 太郎（本人）', approvedAt: '12:05',
+        hashSeed: 'TKT-2026-0413|spooler.restart|1',
+        exec: { ok: true, rows: [['status', 'Running'], ['previousStatus', 'STOPPED'], ['restarted', 'true']] }
+      } },
+      { t: '12:06', kind: 'proposal', proposal: {
+        skillId: 'spooler.queue.purge', title: 'エラーになった印刷ジョブを削除する', version: '1.0.0', risk: 3,
+        params: { confirm: 'PURGE' }, reversible: false,
+        impact: '対象端末の全プリンタで、エラー状態のジョブを削除します。',
+        verifyText: '削除後にエラー状態の印刷ジョブが 0 件であること',
+        rollbackText: '削除したジョブは復元できない（再印刷が必要）。',
+        status: 'approved', approvedBy: '山田 太郎（本人）', approvedAt: '12:06',
+        hashSeed: 'TKT-2026-0413|spooler.queue.purge|2',
+        exec: { ok: true, rows: [['purgedCount', '3'], ['remainingErrorCount', '0'], ['irreversible', 'true']] }
+      } },
+      { t: '12:07', kind: 'verify', ok: true, title: 'verify 成功（2/2）', items: [['Spooler が Running', '✓'], ['エラージョブ 0 件', '✓']], note: 'サーバが実行 result と verify 条件を突き合わせて評価。AI の自己申告ではない。' },
+      { t: '12:08', kind: 'request', actor: '山田 太郎', title: '結果確認：未解決（N）', body: '「キューの表示は消えたが、まだ印刷できない」— 実印刷の最終確認が必要。' },
+      { t: '12:09', kind: 'handoff', actor: 'AI', title: '担当者へ引継ぎ', to: '田中 美咲', body: '理由: verify は成功したが、実印刷の最終確認が取れていない。変更 2 回・最大 Lv3。', chips: ['TKT / INC 発行', '引継ぎ理由を記録'] },
+      { t: '12:11', kind: 'memo', actor: '田中 美咲', title: '引き受け・遠隔支援で印刷テスト', body: '遠隔支援（同意範囲: 画面共有のみ）でテスト印刷を実施し、正常出力を確認。', chips: ['引き受け', '遠隔支援'] }
+    ]
+  },
+  {
+    id: 'TKT-2026-0414', inc: 'INC-2026-0089', signal: 'amber',
+    title: 'VPN 接続後、社内ポータルが不安定',
+    summary: 'VPN には接続できるが、社内ポータルが時々タイムアウトする。Wi-Fi を切り替えると直ることがある。',
+    requester: { name: '佐々木 花子', dept: '営業部' },
+    assignee: '田中 美咲',
+    elapsed: '9分', steps: [3, 6], aiCalls: [4, 20], session: [9, 30],
+    device: {
+      name: 'PC-SLS-0088', model: 'Dynabook G8', os: 'Windows 11 Pro 23H2',
+      cpu: 'Core i7-1260P', mem: '16 GB', disk: 'C: 88.0 GB 空き / 256 GB', sync: '12:14'
+    },
+    outcome: { kind: 'awaiting-approval', risk: 3 },
+    kb: { no: 'KB-2026-0004', title: 'VPN 接続後の社内到達不可', match: '88%' },
+    verify: { state: 'pending', items: [] },
+    proposal: {
+      skillId: 'network.adapter.restart', title: 'ネットワークアダプタを再起動する', version: '1.0.0', risk: 3,
+      params: { interfaceAlias: 'Wi-Fi' }, reversible: true,
+      impact: '通信が約 10 秒切断されます（VPN も再接続）。',
+      verifyText: '有効化後にアダプタの status が Up であること',
+      rollbackText: '無効化→有効化のみ。IP 構成・バインドは変わらない。',
+      status: 'pending', hashSeed: 'TKT-2026-0414|network.adapter.restart|pending', ttlMs: 252000
+    },
+    copilot: {
+      lead: '提案 network.adapter.restart（Lv3・可逆）が本人の承認待ちです。承認されると端末で実行され、verify で status=Up を確認します。担当者による代行実行はできません。',
+      evidence: ['本人の承認待ち（5分で失効）', '変更 1 回・Lv3・可逆', 'verify: status=Up'],
+      actions: [{ label: '本人の承認画面を見る', act: 'preview' }],
+      note: '承認は本人のみ。担当者は提案の作成と状況確認までです。'
+    },
+    auditSeed: [
+      ['12:14', '佐々木 花子', 'case.create'],
+      ['12:15', 'AI', 'ai.answer'],
+      ['12:16', 'サーバ', 'resolve.executed network.adapters'],
+      ['12:17', 'サーバ', 'resolve.approval.requested']
+    ],
+    timeline: [
+      { t: '12:14', kind: 'request', actor: '佐々木 花子', title: '相談を作成', body: 'VPN 接続後、社内ポータルが時々タイムアウトする。Wi-Fi の切り替えで直ることもある。', chips: ['PC 基本情報を共有'] },
+      { t: '12:15', kind: 'ai', actor: 'AI', title: '一次回答', body: 'KB-2026-0004（VPN 接続後の到達不可）に一致。アダプタの状態を読み取りで確認します。', refs: ['KB-2026-0004'] },
+      { t: '12:16', kind: 'exec', actor: '端末エージェント', title: 'network.adapters（読み取り / Lv1）', rows: [['alias', 'Wi-Fi'], ['status', 'Up'], ['linkSpeed', '866 Mbps'], ['vpn', 'Connected']] },
+      { t: '12:17', kind: 'proposal', proposal: null }
+    ]
+  },
+  {
+    id: 'TKT-2026-0415', inc: 'INC-2026-0090', signal: 'blue',
+    title: 'BitLocker の保護状態を確認したい',
+    summary: '端末を返却する前に、暗号化されているか確認したい。回復キーの取得は不要。',
+    requester: { name: '高橋 健', dept: '経理部' },
+    assignee: null,
+    elapsed: '22分', steps: [2, 6], aiCalls: [2, 20], session: [22, 30],
+    device: {
+      name: 'PC-ACC-0021', model: 'HP EliteBook 840 G9', os: 'Windows 11 Pro 23H2',
+      cpu: 'Core i5-1245U', mem: '16 GB', disk: 'C: 210 GB 空き / 512 GB', sync: '11:58'
+    },
+    outcome: { kind: 'readonly-done', risk: 1 },
+    kb: null,
+    verify: { state: 'na', items: [] },
+    copilot: {
+      lead: '読み取りのみで完了しています。判断18=1 により「解決」には計上せず、「確認完了」として記録します。回復キーの取り扱いは情報セキュリティの手順に従ってください。',
+      evidence: ['変更 0 回', 'risk 1（読み取り）', '本人が結果を確認'],
+      actions: [{ label: '確認完了を記録', act: 'readonly', primary: true }, { label: '引継ぎ', act: 'handoff' }],
+      note: '解決率には入れません。追加の対応が必要なら所管へ引継ぎます。'
+    },
+    auditSeed: [
+      ['11:58', '高橋 健', 'case.create'],
+      ['11:59', 'AI', 'ai.answer'],
+      ['12:00', 'サーバ', 'resolve.executed bitlocker.status'],
+      ['12:01', '高橋 健', 'case.result_viewed']
+    ],
+    timeline: [
+      { t: '11:58', kind: 'request', actor: '高橋 健', title: '相談を作成', body: '返却前の端末が BitLocker で暗号化されているか確認したい。回復キーは不要。', chips: ['PC 基本情報を共有'] },
+      { t: '11:59', kind: 'ai', actor: 'AI', title: '一次回答', body: 'BitLocker の状態は読み取りで確認できます。回復キーの取得・表示は行いません。', refs: [] },
+      { t: '12:00', kind: 'exec', actor: '端末エージェント', title: 'bitlocker.status（読み取り / Lv1）', rows: [['supported', 'true'], ['volumeCount', '2'], ['protectionStatus', 'On'], ['encryptionPercentage', '100']] },
+      { t: '12:01', kind: 'request', actor: '高橋 健', title: '結果確認：確認できた', body: '「保護は有効、暗号化 100% と確認できた」— 変更操作は行っていない。' }
+    ]
+  },
+  {
+    id: 'TKT-2026-0416', inc: 'INC-2026-0091', signal: 'red',
+    title: 'Windows Update が失敗し、再起動を繰り返す',
+    summary: '更新プログラムのインストールが 0x80070002 で失敗。再起動しても同じ状態になる。',
+    requester: { name: '小林 大輔', dept: '製造部' },
+    assignee: null,
+    elapsed: '33分', steps: [2, 6], aiCalls: [3, 20], session: [26, 30],
+    device: {
+      name: 'PC-MFG-0307', model: 'Dell Latitude 5430', os: 'Windows 11 Pro 22H2',
+      cpu: 'Core i5-1235U', mem: '8 GB', disk: 'C: 12.4 GB 空き / 256 GB', sync: '11:47'
+    },
+    outcome: { kind: 'no-skill', risk: 0 },
+    kb: null,
+    verify: { state: 'none', items: [] },
+    copilot: {
+      lead: 'Windows Update の修復 Skill は未承認です。再起動は不可逆・影響大のため、AI では実行しません。更新履歴の確認と、必要なら本人同意の再起動を手動で行ってください。',
+      evidence: ['no_skill（Skill なし）', '読み取り 1 回', 'AI 呼び出し 3/20'],
+      actions: [{ label: 'ナレッジを起案', act: 'kb', primary: true }, { label: '引継ぎメモを作成', act: 'handoff' }],
+      note: '存在しない Skill を提案しないことが安全側の設計です。'
+    },
+    auditSeed: [
+      ['11:47', '小林 大輔', 'case.create'],
+      ['11:48', 'AI', 'ai.answer'],
+      ['11:50', 'サーバ', 'resolve.executed os.info'],
+      ['11:52', 'AI', 'resolve.escalated no_skill']
+    ],
+    timeline: [
+      { t: '11:47', kind: 'request', actor: '小林 大輔', title: '相談を作成', body: 'Windows Update が 0x80070002 で失敗する。再起動しても同じ。', chips: ['PC 基本情報を共有'] },
+      { t: '11:48', kind: 'ai', actor: 'AI', title: '一次回答（Skill なし）', body: '端末の基本情報を確認します。更新の修復は再起動を伴うため、承認済みの Skill がありません。', refs: [] },
+      { t: '11:50', kind: 'exec', actor: '端末エージェント', title: 'os.info（読み取り / Lv1）', rows: [['osName', 'Windows 11 Pro'], ['version', '22H2'], ['buildNumber', '22621.3155'], ['architecture', 'x64']] },
+      { t: '11:52', kind: 'handoff', actor: 'AI', title: '提案せず引継ぎ（no_skill）', to: '未割当', body: '理由: Windows Update の修復 Skill は未承認。再起動は不可逆・影響大のため、AI では実行しない。', chips: ['no_skill', 'ステップ 2/6'] }
+    ]
+  },
+  {
+    id: 'TKT-2026-0417', inc: 'INC-2026-0092', signal: 'red',
+    title: 'Adobe Acrobat のライセンスを追加してほしい',
+    summary: '新入社員用に Adobe Acrobat のライセンスを 1 つ追加したい。購入手続きの方法が分からない。',
+    requester: { name: '伊藤 由美', dept: '総務部' },
+    assignee: null,
+    elapsed: '41分', steps: [1, 6], aiCalls: [1, 20], session: [28, 30],
+    device: {
+      name: 'PC-GEN-0110', model: 'Fujitsu LIFEBOOK U9311', os: 'Windows 11 Pro 23H2',
+      cpu: 'Core i7-1185G7', mem: '16 GB', disk: 'C: 156 GB 空き / 512 GB', sync: '11:39'
+    },
+    outcome: { kind: 'out-of-kb', risk: 0 },
+    kb: null,
+    verify: { state: 'none', items: [] },
+    copilot: {
+      lead: 'KB 外の相談です。ライセンス付与は購買・権限手続きの所管（情報システム部）です。推測回答はせず、手順のナレッジ化候補として起案できます。',
+      evidence: ['out_of_kb', 'KB 該当なし', '端末操作なし'],
+      actions: [{ label: '引き受ける', act: 'claim', primary: true }, { label: 'ナレッジを起案', act: 'kb' }],
+      note: '根拠がないときに回答を作らないのが仕様です。'
+    },
+    auditSeed: [
+      ['11:39', '伊藤 由美', 'case.create'],
+      ['11:40', 'AI', 'ai.answer out_of_kb'],
+      ['11:40', 'AI', 'case.handover']
+    ],
+    timeline: [
+      { t: '11:39', kind: 'request', actor: '伊藤 由美', title: '相談を作成', body: '新入社員用に Adobe Acrobat のライセンスを追加したい。購入手続きが分からない。', chips: ['PC 基本情報を共有'] },
+      { t: '11:40', kind: 'ai', actor: 'AI', title: '回答せず引継ぎ（out_of_kb）', body: 'ライセンス付与は端末操作ではなく購買・権限手続きのため、KB の範囲外です。推測せず担当へ引き継ぎます。', refs: [] },
+      { t: '11:40', kind: 'handoff', actor: 'AI', title: '所管へ引継ぎ', to: '未割当', body: '理由: KB 外（権限・購買手続き）。AI の回答対象外。', chips: ['out_of_kb', '推測しない'] }
+    ]
+  }
+];
+
+/* ---- 初期化: 監査チェーン・承認ハッシュ・期限 ---- */
+function chainAudit(caseId, seeds) {
+  let prev = ZERO;
+  return seeds.map(([t, actor, action]) => {
+    const row = { t, actor, action, prev, hash: H(caseId + '|' + prev + '|' + action + '|' + actor) };
+    prev = row.hash;
+    return row;
+  });
+}
+CASES.forEach((c) => {
+  c.audit = chainAudit(c.id, c.auditSeed || []);
+  delete c.auditSeed;
+  c.resolved = null;
+  c.kbDraft = false;
+  c.escalated = false;
+  c.memos = [];
+  c.timeline.forEach((e) => {
+    if (e.kind === 'proposal') {
+      if (e.proposal) {
+        e.proposal.hash = H(e.proposal.hashSeed);
+        if (e.proposal.status === 'pending') e.proposal.expiresAt = Date.now() + e.proposal.ttlMs;
+      }
+    }
+  });
+  if (c.proposal) {
+    c.proposal.hash = H(c.proposal.hashSeed);
+    c.proposal.expiresAt = Date.now() + c.proposal.ttlMs;
+    const pending = c.timeline.find((e) => e.kind === 'proposal');
+    if (pending) pending.proposal = c.proposal;
+  }
+});
+
+/* =========================================================================
+   状態
+   ========================================================================= */
+const state = {
+  selected: 'TKT-2026-0413',
+  filter: 'all',
+  role: 'helpdesk',
+  query: '',
+  solvedToday: 8,
+  readonlyToday: 3,
+  memo: {},
+  copilot: { 'TKT-2026-0413': 'done' },
+  scrollTop: 0,
+  scrollBottom: false,
+  resetScroll: false
+};
+const current = () => CASES.find((c) => c.id === state.selected) || CASES[0];
+const isDone = (c) => Boolean(c.resolved);
+const isActive = (c) => !c.resolved && Boolean(c.assignee);
+const statusOf = (c) => (c.resolved ? (c.resolved.counted ? 'done' : 'done') : c.assignee ? 'active' : 'open');
+const statusLabel = (c) => (c.resolved ? (c.resolved.counted ? '解決' : '確認完了') : c.assignee ? '対応中' : '未対応');
+
+/* =========================================================================
+   描画: 左ペイン
+   ========================================================================= */
+function renderFilters() {
+  const counts = {
+    all: CASES.length,
+    open: CASES.filter((c) => statusOf(c) === 'open').length,
+    active: CASES.filter((c) => statusOf(c) === 'active').length,
+    done: CASES.filter((c) => statusOf(c) === 'done').length
+  };
+  document.querySelectorAll('[data-act="filter"]').forEach((b) => {
+    const f = b.dataset.filter;
+    b.classList.toggle('on', f === state.filter);
+    const n = b.querySelector('b');
+    if (n) n.textContent = String(counts[f] ?? 0);
+  });
+  document.getElementById('queueCounts').textContent =
+    '未対応 ' + counts.open + ' ・ 対応中 ' + counts.active + ' ・ 完了 ' + counts.done;
+  document.getElementById('queueKpi').innerHTML =
+    '本日 解決 <b>' + state.solvedToday + '</b> ／ 確認完了 <b>' + state.readonlyToday + '</b>（集計外）';
+}
+
+function visibleCases() {
+  let list = CASES.slice();
+  if (state.filter === 'open') list = list.filter((c) => statusOf(c) === 'open');
+  if (state.filter === 'active') list = list.filter((c) => statusOf(c) === 'active');
+  if (state.filter === 'done') list = list.filter((c) => statusOf(c) === 'done');
+  const q = state.query.trim().toLowerCase();
+  if (q) {
+    list = list.filter((c) =>
+      (c.id + ' ' + c.inc + ' ' + c.title + ' ' + c.requester.name + ' ' + c.requester.dept + ' ' + c.device.name).toLowerCase().includes(q)
+    );
+  }
+  const rank = { red: 0, amber: 1, blue: 2 };
+  list.sort((a, b) => (rank[a.signal] - rank[b.signal]) || CASES.indexOf(a) - CASES.indexOf(b));
+  return list;
+}
+
+function caseCardHTML(c) {
+  const si = c.signal === 'red' ? 's-red' : c.signal === 'amber' ? 's-amber' : 's-blue';
+  const chips = [];
+  if (c.resolved) chips.push('<span class="chip ' + (c.resolved.counted ? 'ok' : 'info') + '">' + (c.resolved.counted ? '解決済み' : '確認完了・集計外') + '</span>');
+  if (!c.resolved && c.outcome.kind === 'readonly-done') chips.push('<span class="chip info">読み取りのみ</span>');
+  if (!c.resolved && c.outcome.kind === 'awaiting-approval') chips.push('<span class="chip warn">本人 承認待ち</span>');
+  if (!c.resolved && c.outcome.kind === 'no-skill') chips.push('<span class="chip bad">Skill なし</span>');
+  if (!c.resolved && c.outcome.kind === 'out-of-kb') chips.push('<span class="chip bad">KB 外</span>');
+  if (!c.resolved && c.outcome.kind === 'resolvable-change') chips.push('<span class="chip ok">verify ' + c.verify.items.filter((i) => i.ok).length + '/' + c.verify.items.length + '</span>');
+  if (c.kbDraft) chips.push('<span class="chip navy">KB 下書き</span>');
+  if (c.escalated) chips.push('<span class="chip">引継ぎ済み</span>');
+  const foot = c.assignee
+    ? '<span class="avatar-sm">' + esc(c.assignee.slice(0, 1)) + '</span>' + esc(c.assignee)
+    : '<span class="avatar-sm">?</span>未割当';
+  return '<button type="button" class="case-card" data-act="select" data-id="' + esc(c.id) + '" aria-selected="' + (c.id === state.selected) + '">' +
+    '<span class="signal ' + si + '" aria-hidden="true"></span>' +
+    '<span class="cc-top"><span>' + esc(c.id) + '</span><span>' + esc(c.elapsed) + '</span></span>' +
+    '<h3>' + esc(c.title) + '</h3>' +
+    '<div class="cc-meta">' + esc(c.requester.name) + '・' + esc(c.requester.dept) + ' / ' + esc(c.device.name) + '</div>' +
+    '<div class="cc-chips">' + chips.join('') + '</div>' +
+    '<div class="cc-foot">' + foot + '</div>' +
+    '</button>';
+}
+
+function renderList() {
+  const list = visibleCases();
+  const el = document.getElementById('caseList');
+  let html = list.length ? list.map(caseCardHTML).join('') : '<div class="empty">該当する案件がありません。<br>検索条件を変えてください。</div>';
+  if (state.role === 'approver') html += approvalBlockHTML();
+  el.innerHTML = html;
+}
+
+function approvalBlockHTML() {
+  return '<div class="approval-block">' +
+    '<h3>承認待ち（ナレッジ）<span class="badge warn">2</span></h3>' +
+    '<div class="ap-item"><b>KB-2026-0012</b><p>VPN 再接続の手順</p><small>申請: 佐藤 奨太（DX推進部）・12:02</small></div>' +
+    '<div class="ap-item"><b>KB-2026-0013</b><p>Windows Update 失敗時の確認手順</p><small>申請: 田中 美咲（自分）・11:31</small><span class="chip muted" style="margin-top:4px;display:inline-flex">自分の申請は承認不可</span></div>' +
+    '<button type="button" class="btn btn-sm" data-act="approvals">承認キューを開く</button>' +
+    '</div>';
+}
+
+/* =========================================================================
+   描画: 中央ペイン
+   ========================================================================= */
+function meter(label, used, max, cls) {
+  const p = Math.min(100, Math.round((used / max) * 100));
+  return '<div class="meter ' + (cls || '') + '"><span><em style="font-style:normal">' + label + '</em><em style="font-style:normal">' + used + '/' + max + '</em></span><div class="bar"><i style="width:' + p + '%"></i></div></div>';
+}
+
+function proposalHTML(p) {
+  if (!p) return '';
+  const statusPill = p.status === 'pending'
+    ? '<span class="pill warn">本人 承認待ち</span>'
+    : p.status === 'expired'
+      ? '<span class="pill warn">期限切れ</span>'
+      : '<span class="pill">本人が承認</span>';
+  const approval = p.status === 'approved'
+    ? esc(p.approvedBy) + ' ' + esc(p.approvedAt) + ' ・ <code class="hash" title="' + esc(p.hash) + '">' + esc(p.hash.slice(0, 16)) + '…</code>'
+    : p.status === 'expired'
+      ? '期限切れ（再提案が必要） ・ <code>' + esc(p.hash.slice(0, 16)) + '…</code>'
+      : '本人の Y 待ち ・ 期限 <span class="countdown" data-exp="' + p.expiresAt + '">' + fmtLeft(p.expiresAt - Date.now()) + '</span>';
+  const exec = p.exec
+    ? '<div class="exec-mini"><span class="ok">実行 ✓</span>' + p.exec.rows.map(([k, v]) => '<code>' + esc(k) + '</code>=<b>' + esc(v) + '</b>').join(' ') + '</div>'
+    : '';
+  return '<article class="proposal ' + (p.status === 'pending' ? 'pending' : '') + '">' +
+    '<div class="p-head">' +
+      '<span class="risk lv' + p.risk + '">Lv' + p.risk + '</span>' +
+      '<div class="p-title"><b>' + esc(p.title) + '</b><span class="skill-id mono">' + esc(p.skillId) + ' v' + esc(p.version) + '</span></div>' +
+      statusPill +
+    '</div>' +
+    '<dl class="kv">' +
+      '<dt>パラメータ</dt><dd><code>' + esc(JSON.stringify(p.params)) + '</code></dd>' +
+      (p.impact ? '<dt>影響</dt><dd>' + esc(p.impact) + '</dd>' : '') +
+      '<dt>verify</dt><dd>' + esc(p.verifyText) + '</dd>' +
+      '<dt>戻し方</dt><dd>' + (p.reversible ? '可逆' : '<b class="bad">取消不可</b>') + ' — ' + esc(p.rollbackText) + '</dd>' +
+      '<dt>承認</dt><dd>' + approval + '</dd>' +
+    '</dl>' + exec + '</article>';
+}
+
+function timelineItemHTML(e) {
+  const kind = e.kind;
+  const cls = 'tl-item k-' + kind + (kind === 'verify' && e.ok === false ? ' fail' : '');
+  const time = '<span class="time">' + esc(e.t) + '</span>';
+  const actor = e.actor ? '<span class="actor">' + esc(e.actor) + '</span>' : '';
+  const chips = e.chips && e.chips.length ? '<div class="refs">' + e.chips.map((x) => '<span class="chip">' + esc(x) + '</span>').join('') + '</div>' : '';
+  const refs = e.refs && e.refs.length ? '<div class="refs">根拠: ' + e.refs.map((x) => '<span class="chip info">' + esc(x) + '</span>').join(' ') + '</div>' : '';
+  let inner = '';
+  if (kind === 'proposal') {
+    inner = '<div class="tl-card proposal-wrap">' + proposalHTML(e.proposal) + '</div>';
+  } else if (kind === 'exec') {
+    const rows = (e.rows || []).map(([k, v]) => '<span class="er">' + esc(k) + '=<b>' + esc(v) + '</b></span>').join('');
+    inner = '<div class="tl-card"><div class="tt">' + esc(e.title) + '</div><div class="exec-rows">' + rows + '</div></div>';
+  } else if (kind === 'verify') {
+    const items = (e.items || []).map(([label, mark]) => '<div class="v"><span class="mark ' + (mark === '✓' ? 'y' : 'n') + '">' + esc(mark) + '</span><span>' + esc(label) + '</span></div>').join('');
+    inner = '<div class="tl-card"><div class="tt">' + esc(e.title) + '</div><div class="verify-list">' + items + '</div>' +
+      (e.note ? '<div class="note-line">' + esc(e.note) + '</div>' : '') + '</div>';
+  } else if (kind === 'handoff') {
+    inner = '<div class="tl-card"><div class="tt">' + esc(e.title) + (e.to ? ' → ' + esc(e.to) : '') + '</div><div class="tb">' + esc(e.body) + '</div>' + chips + '</div>';
+  } else {
+    inner = '<div class="tl-card"><div class="tt">' + esc(e.title) + '</div>' +
+      (e.body ? '<div class="tb">' + esc(e.body) + '</div>' : '') + refs + chips + '</div>';
+  }
+  return '<li class="' + cls + '"><span class="tl-dot" aria-hidden="true"></span>' +
+    '<div class="tl-head">' + time + actor + '</div>' + inner + '</li>';
+}
+
+function proposalFor(c) {
+  if (c.proposal) return c.proposal;
+  const p = c.timeline.find((e) => e.kind === 'proposal' && e.proposal && e.proposal.status === 'pending');
+  return p ? p.proposal : null;
+}
+
+function dockHTML(c) {
+  if (c.resolved) {
+    const counted = c.resolved.counted;
+    const canDraft = state.role !== 'approver';
+    return '<div class="dock">' +
+      '<div class="resolved-banner">✓ ' + (counted ? '解決として記録済み' : '確認完了として記録済み（解決には計上しません）') +
+      ' <span class="badge ' + (counted ? 'ok' : 'info') + '">' + esc(c.resolved.at) + ' / ' + esc(c.resolved.by) + '</span></div>' +
+      '<div class="actions">' +
+        '<button type="button" class="btn btn-primary" data-act="report">最終報告書を出力</button>' +
+        (canDraft ? '<button type="button" class="btn" data-act="kb">ナレッジを起案</button>' : '') +
+        '<button type="button" class="btn btn-ghost" data-act="audit">監査を開く</button>' +
+        '<span class="spacer"></span><span class="hint">' + (counted ? '解決率に計上' : '解決率には計上しない（判断18=1）') + '</span>' +
+      '</div></div>';
+  }
+  const p = proposalFor(c);
+  const pending = p && p.status === 'pending';
+  const isApprover = state.role === 'approver';
+  const shown = state.copilot[c.id];
+  const memoVal = state.memo[c.id] || '';
+  return '<div class="dock">' +
+    (pending ? '<div class="pending-strip"><b>本人の承認待ち</b><span class="mono">' + esc(p.skillId) + '</span>' +
+      '<span class="countdown" data-exp="' + p.expiresAt + '">' + fmtLeft(p.expiresAt - Date.now()) + '</span>' +
+      '<span>承認後に端末で実行されます（代行不可）</span></div>' : '') +
+    '<div class="dock-top">' +
+      (isApprover
+        ? '<span class="dock-hint">承認者ロール: AI アシスト・実行・解決登録は使えません</span>'
+        : '<button type="button" class="btn btn-ghost btn-sm" data-act="copilot" aria-expanded="' + (shown ? 'true' : 'false') + '">' +
+            '<span>' + (shown ? 'AI の提案を閉じる' : 'AI に次の一手を相談') + '</span></button>' +
+          '<span class="dock-hint">読み取り 4 種のみ ・ 実行しません</span>') +
+      '<span class="spacer"></span>' +
+      '<span class="mini-stat">ステップ ' + c.steps[0] + '/' + c.steps[1] + ' ・ AI ' + c.aiCalls[0] + '/' + c.aiCalls[1] + ' ・ 経過 ' + c.elapsed + '</span>' +
+    '</div>' +
+    (!isApprover && shown ? copilotHTML(c, shown) : '') +
+    (isApprover ? '' : '<div class="composer">' +
+      '<textarea id="memo" rows="2" placeholder="メモを残す（相談者には表示されません）">' + esc(memoVal) + '</textarea>' +
+      '<button type="button" class="btn" data-act="memo">記録</button>' +
+    '</div>') +
+    '<div class="actions">' + actionButtons(c, isApprover) + '</div>' +
+    '</div>';
+}
+
+function copilotHTML(c, st) {
+  const head = '<div class="cp-head"><b>AI アシスト</b><span class="tag">デモ・固定応答</span>' +
+    '<span class="tools">読み取り: ' + READONLY_TOOLS.map((t) => '<code>' + esc(t) + '</code>').join(' ') + '</span></div>';
+  if (st === 'thinking') return '<div class="copilot">' + head + '<div class="cp-body thinking">この案件の記録と読み取り結果を確認しています</div></div>';
+  const cp = c.copilot;
+  return '<div class="copilot">' + head +
+    '<div class="cp-body"><p>' + esc(cp.lead) + '</p>' +
+    '<div class="cp-ev">根拠: ' + cp.evidence.map((x) => '<span class="chip">' + esc(x) + '</span>').join('') + '</div>' +
+    '<div class="cp-actions">' + cp.actions.map((a) => '<button type="button" class="btn ' + (a.primary ? 'btn-primary ' : '') + 'btn-sm" data-act="' + esc(a.act) + '">' + esc(a.label) + '</button>').join('') + '</div>' +
+    '<p class="cp-note">' + esc(cp.note) + '</p></div></div>';
+}
+
+function actionButtons(c, isApprover) {
+  const b = [];
+  if (isApprover) {
+    b.push('<button type="button" class="btn" data-act="approvals">ナレッジ承認キュー（2）</button>');
+    b.push('<button type="button" class="btn" data-act="audit">監査を開く</button>');
+    b.push('<span class="hint">承認者ロール: 解決の登録・端末の実行はできません（権限分離）</span>');
+    return b.join('');
+  }
+  if (!c.assignee) b.push('<button type="button" class="btn btn-primary" data-act="claim">引き受ける</button>');
+  switch (c.outcome.kind) {
+    case 'resolvable-change':
+      b.push('<button type="button" class="btn btn-ok" data-act="resolve">解決を記録（変更あり・Lv' + c.outcome.risk + '）</button>');
+      break;
+    case 'readonly-done':
+      b.push('<button type="button" class="btn" data-act="readonly">確認完了を記録（解決に計上しない）</button>');
+      break;
+    case 'awaiting-approval': {
+      const p = proposalFor(c);
+      if (p && p.status === 'pending') {
+        b.push('<button type="button" class="btn" data-act="preview">本人の承認画面</button>');
+        b.push('<button type="button" class="btn btn-danger" data-act="withdraw">提案を取り下げ</button>');
+        b.push('<button type="button" class="btn" data-act="exec-disabled" disabled title="本人の承認が必要です（担当者は代行できません）">実行（本人承認が必要）</button>');
+      } else {
+        b.push('<button type="button" class="btn" data-act="preview">提案の記録</button>');
+        b.push('<span class="hint">提案は期限切れです。再提案には本人の承認を取り直します。</span>');
+      }
+      break;
+    }
+    case 'no-skill':
+    case 'out-of-kb':
+      b.push('<button type="button" class="btn" data-act="handoff">引継ぎメモを作成</button>');
+      break;
+  }
+  if (c.outcome.kind !== 'awaiting-approval') {
+    b.push('<button type="button" class="btn" data-act="kb">ナレッジを起案</button>');
+  }
+  if (c.outcome.kind === 'resolvable-change' || c.outcome.kind === 'readonly-done') {
+    b.push('<button type="button" class="btn btn-ghost" data-act="handoff">引継ぎ</button>');
+  }
+  b.push('<button type="button" class="btn btn-ghost" data-act="audit">監査</button>');
+  return b.join('');
+}
+
+function renderCase() {
+  const c = current();
+  const old = document.querySelector('.timeline-wrap');
+  if (old && !state.resetScroll) state.scrollTop = old.scrollTop;
+  const scrollTop = state.scrollTop;
+  state.resetScroll = false;
+  const roleBanner = state.role === 'approver'
+    ? '<div class="role-banner">承認者ロールで表示中：案件の閲覧・ナレッジ承認・監査のみ。解決の登録・端末の実行はできません。</div>' : '';
+  const head = '<div class="case-head">' +
+    '<div class="top-line">' +
+      '<span class="signal-dot ' + (c.signal === 'red' ? 's-red' : c.signal === 'amber' ? 's-amber' : 's-blue') + '" aria-hidden="true"></span>' +
+      '<h1>' + esc(c.title) + '</h1>' +
+      '<span class="state-pill ' + statusOf(c) + '">' + statusLabel(c) + '</span>' +
+    '</div>' +
+    '<div class="case-meta">' +
+      '<span><span class="mono">' + esc(c.id) + '</span> / ' + esc(c.inc) + '</span>' +
+      '<span><span class="mi">相談者</span>' + esc(c.requester.name) + '（' + esc(c.requester.dept) + '）</span>' +
+      '<span><span class="mi">端末</span>' + esc(c.device.name) + '</span>' +
+      '<span><span class="mi">経過</span>' + esc(c.elapsed) + '</span>' +
+      '<span><span class="mi">担当</span>' + (c.assignee ? esc(c.assignee) : '未割当') + '</span>' +
+    '</div>' +
+    '<div class="meters">' +
+      meter('ステップ', c.steps[0], c.steps[1], c.steps[0] >= c.steps[1] ? 'danger' : '') +
+      meter('経過（分）', c.session[0], c.session[1], c.session[0] >= 26 ? 'warn' : '') +
+      meter('AI 呼び出し', c.aiCalls[0], c.aiCalls[1], '') +
+    '</div></div>';
+  const timeline = '<div class="timeline-wrap"><ol class="timeline">' +
+    c.timeline.map(timelineItemHTML).join('') +
+    (c.memos.length ? c.memos.map((m) => '<li class="tl-item k-memo"><span class="tl-dot" aria-hidden="true"></span><div class="tl-head"><span class="time">' + esc(m.t) + '</span><span class="actor">' + esc(m.actor) + '</span></div><div class="tl-card"><div class="tb">' + esc(m.body) + '</div></div></li>').join('') : '') +
+    '</ol></div>';
+  const el = document.getElementById('casePane');
+  el.innerHTML = roleBanner + head + timeline + dockHTML(c);
+  const tw = el.querySelector('.timeline-wrap');
+  if (tw) tw.scrollTop = state.scrollBottom ? tw.scrollHeight : scrollTop;
+  state.scrollBottom = false;
+  state.scrollTop = tw ? tw.scrollTop : 0;
+}
+
+/* =========================================================================
+   描画: 右ペイン（端末・verify・監査）
+   ========================================================================= */
+function deviceCard(c) {
+  const d = c.device;
+  const row = (k, v) => '<div class="dev-row"><dt>' + k + '</dt><dd>' + esc(v) + '</dd></div>';
+  return '<div class="ev-card"><div class="ev-head">端末（本人が共有した範囲）<span class="badge info">読み取り</span></div><div class="ev-body">' +
+    '<dl style="margin:0">' +
+      row('端末名', d.name) + row('型番', d.model) + row('OS', d.os) + row('CPU', d.cpu) + row('メモリ', d.mem) + row('空き容量', d.disk) + row('最終同期', d.sync) +
+    '</dl>' +
+    '<div class="share-chips"><span class="chip">基本情報</span><span class="chip">サービス状態</span><span class="chip muted">画面・キー入力は取得しない</span></div>' +
+    '<div class="ev-note">IP・シリアル・資産番号・メールは AI に渡す前に伏せています。</div>' +
+    '</div></div>';
+}
+
+function verifyCard(c) {
+  const v = c.verify;
+  const badge = v.state === 'ok' ? '<span class="badge ok">成功</span>'
+    : v.state === 'pending' ? '<span class="badge warn">実行前</span>'
+      : v.state === 'na' ? '<span class="badge info">対象外</span>'
+        : '<span class="badge">未実施</span>';
+  const items = v.items.length
+    ? '<div class="verify-list">' + v.items.map((i) => '<div class="v"><span class="mark ' + (i.ok ? 'y' : 'n') + '">' + (i.ok ? '✓' : '×') + '</span><span>' + esc(i.label) + '<small> ' + esc(i.at) + ' / ' + esc(i.by) + '</small></span></div>').join('') + '</div>'
+    : '<div class="ev-note">' + (v.state === 'pending' ? '本人の承認後に実行・評価します。' : v.state === 'na' ? '読み取りのみのため verify の対象外です。' : '端末での実行はありません。') + '</div>';
+  return '<div class="ev-card"><div class="ev-head">検証（verify）' + badge + '</div><div class="ev-body">' + items +
+    '<div class="ev-note">判定はサーバが result と条件を突き合わせて行います（AI の自己申告ではありません）。</div>' +
+    '</div></div>';
+}
+
+function auditCard(c) {
+  const rows = c.audit.slice(-4).map((r) =>
+    '<div class="audit-row"><span class="at">' + esc(r.t) + '</span><span class="aa"><b>' + esc(r.action) + '</b><code title="' + esc(r.hash) + '">' + esc(r.hash.slice(0, 10)) + '…</code></span></div>'
+  ).join('');
+  return '<div class="ev-card"><div class="ev-head">監査（ハッシュチェーン）<span class="badge ok">検証済み</span></div><div class="ev-body">' +
+    rows +
+    '<div class="ev-actions"><button type="button" class="btn btn-sm" data-act="audit">全 ' + c.audit.length + ' 件を開く</button>' +
+    '<button type="button" class="btn btn-sm btn-ghost" data-act="verify-chain">鎖を検証</button></div>' +
+    '<div class="ev-note">各イベントは直前のハッシュを含めて再計算します。承認ハッシュもここに紐づきます。</div>' +
+    '</div></div>';
+}
+
+function supportCard(c) {
+  const kb = c.kb
+    ? '<div class="kb-line"><span><b>' + esc(c.kb.no) + '</b> ' + esc(c.kb.title) + '</span><span class="badge info">' + esc(c.kb.match) + '</span></div>'
+    : '<div class="kb-line"><span>一致する KB なし</span><span class="badge">KB 外</span></div>';
+  const p = proposalFor(c);
+  const ttl = p && p.status === 'pending'
+    ? '<div class="ttl-note">承認ハッシュの有効期限: 5 分（<span class="countdown" data-exp="' + p.expiresAt + '">' + fmtLeft(p.expiresAt - Date.now()) + '</span>）</div>'
+    : '';
+  return '<div class="ev-card"><div class="ev-head">支援・ナレッジ</div><div class="ev-body">' + kb + ttl +
+    '<div class="ev-actions">' +
+      '<button type="button" class="btn btn-sm" data-act="remote">遠隔支援</button>' +
+      '<button type="button" class="btn btn-sm" data-act="kb">ナレッジを起案</button>' +
+      '<button type="button" class="btn btn-sm btn-ghost" data-act="report">最終報告書</button>' +
+    '</div>' +
+    '<div class="ev-note">遠隔支援は本人の同意範囲のみ。画面共有と操作支援は別々に同意します。</div>' +
+    '</div></div>';
+}
+
+function renderEvidence() {
+  const c = current();
+  document.getElementById('evidencePane').innerHTML = deviceCard(c) + verifyCard(c) + auditCard(c) + supportCard(c);
+}
+
+/* =========================================================================
+   全体
+   ========================================================================= */
+function renderAll() {
+  renderFilters();
+  renderList();
+  renderCase();
+  renderEvidence();
+  document.querySelectorAll('[data-act="role"]').forEach((b) => b.classList.toggle('on', b.dataset.role === state.role));
+  const chip = document.querySelector('.user-chip small');
+  if (chip) chip.textContent = USER.dept + ' ／ ' + ROLE_LABEL[state.role];
+}
+
+function fmtLeft(ms) {
+  if (ms <= 0) return '期限切れ';
+  const s = Math.floor(ms / 1000);
+  return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+}
+
+function toast(msg, kind) {
+  const root = document.getElementById('toastRoot');
+  const el = document.createElement('div');
+  el.className = 'toast' + (kind ? ' ' + kind : '');
+  el.textContent = msg;
+  root.appendChild(el);
+  setTimeout(() => { el.remove(); }, 3600);
+}
+
+/* =========================================================================
+   操作
+   ========================================================================= */
+function selectCase(id) {
+  if (id === state.selected) return;
+  state.selected = id;
+  state.resetScroll = true;
+  state.scrollTop = 0;
+  state.scrollBottom = false;
+  renderAll();
+}
+
+function claim(c) {
+  if (state.role === 'approver') { toast('承認者は担当者になれません（権限分離）', 'warn'); return; }
+  if (c.assignee) return;
+  c.assignee = USER.name;
+  c.timeline.push({ t: nowHHMM(), kind: 'memo', actor: USER.name, title: '引き受けました', body: '担当: ' + USER.name + '（' + USER.dept + '）。' });
+  addAudit(c, USER.name, 'case.claimed');
+  state.scrollBottom = true;
+  renderAll();
+  toast('引き受けました。担当: ' + USER.name, 'ok');
+}
+
+function addAudit(c, actor, action) {
+  const prev = c.audit.length ? c.audit[c.audit.length - 1].hash : ZERO;
+  c.audit.push({ t: nowHHMM(), actor, action, prev, hash: H(c.id + '|' + prev + '|' + action + '|' + actor) });
+}
+
+function saveMemo(c) {
+  if (state.role === 'approver') { toast('承認者ロールではメモを記録できません（参照のみ）', 'warn'); return; }
+  const ta = document.getElementById('memo');
+  const text = ta ? ta.value.trim() : '';
+  if (!text) { toast('メモが空です'); return; }
+  state.memo[c.id] = '';
+  c.timeline.push({ t: nowHHMM(), kind: 'memo', actor: USER.name, title: '担当者メモ', body: text });
+  addAudit(c, USER.name, 'case.note');
+  state.scrollBottom = true;
+  renderAll();
+  toast('メモを記録しました');
+}
+
+function askCopilot(c) {
+  if (state.copilot[c.id] === 'done') {
+    state.copilot[c.id] = '';
+    renderCase();
+    return;
+  }
+  state.copilot[c.id] = 'thinking';
+  renderCase();
+  setTimeout(() => {
+    state.copilot[c.id] = 'done';
+    renderCase();
+  }, 750);
+}
+
+/* ---- モーダル ---- */
+function openModal(opts) {
+  const root = document.getElementById('modalRoot');
+  root.innerHTML = '<div class="modal-backdrop">' +
+    '<div class="modal ' + (opts.wide ? 'wide' : '') + '" role="dialog" aria-modal="true" aria-label="' + esc(opts.title) + '">' +
+      '<div class="modal-head"><div><h3>' + esc(opts.title) + '</h3>' + (opts.sub ? '<p>' + esc(opts.sub) + '</p>' : '') + '</div>' +
+      '<button type="button" class="x" data-act="close-modal" aria-label="閉じる">×</button></div>' +
+      '<div class="modal-body">' + opts.body + '</div>' +
+      (opts.footer ? '<div class="modal-foot">' + opts.footer + '</div>' : '') +
+    '</div></div>';
+  document.body.classList.add('modal-open');
+  const backdrop = root.querySelector('.modal-backdrop');
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) closeModal(); });
+  const first = root.querySelector('.modal button, .modal input, .modal textarea, .modal select');
+  if (first) first.focus();
+}
+
+function closeModal() {
+  const root = document.getElementById('modalRoot');
+  root.innerHTML = '';
+  document.body.classList.remove('modal-open');
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeModal();
+});
+
+/* ---- 解決 / 確認完了 ---- */
+function openResolve(c, readonly) {
+  if (state.role === 'approver') { toast('承認者は解決の登録ができません（権限分離）', 'warn'); return; }
+  if (!c.assignee) { toast('先に「引き受ける」を押してください', 'warn'); return; }
+  const title = readonly ? '確認完了を記録（解決に計上しない）' : '解決を記録（変更あり・Lv' + c.outcome.risk + '）';
+  const sub = c.id + ' ／ ' + c.title;
+  const verified = c.verify.items.filter((i) => i.ok).map((i) => i.label).join(' / ') || '—';
+  const body =
+    (readonly
+      ? '<div class="callout warn"><b>判断18=1（現状維持）</b><br>読み取りのみで完了した相談は「解決」に計上しません。この記録は「確認完了」として残り、解決率には入りません。</div>'
+      : '<div class="callout"><b>解決の条件を満たしています</b><br>変更を伴う対応（Lv' + c.outcome.risk + '）と verify の成功が記録されています。</div>') +
+    '<div class="form-row"><label>対応内容</label><textarea id="f-summary" rows="3">' +
+      (readonly ? '読み取りで状態を確認し、案内を提示。変更操作は行っていない。' : 'verify 成功を確認。実印刷の最終確認も完了し、利用者の作業再開を確認した。') +
+    '</textarea></div>' +
+    '<div class="form-row"><label>実施者</label><input id="f-by" value="' + esc(USER.name + ' ／ ' + USER.dept) + '" readonly></div>' +
+    (readonly ? '' : '<div class="form-row"><label>検証（サーバ評価）</label><div class="checkline">✓ ' + esc(verified) + '</div></div>') +
+    '<label class="check"><input type="checkbox" id="f-kb" checked> ナレッジの下書きも作成する（承認は別の承認者が行います）</label>' +
+    (readonly ? '<div class="callout info">解決として扱うには、変更を伴う対応（risk 2 以上）と verify の成功が必要です。必要なら所管へ引継ぎしてください。</div>' : '');
+  openModal({
+    title, sub, body,
+    footer: '<button type="button" class="btn" data-act="close-modal">キャンセル</button>' +
+      '<button type="button" class="btn ' + (readonly ? '' : 'btn-ok') + '" data-act="do-resolve" data-readonly="' + (readonly ? '1' : '0') + '">' +
+      (readonly ? '確認完了を記録' : '解決として記録') + '</button>'
+  });
+}
+
+function submitResolve(readonly) {
+  const c = current();
+  const summaryEl = document.getElementById('f-summary');
+  const kbEl = document.getElementById('f-kb');
+  const summary = summaryEl ? summaryEl.value.trim() : '';
+  const withKb = kbEl ? kbEl.checked : false;
+  if (!summary) { toast('対応内容を入力してください', 'warn'); return; }
+  c.resolved = { at: nowHHMM(), by: USER.name, counted: !readonly, summary };
+  if (readonly) state.readonlyToday++; else state.solvedToday++;
+  c.timeline.push({
+    t: nowHHMM(), kind: 'resolve', actor: USER.name,
+    title: readonly ? '確認完了を記録（集計外）' : '解決を記録',
+    body: summary,
+    chips: readonly ? ['判断18=1', '解決率には計上しない'] : ['変更あり・Lv' + c.outcome.risk, '解決率に計上']
+  });
+  addAudit(c, USER.name, readonly ? 'case.confirmed not_counted' : 'case.resolved');
+  if (withKb) {
+    c.kbDraft = true;
+    addAudit(c, 'サーバ', 'knowledge.draft');
+    c.timeline.push({ t: nowHHMM(), kind: 'memo', actor: 'システム', title: 'ナレッジの下書きを作成', body: '承認待ち（申請者と承認者は別）。', chips: ['KB 下書き'] });
+  }
+  closeModal();
+  state.scrollBottom = true;
+  renderAll();
+  toast(readonly ? '確認完了を記録しました（解決には計上しません）' : '解決として記録しました', 'ok');
+}
+
+/* ---- ナレッジ下書き ---- */
+function openKb(c) {
+  if (state.role === 'approver') { toast('承認者はナレッジの起案者になれません（権限分離）', 'warn'); return; }
+  const body =
+    '<div class="callout info">下書きは<b>別の承認者</b>が確認して公開します。自分の申請を自分で承認することはできません。</div>' +
+    '<div class="form-row"><label>件名</label><input id="k-title" value="' + esc(c.title) + '"></div>' +
+    '<div class="form-row"><label>症状・相談内容</label><textarea id="k-symptom" rows="2">' + esc(c.summary) + '</textarea></div>' +
+    '<div class="form-row"><label>原因（分かっている範囲）</label><textarea id="k-cause" rows="2">' + esc(c.outcome.kind === 'resolvable-change' ? 'スプーラ停止とエラージョブの残留。' : '未確定（引継ぎで確認）。') + '</textarea></div>' +
+    '<div class="form-row"><label>手順</label><textarea id="k-steps" rows="3">' + esc(c.outcome.kind === 'resolvable-change' ? '1. spooler.status で状態確認\n2. spooler.restart を本人承認で実行\n3. spooler.queue.purge でエラージョブ削除（取消不可）\n4. verify とテスト印刷で確認' : '1. 相談内容を確認\n2. 所管へ引継ぎ\n3. 対応結果を記録') + '</textarea></div>' +
+    '<div class="form-row"><label>分野</label><select id="k-cat"><option>PC・周辺機器</option><option>ネットワーク</option><option>アカウント・権限</option><option>業務システム</option></select></div>';
+  openModal({
+    title: 'ナレッジの下書き', sub: c.id + ' ／ ' + c.title, body,
+    footer: '<button type="button" class="btn" data-act="close-modal">キャンセル</button>' +
+      '<button type="button" class="btn btn-primary" data-act="do-kb">下書きを保存</button>'
+  });
+}
+
+function submitKb() {
+  const c = current();
+  const titleEl = document.getElementById('k-title');
+  const title = titleEl ? titleEl.value.trim() : '';
+  if (!title) { toast('件名を入力してください', 'warn'); return; }
+  c.kbDraft = true;
+  addAudit(c, USER.name, 'knowledge.draft');
+  c.timeline.push({ t: nowHHMM(), kind: 'memo', actor: USER.name, title: 'ナレッジの下書きを保存', body: '「' + title + '」— 承認待ち（承認者は別）。', chips: ['KB 下書き'] });
+  closeModal();
+  state.scrollBottom = true;
+  renderAll();
+  toast('ナレッジの下書きを保存しました（承認は別の承認者）', 'ok');
+}
+
+/* ---- 引継ぎメモ ---- */
+function openHandoff(c) {
+  if (state.role === 'approver') { toast('承認者は引継ぎを登録できません（閲覧のみ）', 'warn'); return; }
+  const body =
+    '<div class="callout warn">引継ぎは「担当を代える」ことです。承認（Y/N）は引き続き本人が行います。</div>' +
+    '<div class="form-row"><label>宛先</label><select id="h-to">' +
+      '<option>鈴木 健太（情報システム部）</option><option>佐藤 奨太（DX推進部）</option><option>情報セキュリティ担当</option>' +
+    '</select></div>' +
+    '<div class="form-row"><label>理由・申し送り</label><textarea id="h-body" rows="4">' +
+      esc(c.outcome.kind === 'no-skill'
+        ? 'Windows Update の修復 Skill が未承認のため、AI では実行できませんでした。更新履歴の確認と、必要なら本人同意の再起動をお願いします。'
+        : c.outcome.kind === 'out-of-kb'
+          ? 'KB 外（ライセンス付与・購買手続き）のため、所管での対応をお願いします。'
+          : 'verify は成功していますが、実運用での最終確認をお願いします。') +
+    '</textarea></div>' +
+    '<label class="check"><input type="checkbox" checked> PC 基本情報と AI の経過を共有する（本人同意済み）</label>';
+  openModal({
+    title: '引継ぎメモを作成', sub: c.id + ' ／ ' + c.title, body,
+    footer: '<button type="button" class="btn" data-act="close-modal">キャンセル</button>' +
+      '<button type="button" class="btn btn-primary" data-act="do-handoff">引継ぎを記録</button>'
+  });
+}
+
+function submitHandoff() {
+  const c = current();
+  const to = (document.getElementById('h-to') || {}).value || '未割当';
+  const body = (document.getElementById('h-body') || {}).value || '';
+  c.escalated = true;
+  addAudit(c, USER.name, 'case.handover.out');
+  c.timeline.push({ t: nowHHMM(), kind: 'handoff', actor: USER.name, title: '引継ぎを記録', to, body, chips: ['申し送り'] });
+  closeModal();
+  state.scrollBottom = true;
+  renderAll();
+  toast('引継ぎを記録しました → ' + to, 'ok');
+}
+
+/* ---- 承認待ちのプレビュー（本人の画面） ---- */
+function openPreview(c) {
+  const p = proposalFor(c);
+  if (!p) { toast('承認待ちの提案がありません'); return; }
+  const body =
+    '<div class="callout info">これは<b>相談者の画面（STEP 3）のプレビュー</b>です。実際の Y/N は本人だけが押せます。</div>' +
+    '<div class="requester-card">' +
+      '<div class="rc-head"><span class="badge navy">本人の画面</span><span class="countdown" data-exp="' + p.expiresAt + '">' + fmtLeft(p.expiresAt - Date.now()) + '</span></div>' +
+      '<h4>この操作を実行しますか？</h4>' +
+      '<p class="rc-sub">' + esc(p.title) + '（Lv' + p.risk + '・' + (p.reversible ? '可逆' : '取消不可') + '）</p>' +
+      '<dl class="kv" style="margin-top:0">' +
+        '<dt>対象</dt><dd>' + esc(c.device.name) + '</dd>' +
+        '<dt>パラメータ</dt><dd><code>' + esc(JSON.stringify(p.params)) + '</code></dd>' +
+        (p.impact ? '<dt>影響</dt><dd>' + esc(p.impact) + '</dd>' : '') +
+        '<dt>verify</dt><dd>' + esc(p.verifyText) + '</dd>' +
+        '<dt>戻し方</dt><dd>' + (p.reversible ? '可逆' : '<b class="bad">取消不可</b>') + ' — ' + esc(p.rollbackText) + '</dd>' +
+      '</dl>' +
+      (p.reversible ? '' : '<div class="callout danger">削除した印刷ジョブは元に戻せません。</div>') +
+      '<div class="rc-actions"><button type="button" class="btn" disabled>はい（Y）</button><button type="button" class="btn" disabled>いいえ（N）</button></div>' +
+      '<div class="hashline">承認ハッシュ: <code>' + esc(p.hash) + '</code><br>有効期限 5 分 ・ 実行時にサーバが再計算して照合します（表示はデモ用）。</div>' +
+    '</div>';
+  openModal({ title: '本人の承認画面（プレビュー）', sub: c.id + ' ／ 承認は本人のみ', body, wide: true, footer: '<button type="button" class="btn" data-act="close-modal">閉じる</button>' });
+}
+
+function openWithdraw(c) {
+  if (state.role === 'approver') { toast('承認者は提案を取り下げられません', 'warn'); return; }
+  const p = proposalFor(c);
+  if (!p) return;
+  openModal({
+    title: '提案を取り下げますか？', sub: c.id + ' ／ ' + p.skillId,
+    body: '<div class="callout warn">取り下げると、この提案では実行されません。必要な場合は新しい提案を作成し、本人の承認を取り直してください。</div>',
+    footer: '<button type="button" class="btn" data-act="close-modal">キャンセル</button>' +
+      '<button type="button" class="btn btn-danger" data-act="do-withdraw">取り下げる</button>'
+  });
+}
+
+function submitWithdraw() {
+  const c = current();
+  const p = proposalFor(c);
+  if (!p) return;
+  p.status = 'expired';
+  addAudit(c, USER.name, 'resolve.approval.withdrawn');
+  c.timeline.push({ t: nowHHMM(), kind: 'memo', actor: USER.name, title: '提案を取り下げ', body: p.skillId + ' の提案を期限前に取り下げました。' });
+  closeModal();
+  renderAll();
+  toast('提案を取り下げました');
+}
+
+/* ---- 監査 ---- */
+function openAudit(c) {
+  const rows = c.audit.map((r) =>
+    '<tr><td>' + esc(r.t) + '</td><td>' + esc(r.actor) + '</td><td>' + esc(r.action) + '</td>' +
+    '<td><code>' + esc(r.prev.slice(0, 8)) + '…</code></td><td><code>' + esc(r.hash.slice(0, 12)) + '…</code></td></tr>'
+  ).join('');
+  const body =
+    '<div class="callout info">監査ログはハッシュチェーンです。各行の <code>hash</code> は「前の hash + イベント内容」から再計算できます。<br>表示はデモ用の擬似値で、実装はサーバ側の SHA-256 です。</div>' +
+    '<table class="audit-table"><thead><tr><th>時刻</th><th>実行者</th><th>イベント</th><th>prev</th><th>hash</th></tr></thead><tbody>' + rows + '</tbody></table>';
+  openModal({
+    title: '監査ログ', sub: c.id + ' ／ 全 ' + c.audit.length + ' 件', body, wide: true,
+    footer: '<button type="button" class="btn" data-act="verify-chain">鎖を検証</button>' +
+      '<button type="button" class="btn btn-primary" data-act="close-modal">閉じる</button>'
+  });
+}
+
+function verifyChain() {
+  const c = current();
+  let prev = ZERO;
+  let broken = 0;
+  c.audit.forEach((r) => {
+    const expect = H(c.id + '|' + prev + '|' + r.action + '|' + r.actor);
+    if (r.prev !== prev || r.hash !== expect) broken++;
+    prev = r.hash;
+  });
+  toast(broken === 0
+    ? '監査チェーンを検証しました：' + c.audit.length + ' 件すべて一致（不一致 0）'
+    : '不一致 ' + broken + ' 件を検出しました', broken === 0 ? 'ok' : 'warn');
+}
+
+/* ---- 承認キュー ---- */
+function openApprovals() {
+  const body =
+    '<div class="callout info">承認者は自分の申請を承認できません（職務分離）。承認すると公開され、次の AI 回答の根拠になります。</div>' +
+    '<div class="kb-approve-item"><div class="kbm"><b>KB-2026-0012</b><p>VPN 再接続の手順</p><small>申請: 佐藤 奨太（DX推進部）・12:02 ／ 添付: 証跡 2 件</small></div>' +
+      '<div><button type="button" class="btn btn-sm btn-primary" data-act="approve-kb">承認</button> <button type="button" class="btn btn-sm" data-act="approve-kb">差戻し</button></div></div>' +
+    '<div class="kb-approve-item"><div class="kbm"><b>KB-2026-0013</b><p>Windows Update 失敗時の確認手順</p><small>申請: 田中 美咲（自分）・11:31</small><br><span class="chip muted">自分の申請は承認不可</span></div>' +
+      '<div><button type="button" class="btn btn-sm" disabled>承認</button></div></div>';
+  openModal({ title: 'ナレッジ承認キュー', sub: '承認待ち 2 件', body, footer: '<button type="button" class="btn btn-primary" data-act="close-modal">閉じる</button>' });
+}
+
+/* ---- 遠隔支援 ---- */
+function openRemote(c) {
+  const body =
+    '<div class="callout warn">遠隔支援は<b>本人の同意</b>が前提です。同意の範囲（画面共有 / 操作支援）を超えて操作しません。</div>' +
+    '<div class="form-row"><label>同意の範囲</label>' +
+      '<label class="check"><input type="checkbox" checked> 画面共有（閲覧のみ）</label>' +
+      '<label class="check"><input type="checkbox"> 操作支援（本人がその場で許可した操作のみ）</label>' +
+    '</div>' +
+    '<div class="form-row"><label>目的</label><textarea id="r-purpose" rows="2">実印刷の最終確認（テスト印刷）</textarea></div>' +
+    '<div class="callout info">接続は 1 回限り。記録は監査ログと最終報告書に残ります。</div>';
+  openModal({
+    title: '遠隔支援', sub: c.id + ' ／ ' + c.device.name, body,
+    footer: '<button type="button" class="btn" data-act="close-modal">キャンセル</button>' +
+      '<button type="button" class="btn btn-primary" data-act="request-remote">同意を依頼する</button>'
+  });
+}
+
+/* ---- 最終報告書 ---- */
+function openReport(c) {
+  openModal({
+    title: '最終報告書', sub: c.id + ' ／ ' + c.title,
+    body: '<div class="callout info">最終報告書は、相談・AI の経過・引継ぎ・解決・ナレッジの状態を 1 つの Standalone HTML / PDF にまとめたものです（デモでは出力しません）。</div>' +
+      '<ul><li>対応の経過: 相談、AI 診断、提案、承認、実行、verify、引継ぎ、担当者の対応</li>' +
+      '<li>解決の区分: ' + (c.resolved ? (c.resolved.counted ? '解決（変更あり）' : '確認完了（集計外）') : '未確定') + '</li>' +
+      '<li>監査: ' + c.audit.length + ' 件のイベント（ハッシュチェーン）</li></ul>' +
+      '<div class="callout warn">個人情報は伏せ字化してから出力します。正式な監査証跡はサーバ側の正本を参照してください。</div>',
+    footer: '<button type="button" class="btn" data-act="close-modal">閉じる</button>' +
+      '<button type="button" class="btn btn-primary" data-act="report-demo">出力（デモ）</button>'
+  });
+}
+
+/* ---- 読み方 ---- */
+function openHelp() {
+  const body =
+    '<div class="callout"><b>この画面は「引継ぎの後」を 3 ペインで見せるサンプルです。</b><br>製品 UI（既存プロトタイプ）は変更していません。データはすべてデモです。</div>' +
+    '<ul class="plain-list" style="margin-top:10px">' +
+      '<li><span class="n">1</span><span><b>左: 引継ぎボード</b> — 赤 → 黄 → 青の順。引継ぎ理由・AI の到達点・担当が 1 行で分かる。</span></li>' +
+      '<li><span class="n">2</span><span><b>中: 経過と次の一手</b> — 相談 → AI → 提案 → 本人 Y/N → 実行 → verify → 引継ぎ。担当者は<b>提案の作成と状況確認まで</b>で、実行は代行できない。</span></li>' +
+      '<li><span class="n">3</span><span><b>右: 端末・verify・監査</b> — 判断の根拠を同じ画面に置く。承認ハッシュは 5 分で失効し、監査チェーンに紐づく。</span></li>' +
+    '</ul>' +
+    '<h4>このプロトタイプで確認してほしいこと</h4>' +
+    '<ul>' +
+      '<li>引継ぎ後に担当者が「何をすればいいか」を迷わないか（左 → 中の流れ）</li>' +
+      '<li>承認の境界が見えるか（本人 Y/N・担当者代行不可・期限 5 分）</li>' +
+      '<li>解決の区分が業務に合うか（判断18=1: 変更ありのみ解決、読み取りのみは確認完了）</li>' +
+    '</ul>' +
+    '<div class="callout info">AI アシストは<b>読み取り 4 種 + 提案</b>のみ。Hermes などの別エージェント基盤は使いません（判断17=1）。実行経路は既存の承認・verify・監査だけです。</div>' +
+    '<p style="font-size:10.5px;color:var(--u-muted)">ハッシュと監査チェーンの表示はデモ用の擬似値です。実装はサーバ側の SHA-256 と監査ログが正本です。</p>';
+  openModal({ title: 'このプロトタイプの読み方', sub: '引継ぎワークスペース（3ペイン）v0.1', body, wide: true, footer: '<button type="button" class="btn btn-primary" data-act="close-modal">閉じる</button>' });
+}
+
+/* =========================================================================
+   イベント
+   ========================================================================= */
+document.addEventListener('click', (e) => {
+  const t = e.target.closest('[data-act]');
+  if (!t) return;
+  const act = t.dataset.act;
+  const c = current();
+  switch (act) {
+    case 'select': selectCase(t.dataset.id); break;
+    case 'filter': state.filter = t.dataset.filter; renderAll(); break;
+    case 'role': state.role = t.dataset.role; renderAll(); toast(state.role === 'approver' ? '承認者ロールに切り替えました（参照・承認のみ）' : 'ヘルプデスクロールに切り替えました'); break;
+    case 'refresh': renderAll(); toast('最新の状態に更新しました（デモ）'); break;
+    case 'claim': claim(c); break;
+    case 'resolve': openResolve(c, false); break;
+    case 'readonly': openResolve(c, true); break;
+    case 'kb': openKb(c); break;
+    case 'handoff': openHandoff(c); break;
+    case 'preview': openPreview(c); break;
+    case 'withdraw': openWithdraw(c); break;
+    case 'audit': openAudit(c); break;
+    case 'verify-chain': verifyChain(); break;
+    case 'remote': openRemote(c); break;
+    case 'report': openReport(c); break;
+    case 'report-demo': closeModal(); toast('最終報告書の出力はデモでは行いません'); break;
+    case 'help': openHelp(); break;
+    case 'copilot': askCopilot(c); break;
+    case 'memo': saveMemo(c); break;
+    case 'approvals': openApprovals(); break;
+    case 'approve-kb': toast('デモのため、承認・差戻しは実行しません', 'warn'); break;
+    case 'request-remote': closeModal(); toast('同意の依頼を送りました（デモ）', 'ok'); break;
+    case 'close-modal': closeModal(); break;
+    case 'do-resolve': submitResolve(t.dataset.readonly === '1'); break;
+    case 'do-kb': submitKb(); break;
+    case 'do-handoff': submitHandoff(); break;
+    case 'do-withdraw': submitWithdraw(); break;
+    default: break;
+  }
+});
+
+document.addEventListener('input', (e) => {
+  if (e.target.id === 'search') {
+    state.query = e.target.value;
+    renderList();
+  }
+  if (e.target.id === 'memo') {
+    state.memo[state.selected] = e.target.value;
+  }
+});
+
+/* 承認期限のカウントダウン */
+setInterval(() => {
+  document.querySelectorAll('[data-exp]').forEach((el) => {
+    const left = Number(el.dataset.exp) - Date.now();
+    el.textContent = fmtLeft(left);
+    el.classList.toggle('expired', left <= 0);
+  });
+}, 1000);
+
+/* 初期描画 */
+renderAll();
+</script>
+</body>
+</html>

@@ -39,6 +39,9 @@ describe('prototype UI integration', () => {
     expect(html).toContain('__AIHD_ASSIST_BRIDGE__');
     // 解決ループ（読み取り診断）のブリッジ
     expect(html).toContain('__AIHD_RESOLVE_BRIDGE__');
+    // 引継ぎワークスペース（3ペイン）のブリッジ
+    expect(html).toContain('__AIHD_HW_BRIDGE__');
+    expect(html).toContain('引継ぎワークスペース');
     expect(html).toContain('解決ループ（読み取り診断）');
     expect(html).toContain('最終報告書');
     expect(html).toContain('遠隔支援');
@@ -99,6 +102,9 @@ describe('prototype UI integration', () => {
     expect(body.answer.length).toBeGreaterThan(0);
     expect(body.sources.length).toBeGreaterThan(0);
     expect(body.sources[0].kbNo).toMatch(/^KB-/);
+    // 画面の「プロンプトを見る」用に、実際に AI へ渡した内容を返す
+    expect(body.prompt.system).toContain('一次対応AI');
+    expect(body.prompt.user).toContain('共有フォルダ');
   });
 
   it('画面で承認したナレッジ（helpdesk 状態の active KB）を AI 回答の根拠に使う', async () => {
