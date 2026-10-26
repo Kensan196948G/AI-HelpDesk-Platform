@@ -73,7 +73,8 @@ curl -s -H "X-Helpdesk-Service-Key: $KEY" \
      -H "X-Operator-Email: kensan1969@gmail.com"   # Access許可リストのメール \
      "http://127.0.0.1:18950/api/terminal/context?caseId=NO-SUCH"  # 例: -H "X-Operator-Email: kensan1969@gmail.com"
 
-# 2) ブラウザ: https://rsp.mirai-remotetools.com/ にログイン → 左ナビ「AI支援」
+# 2) ブラウザ: https://rsp.mirai-remotetools.com/ に **RSP のアプリログイン**（Entra）→ 左ナビ「AI支援」
+#    案件IDは cowork のケースIDのほか INC-/TKT- 番号でもよい（2026-10-26 追補）
 #    → 案件ID（HelpDeskで claim 済み）を読み込み → AI提案 → 記録 → 終了 → 報告書 → ナレッジ下書き
 ```
 

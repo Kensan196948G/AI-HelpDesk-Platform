@@ -100,6 +100,8 @@
 }
 ```
 
+- `caseId` は cowork の案件IDのほか、スナップショットの `inc.id` / `ticket.id`
+  （画面に出る `INC-xxxx` / `TKT-xxxx`）でも引ける。
 - PC情報の IP・シリアル・資産番号は **マスク**して返す（項目名で判定）。
 - `session` は最新の RSP 実行セッション（無ければ null）。
 
