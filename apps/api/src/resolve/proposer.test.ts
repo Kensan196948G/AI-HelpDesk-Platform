@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildSkillCatalogForAi,
   escalationReasonForDecision,
   fallbackPropose,
   isDuplicateProposal,
@@ -215,5 +216,49 @@ describe('AI 提案の正規化と終了宣言（decision）', () => {
 
   it('escalationReasonForDecision は未指定で null', () => {
     expect(escalationReasonForDecision(undefined)).toBeNull();
+  });
+});
+
+describe('buildSkillCatalogForAi', () => {
+  const base = {
+    version: '1.0.0',
+    summary: '',
+    symptoms: [],
+    os: ['windows'],
+    paramsSchema: { type: 'object', additionalProperties: false, properties: {} },
+    scriptPath: 'scripts/skills/windows/x.ps1',
+    args: [],
+    verify: null,
+    timeoutSec: 60,
+    resultSchema: {},
+    outputPolicy: {},
+  };
+  it('risk>=2 かつ rollback ありは repair、読み取りは diagnose', () => {
+    const catalog = buildSkillCatalogForAi([
+      {
+        ...base,
+        id: 'service.restart',
+        title: 'restart',
+        riskLevel: 2,
+        rollback: { description: '戻せる' },
+        requires: { elevation: true },
+      },
+      {
+        ...base,
+        id: 'bitlocker.status',
+        title: 'status',
+        riskLevel: 1,
+        rollback: { description: '取消不要' },
+        requires: { elevation: true },
+      },
+      { ...base, id: 'os.info', title: 'info', riskLevel: 1, rollback: null, requires: {} },
+    ] as never);
+    expect(catalog.map((s) => [s.id, s.kind])).toEqual([
+      ['service.restart', 'repair'],
+      ['bitlocker.status', 'diagnose'],
+      ['os.info', 'diagnose'],
+    ]);
+    expect(catalog[0].requiresElevation).toBe(true);
+    expect(catalog[2].requiresElevation).toBe(false);
   });
 });
