@@ -2,7 +2,7 @@ import { type FinalReport, FinalReportSchema } from '../domain/final-report.js';
 import { redactPII } from '../domain/pii.js';
 import { type CaseSnapshot, normalizeState } from '../lib/case-handover.js';
 import type { HandoverRow } from '../routes/case-handovers.js';
-import type { TerminalSessionRow, TerminalStepRow } from './session.js';
+import type { OutputSource, TerminalSessionRow, TerminalStepRow } from './session.js';
 
 /** 画面のカテゴリ（プロトタイプの CATS）→ 表示・報告書の表記。 */
 export const CATEGORY_LABEL: Record<string, string> = {
@@ -276,6 +276,8 @@ export function buildTerminalReport(input: TerminalReportInput): TerminalReportR
         | 'expired'
         | undefined,
       captureSupported: recordedSteps.some((step) => step.output_source === 'auto'),
+      // RSP の remote_session との相互参照（Phase 2・未相関なら undefined）。
+      rspSessionId: session.rsp_session_id ?? undefined,
       steps: steps.map((step) => ({
         seq: step.seq,
         at: new Date(step.recorded_at ?? step.proposed_at).toISOString(),
@@ -297,10 +299,12 @@ export function buildTerminalReport(input: TerminalReportInput): TerminalReportR
           ? {
               command: text(step.executed_command, 8000),
               output: text(step.output, 20_000),
-              outputSource: (step.output_source ?? 'manual') as 'auto' | 'manual',
+              outputSource: (step.output_source ?? 'manual') as OutputSource,
               exitStatus: (step.exit_status ?? 'unknown') as 'success' | 'failure' | 'unknown',
               note: text(step.note, 1000) || undefined,
               sha256: text(step.sha256, 64) || undefined,
+              // RSP のコマンドキュー由来のときだけ載せる（未相関なら undefined）。
+              rspCommandLogId: step.rsp_command_log_id ?? undefined,
             }
           : null,
       })),

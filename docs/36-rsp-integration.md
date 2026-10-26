@@ -147,6 +147,10 @@
 | POST | `/api/v1/helpdesk/sessions/{id}/report` | 同名 |
 | POST | `/api/v1/helpdesk/sessions/{id}/knowledge-draft` | 同名 |
 
+- 実行記録 (`POST .../steps/{id}/record`) の body は `outputSource` に `"rsp_command"` を
+  指定でき、その場合は `rspCommandLogId`（RSP の `command_logs.log_id`）が必須。
+  `rspSessionId`（RSP の `remote_sessions.session_id`）は任意で、セッションに
+  未保存のときだけ保存される（COALESCE）。詳細は `docs/35-terminal-session.md` §4-4。
 - リクエストヘッダー: `X-Helpdesk-Service-Key`、`X-Operator-Email`。
 - 報告書の返却 URL は HelpDesk 相対のため、RSP プロキシが
   `/api/v1/helpdesk/reports/{id}/html|pdf` に**書き換えて**返す。
@@ -202,6 +206,6 @@
 |---|---|---|
 | 0 | HelpDesk 統合API（context/cases）＋ RSP プロキシ ＋ RSP WebUI 読み取りパネル（案件・PC情報） | 実装中 |
 | 1 | AI提案・実行記録・終了・報告書・ナレッジ下書き（手動実行） | Phase 0 の直後 |
-| 2 | RSP のコマンド実行（W23）と接続し、出力を自動取込 | Phase 1 の後 |
-| 3 | HelpDesk 3ペインからのディープリンク（2026-10-26 実装）、監査相関、ロール調整 | ディープリンクは実装済み。相関ID・ロール調整は未対応 |
+| 2 | RSP のコマンド実行（W23）と接続し、出力を自動取込（2026-10-26 実装） | 実装済み。`outputSource: "rsp_command"` + `rspCommandLogId` で記録する（docs/35 §4-4） |
+| 3 | HelpDesk 3ペインからのディープリンク、監査相関、ロール調整 | ディープリンク（2026-10-26）と監査相関ID（`rsp_session_id` / RSP `helpdesk_session_id`）は実装済み。ロール調整は未対応 |
 | 4 | （任意）MeshCentral のターミナルログ取得 | 法務・同意次第 |
