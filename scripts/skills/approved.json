@@ -7,8 +7,8 @@
       "scriptHash": "sha256:3399081a905ea256740356acb4f743d8ecefcaf28529ec1c2e2f373e17ac808b",
       "contentHash": "sha256:1d2416c7f850df4ebf04dd1b375366e4171ad3e5e33219a807fc96e8ea3a3a5a",
       "approvedBy": "kensan1969@gmail.com",
-      "approvedAt": "2026-10-26T00:29:18.746Z",
-      "note": "2026-10-26 実機検証: PowerShell 5.1 対応で全スクリプトへ UTF-8 BOM を付与"
+      "approvedAt": "2026-10-26T01:06:54.426Z",
+      "note": "2026-10-26 Phase7: 修復Skill4件（service.restart / network.adapter.restart / defender.update / recyclebin.clear）を承認"
     },
     {
       "id": "disk.space",
@@ -16,8 +16,8 @@
       "scriptHash": "sha256:1c4b0685fa75c347b623eb889e77d93aa73a2f618ae979440523a36342a6ddc8",
       "contentHash": "sha256:54c217f1ab84b44bb9f0b4aa73bb7748ebb50ee5178286ca59ad286ac9ee43a9",
       "approvedBy": "kensan1969@gmail.com",
-      "approvedAt": "2026-10-26T00:29:18.746Z",
-      "note": "2026-10-26 実機検証: PowerShell 5.1 対応で全スクリプトへ UTF-8 BOM を付与"
+      "approvedAt": "2026-10-26T01:06:54.426Z",
+      "note": "2026-10-26 Phase7: 修復Skill4件（service.restart / network.adapter.restart / defender.update / recyclebin.clear）を承認"
     },
     {
       "id": "spooler.status",
@@ -25,8 +25,8 @@
       "scriptHash": "sha256:0122190ad31e0328d9a00e438fe56af2e5c5ec6e0e6702042ebdb8e3d364a330",
       "contentHash": "sha256:17eef91c11f8d84aab75490832e41335e563e680577d4a844ee9f1f6e8be6b99",
       "approvedBy": "kensan1969@gmail.com",
-      "approvedAt": "2026-10-26T00:29:18.746Z",
-      "note": "2026-10-26 実機検証: PowerShell 5.1 対応で全スクリプトへ UTF-8 BOM を付与"
+      "approvedAt": "2026-10-26T01:06:54.426Z",
+      "note": "2026-10-26 Phase7: 修復Skill4件（service.restart / network.adapter.restart / defender.update / recyclebin.clear）を承認"
     },
     {
       "id": "service.status",
@@ -34,8 +34,8 @@
       "scriptHash": "sha256:25e5666a6376d5c77dfef300d85d0a47f756c9f6aba428db10c858fe7460af43",
       "contentHash": "sha256:acf33cc34cdcf7e2ce1aef727ba6e9d0bf7a3cbae5708ff13d90dbd253f4b461",
       "approvedBy": "kensan1969@gmail.com",
-      "approvedAt": "2026-10-26T00:29:18.746Z",
-      "note": "2026-10-26 実機検証: PowerShell 5.1 対応で全スクリプトへ UTF-8 BOM を付与"
+      "approvedAt": "2026-10-26T01:06:54.426Z",
+      "note": "2026-10-26 Phase7: 修復Skill4件（service.restart / network.adapter.restart / defender.update / recyclebin.clear）を承認"
     },
     {
       "id": "network.adapters",
@@ -43,8 +43,8 @@
       "scriptHash": "sha256:af3107553f9da4ee3194d2421bbe7d998a17d1fba1242dd165a2db11289b3138",
       "contentHash": "sha256:8526c7e7442b3593e15243554539b36b2a4ef8ab71f81bd77c1206d5a653acc6",
       "approvedBy": "kensan1969@gmail.com",
-      "approvedAt": "2026-10-26T00:29:18.746Z",
-      "note": "2026-10-26 実機検証: PowerShell 5.1 対応で全スクリプトへ UTF-8 BOM を付与"
+      "approvedAt": "2026-10-26T01:06:54.426Z",
+      "note": "2026-10-26 Phase7: 修復Skill4件（service.restart / network.adapter.restart / defender.update / recyclebin.clear）を承認"
     },
     {
       "id": "spooler.restart",
@@ -52,8 +52,8 @@
       "scriptHash": "sha256:1425657d32a6712a511ec564183fa8cce57c9cc19ef783a6d6996777a26c754c",
       "contentHash": "sha256:cdd91d5a1ad5fda0ff45f6551656b9a38b4286aa509ee5eaa9aa50b8f47d34ba",
       "approvedBy": "kensan1969@gmail.com",
-      "approvedAt": "2026-10-26T00:29:18.746Z",
-      "note": "2026-10-26 実機検証: PowerShell 5.1 対応で全スクリプトへ UTF-8 BOM を付与"
+      "approvedAt": "2026-10-26T01:06:54.426Z",
+      "note": "2026-10-26 Phase7: 修復Skill4件（service.restart / network.adapter.restart / defender.update / recyclebin.clear）を承認"
     },
     {
       "id": "spooler.queue.purge",
@@ -61,8 +61,8 @@
       "scriptHash": "sha256:3ee4d9b1c7dd1db5a3c607f87ee01e9a0b2dd643c2ff98c358c0c3e2027f3311",
       "contentHash": "sha256:4fff53ab452c3bfb1fcf475db87834c1440443a6eba9bb562f06dd589775985b",
       "approvedBy": "kensan1969@gmail.com",
-      "approvedAt": "2026-10-26T00:29:18.746Z",
-      "note": "2026-10-26 実機検証: PowerShell 5.1 対応で全スクリプトへ UTF-8 BOM を付与"
+      "approvedAt": "2026-10-26T01:06:54.426Z",
+      "note": "2026-10-26 Phase7: 修復Skill4件（service.restart / network.adapter.restart / defender.update / recyclebin.clear）を承認"
     },
     {
       "id": "service.start",
@@ -70,8 +70,44 @@
       "scriptHash": "sha256:c42417a91ef565652b67b81e7b45410a27a2a11a6d93f60715ecd376ac0bc707",
       "contentHash": "sha256:90ed06de3798b2ac476c5552e594077b2efc28dc24f48253af62ac18d08da7e2",
       "approvedBy": "kensan1969@gmail.com",
-      "approvedAt": "2026-10-26T00:29:18.746Z",
-      "note": "2026-10-26 実機検証: PowerShell 5.1 対応で全スクリプトへ UTF-8 BOM を付与"
+      "approvedAt": "2026-10-26T01:06:54.426Z",
+      "note": "2026-10-26 Phase7: 修復Skill4件（service.restart / network.adapter.restart / defender.update / recyclebin.clear）を承認"
+    },
+    {
+      "id": "service.restart",
+      "version": "1.0.0",
+      "scriptHash": "sha256:93ed4e42bcd32210dfba5c2d6f46dba079c40f52c0125d255b5a5ed23f958741",
+      "contentHash": "sha256:ca7f762cafa3ce4f5460a22f13b7a7909e25a808a063315458fc2ce2b40f3480",
+      "approvedBy": "kensan1969@gmail.com",
+      "approvedAt": "2026-10-26T01:06:54.426Z",
+      "note": "2026-10-26 Phase7: 修復Skill4件（service.restart / network.adapter.restart / defender.update / recyclebin.clear）を承認"
+    },
+    {
+      "id": "network.adapter.restart",
+      "version": "1.0.0",
+      "scriptHash": "sha256:b30ffabc0195f759c62ba67dbb786427390297698a4cb10b44caeb3bf260c558",
+      "contentHash": "sha256:984e1cfb93851fef60df15a5a58e5b3000053ea7a84b9db5b3ebc7fe7a6b84cb",
+      "approvedBy": "kensan1969@gmail.com",
+      "approvedAt": "2026-10-26T01:06:54.426Z",
+      "note": "2026-10-26 Phase7: 修復Skill4件（service.restart / network.adapter.restart / defender.update / recyclebin.clear）を承認"
+    },
+    {
+      "id": "defender.update",
+      "version": "1.0.0",
+      "scriptHash": "sha256:868dca8fcf66102d218480f6480e04892d96036cc08f82761fcb7dcfdbcdaaef",
+      "contentHash": "sha256:68fac12739739d78062bd2dca9dcf24da1facf467992b4042adb1ef8f072f475",
+      "approvedBy": "kensan1969@gmail.com",
+      "approvedAt": "2026-10-26T01:06:54.426Z",
+      "note": "2026-10-26 Phase7: 修復Skill4件（service.restart / network.adapter.restart / defender.update / recyclebin.clear）を承認"
+    },
+    {
+      "id": "recyclebin.clear",
+      "version": "1.0.0",
+      "scriptHash": "sha256:0de6b928992b3e602ba3e0514d479ef24ea3676f5808ff73b49c6bd046124359",
+      "contentHash": "sha256:b1ac9bdb3e5a615f1dd9c8dba537950f8981e1aa52b1bdf8da78327b5cb7b9ff",
+      "approvedBy": "kensan1969@gmail.com",
+      "approvedAt": "2026-10-26T01:06:54.426Z",
+      "note": "2026-10-26 Phase7: 修復Skill4件（service.restart / network.adapter.restart / defender.update / recyclebin.clear）を承認"
     },
     {
       "id": "temp.cleanup",
@@ -79,8 +115,8 @@
       "scriptHash": "sha256:9601884df798e34592be1cee125e405fecd9473d7ae7059c4dbadec58fd9c6de",
       "contentHash": "sha256:bf5439db83a3f5052e0fde89327096ef1ec1d6991f1272100794129ad7d6d597",
       "approvedBy": "kensan1969@gmail.com",
-      "approvedAt": "2026-10-26T00:29:18.746Z",
-      "note": "2026-10-26 実機検証: PowerShell 5.1 対応で全スクリプトへ UTF-8 BOM を付与"
+      "approvedAt": "2026-10-26T01:06:54.426Z",
+      "note": "2026-10-26 Phase7: 修復Skill4件（service.restart / network.adapter.restart / defender.update / recyclebin.clear）を承認"
     },
     {
       "id": "dns.flush",
@@ -88,8 +124,8 @@
       "scriptHash": "sha256:23e95709d203df1eead93902b41354c3954a3a7c323b133fe7f8ef6ae4a5ea88",
       "contentHash": "sha256:43679dad8be48dbebe0127c7917895d20a60f7a02a7a43db1df0e753018740df",
       "approvedBy": "kensan1969@gmail.com",
-      "approvedAt": "2026-10-26T00:29:18.746Z",
-      "note": "2026-10-26 実機検証: PowerShell 5.1 対応で全スクリプトへ UTF-8 BOM を付与"
+      "approvedAt": "2026-10-26T01:06:54.426Z",
+      "note": "2026-10-26 Phase7: 修復Skill4件（service.restart / network.adapter.restart / defender.update / recyclebin.clear）を承認"
     },
     {
       "id": "bitlocker.status",
@@ -97,8 +133,8 @@
       "scriptHash": "sha256:2c6a594b2f53b6d38fe3e0b3d2ec1f44348472e29c22d9beb20c2571f661fc11",
       "contentHash": "sha256:059988ca78e8d0ba2a923ca529ea02fde5e62e534ebc961381d080379b2d9e77",
       "approvedBy": "kensan1969@gmail.com",
-      "approvedAt": "2026-10-26T00:29:18.746Z",
-      "note": "2026-10-26 実機検証: PowerShell 5.1 対応で全スクリプトへ UTF-8 BOM を付与"
+      "approvedAt": "2026-10-26T01:06:54.426Z",
+      "note": "2026-10-26 Phase7: 修復Skill4件（service.restart / network.adapter.restart / defender.update / recyclebin.clear）を承認"
     },
     {
       "id": "defender.quickscan",
@@ -106,8 +142,8 @@
       "scriptHash": "sha256:050946da4500b7a88c4dffb583a725b45f28efb56ded73d8941df3ce5cb3d219",
       "contentHash": "sha256:b5d5d1763d02c06b79f712bfd6bff74435f99fd0c2df11b8a2e405b5b65f4e4c",
       "approvedBy": "kensan1969@gmail.com",
-      "approvedAt": "2026-10-26T00:29:18.746Z",
-      "note": "2026-10-26 実機検証: PowerShell 5.1 対応で全スクリプトへ UTF-8 BOM を付与"
+      "approvedAt": "2026-10-26T01:06:54.426Z",
+      "note": "2026-10-26 Phase7: 修復Skill4件（service.restart / network.adapter.restart / defender.update / recyclebin.clear）を承認"
     }
   ]
 }

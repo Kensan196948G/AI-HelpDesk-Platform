@@ -33,6 +33,16 @@ const REPAIR_SKILLS = [
 
 const REPAIR_SKILL_SET = new Set<string>(REPAIR_SKILLS);
 
+/** Phase 7 で追加する修復系（到達率向上 / 既存 12 件の定義は変えない）。 */
+const PHASE_7_SKILLS = [
+  'service.restart',
+  'network.adapter.restart',
+  'defender.update',
+  'recyclebin.clear',
+] as const;
+
+const PHASE_7_SKILL_SET = new Set<string>(PHASE_7_SKILLS);
+
 /** Phase 2 で指定されたリスクレベル（これ以外へ上げ下げしない）。 */
 const REPAIR_RISK_LEVEL: Record<string, number> = {
   'spooler.restart': 2,
@@ -42,6 +52,14 @@ const REPAIR_RISK_LEVEL: Record<string, number> = {
   'dns.flush': 1,
   'bitlocker.status': 1,
   'defender.quickscan': 1,
+};
+
+/** Phase 7 で指定されたリスクレベル（4 以上に上げない）。 */
+const PHASE_7_RISK_LEVEL: Record<string, number> = {
+  'service.restart': 2,
+  'network.adapter.restart': 3,
+  'defender.update': 1,
+  'recyclebin.clear': 2,
 };
 
 const REPO_ROOT = process.cwd();
@@ -68,6 +86,37 @@ function propertiesOf(schema: Record<string, unknown>): Record<string, Record<st
 }
 
 /**
+ * 変更系（修復）Skill の不変条件: verify / rollback の存在と形。
+ *
+ * Phase 2 の 7 件と Phase 7 の追加分で同じ契約を強制するため関数に切り出す
+ * （assert を緩めないため、Phase 2 のテストもこの関数を通す）。
+ */
+function assertRepairSkillShape(id: string): void {
+  const skill = skillById(id);
+  expect(skill.verify, `${id}.verify`).not.toBeNull();
+  expect(skill.rollback, `${id}.rollback`).not.toBeNull();
+
+  const verify = skill.verify as Record<string, unknown>;
+  expect(typeof verify.description, `${id}.verify.description`).toBe('string');
+  expect((verify.description as string).length, id).toBeGreaterThan(0);
+  // 確認条件は「既存スクリプトによる独立確認」か「自 Skill の結果フィールド」のどちらか。
+  expect(
+    typeof verify.script === 'string' || typeof verify.resultField === 'string',
+    `${id}.verify`,
+  ).toBe(true);
+  if (typeof verify.script === 'string') {
+    expect(existsSync(path.join(REPO_ROOT, verify.script)), verify.script).toBe(true);
+  }
+
+  const rollback = skill.rollback as Record<string, unknown>;
+  expect(typeof rollback.reversible, `${id}.rollback.reversible`).toBe('boolean');
+  expect(typeof rollback.description, `${id}.rollback.description`).toBe('string');
+  expect((rollback.description as string).length, id).toBeGreaterThan(0);
+  // 実行基盤の無い rollback スクリプトを参照しない（実体の無い約束を作らない）。
+  expect(rollback.script, `${id}.rollback.script`).toBeNull();
+}
+
+/**
  * 端末エージェントの許可リスト（skill_id → スクリプトファイル名）をソースから取り出す。
  * endpoint-command-agent.mjs は起動時に main() を実行するため import せず、静的に読む。
  */
@@ -83,9 +132,9 @@ function agentAllowlist(): Map<string, string> {
 }
 
 describe('Skill カタログ定義', () => {
-  it('Phase B の読み取り 5 件と Phase 2 の修復 7 件で構成される', () => {
+  it('Phase B の読み取り 5 件と Phase 2 / Phase 7 の修復 Skill で構成される', () => {
     expect(SKILL_CATALOG.map((skill) => skill.id).sort()).toEqual(
-      [...PHASE_B_READ_ONLY, ...REPAIR_SKILLS].sort(),
+      [...PHASE_B_READ_ONLY, ...REPAIR_SKILLS, ...PHASE_7_SKILLS].sort(),
     );
   });
 
@@ -126,6 +175,14 @@ describe('Skill カタログ定義', () => {
   it('修復 7 件の riskLevel は指定どおり（4 以上に上げない）', () => {
     for (const id of REPAIR_SKILLS) {
       expect(skillById(id).riskLevel, id).toBe(REPAIR_RISK_LEVEL[id]);
+    }
+  });
+
+  it('Phase 7 の修復 Skill の riskLevel も指定どおり（4 以上に上げない）', () => {
+    for (const id of PHASE_7_SKILLS) {
+      const risk = skillById(id).riskLevel;
+      expect(risk, id).toBe(PHASE_7_RISK_LEVEL[id]);
+      expect(risk, id).toBeLessThan(4);
     }
   });
 
@@ -219,30 +276,11 @@ describe('Skill カタログ定義', () => {
   });
 
   it('修復 7 件は verify と rollback を必ず持つ（description / reversible 付き）', () => {
-    for (const id of REPAIR_SKILLS) {
-      const skill = skillById(id);
-      expect(skill.verify, `${id}.verify`).not.toBeNull();
-      expect(skill.rollback, `${id}.rollback`).not.toBeNull();
+    for (const id of REPAIR_SKILLS) assertRepairSkillShape(id);
+  });
 
-      const verify = skill.verify as Record<string, unknown>;
-      expect(typeof verify.description, `${id}.verify.description`).toBe('string');
-      expect((verify.description as string).length, id).toBeGreaterThan(0);
-      // 確認条件は「既存スクリプトによる独立確認」か「自 Skill の結果フィールド」のどちらか。
-      expect(
-        typeof verify.script === 'string' || typeof verify.resultField === 'string',
-        `${id}.verify`,
-      ).toBe(true);
-      if (typeof verify.script === 'string') {
-        expect(existsSync(path.join(REPO_ROOT, verify.script)), verify.script).toBe(true);
-      }
-
-      const rollback = skill.rollback as Record<string, unknown>;
-      expect(typeof rollback.reversible, `${id}.rollback.reversible`).toBe('boolean');
-      expect(typeof rollback.description, `${id}.rollback.description`).toBe('string');
-      expect((rollback.description as string).length, id).toBeGreaterThan(0);
-      // 実行基盤の無い rollback スクリプトを参照しない（実体の無い約束を作らない）。
-      expect(rollback.script, `${id}.rollback.script`).toBeNull();
-    }
+  it('Phase 7 の修復 Skill も verify と rollback を必ず持つ', () => {
+    for (const id of PHASE_7_SKILLS) assertRepairSkillShape(id);
   });
 
   it('spooler.queue.purge は取消不可・影響範囲を rollback に明記する（risk 3）', () => {
@@ -296,6 +334,71 @@ describe('Skill カタログ定義', () => {
     expect(skill.args).toEqual(['-OlderThanDays', '{{olderThanDays}}']);
   });
 
+  it('service.restart は name を Spooler / W32Time に限定し、status で verify する', () => {
+    const skill = skillById('service.restart');
+    expect(skill.riskLevel).toBe(2);
+    expect(skill.paramsSchema).toEqual({
+      type: 'object',
+      additionalProperties: false,
+      required: ['name'],
+      properties: { name: { type: 'string', enum: ['Spooler', 'W32Time'] } },
+    });
+    expect(skill.args).toEqual(['-Service', '{{name}}']);
+    // 追撃に頼らず、再起動スクリプト自身が返す status で決定的に判定する。
+    expect(skill.verify).toMatchObject({ resultField: 'status', equals: 'Running' });
+    // 再起動のみでスタートアップは変えない（可逆）。
+    expect((skill.rollback as Record<string, unknown>).reversible).toBe(true);
+    // サービス操作は昇格が必要（admin エージェント経路で実行する）。
+    expect((skill.requires as Record<string, unknown>).elevation).toBe(true);
+  });
+
+  it('network.adapter.restart は interfaceAlias を型付きで受け取り、status=Up で verify する', () => {
+    const skill = skillById('network.adapter.restart');
+    expect(skill.riskLevel).toBe(3);
+    // アダプタ名は端末ごとに異なるため enum にしない。長さと形式だけをスキーマで絞る。
+    expect(skill.paramsSchema).toEqual({
+      type: 'object',
+      additionalProperties: false,
+      required: ['interfaceAlias'],
+      properties: {
+        interfaceAlias: { type: 'string', minLength: 1, maxLength: 64, pattern: '^[^-]' },
+      },
+    });
+    expect(skill.args).toEqual(['-InterfaceAlias', '{{interfaceAlias}}']);
+    expect(skill.verify).toMatchObject({ resultField: 'status', equals: 'Up' });
+    // 無効化→有効化のみで IP 構成は変わらない（可逆）。
+    expect((skill.rollback as Record<string, unknown>).reversible).toBe(true);
+    expect((skill.requires as Record<string, unknown>).elevation).toBe(true);
+  });
+
+  it('defender.update は定義更新で updated=true を verify し、リスク 1 のままにする', () => {
+    const skill = skillById('defender.update');
+    expect(skill.riskLevel).toBe(1);
+    expect(skill.paramsSchema).toEqual({
+      type: 'object',
+      additionalProperties: false,
+      properties: {},
+    });
+    expect(skill.verify).toMatchObject({ resultField: 'updated', equals: true });
+    expect((skill.rollback as Record<string, unknown>).reversible).toBe(true);
+    expect((skill.requires as Record<string, unknown>).elevation).toBe(true);
+    // 固定コマンド（引数でコマンド文字列を受け取らない）。
+    const text = readSkillScript(skill);
+    expect(text).toContain('Update-MpSignature');
+  });
+
+  it('recyclebin.clear は復元不可を rollback に明記し、標準権限で実行する（risk 2）', () => {
+    const skill = skillById('recyclebin.clear');
+    expect(skill.riskLevel).toBe(2);
+    expect(skill.verify).toMatchObject({ resultField: 'cleared', equals: true });
+    const rollback = skill.rollback as Record<string, unknown>;
+    expect(rollback.reversible).toBe(false);
+    expect(rollback.description as string).toContain('復元不可');
+    expect(rollback.description as string).toContain('影響範囲');
+    // 自分のごみ箱だけを消すため昇格は不要（standard エージェントで実行する）。
+    expect((skill.requires as Record<string, unknown>).elevation).toBe(false);
+  });
+
   it('修復 Skill はプロンプト由来のコマンド文字列を受け取るパラメータを持たない', () => {
     for (const skill of SKILL_CATALOG) {
       for (const [key, property] of Object.entries(propertiesOf(skill.paramsSchema))) {
@@ -329,13 +432,14 @@ describe('端末エージェントとの契約（静的検証）', () => {
   });
 
   it('修復 Skill は mock fixture か専用 mock 分岐を持つ（Linux での PoC 用）', () => {
-    for (const id of REPAIR_SKILLS) {
+    // パラメータで対象が決まる Skill は fixture ではなく専用分岐で組み立てる。
+    const branchSkills = new Set(['service.start', 'service.restart', 'network.adapter.restart']);
+    for (const id of [...REPAIR_SKILLS, ...PHASE_7_SKILLS]) {
       const escaped = id.replace(/\./g, '\\.');
       const hasFixture = new RegExp(`'${escaped}': Object\\.freeze\\(`).test(AGENT_SOURCE);
-      if (id === 'service.start') {
-        // 起動対象ごとに MOCK_SERVICES から組み立てる。
-        expect(hasFixture).toBe(false);
-        expect(AGENT_SOURCE).toContain("skillId === 'service.start'");
+      if (branchSkills.has(id)) {
+        expect(hasFixture, `${id} は専用分岐`).toBe(false);
+        expect(AGENT_SOURCE).toContain(`skillId === '${id}'`);
       } else {
         expect(hasFixture, `${id} の fixture`).toBe(true);
       }
@@ -350,11 +454,22 @@ describe('端末エージェントとの契約（静的検証）', () => {
     expect(AGENT_SOURCE).toContain('function requireOlderThanDays');
     expect(AGENT_SOURCE).toContain('function requirePurgeConfirm');
     expect(AGENT_SOURCE).toContain("const PURGE_CONFIRM_TOKEN = 'PURGE'");
+    // service.restart も端末側で許可リストを再検証する。
+    expect(AGENT_SOURCE).toContain(
+      "const SERVICE_RESTART_NAMES = Object.freeze(['Spooler', 'W32Time'])",
+    );
+    expect(AGENT_SOURCE).toContain('function requireRestartService');
+    // network.adapter.restart は端末側でも形（長さ・先頭文字・制御文字）を再検証する。
+    expect(AGENT_SOURCE).toContain('function requireInterfaceAlias');
+    expect(AGENT_SOURCE).toContain('const INTERFACE_ALIAS_MAX_LENGTH = 64;');
+    expect(AGENT_SOURCE).toContain('interfaceAlias を "-" で開始できません');
   });
 });
 
 describe('端末スクリプトの静的契約（Windows 実機なし・実行検証は未実施）', () => {
-  const repairSkills = SKILL_CATALOG.filter((skill) => REPAIR_SKILL_SET.has(skill.id));
+  const repairSkills = SKILL_CATALOG.filter(
+    (skill) => REPAIR_SKILL_SET.has(skill.id) || PHASE_7_SKILL_SET.has(skill.id),
+  );
 
   it('動的実行・シェル文字列連結・$args の直接利用をしない', () => {
     for (const skill of repairSkills) {
@@ -382,6 +497,22 @@ describe('端末スクリプトの静的契約（Windows 実機なし・実行�
     expect(purge).toContain('[switch]$ConfirmPurge');
     expect(purge).toMatch(/-not \$ConfirmPurge/);
     expect(purge).toMatch(/exit 2/);
+
+    // service.restart: 引数をそのまま -Name に渡さず、許可リストの正規名へ解決する。
+    const serviceRestart = readSkillScript(skillById('service.restart'));
+    expect(serviceRestart).toContain('[string]$Service');
+    expect(serviceRestart).toContain("$allowed = @('Spooler', 'W32Time')");
+    expect(serviceRestart).toMatch(/exit 2/);
+    expect(serviceRestart).toContain('Restart-Service -Name $canonical');
+
+    // network.adapter.restart: 形の検証 → 実機一覧との完全一致 → Disable→Enable。
+    const adapterRestart = readSkillScript(skillById('network.adapter.restart'));
+    expect(adapterRestart).toContain('[string]$InterfaceAlias');
+    expect(adapterRestart).toContain('$InterfaceAlias.Length -gt 64');
+    expect(adapterRestart).toContain('$InterfaceAlias.StartsWith');
+    expect(adapterRestart).toMatch(/exit 2/);
+    expect(adapterRestart).toContain('Disable-NetAdapter -Name $adapterName');
+    expect(adapterRestart).toContain('Enable-NetAdapter -Name $adapterName');
   });
 
   it('出力は JSON 1 行で、失敗時は stderr + 非 0 終了コードを返す', () => {
@@ -414,6 +545,9 @@ describe('端末スクリプトの静的契約（Windows 実機なし・実行�
       'spooler.restart',
       'spooler.queue.purge',
       'service.start',
+      'service.restart',
+      'network.adapter.restart',
+      'defender.update',
       'bitlocker.status',
       'defender.quickscan',
     ]) {
@@ -421,6 +555,16 @@ describe('端末スクリプトの静的契約（Windows 実機なし・実行�
       expect(text, id).toContain('Test-IsElevated');
       expect(text, id).toMatch(/exit 3/);
     }
+  });
+
+  it('recyclebin.clear は自分のごみ箱だけを対象にし、実行前後で件数を測る', () => {
+    const text = readSkillScript(skillById('recyclebin.clear'));
+    // 他ユーザーのごみ箱や任意ドライブを引数で指定させない（固定コマンド）。
+    expect(text).toContain('Clear-RecycleBin -Force');
+    expect(text).not.toMatch(/-DriveLetter/);
+    expect(text).toContain('itemsBefore');
+    expect(text).toContain('itemsAfter');
+    expect(text).not.toContain('Test-IsElevated');
   });
 });
 
@@ -458,6 +602,16 @@ describe('validateParams', () => {
     expect(validateParams(serviceStartParams, {}).ok).toBe(false);
   });
 
+  it('service.restart も name を Spooler / W32Time に限定する', () => {
+    const restartParams = skillById('service.restart').paramsSchema;
+    expect(validateParams(restartParams, { name: 'Spooler' })).toEqual({ ok: true });
+    expect(validateParams(restartParams, { name: 'W32Time' })).toEqual({ ok: true });
+    expect(validateParams(restartParams, { name: 'Winmgmt' }).ok).toBe(false);
+    expect(validateParams(restartParams, { name: 'Spooler; Restart-Computer' }).ok).toBe(false);
+    expect(validateParams(restartParams, { service: 'Spooler' }).ok).toBe(false);
+    expect(validateParams(restartParams, {}).ok).toBe(false);
+  });
+
   it('temp.cleanup は olderThanDays の型と範囲（1..30）を強制する', () => {
     expect(validateParams(tempCleanupParams, { olderThanDays: 1 })).toEqual({ ok: true });
     expect(validateParams(tempCleanupParams, { olderThanDays: 30 })).toEqual({ ok: true });
@@ -488,6 +642,43 @@ describe('validateParams', () => {
     expect(validateParams(numberSchema, { ratio: 1.5 })).toEqual({ ok: true });
     expect(validateParams(numberSchema, { ratio: 0.4 }).ok).toBe(false);
     expect(validateParams(numberSchema, { ratio: 1.6 }).ok).toBe(false);
+  });
+
+  it('network.adapter.restart の interfaceAlias は長さと形式（先頭 "-" 不可）で検証する', () => {
+    const aliasParams = skillById('network.adapter.restart').paramsSchema;
+    // 日本語のアダプタ名（イーサネット / Wi-Fi）を許可する。
+    expect(validateParams(aliasParams, { interfaceAlias: 'Ethernet' })).toEqual({ ok: true });
+    expect(validateParams(aliasParams, { interfaceAlias: 'イーサネット' })).toEqual({ ok: true });
+    expect(validateParams(aliasParams, { interfaceAlias: 'Wi-Fi' })).toEqual({ ok: true });
+    expect(validateParams(aliasParams, { interfaceAlias: 'Ethernet 2' })).toEqual({ ok: true });
+    // 空・長すぎる・先頭 "-"・型違い・未知キーは拒否する。
+    expect(validateParams(aliasParams, { interfaceAlias: '' }).ok).toBe(false);
+    expect(validateParams(aliasParams, { interfaceAlias: 'A'.repeat(65) }).ok).toBe(false);
+    expect(validateParams(aliasParams, { interfaceAlias: '-Ethernet' }).ok).toBe(false);
+    expect(validateParams(aliasParams, { interfaceAlias: 1 }).ok).toBe(false);
+    expect(validateParams(aliasParams, {}).ok).toBe(false);
+    expect(validateParams(aliasParams, { interfaceAlias: 'Ethernet', command: 'x' }).ok).toBe(
+      false,
+    );
+  });
+
+  it('minLength / maxLength / pattern を文字列にも強制する（不正な pattern は拒否）', () => {
+    const lengthSchema = {
+      type: 'object',
+      additionalProperties: false,
+      properties: { name: { type: 'string', minLength: 2, maxLength: 4 } },
+    };
+    expect(validateParams(lengthSchema, { name: 'abc' })).toEqual({ ok: true });
+    expect(validateParams(lengthSchema, { name: 'a' }).ok).toBe(false);
+    expect(validateParams(lengthSchema, { name: 'abcde' }).ok).toBe(false);
+
+    // コンパイルできない pattern は「検証不能」として拒否する（fail-closed）。
+    const brokenPatternSchema = {
+      type: 'object',
+      additionalProperties: false,
+      properties: { name: { type: 'string', pattern: '[' } },
+    };
+    expect(validateParams(brokenPatternSchema, { name: 'abc' }).ok).toBe(false);
   });
 
   it('全 Skill が未知パラメータ（コマンド文字列など）を拒否する', () => {

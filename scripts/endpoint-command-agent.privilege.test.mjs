@@ -3,7 +3,7 @@
  *
  * 分離の本体はサーバ側（apps/api/src/routes/device.ts の統合テストで証明する）。
  * ここでは二重防御としてのエージェント側の契約を固定する:
- *   - admin の許可リストが「昇格必須 5 件」と一致する（カタログの elevation:true と突き合わせ）
+ *   - admin の許可リストが「昇格必須の Skill」と過不足なく一致する（カタログの elevation:true と突き合わせ）
  *   - 昇格必須の .ps1 が非昇格時に exit 3 で拒否する（最後の砦）
  *   - 既定は standard。admin で adminDeviceToken が無い/同一なら起動しない
  *
@@ -47,12 +47,15 @@ function runAgent(config, env = {}, args = ['--once', '--mock']) {
 }
 
 describe('端末エージェントの権限区分（二重防御）', () => {
-  it('admin の許可リストはカタログの昇格必須 Skill 5 件と一致する', () => {
+  it('admin の許可リストはカタログの昇格必須 Skill 8 件と一致する', () => {
     expect(agentElevatedSkillIds().sort()).toEqual([...ELEVATED_SKILLS].sort());
-    expect(ELEVATED_SKILLS).toHaveLength(5);
+    expect(ELEVATED_SKILLS).toHaveLength(8);
     expect(ELEVATED_SKILLS.sort()).toEqual([
       'bitlocker.status',
       'defender.quickscan',
+      'defender.update',
+      'network.adapter.restart',
+      'service.restart',
       'service.start',
       'spooler.queue.purge',
       'spooler.restart',

@@ -106,6 +106,7 @@ const CHANGE_STANDARD_REQUIRES = {
  * Skill カタログ。
  * - Phase B: 読み取り専用 5 件（risk_level 1）
  * - Phase 2: 修復系 7 件（risk_level 1〜3 / verify・rollback 付き）
+ * - Phase 7: 追加の修復系（到達率向上 / verify・rollback 付き・risk 3 以下）
  *
  * スクリプト文字列は保持せず、許可済みの引数配列だけを持つ。
  * `args` はテンプレート（`{{param}}`）で、端末エージェントが配列のまま
@@ -421,6 +422,205 @@ export const SKILL_CATALOG: SkillDefinition[] = [
       maskPii: true,
     },
   },
+  // ── Phase 7: 追加の修復系（到達率を上げる / 承認は人間の Gate） ──────
+  {
+    id: 'service.restart',
+    version: '1.0.0',
+    title: '指定サービスを再起動する',
+    summary:
+      '許可された Windows サービス（Spooler / W32Time）を再起動し、起動状態を確認します。設定は変更しません。',
+    symptoms: [
+      'サービスが応答しない',
+      'サービスを再起動したい',
+      'プリンタが応答しない',
+      '時刻同期がおかしい',
+    ],
+    os: ['windows'],
+    riskLevel: 2,
+    requires: CHANGE_ELEVATED_REQUIRES,
+    // service.start と同じ許可リスト。引数で対象を選ぶが、昇格操作の対象は増やさない。
+    paramsSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['name'],
+      properties: {
+        name: { type: 'string', enum: ['Spooler', 'W32Time'] },
+      },
+    },
+    scriptPath: 'scripts/skills/windows/service-restart.ps1',
+    args: ['-Service', '{{name}}'],
+    // 実行後の確認条件: 再起動スクリプト自身が再取得した status が Running であること
+    // （追撃ステップを積まずに、結果フィールドだけで決定的に評価できる）。
+    verify: {
+      description: '再起動後にサービスが Running であること',
+      resultField: 'status',
+      equals: 'Running',
+    },
+    // 可逆: 再起動のみでスタートアップの種類は変えない。停止していた場合は停止で戻せる。
+    rollback: {
+      reversible: true,
+      script: null,
+      args: [],
+      description:
+        '再起動のみで設定（スタートアップの種類）は変わらないため可逆。停止していたサービスを起動した場合は Stop-Service で元に戻せる（自動停止は行わない）。',
+    },
+    timeoutSec: 60,
+    // 実スクリプト（service-restart.ps1）の出力キーに合わせる。
+    resultSchema: {
+      name: 'string',
+      displayName: 'string',
+      status: 'string',
+      startType: 'string',
+      previousStatus: 'string',
+      restarted: 'boolean',
+    },
+    outputPolicy: {
+      maxBytes: 8192,
+      fieldsToAi: ['name', 'status', 'startType', 'previousStatus', 'restarted'],
+      maskPii: true,
+    },
+  },
+  {
+    id: 'network.adapter.restart',
+    version: '1.0.0',
+    title: 'ネットワークアダプタを再起動する',
+    summary:
+      '指定したネットワークアダプタを無効化→有効化してリンクを張り直し、有効化後の状態を確認します。',
+    symptoms: [
+      'ネットワークにつながらない',
+      'VPN の接続が切れる',
+      'アダプタを再起動したい',
+      '通信が不安定',
+    ],
+    os: ['windows'],
+    riskLevel: 3,
+    requires: CHANGE_ELEVATED_REQUIRES,
+    // アダプタ名は端末ごとに異なるため enum では固定できない。長さと形式
+    // （先頭が '-' でない）だけをスキーマで絞り、実在するアダプタ名との
+    // 完全一致は .ps1 が実行時に検証する。値はシェルを介さず引数配列で渡す。
+    paramsSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['interfaceAlias'],
+      properties: {
+        interfaceAlias: { type: 'string', minLength: 1, maxLength: 64, pattern: '^[^-]' },
+      },
+    },
+    scriptPath: 'scripts/skills/windows/network-adapter-restart.ps1',
+    args: ['-InterfaceAlias', '{{interfaceAlias}}'],
+    // 実行後の確認条件: 有効化後に再取得した status が Up であること。
+    verify: {
+      description: '有効化後にアダプタの status が Up であること',
+      resultField: 'status',
+      equals: 'Up',
+    },
+    // 可逆: 無効化→有効化のみで IP 構成・バインドは変えない。
+    rollback: {
+      reversible: true,
+      script: null,
+      args: [],
+      description:
+        '無効化→有効化のみで設定（IP 構成・バインド）は変わらないため可逆。必要なら Enable-NetAdapter を実行して有効に戻せる（自動復元は行わない）。',
+    },
+    timeoutSec: 60,
+    // 実スクリプト（network-adapter-restart.ps1）の出力キーに合わせる。
+    resultSchema: {
+      name: 'string',
+      interfaceDescription: 'string',
+      previousStatus: 'string',
+      status: 'string',
+      restarted: 'boolean',
+    },
+    outputPolicy: {
+      maxBytes: 8192,
+      fieldsToAi: ['name', 'status', 'previousStatus', 'restarted'],
+      maskPii: true,
+    },
+  },
+  {
+    id: 'defender.update',
+    version: '1.0.0',
+    title: 'Defender の定義を更新する',
+    summary: 'Microsoft Defender のウイルス定義を更新し、更新前後の定義バージョンを確認します。',
+    symptoms: ['ウイルス定義が古い', 'Defender を更新したい', '定義の更新に失敗する'],
+    os: ['windows'],
+    // 定義の更新だけで設定は変えないためリスク 1。ただし更新操作には昇格が必要。
+    riskLevel: 1,
+    requires: CHANGE_ELEVATED_REQUIRES,
+    paramsSchema: { type: 'object', additionalProperties: false, properties: {} },
+    scriptPath: 'scripts/skills/windows/defender-update.ps1',
+    args: [],
+    // 定義バージョンが実際に進んだことを確認する（既に最新なら false）。
+    verify: {
+      description: '定義バージョンが更新されたこと',
+      resultField: 'updated',
+      equals: true,
+    },
+    // 設定変更なし。定義は次回の自動更新でも上書きされる。
+    rollback: {
+      reversible: true,
+      script: null,
+      args: [],
+      description:
+        '定義の更新のみで設定変更はないため取消操作は不要（ロールバック不要）。定義は次回の自動更新で上書きされる。',
+    },
+    timeoutSec: 60,
+    // 実スクリプト（defender-update.ps1）の出力キーに合わせる。
+    resultSchema: {
+      updated: 'boolean',
+      previousVersion: 'string',
+      currentVersion: 'string',
+      lastUpdated: 'string',
+    },
+    outputPolicy: {
+      maxBytes: 8192,
+      fieldsToAi: ['updated', 'previousVersion', 'currentVersion'],
+      maskPii: true,
+    },
+  },
+  {
+    id: 'recyclebin.clear',
+    version: '1.0.0',
+    title: 'ごみ箱を空にする',
+    summary:
+      '実行ユーザーのごみ箱（全ドライブ）を空にし、削除した件数を確認します。削除したファイルは復元できません。',
+    symptoms: ['ごみ箱を空にしたい', 'ディスクが圧迫されている', 'ごみ箱のファイルを消したい'],
+    os: ['windows'],
+    riskLevel: 2,
+    requires: CHANGE_STANDARD_REQUIRES,
+    paramsSchema: { type: 'object', additionalProperties: false, properties: {} },
+    scriptPath: 'scripts/skills/windows/recyclebin-clear.ps1',
+    args: [],
+    // 1 件以上消して 0 件になったことを確認する（既に空なら false）。
+    verify: {
+      description: 'ごみ箱が空になったこと（1 件以上削除して 0 件）',
+      resultField: 'cleared',
+      equals: true,
+    },
+    // 復元不可: 削除したごみ箱のファイルは戻せない。影響範囲を明記する。
+    rollback: {
+      reversible: false,
+      script: null,
+      args: [],
+      description:
+        '復元不可。削除したごみ箱のファイルは元に戻せない。影響範囲: 実行ユーザーの全ドライブのごみ箱にある全ファイル（他ユーザーのごみ箱は対象外）。必要なら利用者が元のファイルを再作成する。',
+    },
+    timeoutSec: 60,
+    // 実スクリプト（recyclebin-clear.ps1）の出力キーに合わせる。
+    resultSchema: {
+      cleared: 'boolean',
+      clearedCount: 'number',
+      itemsBefore: 'number',
+      itemsAfter: 'number',
+      alreadyEmpty: 'boolean',
+      irreversible: 'boolean',
+    },
+    outputPolicy: {
+      maxBytes: 8192,
+      fieldsToAi: ['cleared', 'clearedCount', 'alreadyEmpty', 'irreversible'],
+      maskPii: true,
+    },
+  },
   {
     id: 'temp.cleanup',
     version: '1.0.0',
@@ -727,10 +927,15 @@ export function toSkillRecord(row: SkillRow): SkillRecord {
 
 /**
  * JSON Schema のうち、カタログで使う範囲を検証する。
- * object / string enum / required / additionalProperties:false / 型 / minimum / maximum。
+ * object / string enum / required / additionalProperties:false / 型 /
+ * minimum・maximum / minLength・maxLength / pattern。
  *
  * `minimum` / `maximum` は temp.cleanup の olderThanDays（1〜30）のような
  * 数値範囲をサーバ側でも強制するために見る（端末エージェント側でも再検証する）。
+ * `minLength` / `maxLength` / `pattern` は network.adapter.restart の
+ * interfaceAlias のように「端末ごとに値が変わり enum にできない」文字列を、
+ * 長さと形式で絞るために見る（実在確認は .ps1 が実行時に行う）。
+ * pattern は JSON Schema と同じく部分一致（呼び出し側が ^ で固定する）。
  * テンプレート引数に使う値だけを許可する。
  */
 export function validateParams(
@@ -762,6 +967,37 @@ export function validateParams(
     const type = typeof propertySchema.type === 'string' ? propertySchema.type : undefined;
     if (type === 'string' && typeof raw !== 'string') {
       return { ok: false, message: `パラメータ ${key} は文字列で指定してください。` };
+    }
+    if (type === 'string' && typeof raw === 'string') {
+      const minLength =
+        typeof propertySchema.minLength === 'number' ? propertySchema.minLength : null;
+      const maxLength =
+        typeof propertySchema.maxLength === 'number' ? propertySchema.maxLength : null;
+      const pattern = typeof propertySchema.pattern === 'string' ? propertySchema.pattern : null;
+      if (minLength !== null && raw.length < minLength) {
+        return {
+          ok: false,
+          message: `パラメータ ${key} は ${minLength} 文字以上で指定してください。`,
+        };
+      }
+      if (maxLength !== null && raw.length > maxLength) {
+        return {
+          ok: false,
+          message: `パラメータ ${key} は ${maxLength} 文字以内で指定してください。`,
+        };
+      }
+      if (pattern !== null) {
+        // 不正な正規表現は「検証できない」ので拒否する（fail-closed）。
+        let matched = false;
+        try {
+          matched = new RegExp(pattern).test(raw);
+        } catch {
+          matched = false;
+        }
+        if (!matched) {
+          return { ok: false, message: `パラメータ ${key} の形式が許可されていません。` };
+        }
+      }
     }
     if (type === 'number' && typeof raw !== 'number') {
       return { ok: false, message: `パラメータ ${key} は数値で指定してください。` };

@@ -361,15 +361,37 @@ async function loadLastResultAi(sessionId: string): Promise<unknown | null> {
   return rows[0]?.result_ai ?? null;
 }
 
+/**
+ * AI に渡す「直近の verify 評価」を選ぶ。
+ *
+ * script 形態 verify の追撃ステップ（verify_for_step_id あり）は、自身の verify を
+ * 持たない（no_verify_definition）代わりに、**親ステップの verify_result が更新**される。
+ * 追撃ステップの値をそのまま渡すと、AI は「評価不能」しか見られず再提案できない。
+ */
+export function effectiveVerifyForAi(
+  last: { verify_result: unknown; verify_for_step_id: string | null } | undefined,
+  parent: { verify_result: unknown } | undefined,
+): unknown | null {
+  if (!last) return null;
+  if (last.verify_for_step_id && parent) return parent.verify_result ?? last.verify_result;
+  return last.verify_result ?? null;
+}
+
 /** 直近の done ステップの verify 評価結果を、AI の終了宣言の材料として読む。 */
 async function loadLastVerifyResult(sessionId: string): Promise<unknown | null> {
-  const rows = await sql<{ verify_result: unknown }[]>`
-    SELECT verify_result FROM resolution_steps
-    WHERE session_id = ${sessionId} AND status = 'done' AND verify_result IS NOT NULL
-    ORDER BY seq DESC
+  const rows = await sql<
+    { verify_result: unknown; verify_for_step_id: string | null; parent_verify_result: unknown }[]
+  >`
+    SELECT st.verify_result, st.verify_for_step_id, parent.verify_result AS parent_verify_result
+    FROM resolution_steps st
+    LEFT JOIN resolution_steps parent ON parent.id = st.verify_for_step_id
+    WHERE st.session_id = ${sessionId} AND st.status = 'done'
+    ORDER BY st.seq DESC
     LIMIT 1
   `;
-  return rows[0]?.verify_result ?? null;
+  const row = rows[0];
+  if (!row) return null;
+  return effectiveVerifyForAi(row, { verify_result: row.parent_verify_result });
 }
 
 function stepDto(row: StepRow, session: SessionRow) {
