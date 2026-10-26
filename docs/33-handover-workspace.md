@@ -152,7 +152,7 @@
 | インライン時の「×」 | 非表示。`Esc` / 左ナビ再クリック / 別ナビで閉じる。全画面フォールバック時のみ表示 |
 | AI に聞く | 質問入力→回答・根拠 KB・モデル・確信度を表示。直接受付の案件はナレッジ検索で回答 |
 | 入力と表示の区別 | 入力カードの背景・入力欄の枠・「入力」「表示」タグを確認 |
-| プレビュー反映 | 2026-10-26 13:33 に `ai-helpdesk-api.service` を再起動（`commit=f237738` / health 200 / 公開URLは Cloudflare Access へ 302） |
+| プレビュー反映 | 2026-10-26 13:44 に `ai-helpdesk-api.service` を再起動（`commit=c573233` / health 200 / 公開URLは Cloudflare Access へ 302） |
 | AI窓口由来の案件（テスト用フィクスチャ） | 共有情報、会話、提案、承認ハッシュの表示を確認 |
 
 証跡: `docs/evidence/handover-workspace/`
@@ -164,8 +164,8 @@
 
 ## 9. 未完了・次段階
 
-1. **プレビュー環境への反映**: 2026-10-26 13:33 に `ai-helpdesk-api.service` を再起動済み
-   （`commit=f237738` / health 200 / 公開URLは Cloudflare Access のログインへ 302）。
+1. **プレビュー環境への反映**: 2026-10-26 13:44 に `ai-helpdesk-api.service` を再起動済み
+   （`commit=c573233` / health 200 / 公開URLは Cloudflare Access のログインへ 302）。
    配信 HTML はプロセス起動時にキャッシュされるため、ブリッジ変更時は再起動が必要。
 2. 引継ぎ受信（`case_handovers` の実データ）での claim からマージまでの実機確認。
 3. 解決ループの `Skill` / `verify` / 新しい承認ハッシュをこの画面に接続するかの設計。
