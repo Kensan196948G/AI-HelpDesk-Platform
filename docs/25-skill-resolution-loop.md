@@ -447,7 +447,7 @@
 | 権限分離 | **実装済み**。`016_agent_privilege.sql` で `device_tokens.privilege`（standard / admin・既定 standard）を追加。`GET /api/device/command` は `skills.requires->>'elevation'` で配信を分離し、`POST /api/device/command/:id/result` は権限不一致を 403 `PRIVILEGE_MISMATCH` で拒否する（サーバ側で強制）。エージェントは `AIHD_AGENT_PRIVILEGE`（既定 standard）と `adminDeviceToken` で二重防御 |
 | 検証 | typecheck / lint（自変更ファイル）/ test **327 件 PASS**（2 回連続実行）。`.ps1` 12 件の Parser 構文 OK、PSScriptAnalyzer Error 0。**Windows 実機の実行検証は未実施**（静的契約まで） |
 | 残り（人間の Gate） | 修復 7 件の承認（`scripts/approve-skills.ts` を人間が実行）、管理者トークンの発行、Windows 実機でのサービス登録（管理者権限）と実行検証 |
-| 既知の制約 | UTF-8 BOM なし（既存 5 件と同一）。PS 5.1 では日本語 stderr が化け得る |
+| 既知の制約 | ~~UTF-8 BOM なし~~ → **2026-10-26 実機で構文エラーを確認し、全12件に BOM を付与**（PS 5.1 は BOM なし UTF-8 を ANSI として解釈するため） |
 
 Phase B の実測（隔離 DB + mock エージェント）:
 - `network.adapters` 提案 → Y → `done` → 結果表示 → 継続 Y → `os.info` 提案 → Y → `done` → 継続 N → `stopped`

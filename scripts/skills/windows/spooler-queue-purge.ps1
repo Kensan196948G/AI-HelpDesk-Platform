@@ -1,4 +1,4 @@
-<#
+﻿<#
   spooler.queue.purge Skill（取消不可 / Phase 2）
 
   目的:

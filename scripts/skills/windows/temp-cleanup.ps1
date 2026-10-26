@@ -1,4 +1,4 @@
-<#
+﻿<#
   temp.cleanup Skill（修復・復元不可 / Phase 2）
 
   目的:
