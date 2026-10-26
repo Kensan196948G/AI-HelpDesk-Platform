@@ -14,7 +14,7 @@
  *   - Windows: SPOOLER_RESTART（Restart-Service Spooler）
  *   - それ以外: 実行せず「未対応OS」として報告（Linux での動作確認用）
  *
- * Skill 実行（Phase B 読み取り 5 件 / Phase 2 修復 7 件）:
+ * Skill 実行（Phase B 読み取り 5 件 / Phase 2 修復 7 件 / Phase 7 修復 4 件）:
  *   command に skill_id / skill_version がある場合だけ、リポジトリ内の許可済み
  *   PowerShell スクリプト（scripts/skills/windows/）を引数配列で実行する。
  *   - Windows: powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass
@@ -27,7 +27,7 @@
  *
  * 権限区分（AIHD_AGENT_PRIVILEGE / 既定 standard。docs/25 §12・§17-2）:
  *   - standard: 従来どおり。`config.deviceToken` を使い、昇格不要のコマンドだけを受け取る。
- *   - admin   : 昇格必須の 5 件（ELEVATED_SKILL_IDS）だけを実行できる。`config.adminDeviceToken`
+ *   - admin   : 昇格必須の Skill（ELEVATED_SKILL_IDS）だけを実行できる。`config.adminDeviceToken`
  *               （standard とは別トークン）が必須で、無ければ起動しない。許可リスト外の
  *               skill_id・skill_id なしのコマンドは「未知の Skill」として拒否する（二重防御）。
  *   - 分離の本体はサーバ側（device_tokens.privilege）で強制する。ここは
@@ -38,7 +38,7 @@
  *   - SKILL_SCRIPTS に無い skill_id は実行しない（未知 Skill を拒否）。
  *   - 人間が承認した scripts/skills/approved.json と id@version / contentHash /
  *     scriptHash が一致しない Skill も実行しない（承認は人間の Gate）。
- *   - Phase 2 の修復 7 件は、人間が承認するまで manifest に無いため拒否される（仕様）。
+ *   - Phase 2 / Phase 7 の修復 Skill は、人間が承認するまで manifest に無いため拒否される（仕様）。
  *   - パラメータは params を agent 側でも再検証し、許可値・整数範囲だけを引数にする。
  *   - 注意: 本ファイルの実行検証は Windows 実機が無いため未実施（静的な契約検証のみ）。
  *
@@ -73,11 +73,15 @@ const mockMode = Boolean(args.mock) || process.platform !== 'win32';
 // ── 権限区分（既定 standard） ────────────────────────────────────────
 // サーバ側 device_tokens.privilege と対になる。admin は昇格必須 Skill だけを実行する。
 const AGENT_PRIVILEGES = Object.freeze(['standard', 'admin']);
-// 昇格必須（skills.requires.elevation = true）の修復 5 件。admin の許可リストはこれだけ。
+// 昇格必須（skills.requires.elevation = true）の Skill。admin の許可リストはこれだけ。
+// カタログ側の elevation:true と過不足なく一致させる（privilege.test.mjs が突き合わせる）。
 const ELEVATED_SKILL_IDS = Object.freeze([
   'spooler.restart',
   'spooler.queue.purge',
   'service.start',
+  'service.restart',
+  'network.adapter.restart',
+  'defender.update',
   'bitlocker.status',
   'defender.quickscan',
 ]);
@@ -146,6 +150,11 @@ const OUTPUT_LIMIT_BYTES = 64 * 1024;
 const SUMMARY_LIMIT_CHARS = 2_000;
 const SERVICE_NAMES = Object.freeze(['Spooler', 'W32Time', 'Winmgmt']);
 const SERVICE_START_NAMES = Object.freeze(['Spooler', 'W32Time']);
+// service.restart も service.start と同じ許可リスト（対象は増やさない）。
+const SERVICE_RESTART_NAMES = Object.freeze(['Spooler', 'W32Time']);
+// network.adapter.restart のアダプタ名は端末ごとに異なるため enum にできない。
+// 長さだけを上限で絞り、実在確認は .ps1（実行端末の一覧との完全一致）が行う。
+const INTERFACE_ALIAS_MAX_LENGTH = 64;
 const PURGE_CONFIRM_TOKEN = 'PURGE';
 const TEMP_CLEANUP_MIN_DAYS = 1;
 const TEMP_CLEANUP_MAX_DAYS = 30;
@@ -182,6 +191,25 @@ const SKILL_SCRIPTS = new Map([
       buildArgs: (params) => ['-Service', requireAllowedStartService(params)],
     },
   ],
+  // ── Phase 7: 追加の修復系（manifest 承認後にだけ実行できる） ──
+  [
+    'service.restart',
+    {
+      file: 'service-restart.ps1',
+      buildArgs: (params) => ['-Service', requireRestartService(params)],
+    },
+  ],
+  [
+    'network.adapter.restart',
+    {
+      file: 'network-adapter-restart.ps1',
+      // アダプタ名は端末ごとに異なるため enum にできない。形だけを検証し、
+      // 実在するアダプタ名との完全一致は .ps1 が実行時に確認する。
+      buildArgs: (params) => ['-InterfaceAlias', requireInterfaceAlias(params)],
+    },
+  ],
+  ['defender.update', { file: 'defender-update.ps1', buildArgs: () => [] }],
+  ['recyclebin.clear', { file: 'recyclebin-clear.ps1', buildArgs: () => [] }],
   [
     'temp.cleanup',
     {
@@ -276,6 +304,21 @@ const MOCK_FIXTURES = Object.freeze({
     scanType: 'QuickScan',
     startedAt: '2026-10-25T00:00:00.0000000Z',
   }),
+  // ── Phase 7: 追加の修復系（PII なし・実出力キーに合わせた固定 fixture） ──
+  'defender.update': Object.freeze({
+    updated: true,
+    previousVersion: '1.415.118.0',
+    currentVersion: '1.415.120.0',
+    lastUpdated: '2026-10-25T00:00:00.0000000Z',
+  }),
+  'recyclebin.clear': Object.freeze({
+    cleared: true,
+    clearedCount: 12,
+    itemsBefore: 12,
+    itemsAfter: 0,
+    alreadyEmpty: false,
+    irreversible: true,
+  }),
 });
 
 const MOCK_SERVICES = Object.freeze({
@@ -358,6 +401,48 @@ function requireAllowedStartService(params) {
     );
   }
   return name;
+}
+
+/** service.restart の再起動対象を許可リストで検証する（agent 側でも多層防御）。 */
+function requireRestartService(params) {
+  const raw = params?.name;
+  const name = typeof raw === 'string' ? raw.trim() : '';
+  if (!SERVICE_RESTART_NAMES.includes(name)) {
+    throw new Error(
+      `service.restart の name が許可されていません: ${name === '' ? '(empty)' : name}`,
+    );
+  }
+  return name;
+}
+
+/**
+ * network.adapter.restart の interfaceAlias を検証する（agent 側でも多層防御）。
+ *
+ * 値はシェルを介さず引数配列で渡すが、先頭 '-'（PowerShell のパラメータ名と
+ * 誤認され得る）・制御文字・長すぎる値を拒否する。実在するアダプタ名かどうかは
+ * .ps1 が実行端末の一覧と完全一致で確認する（ここでは端末の一覧を持たない）。
+ */
+function requireInterfaceAlias(params) {
+  const raw = params?.interfaceAlias;
+  if (typeof raw !== 'string' || raw.trim() === '') {
+    throw new Error('network.adapter.restart の interfaceAlias は空でない文字列で指定してください');
+  }
+  if (raw.length > INTERFACE_ALIAS_MAX_LENGTH) {
+    throw new Error(
+      `network.adapter.restart の interfaceAlias は ${INTERFACE_ALIAS_MAX_LENGTH} 文字以内で指定してください`,
+    );
+  }
+  if (raw.startsWith('-')) {
+    throw new Error('network.adapter.restart の interfaceAlias を "-" で開始できません');
+  }
+  // 制御文字（改行・タブ等）はアダプタ名に現れない（.ps1 でも同じ検査をする）。
+  for (const char of raw) {
+    const code = char.codePointAt(0) ?? 0;
+    if (code < 0x20 || code === 0x7f) {
+      throw new Error('network.adapter.restart の interfaceAlias に制御文字を含められません');
+    }
+  }
+  return raw;
 }
 
 /**
@@ -443,6 +528,20 @@ function runMockSkill(skillId, params) {
     // 起動対象も mock で検証する（本番と同じ fail-closed を維持）。
     const name = requireAllowedStartService(params);
     normalized = { ...MOCK_SERVICES[name], previousStatus: 'Stopped', started: true };
+  } else if (skillId === 'service.restart') {
+    // 再起動対象も mock で検証する（本番と同じ fail-closed を維持）。
+    const name = requireRestartService(params);
+    normalized = { ...MOCK_SERVICES[name], previousStatus: 'Running', restarted: true };
+  } else if (skillId === 'network.adapter.restart') {
+    // アダプタ名も mock で検証する（本番と同じ fail-closed を維持）。
+    const alias = requireInterfaceAlias(params);
+    normalized = {
+      name: alias,
+      interfaceDescription: 'Intel(R) Ethernet Connection I219-LM',
+      previousStatus: 'Disabled',
+      status: 'Up',
+      restarted: true,
+    };
   } else if (skillId === 'spooler.queue.purge') {
     requirePurgeConfirm(params);
     normalized = structuredClone(MOCK_FIXTURES[skillId]);
