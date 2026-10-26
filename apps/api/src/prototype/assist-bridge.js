@@ -13,7 +13,13 @@
  */
 (() => {
   if (window.__AIHD_ASSIST_BRIDGE__) return;
-  window.__AIHD_ASSIST_BRIDGE__ = { version: 1, at: new Date().toISOString() };
+  // rspDeepLink は純粋な URL 生成関数で、状態も秘密も持たない。
+  // 画面からは使わず、単体テスト (assist-bridge.test.ts) の検証点として公開する。
+  window.__AIHD_ASSIST_BRIDGE__ = {
+    version: 2,
+    at: new Date().toISOString(),
+    rspDeepLink: (c) => ahRspDeepLink(c),
+  };
 
   const AH = {
     busy: null,
@@ -784,18 +790,62 @@
       .join('');
   }
 
-  function ahRspLinks() {
+  /**
+   * 本人が共有した PC 情報の端末名だけを返す。
+   *
+   * 共有されていない PC 情報は担当者に見せないのと同じ理由で、URL にも載せない
+   * (AI-HelpDesk docs/23-rsp-meshcentral-integration.md §5: 推測・漏えいで
+   * 別の端末を開かせない)。空文字なら RSP 側は案件だけを開き、端末は
+   * オペレータが検索して選ぶ。
+   */
+  function ahShareableDevice(c) {
+    try {
+      if (!pcVisible(c)) return '';
+      const snap = c && c.pc && c.pc.state === 'done' ? c.pc.snap : null;
+      const device = snap && snap.device ? String(snap.device).trim() : '';
+      return device;
+    } catch (error) {
+      return '';
+    }
+  }
+
+  /**
+   * RSP の AI支援ビューを案件・端末付きで開く URL。
+   *
+   * 受け側は RSP の `/?helpdeskCase=<案件ID>&hostname=<端末名>`
+   * (RSP docs/36-rsp-integration.md §5 Phase 3 / RSP docs/webui-navigation.md §5)。
+   * caseId は Cowork の案件IDだけでなく INC-/TKT- 番号でも RSP 側が解決する。
+   */
+  function ahRspDeepLink(c) {
+    const base = String(ahRspUrl || '').replace(/\/+$/, '');
+    const params = [];
+    const caseId = c && c.id ? String(c.id).trim() : '';
+    if (caseId) params.push('helpdeskCase=' + encodeURIComponent(caseId));
+    const device = ahShareableDevice(c);
+    if (device) params.push('hostname=' + encodeURIComponent(device));
+    return base + '/' + (params.length ? '?' + params.join('&') : '');
+  }
+
+  function ahRspLinks(c) {
+    const rspHref = ahRspDeepLink(c);
+    const device = ahShareableDevice(c);
     return (
       '<div class="ahd-row" style="margin-top:8px">' +
       '<a class="u-btn" href="' +
       ahEsc(ahMeshUrl) +
       '" target="_blank" rel="noopener noreferrer">MeshCentralを開く</a>' +
       '<a class="u-btn" href="' +
-      ahEsc(ahRspUrl) +
-      '" target="_blank" rel="noopener noreferrer">RSPで開く</a>' +
+      ahEsc(rspHref) +
+      '" target="_blank" rel="noopener noreferrer" title="' +
+      ahEsc(
+        device
+          ? device + ' の端末詳細を RSP で開きます'
+          : '案件を RSP で開きます（端末は RSP 側で選択）',
+      ) +
+      '">RSPで支援する</a>' +
       '</div>' +
-      '<div class="ahd-msg">RSP / MeshCentral のログインは Entra ID です。端末はコンピュータ名で選んでください。' +
-      'デバイス指定のセッション URL は Phase 2（RSP 統合 API）で自動化します。</div>'
+      '<div class="ahd-msg">RSP は案件と端末を指定して開きます（端末が一致しない場合は RSP 側の検索から選べます）。' +
+      'RSP / MeshCentral のログインは Entra ID です。</div>'
     );
   }
 
@@ -823,7 +873,7 @@
         ahEsc(L.inc.id) +
         '</div>' +
         '<div class="ahd-row"><button class="u-btn pri" data-act="wRemoteRequest">本人に遠隔支援を依頼</button></div>' +
-        ahRspLinks() +
+        ahRspLinks(c) +
         '<div class="ahd-msg">実行が必要な操作は、既存の許可リスト（SPOOLER_RESTART）と本人の Y/N・管理者承認を通します。</div>' +
         '</div>'
       );
@@ -924,7 +974,7 @@
       ahEsc(statusLabel) +
       '</b></div>' +
       body +
-      (isHelper ? ahRspLinks() : '') +
+      (isHelper ? ahRspLinks(c) : '') +
       '<div class="ahd-msg">遠隔支援の依頼・承認・案内の送信は監査ログに記録します。</div>' +
       '</div>'
     );

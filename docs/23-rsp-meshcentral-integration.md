@@ -148,8 +148,10 @@ AI HelpDesk サーバー側で、AI に渡すツールを限定します。
 - AI HelpDesk に `RSP_BASE_URL`（例: `https://rsp.mirai-remotetools.com`）を設定。
 - B さんの STEP 5 に「RSPで開く」を追加。RSP WebUI で端末を検索し、既存の
   「MeshAgent接続」「MeshAgentターミナル接続」を使う。
-- RSP WebUI に `?hostname=<hostname>` のディープリンクを追加できれば、端末検索を省略できる
-  （RSP 側の小さな改修）。
+- RSP WebUI の `?hostname=<hostname>` ディープリンクは実装済み（2026-10-26）。
+  3ペインの「RSPで支援する」は `{RSP_BASE_URL}/?helpdeskCase=<案件ID>&hostname=<端末名>` を開き、
+  RSP の端末詳細（360°）へ直接着地する。端末名は本人が共有した PC 情報がある場合だけ付ける
+  （共有範囲外の端末名を URL に載せない）。
 - AI は「GUI 手順 / PowerShell 案」を返すだけ。実行は B さんが RSP で行う。
 
 ### 4-2. Phase 2（RSP 統合 API）
