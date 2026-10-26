@@ -393,6 +393,16 @@ describe('端末スクリプトの静的契約（Windows 実機なし・実行�
     }
   });
 
+  // 2026-10-26 実機（Windows 11 / PowerShell 5.1）で、BOM なし UTF-8 の日本語コメントが
+  // ANSI として解釈されて構文エラーになった（spooler.restart が実行不能）。
+  // 端末エージェントは powershell.exe（5.1）を呼ぶため、全スクリプトで BOM を必須にする。
+  it('スクリプトは UTF-8 BOM 付きで保存されている（PowerShell 5.1 の文字化け防止）', () => {
+    for (const skill of SKILL_CATALOG) {
+      const buf = readFileSync(path.join(REPO_ROOT, skill.scriptPath));
+      expect([...buf.subarray(0, 3)], `${skill.id} は BOM なし`).toEqual([0xef, 0xbb, 0xbf]);
+    }
+  });
+
   it('BitLocker は回復キーを取得・出力しない', () => {
     const text = readSkillScript(skillById('bitlocker.status'));
     expect(text).not.toMatch(/Get-BitLockerKeyProtector|protectors\s+-get/i);

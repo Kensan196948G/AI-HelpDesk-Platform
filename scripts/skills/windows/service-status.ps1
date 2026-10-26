@@ -1,4 +1,4 @@
-<#
+﻿<#
   service.status Skill（読み取り専用 / Phase B）
 
   目的:

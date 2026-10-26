@@ -1,4 +1,4 @@
-<#
+﻿<#
   service.start Skill（修復・可逆 / Phase 2）
 
   目的:

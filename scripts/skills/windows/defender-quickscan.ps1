@@ -1,4 +1,4 @@
-<#
+﻿<#
   defender.quickscan Skill（実行・設定変更なし / Phase 2 / KB-2026-0008 の穴埋め）
 
   目的:

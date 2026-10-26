@@ -1,4 +1,4 @@
-<#
+﻿<#
   bitlocker.status Skill（読み取り専用 / Phase 2 / KB-2026-0007 の穴埋め）
 
   目的:

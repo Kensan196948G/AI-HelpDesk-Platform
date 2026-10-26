@@ -4,110 +4,110 @@
     {
       "id": "os.info",
       "version": "1.0.0",
-      "scriptHash": "sha256:3eb14a4ff13d60373a2bd05ab0db2fd9f33226991368337487dbb2066cae1bb6",
-      "contentHash": "sha256:d7ac254f6ad7196644755863303d963653cd4e25b6c0f3eb05c398fb386b156b",
+      "scriptHash": "sha256:3399081a905ea256740356acb4f743d8ecefcaf28529ec1c2e2f373e17ac808b",
+      "contentHash": "sha256:1d2416c7f850df4ebf04dd1b375366e4171ad3e5e33219a807fc96e8ea3a3a5a",
       "approvedBy": "kensan1969@gmail.com",
-      "approvedAt": "2026-10-25T15:55:39.162Z",
-      "note": "2026-10-26 オーナー承認: temp.cleanup の verify を deletedBytes>=1 に強化"
+      "approvedAt": "2026-10-26T00:29:18.746Z",
+      "note": "2026-10-26 実機検証: PowerShell 5.1 対応で全スクリプトへ UTF-8 BOM を付与"
     },
     {
       "id": "disk.space",
       "version": "1.0.0",
-      "scriptHash": "sha256:a07b9aae1957bb32bc7da3dbc61a9d6c502a8343a50f4b116ff52318d6eb277d",
-      "contentHash": "sha256:1810ec9b7e7d9612654f698741f078b7f3125bffa16f3ab12fe51701af3024a5",
+      "scriptHash": "sha256:1c4b0685fa75c347b623eb889e77d93aa73a2f618ae979440523a36342a6ddc8",
+      "contentHash": "sha256:54c217f1ab84b44bb9f0b4aa73bb7748ebb50ee5178286ca59ad286ac9ee43a9",
       "approvedBy": "kensan1969@gmail.com",
-      "approvedAt": "2026-10-25T15:55:39.162Z",
-      "note": "2026-10-26 オーナー承認: temp.cleanup の verify を deletedBytes>=1 に強化"
+      "approvedAt": "2026-10-26T00:29:18.746Z",
+      "note": "2026-10-26 実機検証: PowerShell 5.1 対応で全スクリプトへ UTF-8 BOM を付与"
     },
     {
       "id": "spooler.status",
       "version": "1.0.0",
-      "scriptHash": "sha256:38efeb36160b873cecf8d15358ff02b000b792284a3b5b8d19016e13a37d166c",
-      "contentHash": "sha256:62d6e79f5cf510464fffc2616ce0f4cd22d33954681b7da006bff876863ed828",
+      "scriptHash": "sha256:0122190ad31e0328d9a00e438fe56af2e5c5ec6e0e6702042ebdb8e3d364a330",
+      "contentHash": "sha256:17eef91c11f8d84aab75490832e41335e563e680577d4a844ee9f1f6e8be6b99",
       "approvedBy": "kensan1969@gmail.com",
-      "approvedAt": "2026-10-25T15:55:39.162Z",
-      "note": "2026-10-26 オーナー承認: temp.cleanup の verify を deletedBytes>=1 に強化"
+      "approvedAt": "2026-10-26T00:29:18.746Z",
+      "note": "2026-10-26 実機検証: PowerShell 5.1 対応で全スクリプトへ UTF-8 BOM を付与"
     },
     {
       "id": "service.status",
       "version": "1.0.0",
-      "scriptHash": "sha256:b577fb8e6f5aa7588ce93d37ffb7eee91c1624a70db921c6cb21ad68f9c01ab3",
-      "contentHash": "sha256:5c154948fdfc704f00c8acbd16741dabe4220a3e6ca00739f61211d6d7ac3f1d",
+      "scriptHash": "sha256:25e5666a6376d5c77dfef300d85d0a47f756c9f6aba428db10c858fe7460af43",
+      "contentHash": "sha256:acf33cc34cdcf7e2ce1aef727ba6e9d0bf7a3cbae5708ff13d90dbd253f4b461",
       "approvedBy": "kensan1969@gmail.com",
-      "approvedAt": "2026-10-25T15:55:39.162Z",
-      "note": "2026-10-26 オーナー承認: temp.cleanup の verify を deletedBytes>=1 に強化"
+      "approvedAt": "2026-10-26T00:29:18.746Z",
+      "note": "2026-10-26 実機検証: PowerShell 5.1 対応で全スクリプトへ UTF-8 BOM を付与"
     },
     {
       "id": "network.adapters",
       "version": "1.0.0",
-      "scriptHash": "sha256:13698d5c0cf06aed87f5f5ba4342747a42cca58045df78f8581917300c4fa941",
-      "contentHash": "sha256:d148bd14a65beb2120718f56ef0a649cc7292836b5991852718a7943006c769c",
+      "scriptHash": "sha256:af3107553f9da4ee3194d2421bbe7d998a17d1fba1242dd165a2db11289b3138",
+      "contentHash": "sha256:8526c7e7442b3593e15243554539b36b2a4ef8ab71f81bd77c1206d5a653acc6",
       "approvedBy": "kensan1969@gmail.com",
-      "approvedAt": "2026-10-25T15:55:39.162Z",
-      "note": "2026-10-26 オーナー承認: temp.cleanup の verify を deletedBytes>=1 に強化"
+      "approvedAt": "2026-10-26T00:29:18.746Z",
+      "note": "2026-10-26 実機検証: PowerShell 5.1 対応で全スクリプトへ UTF-8 BOM を付与"
     },
     {
       "id": "spooler.restart",
       "version": "1.0.0",
-      "scriptHash": "sha256:c5e94d258ec4f3601b86ae35c4d66f6120deef7d52eaf127228c8aba8fca9950",
-      "contentHash": "sha256:3460d8ff156ba69bfe379bff9f6cf9919ff3d64988569daff959584590e8ce2d",
+      "scriptHash": "sha256:1425657d32a6712a511ec564183fa8cce57c9cc19ef783a6d6996777a26c754c",
+      "contentHash": "sha256:cdd91d5a1ad5fda0ff45f6551656b9a38b4286aa509ee5eaa9aa50b8f47d34ba",
       "approvedBy": "kensan1969@gmail.com",
-      "approvedAt": "2026-10-25T15:55:39.162Z",
-      "note": "2026-10-26 オーナー承認: temp.cleanup の verify を deletedBytes>=1 に強化"
+      "approvedAt": "2026-10-26T00:29:18.746Z",
+      "note": "2026-10-26 実機検証: PowerShell 5.1 対応で全スクリプトへ UTF-8 BOM を付与"
     },
     {
       "id": "spooler.queue.purge",
       "version": "1.0.0",
-      "scriptHash": "sha256:ecf7e4498fddb017e1dd6a2591abb69f3c3f06eeefc87cf7df27575bf0aac81b",
-      "contentHash": "sha256:f6b7505960e77454f634c40dbda9ec18b12c5e4afa00a2361f576653d3e5d368",
+      "scriptHash": "sha256:3ee4d9b1c7dd1db5a3c607f87ee01e9a0b2dd643c2ff98c358c0c3e2027f3311",
+      "contentHash": "sha256:4fff53ab452c3bfb1fcf475db87834c1440443a6eba9bb562f06dd589775985b",
       "approvedBy": "kensan1969@gmail.com",
-      "approvedAt": "2026-10-25T15:55:39.162Z",
-      "note": "2026-10-26 オーナー承認: temp.cleanup の verify を deletedBytes>=1 に強化"
+      "approvedAt": "2026-10-26T00:29:18.746Z",
+      "note": "2026-10-26 実機検証: PowerShell 5.1 対応で全スクリプトへ UTF-8 BOM を付与"
     },
     {
       "id": "service.start",
       "version": "1.0.0",
-      "scriptHash": "sha256:b869689ebca3a889d3b67da48ae74f6f2a0e190574583d698bb2bb675a567cce",
-      "contentHash": "sha256:737c56a989f24ceb42aa1d4775b9871213f07ee918c1d35390b4081ba7c2dc85",
+      "scriptHash": "sha256:c42417a91ef565652b67b81e7b45410a27a2a11a6d93f60715ecd376ac0bc707",
+      "contentHash": "sha256:90ed06de3798b2ac476c5552e594077b2efc28dc24f48253af62ac18d08da7e2",
       "approvedBy": "kensan1969@gmail.com",
-      "approvedAt": "2026-10-25T15:55:39.162Z",
-      "note": "2026-10-26 オーナー承認: temp.cleanup の verify を deletedBytes>=1 に強化"
+      "approvedAt": "2026-10-26T00:29:18.746Z",
+      "note": "2026-10-26 実機検証: PowerShell 5.1 対応で全スクリプトへ UTF-8 BOM を付与"
     },
     {
       "id": "temp.cleanup",
       "version": "1.0.0",
-      "scriptHash": "sha256:6df628cada387995406c9d036d11e36afae27dc5a49f960a4b8e97db73ab4e25",
-      "contentHash": "sha256:df9d7a8cc31cc67ceecf4fee4b1d5122a9cb6e0c618a119a1743f658f01a618d",
+      "scriptHash": "sha256:9601884df798e34592be1cee125e405fecd9473d7ae7059c4dbadec58fd9c6de",
+      "contentHash": "sha256:bf5439db83a3f5052e0fde89327096ef1ec1d6991f1272100794129ad7d6d597",
       "approvedBy": "kensan1969@gmail.com",
-      "approvedAt": "2026-10-25T15:55:39.162Z",
-      "note": "2026-10-26 オーナー承認: temp.cleanup の verify を deletedBytes>=1 に強化"
+      "approvedAt": "2026-10-26T00:29:18.746Z",
+      "note": "2026-10-26 実機検証: PowerShell 5.1 対応で全スクリプトへ UTF-8 BOM を付与"
     },
     {
       "id": "dns.flush",
       "version": "1.0.0",
-      "scriptHash": "sha256:fdfa1b0e6f5fa46799cb041348388f38cf21af4bc8d0fbf78599ea07533ebbe2",
-      "contentHash": "sha256:48425bc5eb461366cf1691f8baaca3c38563a614587193df5505c53f2e81d1dc",
+      "scriptHash": "sha256:23e95709d203df1eead93902b41354c3954a3a7c323b133fe7f8ef6ae4a5ea88",
+      "contentHash": "sha256:43679dad8be48dbebe0127c7917895d20a60f7a02a7a43db1df0e753018740df",
       "approvedBy": "kensan1969@gmail.com",
-      "approvedAt": "2026-10-25T15:55:39.162Z",
-      "note": "2026-10-26 オーナー承認: temp.cleanup の verify を deletedBytes>=1 に強化"
+      "approvedAt": "2026-10-26T00:29:18.746Z",
+      "note": "2026-10-26 実機検証: PowerShell 5.1 対応で全スクリプトへ UTF-8 BOM を付与"
     },
     {
       "id": "bitlocker.status",
       "version": "1.0.0",
-      "scriptHash": "sha256:c45e631f973943c6c7ada0b641222df613ca99c59bffc9bd1f14a3c44e314cb1",
-      "contentHash": "sha256:66ef95144dbb18ff1be97befeb0e4e33fc48e1bf072ecdbf7f5f843301fa99f5",
+      "scriptHash": "sha256:2c6a594b2f53b6d38fe3e0b3d2ec1f44348472e29c22d9beb20c2571f661fc11",
+      "contentHash": "sha256:059988ca78e8d0ba2a923ca529ea02fde5e62e534ebc961381d080379b2d9e77",
       "approvedBy": "kensan1969@gmail.com",
-      "approvedAt": "2026-10-25T15:55:39.162Z",
-      "note": "2026-10-26 オーナー承認: temp.cleanup の verify を deletedBytes>=1 に強化"
+      "approvedAt": "2026-10-26T00:29:18.746Z",
+      "note": "2026-10-26 実機検証: PowerShell 5.1 対応で全スクリプトへ UTF-8 BOM を付与"
     },
     {
       "id": "defender.quickscan",
       "version": "1.0.0",
-      "scriptHash": "sha256:e680ad54172765cedda2d358c50327e507ca7533cdebc8668ff96dc8da5d1a07",
-      "contentHash": "sha256:9d042749e12a187e46811812dc7f6092d020ea56d6e42fce7a8555dc0b1af701",
+      "scriptHash": "sha256:050946da4500b7a88c4dffb583a725b45f28efb56ded73d8941df3ce5cb3d219",
+      "contentHash": "sha256:b5d5d1763d02c06b79f712bfd6bff74435f99fd0c2df11b8a2e405b5b65f4e4c",
       "approvedBy": "kensan1969@gmail.com",
-      "approvedAt": "2026-10-25T15:55:39.162Z",
-      "note": "2026-10-26 オーナー承認: temp.cleanup の verify を deletedBytes>=1 に強化"
+      "approvedAt": "2026-10-26T00:29:18.746Z",
+      "note": "2026-10-26 実機検証: PowerShell 5.1 対応で全スクリプトへ UTF-8 BOM を付与"
     }
   ]
 }
