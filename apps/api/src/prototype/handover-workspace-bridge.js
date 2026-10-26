@@ -48,6 +48,9 @@
 
   const HW = {
     open: false,
+    embedded: false,
+    baseView: null,
+    baseScreen: null,
     selected: null,
     filter: 'all',
     query: '',
@@ -1074,7 +1077,17 @@
   const style = document.createElement('style');
   style.id = 'ahd-hw-style';
   style.textContent = `
-#ahd-hw{position:fixed;inset:0;z-index:9000;display:flex;flex-direction:column;background:var(--u-bg,#f4f3ee);color:var(--u-ink,#1b222b);font-family:var(--u-font,system-ui),sans-serif;font-size:13px;line-height:1.6;overflow:hidden}
+#ahd-hw{display:flex;flex-direction:column;background:var(--u-bg,#f4f3ee);color:var(--u-ink,#1b222b);font-family:var(--u-font,system-ui),sans-serif;font-size:13px;line-height:1.6;overflow:hidden}
+#ahd-hw.hw-floating{position:fixed;inset:0;z-index:9000}
+#ahd-hw.hw-embedded{position:relative;flex:1;min-width:0;min-height:0;z-index:auto}
+.ux-content.ahd-hw-embedded>#uxPage,.ux-content.ahd-hw-embedded>#cw,.ux-content.ahd-hw-embedded>#hd{display:none!important}
+#ahd-hw.hw-embedded .hw-top{height:42px;padding:0 10px;border-bottom-width:2px}
+#ahd-hw.hw-embedded .hw-mark{display:none}
+#ahd-hw.hw-embedded .hw-title{font-size:12.5px}
+#ahd-hw.hw-embedded .hw-sub{max-width:50%}
+#ahd-hw.hw-embedded .hw-top-note{display:none}
+#ahd-hw.hw-embedded .hw-grid{padding:8px;gap:8px}
+#ahd-hw.hw-embedded .hw-ev{padding:7px}
 #ahd-hw[hidden]{display:none!important}
 #ahd-hw *{box-sizing:border-box}
 #ahd-hw .hw-top{flex:none;height:54px;display:flex;align-items:center;gap:9px;padding:0 14px;background:linear-gradient(180deg,#173352,#122a45);color:#fff;border-bottom:3px solid var(--u-safety,#f5b800)}
@@ -1313,15 +1326,44 @@ body.ahd-hw-open{overflow:hidden}
   }
 
   function updateLauncher() {
+    if (HW.open && HW.embedded) {
+      const changed =
+        typeof S !== 'undefined' &&
+        S &&
+        S.ui &&
+        (S.ui.view !== HW.baseView || S.ui.screen !== HW.baseScreen);
+      if (changed || !railAllowed()) {
+        close();
+        return;
+      }
+    }
     launcher.hidden = HW.open || !helpdeskActive();
     syncRailItem();
   }
 
   function openWorkspace() {
-    if (HW.open) return;
+    if (HW.open) {
+      close();
+      return;
+    }
+    const content = document.querySelector('.ux-content');
+    HW.embedded = Boolean(content);
+    HW.baseView = typeof S !== 'undefined' && S && S.ui ? S.ui.view : null;
+    HW.baseScreen = typeof S !== 'undefined' && S && S.ui ? S.ui.screen : null;
+    if (content) {
+      content.classList.add('ahd-hw-embedded');
+      if (root.parentElement !== content) content.appendChild(root);
+      root.classList.remove('hw-floating');
+      root.classList.add('hw-embedded');
+      document.body.classList.remove('ahd-hw-open');
+    } else {
+      if (root.parentElement !== document.body) document.body.appendChild(root);
+      root.classList.remove('hw-embedded');
+      root.classList.add('hw-floating');
+      document.body.classList.add('ahd-hw-open');
+    }
     HW.open = true;
     root.hidden = false;
-    document.body.classList.add('ahd-hw-open');
     updateLauncher();
     ensureSelected();
     renderAll();
@@ -1332,8 +1374,12 @@ body.ahd-hw-open{overflow:hidden}
 
   function close() {
     HW.open = false;
+    HW.embedded = false;
     root.hidden = true;
     document.body.classList.remove('ahd-hw-open');
+    const content = document.querySelector('.ux-content');
+    if (content) content.classList.remove('ahd-hw-embedded');
+    root.classList.remove('hw-embedded', 'hw-floating');
     updateLauncher();
     launcher.focus();
   }
@@ -1410,6 +1456,18 @@ body.ahd-hw-open{overflow:hidden}
         event.stopPropagation();
         close();
       }
+    },
+    true,
+  );
+
+  document.addEventListener(
+    'click',
+    (event) => {
+      if (!HW.open || root.contains(event.target)) return;
+      const action = event.target.closest(
+        '[data-act="nav"], [data-act="wRail"], [data-act="wTool"], [data-act="profile"], [data-act="estop"]',
+      );
+      if (action) close();
     },
     true,
   );

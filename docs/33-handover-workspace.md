@@ -5,7 +5,7 @@
 | 位置づけ | ヘルプデスク担当者向けの**新画面**。既存画面の DOM / CSS / 画面遷移は変更しない |
 | 指示 | ユーザー指示（2026-10-26）「新画面として追加（ポップアップでもOK）」。判断17=1 / 判断18=1 を前提 |
 | 実装 | `apps/api/src/prototype/handover-workspace-bridge.js`（既存ブリッジと同じく `</body>` 直前に注入） |
-| 起動 | 左ナビ「引継ぎ」またはヘルプデスク画面の右下「🧭 引継ぎワークスペース」→ 同一タブ内の全画面オーバーレイ |
+| 起動 | 左ナビ「引継ぎ」またはヘルプデスク画面の右下「🧭 引継ぎワークスペース」→ 既存の右側コンテンツ（`.ux-content`）内に表示 |
 | データ | localStorage の既存状態（`mirai-wizard-v31-helpdesk` / `-cowork`）。**デモデータは使わない** |
 | ロールバック | `prototype.ts` の `BRIDGE_FILES` から 1 行外すだけ。DB マイグレーションなし |
 
@@ -25,9 +25,12 @@
   右下に「🧭 引継ぎワークスペース」ボタンを表示する（追加 DOM。既存レイアウトは変えない）。
 - 左ナビ（`#uxRail`）にも「引継ぎ」を追加する（一般社員には非表示）。
   `uxShell` の再描画で消えるため `MutationObserver` で戻す。クリックで同じ画面を開く。
-- クリックで全画面オーバーレイを開く。**別ウィンドウ（`window.open`）ではない**。
-  ブラウザのポップアップブロックや別タブの状態管理を持ち込まないため。
-- 閉じる: 右上「×」または `Esc`。元のヘルプデスク画面に戻る。
+- クリックすると、既存の右側コンテンツ（`.ux-content`）内に表示する。
+  左ナビとアプリのヘッダーは残る。**別ウィンドウ（`window.open`）ではない**。
+- 表示中は `.ux-content` の `#uxPage` / `#cw` / `#hd` を隠し、`#ahd-hw` を
+  flex 子として同じ領域に表示する。閉じる・別ナビへの移動で元の画面に戻る。
+- `.ux-content` が無い場合だけ、従来の全画面オーバーレイにフォールバックする。
+- 閉じる: 右上「×」、`Esc`、または左ナビの「引継ぎ」をもう一度押す。
 - 画面を閉じても既存の操作・状態は変わらない（読み取り＋明示操作のみ）。
 
 ## 3. 画面の内容
@@ -132,13 +135,14 @@
 | 承認者ロール | 担当開始・解決記録を非表示（閲覧のみ） |
 | 絞り込み / Esc / 再表示 | 動作確認 |
 | 左ナビ項目 | 非一般社員に表示、一般社員は非表示。クリックで開き、画面遷移（`S.ui.view`）を変えない。`uxShell` 再描画後も残る |
+| インライン表示 | `.ux-content` 内に表示。左ナビ・ヘッダーは残り、`#uxPage`/`#cw`/`#hd` を隠す。別ナビで閉じて元画面に戻る。`S.ui.view` は変わらない |
 | プレビュー反映 | 2026-10-26 13:19 に `ai-helpdesk-api.service` を再起動（`commit=57f73c7` / health 200 / 公開URLは Cloudflare Access へ 302） |
 | AI窓口由来の案件（テスト用フィクスチャ） | 共有情報、会話、提案、承認ハッシュの表示を確認 |
 
 証跡: `docs/evidence/handover-workspace/`
-- `handover-workspace-light-1600.png`
-- `handover-workspace-dark-1600.png`
-- `handover-workspace-light-1280.png`
+- `handover-workspace-embedded-1600.png`
+- `handover-workspace-embedded-1280.png`
+- `handover-workspace-embedded-dark-1280.png`
 - `handover-workspace-nav.png`
 - `handover-workspace-launcher.png`
 
