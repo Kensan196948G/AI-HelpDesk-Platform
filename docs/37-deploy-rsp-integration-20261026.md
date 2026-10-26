@@ -70,8 +70,8 @@ sudo systemctl restart rsp-api
 # 1) HelpDesk の統合認証（認証通過なら 404 NOT_FOUND。401/403 ならキー未反映）
 KEY=$(grep '^RSP_INTEGRATION_KEY=' ~/.config/ai-helpdesk/api.conf | cut -d= -f2-)
 curl -s -H "X-Helpdesk-Service-Key: $KEY" \
-     -H "X-Operator-Email: <Access許可リストのメール>" \
-     "http://127.0.0.1:18950/api/terminal/context?caseId=NO-SUCH"
+     -H "X-Operator-Email: kensan1969@gmail.com"   # Access許可リストのメール \
+     "http://127.0.0.1:18950/api/terminal/context?caseId=NO-SUCH"  # 例: -H "X-Operator-Email: kensan1969@gmail.com"
 
 # 2) ブラウザ: https://rsp.mirai-remotetools.com/ にログイン → 左ナビ「AI支援」
 #    → 案件ID（HelpDeskで claim 済み）を読み込み → AI提案 → 記録 → 終了 → 報告書 → ナレッジ下書き
