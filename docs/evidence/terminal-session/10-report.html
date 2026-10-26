@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>最終報告書 CASE-UI-TERM-3 - 担当者の対応で解決</title>
+<style>
+:root { color-scheme: light; }
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: #fff; color: #1f2933; }
+body { font-family: "IPAGothic", "IPAPGothic", "Noto Sans JP", "Yu Gothic", "Hiragino Kaku Gothic ProN", sans-serif; font-size: 10.5pt; line-height: 1.65; }
+.page { max-width: 186mm; margin: 0 auto; padding: 12mm 10mm 16mm; }
+.cover { border-bottom: 3px solid #1f2933; padding-bottom: 8mm; margin-bottom: 7mm; }
+.cover .eyebrow { font-size: 9pt; letter-spacing: .14em; color: #52606d; }
+.cover h1 { font-size: 22pt; margin: 2mm 0 3mm; letter-spacing: .04em; }
+.cover .sub { display: flex; flex-wrap: wrap; gap: 3mm 8mm; align-items: center; }
+.cover .case { font-family: ui-monospace, "IPAGothic", monospace; font-size: 12pt; }
+.badge { display: inline-block; border: 1px solid #52606d; border-radius: 999px; padding: 0 3mm; font-size: 9pt; line-height: 1.8; }
+.muted { color: #616e7c; font-size: 9pt; }
+.note { background: #f5f7fa; border-left: 3px solid #9aa5b1; padding: 2mm 3mm; font-size: 9pt; color: #3e4c59; }
+.ok { color: #1d7a4d; }
+.sec { margin: 7mm 0 0; page-break-inside: avoid; }
+.sec h2 { font-size: 13pt; margin: 0 0 3mm; padding-bottom: 1.5mm; border-bottom: 1px solid #cbd2d9; }
+h3 { font-size: 10.5pt; margin: 4mm 0 2mm; }
+table { width: 100%; border-collapse: collapse; margin: 2mm 0; font-size: 9.5pt; }
+th, td { border: 1px solid #d9e2ec; padding: 1.6mm 2mm; text-align: left; vertical-align: top; word-break: break-word; }
+th { background: #f0f4f8; font-weight: 700; white-space: nowrap; }
+.dot { display: inline-block; width: 2.2mm; height: 2.2mm; border-radius: 50%; margin-right: 1.4mm; vertical-align: middle; }
+.dot.ok { background: #1d7a4d; }
+.dot.warn { background: #d97706; }
+.dot.ng { background: #b42318; }
+.chat { display: grid; gap: 2.5mm; }
+.msg { border: 1px solid #d9e2ec; border-radius: 2mm; padding: 2.5mm 3mm; page-break-inside: avoid; }
+.msg.user { background: #f7f9fb; }
+.msg.ai { background: #fff; }
+.msg.system { background: #fffbea; border-color: #f0d38a; }
+.msg-head { font-size: 9pt; color: #52606d; margin-bottom: 1mm; }
+.msg-text { white-space: pre-wrap; }
+.msg-title { font-weight: 700; margin-bottom: 1mm; }
+.steps { margin: 1mm 0 1mm 5mm; padding: 0; }
+.steps li { margin: .5mm 0; }
+.memo { white-space: pre-wrap; background: #f7f9fb; border: 1px solid #d9e2ec; border-radius: 2mm; padding: 3mm; font-size: 9.5pt; }
+.proposal { border: 1px solid #d9e2ec; border-radius: 2mm; padding: 2.5mm 3mm; margin: 2mm 0; page-break-inside: avoid; }
+details { margin-top: 2mm; }
+summary { cursor: pointer; color: #245b9c; font-size: 9.5pt; }
+.footer { margin-top: 9mm; padding-top: 3mm; border-top: 1px solid #cbd2d9; color: #616e7c; font-size: 8.5pt; }
+.hash { font-family: ui-monospace, "IPAGothic", monospace; word-break: break-all; }
+@page { size: A4; margin: 12mm 10mm; }
+@media print { .page { max-width: none; padding: 0; } a { color: inherit; text-decoration: none; } }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="cover">
+    <div class="eyebrow">みらいAI窓口 × ヘルプデスク ／ 最終報告書</div>
+    <h1>担当者の対応で解決</h1>
+    <div class="sub">
+      <span class="case">CASE-UI-TERM-3</span>
+      <span class="badge" style="border-color:#245b9c;color:#245b9c">STEP 5 完了</span>
+      <span class="muted">プリンタで印刷できない（UI検証）</span>
+    </div>
+  </div>
+
+  <section class="sec" id="summary"><h2>概要</h2><table><thead><tr><th>項目</th><th>内容</th></tr></thead><tbody><tr><td>案件番号</td><td><span class="case">CASE-UI-TERM-3</span></td></tr><tr><td>相談者</td><td>[メールアドレス]</td></tr><tr><td>相談日時</td><td>2026-10-26T00:00:00.000Z</td></tr><tr><td>相談の種類</td><td>PC・周辺機器</td></tr><tr><td>急ぎ具合</td><td>急ぎ</td></tr><tr><td>対応結果</td><td><span class="badge" style="border-color:#245b9c;color:#245b9c">担当者の対応で解決</span></td></tr><tr><td>AIモデル</td><td>deepseek-flash</td></tr><tr><td>出力日時</td><td>2026-10-26T06:20:49.150Z</td></tr><tr><td>出力者</td><td>[メールアドレス] <span class="muted">（ヘルプデスク）</span></td></tr><tr><td>受付番号 / ヘルプデスク</td><td>TKT-CASE-UI-TERM-3 / INC-CASE-UI-TERM-3</td></tr><tr><td>担当者</td><td>[メールアドレス]</td></tr></tbody></table></section>
+  <section class="sec"><h2>相談内容</h2><p class="msg-text">印刷キューが止まっています。スプーラの状態を確認したいです。</p></section>
+  <section class="sec"><h2>対応の経過</h2><table><thead><tr><th>日時</th><th>実施者</th><th>出来事</th><th>補足</th></tr></thead><tbody><tr><td>2026-10-26T06:17:59.572Z</td><td>[メールアドレス]</td><td>RSP実行セッションを開始</td><td>対象端末 MRK-[資産番号]</td></tr><tr><td>2026-10-26T06:18:16.171Z</td><td>AI</td><td>ステップ1の提案</td><td>Get-Service Spooler | Select-Object Status,Name</td></tr><tr><td>2026-10-26T06:19:50.462Z</td><td>[メールアドレス]</td><td>ステップ1を実行・記録（success）</td><td>Get-Service Spooler | Select-Object Status,Name | Format-Table -AutoSize</td></tr><tr><td>2026-10-26T06:20:07.339Z</td><td>AI</td><td>ステップ2の提案</td><td>Get-Service Spooler | Select-Object Status,Name</td></tr><tr><td>2026-10-26T06:20:24.620Z</td><td>[メールアドレス]</td><td>ステップ2を実行・記録（success）</td><td>Restart-Service Spooler -Force; Get-Service Spooler | Select-Object Status,Name</td></tr><tr><td>2026-10-26T06:20:35.647Z</td><td>[メールアドレス]</td><td>セッションを終了（resolved）</td><td>スプーラ再起動で復旧。テスト印刷も成功</td></tr></tbody></table></section>
+  <section class="sec"><h2>PC基本情報（読み取りのみ）</h2><p class="muted">端末 MRK-[資産番号] ／ 取得 2026-10-26T00:10:00.000Z ／ 2項目 ／ 読み取りのみ</p><p class="note">IPアドレス・シリアル番号・資産番号は、この報告書では伏せています。</p><h3>気になる点（1件）</h3><table><thead><tr><th>判定</th><th>項目</th><th>値</th><th>補足</th></tr></thead><tbody><tr><td><span class="dot ng"></span>異常</td><td>印刷スプーラ</td><td>停止</td><td></td></tr></tbody></table><details open><summary>PC基本情報の全項目（2件）</summary><table><thead><tr><th>分類</th><th>項目</th><th>値</th><th>判定</th></tr></thead><tbody><tr><td>周辺機器</td><td>印刷スプーラ</td><td>停止</td><td><span class="dot ng"></span>異常</td></tr><tr><td>端末</td><td>機種</td><td>標準機</td><td><span class="dot ok"></span>正常</td></tr></tbody></table></details></section>
+  <section class="sec"><h2>AIの一次対応</h2><p class="muted">生成元 deepseek ／ モデル deepseek-flash</p><h3>やり取り</h3><div class="chat"><div class="msg ai"><div class="msg-head">AI </div><div class="msg-text">印刷できません</div></div></div></section>
+  <section class="sec"><h2>担当者への引継ぎ</h2><table><thead><tr><th>項目</th><th>内容</th></tr></thead><tbody><tr><td>受付番号</td><td>TKT-CASE-UI-TERM-3</td></tr><tr><td>ヘルプデスク番号</td><td>INC-CASE-UI-TERM-3</td></tr><tr><td>担当</td><td>[メールアドレス]</td></tr><tr><td>引継ぎ日時</td><td>2026-10-26T06:17:59.572Z</td></tr></tbody></table></section>
+  <section class="sec"><h2>担当者の対応・解決記録</h2><table><thead><tr><th>項目</th><th>内容</th></tr></thead><tbody><tr><td>原因</td><td>再起動後にRunningを確認。テスト印刷成功</td></tr><tr><td>担当</td><td>[メールアドレス]</td></tr><tr><td>所要時間</td><td>3分</td></tr><tr><td>解決日時</td><td>2026-10-26T06:20:35.647Z</td></tr><tr><td>備考</td><td>スプーラ再起動で復旧。テスト印刷も成功</td></tr></tbody></table><h3>対応手順</h3><ol class="steps"><li>ステップ1: Get-Service Spooler | Select-Object Status,Name | Format-Table -AutoSize（success）</li><li>ステップ2: Restart-Service Spooler -Force; Get-Service Spooler | Select-Object Status,Name（success）</li></ol></section>
+  <section class="sec"><h2>RSP実行セッション（AI提案と実行記録）</h2><p class="note">このセクションは、担当者がRSPのターミナルで実行した内容の記録です。サーバーはコマンドを実行していません。AIの提案と実行結果は別物として扱います。</p><table><thead><tr><th>項目</th><th>内容</th></tr></thead><tbody><tr><td>セッション</td><td><span class="case">63aff08f-8581-4b72-b793-387f2c9290a4</span></td></tr><tr><td>対象端末</td><td>MRK-[資産番号]</td></tr><tr><td>実行した担当者</td><td>[メールアドレス]</td></tr><tr><td>依頼者</td><td>[メールアドレス]</td></tr><tr><td>開始</td><td>2026-10-26T06:17:59.572Z</td></tr><tr><td>終了</td><td>2026-10-26T06:20:35.647Z</td></tr><tr><td>終了理由</td><td>解決として終了</td></tr><tr><td>出力の取込</td><td>手動貼り付け（自動取込は未対応）</td></tr></tbody></table><div class="proposal"><h3>ステップ 1（2026-10-26T06:19:50.462Z）</h3><p class="muted">目的：印刷スプーラが止まっている原因を確認したい</p><p class="muted">AIの提案（risk low）：印刷スプーラの状態を確認する（読み取りのみ）</p><pre class="memo">Get-Service Spooler | Select-Object Status,Name</pre><p class="muted">確認方法：Status が Running であること</p><p class="muted">戻し方：不要（読み取りのみ）</p><p class="note">警告：読み取りのみ。サービスは変更しません。</p><h3>実行したコマンド</h3><pre class="memo">Get-Service Spooler | Select-Object Status,Name | Format-Table -AutoSize</pre><h3>出力（手動貼り付け）</h3><pre class="memo">Status   Name
+------   ----
+Stopped  Spooler</pre><p class="muted">判定：success ／ 記録ハッシュ：<span class="hash">5d0988ae54b94e1ae9e772ba27110a5b676fe3c33a8bba5adc247f207a338848</span> ／ 補足：スプーラが停止していることを確認</p></div><div class="proposal"><h3>ステップ 2（2026-10-26T06:20:24.620Z）</h3><p class="muted">目的：スプーラを再起動して復旧を確認したい</p><p class="muted">AIの提案（risk low）：印刷スプーラの状態を確認する（読み取りのみ）</p><pre class="memo">Get-Service Spooler | Select-Object Status,Name</pre><p class="muted">確認方法：Status が Running であること</p><p class="muted">戻し方：不要（読み取りのみ）</p><p class="note">警告：読み取りのみ。サービスは変更しません。</p><h3>実行したコマンド</h3><pre class="memo">Restart-Service Spooler -Force; Get-Service Spooler | Select-Object Status,Name</pre><h3>出力（手動貼り付け）</h3><pre class="memo">Status   Name
+------   ----
+Running  Spooler</pre><p class="muted">判定：success ／ 記録ハッシュ：<span class="hash">1e27dcbfecdae61cd0c6b6d725b2121d6f950a1d60f663e1b916af0bb8ee61d9</span> ／ 補足：再起動後にRunningを確認。テスト印刷成功</p></div></section>
+  
+  
+
+  <div class="footer">
+    <div>この報告書は AI HelpDesk Platform が自動生成したものです。個人情報は伏せ字化しています。</div>
+    <div>本報告書は画面の状態をもとに生成しています。サーバー側の案件台帳との突合は MVP では行いません。</div>
+    <div>報告書ID：<span class="hash">87dd2bcf-1217-4748-9929-e8c47ccb6dcb</span></div>
+    <div>SHA-256（内容の同一性確認）：<span class="hash">b523527746a8234bea49ce42a21826b22335960d4592b98b20b06a12947bc882</span></div>
+    <div>出力：2026-10-26T06:20:49.150Z ／ 形式：Standalone HTML（外部ファイル参照なし）</div>
+  </div>
+</div></body>
+</html>

@@ -43,6 +43,18 @@
     invalidated: '無効（内容変更）',
     admin_rejected: '管理者が却下',
   };
+  /** RSP 実行セッション（docs/35-terminal-session.md §4 / §6） */
+  const TC_RISK = { low: '低', medium: '中', high: '高' };
+  const TC_CLOSE_REASON = {
+    resolved: '解決',
+    stopped: '中止',
+    escalated: 'エスカレーション',
+    expired: '期限切れ（TTL）',
+  };
+  const TC_EXIT = { success: '成功', failure: '失敗', unknown: '不明' };
+  const TC_CAPTURE_OFF =
+    '自動取込は利用できません（RSPのターミナルログAPI未提供）。出力は手動で貼り付けてください。';
+  const TC_TTL_MINUTES = 30;
 
   let railObserver = null;
 
@@ -60,6 +72,25 @@
     ai: {},
     aiBusy: {},
     aiDraft: {},
+    /* RSP 実行セッション（選択案件の最新セッションだけを保持する） */
+    tc: {
+      key: null,
+      loading: false,
+      loaded: false,
+      error: null,
+      session: null,
+      steps: [],
+      capture: null,
+      limits: null,
+      busy: {},
+      consent: { screenShare: false, remoteControl: false },
+      intent: '',
+      closeNote: '',
+      openStep: null,
+      drafts: {},
+      report: null,
+      knowledge: null,
+    },
     scrollTop: 0,
     timer: null,
   };
@@ -845,6 +876,897 @@
     else hwToast('AI が回答しました。', 'ok');
   }
 
+  /* ============================ RSP 実行セッション（§4 / §6） ============================ */
+
+  function tcReset() {
+    const tc = HW.tc;
+    tc.key = null;
+    tc.loading = false;
+    tc.loaded = false;
+    tc.error = null;
+    tc.session = null;
+    tc.steps = [];
+    tc.capture = null;
+    tc.limits = null;
+    tc.busy = {};
+    tc.consent = { screenShare: false, remoteControl: false };
+    tc.intent = '';
+    tc.closeNote = '';
+    tc.openStep = null;
+    tc.drafts = {};
+    tc.report = null;
+    tc.knowledge = null;
+  }
+
+  function tcLimits() {
+    const raw = HW.tc.limits || (HW.tc.session && HW.tc.session.limits) || {};
+    const pick = (value, fallback) => (Number(value) > 0 ? Number(value) : fallback);
+    return {
+      maxSteps: pick(raw.maxSteps, 20),
+      maxOutputChars: pick(raw.maxOutputChars, 20000),
+      maxCommandChars: pick(raw.maxCommandChars, 8000),
+      maxNoteChars: pick(raw.maxNoteChars, 1000),
+    };
+  }
+
+  /** 残り時間（ミリ秒）。active 以外は null。 */
+  function tcRemain(session) {
+    if (!session || session.status !== 'active') return null;
+    const end = Date.parse(session.expiresAt || '');
+    if (Number.isNaN(end)) return null;
+    return end - Date.now();
+  }
+
+  function tcRemainText(ms) {
+    if (ms == null) return '';
+    if (ms <= 0) return '期限切れ';
+    const total = Math.floor(ms / 1000);
+    return Math.floor(total / 60) + ':' + pad2(total % 60);
+  }
+
+  function tcExpired() {
+    const remain = tcRemain(HW.tc.session);
+    return remain != null && remain <= 0;
+  }
+
+  function tcStatusChip() {
+    const session = HW.tc.session;
+    if (!session) return '';
+    if (session.status === 'active') return '<span class="hw-chip ok">実行中</span>';
+    const reason = TC_CLOSE_REASON[session.closeReason] || session.closeReason || '終了';
+    return '<span class="hw-chip">' + esc(reason) + '</span>';
+  }
+
+  /** 記録フォームの入力値を保持する（右ペイン再描画で入力が消えないように）。 */
+  function tcDraftOf(step) {
+    if (!HW.tc.drafts[step.id]) {
+      HW.tc.drafts[step.id] = {
+        command: step.proposal && step.proposal.command ? step.proposal.command : '',
+        output: '',
+        exitStatus: 'success',
+        note: '',
+      };
+    }
+    return HW.tc.drafts[step.id];
+  }
+
+  function tcLastOutput() {
+    for (let index = HW.tc.steps.length - 1; index >= 0; index -= 1) {
+      const step = HW.tc.steps[index];
+      if (step.executed && step.executed.output) return String(step.executed.output).slice(0, 4000);
+    }
+    return '';
+  }
+
+  function tcErrorText(status, data) {
+    const code = data && data.error ? String(data.error.code || '') : '';
+    const serverMessage = data && data.error ? String(data.error.message || '') : '';
+    const map = {
+      NOT_CLAIMED_OPERATOR: 'この案件を引き受け（claim）した担当者のみ操作できます。',
+      SESSION_ACTIVE: 'この案件には実行中のセッションがあります。',
+      SESSION_CLOSED: 'このセッションは終了済みです。',
+      STEP_LIMIT: 'ステップの上限に達しました。セッションを終了してください。',
+      STEP_RECORDED: 'このステップは記録済みです。再送はできません。',
+      CAPTURE_UNAVAILABLE: '自動取込は利用できません。出力は手動で貼り付けてください。',
+      AI_UNAVAILABLE: 'AIの提案を取得できませんでした（API未設定または障害）。',
+      RATE_LIMITED: '操作が多すぎます。少し待ってから再試行してください。',
+      NOT_FOUND: '対象の引継ぎが見つかりません。',
+    };
+    if (status === 0) return '通信に失敗しました。ネットワークを確認してください。';
+    if (status === 401)
+      return 'ログインの有効期限が切れました。再読み込みしてログインし直してください。';
+    if (status === 403)
+      return map[code] || serverMessage || 'この操作を行う権限がありません（担当者本人のみ）。';
+    if (status === 404)
+      return (
+        serverMessage || '実行セッションのAPIが見つかりません（APIの反映待ちの可能性があります）。'
+      );
+    if (status === 409)
+      return map[code] || serverMessage || '状態が変わりました。⟳ 更新で再読み込みしてください。';
+    if (status === 429)
+      return map[code] || serverMessage || '操作が多すぎます。少し待ってから再試行してください。';
+    if (status === 502 || status === 503)
+      return map[code] || serverMessage || 'AIが利用できません（API未設定または障害）。';
+    if (status === 400) return serverMessage || map[code] || '入力内容を確認してください。';
+    return serverMessage || '操作に失敗しました（' + status + '）。';
+  }
+
+  /** JSON API 呼び出し。例外を投げず、表示用のメッセージに正規化して返す。 */
+  async function tcSend(url, options) {
+    try {
+      const response = await fetch(url, {
+        method: options && options.method ? options.method : 'GET',
+        headers: { accept: 'application/json', 'content-type': 'application/json' },
+        body: options && options.body ? options.body : undefined,
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        return {
+          data: null,
+          status: response.status,
+          code: data && data.error ? String(data.error.code || '') : '',
+          message: tcErrorText(response.status, data),
+        };
+      }
+      return { data: data || {}, status: response.status, code: '', message: null };
+    } catch {
+      return { data: null, status: 0, code: '', message: tcErrorText(0, null) };
+    }
+  }
+
+  /**
+   * 送信中フラグを立てて実行する（二重送信防止）。
+   * 成功時は data を返し、失敗時は hwToast とカード内メッセージの両方で通知する。
+   */
+  async function tcApply(action, run) {
+    if (HW.tc.busy[action]) return null;
+    HW.tc.busy[action] = true;
+    HW.tc.error = null;
+    renderEv();
+    try {
+      const result = await run();
+      if (!result || !result.data) {
+        const message = result && result.message ? result.message : '操作に失敗しました。';
+        HW.tc.error = message;
+        hwToast(message, 'bad');
+        return null;
+      }
+      return result.data;
+    } catch {
+      const message = '操作に失敗しました（通信または応答の解析）。';
+      HW.tc.error = message;
+      hwToast(message, 'bad');
+      return null;
+    } finally {
+      HW.tc.busy[action] = false;
+      renderEv();
+    }
+  }
+
+  function tcSetSession(session) {
+    if (!session) return;
+    HW.tc.session = session;
+    if (session.capture) HW.tc.capture = session.capture;
+    if (session.limits) HW.tc.limits = session.limits;
+  }
+
+  function tcSetStep(step) {
+    if (!step || !step.id) return;
+    const list = HW.tc.steps;
+    const index = list.findIndex((item) => item.id === step.id);
+    if (index >= 0) list[index] = step;
+    else list.push(step);
+    list.sort((a, b) => Number(a.seq || 0) - Number(b.seq || 0));
+    if (HW.tc.session) HW.tc.session.stepCount = list.length;
+    delete HW.tc.drafts[step.id];
+    if (HW.tc.openStep === step.id) HW.tc.openStep = null;
+  }
+
+  function tcApplyPayload(data) {
+    if (!data) return;
+    if (data.session) tcSetSession(data.session);
+    if (Array.isArray(data.steps)) {
+      HW.tc.steps = data.steps.slice().sort((a, b) => Number(a.seq || 0) - Number(b.seq || 0));
+      if (HW.tc.session) HW.tc.session.stepCount = HW.tc.steps.length;
+    }
+    if (data.step) tcSetStep(data.step);
+  }
+
+  async function tcLoad(key) {
+    const result = await tcSend('/api/terminal/sessions?caseId=' + encodeURIComponent(key), null);
+    if (HW.tc.key !== key) return;
+    if (!result.data) {
+      HW.tc.session = null;
+      HW.tc.steps = [];
+      HW.tc.error = result.message;
+      HW.tc.loading = false;
+      HW.tc.loaded = true;
+      renderEv();
+      return;
+    }
+    HW.tc.session = result.data.session || null;
+    HW.tc.steps = Array.isArray(result.data.steps)
+      ? result.data.steps.slice().sort((a, b) => Number(a.seq || 0) - Number(b.seq || 0))
+      : [];
+    HW.tc.capture = HW.tc.session && HW.tc.session.capture ? HW.tc.session.capture : null;
+    HW.tc.limits = HW.tc.session && HW.tc.session.limits ? HW.tc.session.limits : null;
+    HW.tc.error = null;
+    HW.tc.loading = false;
+    HW.tc.loaded = true;
+    if (HW.tc.session && !HW.tc.capture) void tcLoadCapture(HW.tc.session.id, key);
+    renderEv();
+  }
+
+  /** セッション DTO に capture が無い場合のフォールバック（§4-4）。 */
+  async function tcLoadCapture(sessionId, key) {
+    const result = await tcSend(
+      '/api/terminal/sessions/' + encodeURIComponent(sessionId) + '/capture',
+      null,
+    );
+    if (HW.tc.key !== key || !result.data) return;
+    HW.tc.capture = {
+      supported: Boolean(result.data.supported),
+      reason: result.data.reason ? String(result.data.reason) : '',
+    };
+    renderEv();
+  }
+
+  /**
+   * 端末セッションAPIの案件ID（caseId）。
+   * ヘルプデスクのチケットID（INC-…）ではなく、引継ぎ元の cowork 案件ID（CASE-…）を使う。
+   * cowork 案件が無い場合だけチケットIDにフォールバックする。
+   */
+  function caseIdOf(t) {
+    if (!t) return null;
+    const cw = cowork(t);
+    if (cw && cw.caseId) return String(cw.caseId);
+    return String(t.id);
+  }
+
+  function ensureTerminal(t) {
+    if (!HW.open) return;
+    const key = t ? caseIdOf(t) : null;
+    if (!key) {
+      if (HW.tc.key !== null) tcReset();
+      return;
+    }
+    if (HW.tc.key === key) {
+      if (!HW.tc.loading && !HW.tc.loaded) {
+        HW.tc.loading = true;
+        void tcLoad(key);
+      }
+      return;
+    }
+    tcReset();
+    HW.tc.key = key;
+    HW.tc.loading = true;
+    void tcLoad(key);
+  }
+
+  /** 右ペインだけを再描画する（中央ペインの入力やスクロールを壊さない）。 */
+  function renderEv() {
+    if (!HW.open) return;
+    const t = current();
+    const ev = $('#hw-ev');
+    if (!ev || !t) return;
+    const top = ev.scrollTop;
+    ev.innerHTML = evHTML(t);
+    ev.scrollTop = top;
+  }
+
+  function tcCaptureHTML() {
+    const capture = HW.tc.capture;
+    if (capture && capture.supported) {
+      return '<div class="hw-alert info"><b>自動取込が有効です。</b> 実行結果はRSPのログから取り込みます。手動での貼り付けもできます。</div>';
+    }
+    const reason = capture && capture.reason ? String(capture.reason) : '';
+    return (
+      '<div class="hw-alert bad"><b>自動取込は利用できません</b>（RSPのターミナルログAPI未提供）。出力は手動で貼り付けてください。' +
+      (reason && reason !== TC_CAPTURE_OFF
+        ? '<div class="hw-tc-meta">' + esc(reason) + '</div>'
+        : '') +
+      '</div>'
+    );
+  }
+
+  function tcStartHTML() {
+    const consent = HW.tc.consent;
+    const busy = Boolean(HW.tc.busy.start);
+    return (
+      '<div class="hw-tc-form"><label class="hw-check"><input type="checkbox" data-hw-field="consent" data-consent="screenShare"' +
+      (consent.screenShare ? ' checked' : '') +
+      '>画面共有に同意する（必要な場合）</label><label class="hw-check"><input type="checkbox" data-hw-field="consent" data-consent="remoteControl"' +
+      (consent.remoteControl ? ' checked' : '') +
+      '>操作支援（RSPのターミナル操作）に同意する</label><div class="hw-form-row end"><button type="button" class="hw-btn pri" data-hw="tc-start"' +
+      (consent.remoteControl && !busy ? '' : ' disabled') +
+      '>' +
+      (busy ? '開始しています…' : 'セッションを開始') +
+      '</button></div><p class="hw-note">操作支援に同意しないと開始できません。サーバはコマンドを実行しません。実行するのは担当者です。</p></div>'
+    );
+  }
+
+  function tcMetaRows(session) {
+    const remain = tcRemain(session);
+    const consent =
+      [
+        session.consent && session.consent.screenShare ? '画面共有' : '',
+        session.consent && session.consent.remoteControl ? '操作支援' : '',
+      ]
+        .filter(Boolean)
+        .join('・') || '-';
+    let html = '<dt>対象端末</dt><dd>' + esc(session.device || 'unknown') + '</dd>';
+    html += '<dt>実行者</dt><dd>' + esc(session.operatorEmail || '-') + '</dd>';
+    html += '<dt>開始</dt><dd>' + esc(fmtTs(session.startedAt)) + '</dd>';
+    if (session.status === 'active') {
+      html +=
+        '<dt>残り</dt><dd><span id="hw-tc-remain" class="hw-tc-timer' +
+        (remain != null && remain <= 0 ? ' bad' : '') +
+        '">' +
+        esc(tcRemainText(remain)) +
+        '</span></dd>';
+    } else {
+      html += '<dt>終了</dt><dd>' + esc(fmtTs(session.closedAt)) + '</dd>';
+      html +=
+        '<dt>理由</dt><dd>' +
+        esc(TC_CLOSE_REASON[session.closeReason] || session.closeReason || '-') +
+        '</dd>';
+    }
+    html += '<dt>同意</dt><dd>' + esc(consent) + '</dd>';
+    return html;
+  }
+
+  function tcProposeHTML() {
+    const limits = tcLimits();
+    const busy = Boolean(HW.tc.busy.propose);
+    const full = HW.tc.steps.length >= limits.maxSteps;
+    const expired = tcExpired();
+    const disabled = busy || full || expired;
+    const hint = full
+      ? 'ステップ上限（' + limits.maxSteps + '件）に達しました。セッションを終了してください。'
+      : expired
+        ? '有効期限が切れています。セッションを終了してください。'
+        : 'AIの提案は記録であり、実行するのは担当者です。内容を確認してからRSPで実行してください。';
+    return (
+      '<div class="hw-tc-form"><div class="hw-form-row"><label>目的（次に何を確認・実行するか）<textarea data-hw-field="intent" rows="2" maxlength="500" placeholder="例: 印刷スプーラが止まっている原因を確認したい">' +
+      esc(HW.tc.intent) +
+      '</textarea></label></div><div class="hw-form-row end"><button type="button" class="hw-btn pri" data-hw="tc-propose"' +
+      (disabled ? ' disabled' : '') +
+      '>' +
+      (busy ? '提案を取得中…' : 'AIに次の一手を提案') +
+      '</button></div><p class="hw-note">' +
+      esc(hint) +
+      '</p></div>'
+    );
+  }
+
+  function tcCopyButton(step, kind) {
+    const text =
+      kind === 'executed'
+        ? step.executed && step.executed.command
+        : step.proposal && step.proposal.command;
+    return (
+      '<button type="button" class="hw-btn sm" data-hw="tc-copy" data-id="' +
+      esc(step.id) +
+      '" data-kind="' +
+      kind +
+      '"' +
+      (text ? '' : ' disabled') +
+      '>コピー</button>'
+    );
+  }
+
+  function tcProposalHTML(step) {
+    const proposal = step.proposal || {};
+    const warnings = Array.isArray(proposal.warnings) ? proposal.warnings : [];
+    return (
+      '<div class="hw-tc-meta">' +
+      (proposal.purpose ? '<div><b>目的:</b> ' + esc(proposal.purpose) + '</div>' : '') +
+      (proposal.verify ? '<div><b>確認:</b> ' + esc(proposal.verify) + '</div>' : '') +
+      (proposal.rollback ? '<div><b>戻し:</b> ' + esc(proposal.rollback) + '</div>' : '') +
+      '</div>' +
+      (warnings.length
+        ? '<ul class="hw-tc-warn">' +
+          warnings.map((warning) => '<li>' + esc(warning) + '</li>').join('') +
+          '</ul>'
+        : '')
+    );
+  }
+
+  function tcExecutedHTML(step) {
+    const executed = step.executed;
+    const sha = executed.sha256 ? String(executed.sha256).slice(0, 12) : '';
+    const exitClass =
+      executed.exitStatus === 'success' ? 'ok' : executed.exitStatus === 'failure' ? 'bad' : 'warn';
+    return (
+      '<div class="hw-tc-divider"></div><div class="hw-tc-step-h"><span class="hw-tag display">実行記録</span><span class="hw-chip ' +
+      exitClass +
+      '">' +
+      esc(TC_EXIT[executed.exitStatus] || '不明') +
+      '</span><span class="hw-mono">' +
+      esc(fmtTs(executed.recordedAt)) +
+      '</span>' +
+      (executed.outputSource === 'auto'
+        ? '<span class="hw-chip info">自動取込</span>'
+        : '<span class="hw-chip">手動貼付</span>') +
+      (sha ? '<span class="hw-mono" title="sha256">' + esc(sha) + '…</span>' : '') +
+      '</div><div class="hw-tc-cmd"><code>' +
+      esc(executed.command || '') +
+      '</code>' +
+      tcCopyButton(step, 'executed') +
+      '</div>' +
+      (executed.output
+        ? '<pre class="hw-tc-out">' + esc(executed.output) + '</pre>'
+        : '<p class="hw-note">出力は記録されていません。</p>') +
+      (executed.note
+        ? '<div class="hw-tc-meta"><div><b>補足:</b> ' + esc(executed.note) + '</div></div>'
+        : '')
+    );
+  }
+
+  function tcRecordFormHTML(step, draft, limits, busy) {
+    const id = esc(step.id);
+    const attrs = (field) =>
+      ' data-hw-field="step" data-step-id="' + id + '" data-field="' + field + '"';
+    return (
+      '<div class="hw-tc-divider"></div><div class="hw-form-row"><label>実行したコマンド（提案から編集できます）<textarea' +
+      attrs('command') +
+      ' rows="2" maxlength="' +
+      limits.maxCommandChars +
+      '">' +
+      esc(draft.command) +
+      '</textarea></label></div><div class="hw-form-row"><label>出力（手動で貼り付け）<textarea' +
+      attrs('output') +
+      ' rows="3" maxlength="' +
+      limits.maxOutputChars +
+      '" placeholder="RSPのターミナルからコピーして貼り付けてください">' +
+      esc(draft.output) +
+      '</textarea></label></div><div class="hw-form-row two"><label>判定<select' +
+      attrs('exitStatus') +
+      '><option value="success"' +
+      (draft.exitStatus === 'success' ? ' selected' : '') +
+      '>成功</option><option value="failure"' +
+      (draft.exitStatus === 'failure' ? ' selected' : '') +
+      '>失敗</option><option value="unknown"' +
+      (draft.exitStatus === 'unknown' ? ' selected' : '') +
+      '>不明</option></select></label><label>補足<input type="text"' +
+      attrs('note') +
+      ' maxlength="' +
+      limits.maxNoteChars +
+      '" value="' +
+      esc(draft.note) +
+      '"></label></div><div class="hw-form-row end"><button type="button" class="hw-btn" data-hw="tc-cancel-record"' +
+      (busy ? ' disabled' : '') +
+      '>閉じる</button><button type="button" class="hw-btn pri" data-hw="tc-record" data-id="' +
+      id +
+      '"' +
+      (busy ? ' disabled' : '') +
+      '>' +
+      (busy ? '保存中…' : '記録を保存') +
+      '</button></div><p class="hw-note">記録は1ステップ1回だけです。保存後に再送はできません。</p>'
+    );
+  }
+
+  function tcStepHTML(step) {
+    const executed = step.executed;
+    const open = HW.tc.openStep === step.id;
+    const draft = tcDraftOf(step);
+    const limits = tcLimits();
+    const busy = Boolean(HW.tc.busy['record:' + step.id]);
+    const exitClass = executed
+      ? executed.exitStatus === 'success'
+        ? 'ok'
+        : executed.exitStatus === 'failure'
+          ? 'bad'
+          : 'warn'
+      : '';
+    return (
+      '<div class="hw-tc-step ' +
+      (executed ? 'recorded' : 'pending') +
+      '"><div class="hw-tc-step-h"><b>#' +
+      esc(String(step.seq)) +
+      '</b>' +
+      (executed
+        ? '<span class="hw-chip ok">記録済み</span><span class="hw-chip ' +
+          exitClass +
+          '">' +
+          esc(TC_EXIT[executed.exitStatus] || '不明') +
+          '</span>'
+        : '<span class="hw-chip warn">提案のみ</span>') +
+      '<span class="hw-mono">' +
+      esc(fmtTs(step.proposedAt)) +
+      '</span></div>' +
+      (step.intent
+        ? '<div class="hw-tc-meta"><div><b>目的:</b> ' + esc(step.intent) + '</div></div>'
+        : '') +
+      '<div class="hw-tc-cmd"><code>' +
+      esc(step.proposal && step.proposal.command ? step.proposal.command : '（提案なし）') +
+      '</code>' +
+      tcCopyButton(step, 'proposal') +
+      '</div>' +
+      '<div class="hw-tc-meta"><span class="hw-chip ' +
+      (step.proposal && step.proposal.risk === 'high'
+        ? 'bad'
+        : step.proposal && step.proposal.risk === 'medium'
+          ? 'warn'
+          : 'ok') +
+      '">リスク ' +
+      esc(TC_RISK[step.proposal && step.proposal.risk] || '不明') +
+      '</span></div>' +
+      tcProposalHTML(step) +
+      (executed
+        ? tcExecutedHTML(step)
+        : open
+          ? tcRecordFormHTML(step, draft, limits, busy)
+          : '<div class="hw-form-row end"><button type="button" class="hw-btn sm" data-hw="tc-open-record" data-id="' +
+            esc(step.id) +
+            '">実行を記録</button></div>') +
+      '</div>'
+    );
+  }
+
+  function tcCloseHTML() {
+    const busy = Boolean(HW.tc.busy.close);
+    return (
+      '<div class="hw-tc-form"><div class="hw-form-row"><label>終了理由の補足（任意）<input type="text" data-hw-field="close-note" maxlength="1000" value="' +
+      esc(HW.tc.closeNote) +
+      '"></label></div><div class="hw-form-row end"><button type="button" class="hw-btn" data-hw="tc-close" data-reason="stopped"' +
+      (busy ? ' disabled' : '') +
+      '>中止</button><button type="button" class="hw-btn pri" data-hw="tc-close" data-reason="resolved"' +
+      (busy ? ' disabled' : '') +
+      '>' +
+      (busy ? '終了しています…' : '解決として終了') +
+      '</button></div></div>'
+    );
+  }
+
+  function tcDoneHTML() {
+    const session = HW.tc.session;
+    const resolved = session.closeReason === 'resolved';
+    const reportBusy = Boolean(HW.tc.busy.report);
+    const kbBusy = Boolean(HW.tc.busy.knowledge);
+    // 再読み込み後も kbNo を出せるよう、セッション DTO の knowledge（§4）も見る。
+    const knowledge =
+      HW.tc.knowledge ||
+      (session.knowledge
+        ? {
+            id: session.knowledge.id,
+            kbNo: session.knowledge.kbNo,
+            status: session.knowledge.status,
+          }
+        : null);
+    const kbId = (knowledge && knowledge.id) || session.knowledgeId || '';
+    const kbNo = knowledge && knowledge.kbNo ? String(knowledge.kbNo) : '';
+    const reportId =
+      (HW.tc.report && HW.tc.report.id) || (session.report ? session.report.id : null) || null;
+    const reportSha =
+      (HW.tc.report && HW.tc.report.sha256) ||
+      (session.report ? session.report.sha256 : null) ||
+      null;
+    const reportWarnings =
+      HW.tc.report && Array.isArray(HW.tc.report.warnings) ? HW.tc.report.warnings : [];
+    return (
+      '<div class="hw-tc-form">' +
+      (reportId || reportSha
+        ? '<div class="hw-alert info"><b>報告書を作成済みです。</b>' +
+          (reportSha
+            ? '<div class="hw-tc-meta">sha256: <span class="hw-mono">' +
+              esc(String(reportSha).slice(0, 16)) +
+              '…</span></div>'
+            : '') +
+          (reportWarnings.length
+            ? '<ul class="hw-tc-warn">' +
+              reportWarnings.map((warning) => '<li>' + esc(warning) + '</li>').join('') +
+              '</ul>'
+            : '') +
+          '</div>'
+        : '') +
+      (kbId
+        ? '<div class="hw-alert info"><b>ナレッジ下書き</b> <span class="hw-chip warn">承認待ち（下書き）</span><div class="hw-tc-meta">' +
+          (kbNo ? 'kbNo: <span class="hw-mono">' + esc(kbNo) + '</span>' : 'ID: ' + esc(kbId)) +
+          '</div><div class="hw-tc-meta">公開は承認者のレビュー後です（自動公開しません）。</div></div>'
+        : '') +
+      (resolved
+        ? ''
+        : '<p class="hw-note">報告書は「解決として終了」したセッションからのみ作成できます。</p>') +
+      '<div class="hw-tc-actions"><button type="button" class="hw-btn pri" data-hw="tc-report"' +
+      (resolved && !reportId && !reportBusy ? '' : ' disabled') +
+      '>' +
+      (reportBusy ? '作成中…' : reportId ? '報告書作成済み' : '報告書を作成') +
+      '</button>' +
+      (reportId
+        ? '<button type="button" class="hw-btn" data-hw="tc-open-report">報告書を開く</button>'
+        : '') +
+      '<button type="button" class="hw-btn" data-hw="tc-knowledge"' +
+      (kbId || kbBusy ? ' disabled' : '') +
+      '>' +
+      (kbBusy ? '作成中…' : kbId ? '下書き作成済み' : 'ナレッジ下書きを作成') +
+      '</button></div></div>'
+    );
+  }
+
+  function tcHTML(t) {
+    if (!t) return '<div class="hw-empty sm">案件を選択してください。</div>';
+    const tc = HW.tc;
+    if (tc.loading && !tc.loaded) {
+      return '<div class="hw-tc-body"><p class="hw-empty sm">実行セッションを確認しています…</p></div>';
+    }
+    if (tc.loaded && tc.error && !tc.session) {
+      return (
+        '<div class="hw-tc-body"><div class="hw-alert bad">' +
+        esc(tc.error) +
+        '</div><div class="hw-tc-actions"><button type="button" class="hw-btn sm" data-hw="tc-reload">再読み込み</button></div></div>'
+      );
+    }
+    const session = tc.session;
+    if (!session) {
+      return (
+        '<div class="hw-tc-body">' +
+        (tc.error ? '<div class="hw-alert bad">' + esc(tc.error) + '</div>' : '') +
+        '<p class="hw-note">この案件の実行セッションはまだありません。同意のうえ開始してください。</p>' +
+        '<p class="hw-note">出力は手動で貼り付けます（自動取込の対応状況はセッション開始後に確認できます）。</p>' +
+        tcStartHTML() +
+        '</div>'
+      );
+    }
+    return (
+      '<div class="hw-tc-body">' +
+      (tc.error ? '<div class="hw-alert bad">' + esc(tc.error) + '</div>' : '') +
+      '<dl class="hw-kv">' +
+      tcMetaRows(session) +
+      '</dl>' +
+      tcCaptureHTML() +
+      (session.status === 'active' ? tcProposeHTML() : '') +
+      '<div class="hw-tc-divider"></div><div class="hw-tc-steps-h"><b>ステップ</b><span class="hw-mono">' +
+      HW.tc.steps.length +
+      ' / ' +
+      tcLimits().maxSteps +
+      '</span></div>' +
+      (HW.tc.steps.length
+        ? '<div class="hw-tc-steps">' + HW.tc.steps.map(tcStepHTML).join('') + '</div>'
+        : '<p class="hw-empty sm">まだステップはありません。目的を入力してAIに提案させてください。</p>') +
+      '<div class="hw-tc-divider"></div>' +
+      (session.status === 'active' ? tcCloseHTML() : tcDoneHTML()) +
+      '</div>'
+    );
+  }
+
+  async function tcStart(t) {
+    if (!HW.tc.consent.remoteControl) {
+      hwToast('操作支援（ターミナル操作）への同意が必要です。', 'bad');
+      return;
+    }
+    const payload = {
+      caseId: caseIdOf(t),
+      consent: { screenShare: Boolean(HW.tc.consent.screenShare), remoteControl: true },
+      ttlMinutes: TC_TTL_MINUTES,
+    };
+    const data = await tcApply('start', async () => {
+      const res = await tcSend('/api/terminal/sessions', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      if (res.data) tcApplyPayload(res.data);
+      return res;
+    });
+    if (data) hwToast('RSP実行セッションを開始しました。', 'ok');
+  }
+
+  async function tcPropose() {
+    const session = HW.tc.session;
+    if (!session || session.status !== 'active') return;
+    const intent = String(HW.tc.intent || '').trim();
+    if (!intent) {
+      hwToast('目的を入力してください。', 'bad');
+      return;
+    }
+    if (tcExpired()) {
+      hwToast('有効期限が切れています。セッションを終了してください。', 'bad');
+      return;
+    }
+    if (HW.tc.steps.length >= tcLimits().maxSteps) {
+      hwToast('ステップの上限に達しました。', 'bad');
+      return;
+    }
+    const payload = { intent };
+    const lastOutput = tcLastOutput();
+    if (lastOutput) payload.lastOutput = lastOutput;
+    const data = await tcApply('propose', async () => {
+      const res = await tcSend(
+        '/api/terminal/sessions/' + encodeURIComponent(session.id) + '/steps',
+        { method: 'POST', body: JSON.stringify(payload) },
+      );
+      if (res.data && res.data.step) {
+        tcSetStep(res.data.step);
+        HW.tc.intent = '';
+        HW.tc.openStep = res.data.step.id;
+      }
+      return res;
+    });
+    if (data) hwToast('AIが次の一手を提案しました。内容を確認してから実行してください。', 'ok');
+  }
+
+  async function tcRecord(step) {
+    const draft = tcDraftOf(step);
+    const command = String(draft.command || '').trim();
+    if (!command) {
+      hwToast('実行したコマンドを入力してください。', 'bad');
+      return;
+    }
+    const payload = {
+      command,
+      output: String(draft.output || ''),
+      outputSource: 'manual',
+      exitStatus: draft.exitStatus || 'unknown',
+    };
+    const note = String(draft.note || '').trim();
+    if (note) payload.note = note;
+    const data = await tcApply('record:' + step.id, async () => {
+      const res = await tcSend('/api/terminal/steps/' + encodeURIComponent(step.id) + '/record', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      if (res.data) tcApplyPayload(res.data);
+      return res;
+    });
+    if (data) hwToast('実行記録を保存しました。', 'ok');
+  }
+
+  async function tcClose(reason) {
+    const session = HW.tc.session;
+    if (!session || session.status !== 'active') return;
+    if (reason !== 'resolved' && reason !== 'stopped') return;
+    const payload = { reason };
+    const note = String(HW.tc.closeNote || '').trim();
+    if (note) payload.note = note;
+    const data = await tcApply('close', async () => {
+      const res = await tcSend(
+        '/api/terminal/sessions/' + encodeURIComponent(session.id) + '/close',
+        { method: 'POST', body: JSON.stringify(payload) },
+      );
+      if (res.data && res.data.session) tcSetSession(res.data.session);
+      return res;
+    });
+    if (data) {
+      hwToast(
+        reason === 'resolved'
+          ? '解決として終了しました。報告書とナレッジ下書きを作成できます。'
+          : 'セッションを中止しました。',
+        'ok',
+      );
+    }
+  }
+
+  async function tcReport() {
+    const session = HW.tc.session;
+    if (!session || session.status !== 'closed') return;
+    if (session.closeReason !== 'resolved') {
+      hwToast('報告書は「解決として終了」したセッションからのみ作成できます。', 'bad');
+      return;
+    }
+    // ポップアップブロックを避けるため、クリックと同じ同期処理でタブを開いておく。
+    let win = null;
+    try {
+      win = window.open('', '_blank');
+    } catch {
+      win = null;
+    }
+    const data = await tcApply('report', async () => {
+      const built = await tcSend(
+        '/api/terminal/sessions/' + encodeURIComponent(session.id) + '/report',
+        { method: 'POST', body: '{}' },
+      );
+      if (!built.data) return built;
+      const warnings = Array.isArray(built.data.warnings)
+        ? built.data.warnings.map((item) => String(item))
+        : [];
+      // §4-6: サーバが保存まで行い、files.html.url を返す。UI はその URL を開くだけ
+      // （/api/reports/final へ再送しない。二重作成させない）。
+      const saved = built.data.report;
+      const htmlFile = saved && saved.files ? saved.files.html : null;
+      // inline 表示（previewUrl）を優先する。url はダウンロード用（Content-Disposition: attachment）。
+      const baseUrl = htmlFile ? String(htmlFile.url || '') : '';
+      const previewUrl = htmlFile ? String(htmlFile.previewUrl || '') : '';
+      const url = previewUrl
+        ? previewUrl
+        : baseUrl
+          ? baseUrl + (baseUrl.indexOf('?') >= 0 ? '&' : '?') + 'inline=1'
+          : '';
+      if (!saved || !url) {
+        return {
+          data: null,
+          status: built.status,
+          code: '',
+          message: '報告書のHTML URLを取得できませんでした。',
+        };
+      }
+      HW.tc.report = {
+        id: saved.id || null,
+        sha256: saved.sha256 || null,
+        url,
+        warnings,
+      };
+      if (HW.tc.session) {
+        HW.tc.session.report = {
+          id: HW.tc.report.id,
+          sha256: HW.tc.report.sha256,
+        };
+      }
+      if (win) {
+        try {
+          win.location.replace(url);
+        } catch {
+          win = null;
+        }
+      }
+      return { data: { report: HW.tc.report }, status: 200, code: '', message: null };
+    });
+    if (data) {
+      hwToast('報告書を作成しました。', 'ok');
+      if (!win)
+        hwToast('ポップアップがブロックされた場合は「報告書を開く」から開いてください。', 'bad');
+    } else if (win) {
+      win.close();
+    }
+  }
+
+  async function tcKnowledge() {
+    const session = HW.tc.session;
+    if (!session || session.status !== 'closed') return;
+    const data = await tcApply('knowledge', async () => {
+      const res = await tcSend(
+        '/api/terminal/sessions/' + encodeURIComponent(session.id) + '/knowledge-draft',
+        { method: 'POST', body: '{}' },
+      );
+      if (res.data && res.data.knowledge) {
+        HW.tc.knowledge = res.data.knowledge;
+        if (HW.tc.session) HW.tc.session.knowledgeId = res.data.knowledge.id || null;
+      }
+      return res;
+    });
+    if (data) hwToast('ナレッジ下書きを作成しました（承認待ち）。', 'ok');
+  }
+
+  function tcOpenReport() {
+    const id =
+      (HW.tc.report && HW.tc.report.id) ||
+      (HW.tc.session && HW.tc.session.report ? HW.tc.session.report.id : null);
+    const stored = HW.tc.report && HW.tc.report.url ? String(HW.tc.report.url) : '';
+    if (!id && !stored) {
+      hwToast('報告書がまだありません。', 'bad');
+      return;
+    }
+    const url = stored || '/api/reports/final/' + encodeURIComponent(id) + '/html?inline=1';
+    window.open(url, '_blank', 'noopener');
+  }
+
+  function tcCopy(stepId, kind) {
+    const step = HW.tc.steps.find((item) => item.id === stepId);
+    if (!step) return;
+    const text =
+      kind === 'executed'
+        ? (step.executed && step.executed.command) || ''
+        : (step.proposal && step.proposal.command) || '';
+    if (!text) {
+      hwToast('コピーするコマンドがありません。', 'bad');
+      return;
+    }
+    void copyText(text, 'コマンド');
+  }
+
+  function tcReload() {
+    const t = current();
+    if (!t) return;
+    const key = caseIdOf(t);
+    HW.tc.key = key;
+    HW.tc.session = null;
+    HW.tc.steps = [];
+    HW.tc.error = null;
+    HW.tc.loaded = false;
+    HW.tc.loading = true;
+    renderEv();
+    if (key) void tcLoad(key);
+  }
+
   function caseHTML(t) {
     if (!t) {
       return '<div class="hw-empty lg"><b>案件が選択されていません</b><br>左の引継ぎボードから案件を選んでください。</div>';
@@ -915,6 +1837,11 @@
       '</dd><dt>分野</dt><dd>' +
       esc(CATEGORY[t.cat] || t.cat || '-') +
       '</dd></dl></div>' +
+      '<div class="hw-ev-card hw-tc" id="hw-tc-card"><h3>RSP実行セッション ' +
+      tcStatusChip() +
+      '</h3>' +
+      tcHTML(t) +
+      '</div>' +
       '<div class="hw-ev-card"><h3>端末・共有情報 <span class="hw-chip info">本人同意</span></h3>' +
       sharedHTML(t) +
       '</div>' +
@@ -962,6 +1889,7 @@
     ensureSelected();
     const t = current();
     renderList();
+    ensureTerminal(t);
     const caseEl = $('#hw-case');
     if (caseEl) {
       caseEl.innerHTML = caseHTML(t);
@@ -988,11 +1916,12 @@
   }
 
   /** 既存処理が読む入力を、画面の先頭に一時的に置いてから呼ぶ（二重実装しない）。 */
-  async function copyText(text) {
+  async function copyText(text, label) {
+    const name = label || 'プロンプト';
     try {
       if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
         await navigator.clipboard.writeText(text);
-        hwToast('プロンプトをコピーしました。', 'ok');
+        hwToast(name + 'をコピーしました。', 'ok');
         return;
       }
     } catch {
@@ -1005,7 +1934,7 @@
     area.select();
     try {
       document.execCommand('copy');
-      hwToast('プロンプトをコピーしました。', 'ok');
+      hwToast(name + 'をコピーしました。', 'ok');
     } catch {
       hwToast('コピーできませんでした。表示欄を選択してコピーしてください。', 'bad');
     } finally {
@@ -1428,6 +2357,28 @@
 #ahd-hw .hw-toast{background:var(--u-navy,#16314f);color:#fff;font-size:10.8px;padding:6px 11px;border-radius:7px;box-shadow:0 6px 20px rgba(10,20,30,.28);max-width:min(520px,80vw);text-align:center}
 #ahd-hw .hw-toast.ok{background:#176d42}
 #ahd-hw .hw-toast.bad{background:#8f2320}
+#ahd-hw .hw-tc-body{padding:7px 9px 8px;display:flex;flex-direction:column;gap:6px}
+#ahd-hw .hw-tc-body .hw-note{margin:0}
+#ahd-hw .hw-tc-body .hw-alert{margin-bottom:0}
+#ahd-hw .hw-tc-timer{font-family:"SFMono-Regular",Consolas,monospace;font-size:11px;font-weight:700}
+#ahd-hw .hw-tc-timer.bad{color:var(--u-r,#c9302c)}
+#ahd-hw .hw-tc-form{padding:0;display:flex;flex-direction:column;gap:5px}
+#ahd-hw .hw-tc-form .hw-form-row{margin-bottom:0}
+#ahd-hw .hw-tc-form .hw-note{margin:0}
+#ahd-hw .hw-tc-cmd{display:flex;gap:4px;align-items:flex-start;background:var(--u-surface2,#efede6);border:1px solid var(--u-line,#e1ddd2);border-radius:6px;padding:4px 5px;margin-top:4px}
+#ahd-hw .hw-tc-cmd code{flex:1;min-width:0;font:9.8px/1.45 "SFMono-Regular",Consolas,monospace;white-space:pre-wrap;word-break:break-all;color:var(--u-ink,#1b222b)}
+#ahd-hw .hw-tc-meta{font-size:9.4px;color:var(--u-muted,#5f6874);line-height:1.5;margin-top:3px;display:flex;flex-direction:column;gap:1px}
+#ahd-hw .hw-tc-meta b{color:var(--u-ink,#1b222b);font-weight:650}
+#ahd-hw .hw-tc-warn{margin:3px 0 0;padding-left:14px;font-size:9.4px;color:var(--u-r,#c9302c);line-height:1.5}
+#ahd-hw .hw-tc-divider{border-top:1px dashed var(--u-line,#e1ddd2);margin:5px 0}
+#ahd-hw .hw-tc-steps-h{display:flex;justify-content:space-between;align-items:center;font-size:10px;color:var(--u-muted,#5f6874)}
+#ahd-hw .hw-tc-steps{display:flex;flex-direction:column;gap:5px}
+#ahd-hw .hw-tc-step{border:1px solid var(--u-line,#e1ddd2);border-radius:8px;padding:5px 6px;background:var(--u-surface,#fff)}
+#ahd-hw .hw-tc-step.recorded{border-left:3px solid var(--u-g,#1f9d55)}
+#ahd-hw .hw-tc-step.pending{border-left:3px solid var(--u-y,#e0a800)}
+#ahd-hw .hw-tc-step-h{display:flex;align-items:center;gap:4px;flex-wrap:wrap;font-size:9.8px;margin-bottom:2px}
+#ahd-hw .hw-tc-out{margin:3px 0 0;padding:4px 5px;background:var(--u-surface2,#efede6);border-radius:5px;font:9.6px/1.45 "SFMono-Regular",Consolas,monospace;white-space:pre-wrap;word-break:break-word;max-height:150px;overflow:auto}
+#ahd-hw .hw-tc-actions{display:flex;gap:5px;flex-wrap:wrap}
 #ahd-hw-launcher{position:fixed;right:16px;bottom:16px;z-index:45;display:inline-flex;align-items:center;gap:6px;border:0;border-radius:999px;background:var(--u-navy,#16314f);color:#fff;font:650 11.5px var(--u-font,sans-serif);padding:9px 13px;box-shadow:0 8px 26px rgba(10,20,30,.28);cursor:pointer}
 #ahd-hw-launcher:hover{background:#0f2440}
 #ahd-hw-launcher[hidden]{display:none!important}
@@ -1604,6 +2555,9 @@ body.ahd-hw-open{overflow:hidden}
     if (action === 'close') return close();
     if (action === 'refresh') {
       HW.inboxState = 'idle';
+      // 実行セッションも取り直す（保存直後の古い表示を残さない）。
+      HW.tc.key = null;
+      HW.tc.loaded = false;
       renderAll();
       loadInbox(true);
       hwToast('最新の状態に更新しました。');
@@ -1634,6 +2588,30 @@ body.ahd-hw-open{overflow:hidden}
     if (action === 'ai') return askAi(t);
     if (action === 'copy-prompt') return copyPrompt(target);
     if (action === 'kb') return openKb(target.dataset.id);
+    /* RSP 実行セッション */
+    if (action === 'tc-start') return void tcStart(t);
+    if (action === 'tc-propose') return void tcPropose();
+    if (action === 'tc-open-record') {
+      HW.tc.openStep = target.dataset.id || null;
+      renderEv();
+      return;
+    }
+    if (action === 'tc-cancel-record') {
+      HW.tc.openStep = null;
+      renderEv();
+      return;
+    }
+    if (action === 'tc-record') {
+      const step = HW.tc.steps.find((item) => item.id === target.dataset.id);
+      if (step) void tcRecord(step);
+      return;
+    }
+    if (action === 'tc-copy') return tcCopy(target.dataset.id, target.dataset.kind);
+    if (action === 'tc-close') return void tcClose(target.dataset.reason);
+    if (action === 'tc-report') return void tcReport();
+    if (action === 'tc-knowledge') return void tcKnowledge();
+    if (action === 'tc-open-report') return tcOpenReport();
+    if (action === 'tc-reload') return tcReload();
   });
 
   root.querySelector('#hw-search').addEventListener('input', (event) => {
@@ -1645,6 +2623,40 @@ body.ahd-hw-open{overflow:hidden}
     if (event.target && event.target.id === 'hw-ai-input') {
       const t = current();
       if (t) HW.aiDraft[t.id] = event.target.value;
+    }
+    const el = event.target;
+    if (!el || typeof el.getAttribute !== 'function') return;
+    const field = el.getAttribute('data-hw-field');
+    if (field === 'intent') {
+      HW.tc.intent = el.value;
+      return;
+    }
+    if (field === 'close-note') {
+      HW.tc.closeNote = el.value;
+      return;
+    }
+    if (field === 'step') {
+      const draft = HW.tc.drafts[el.getAttribute('data-step-id')];
+      if (draft) draft[el.getAttribute('data-field')] = el.value;
+    }
+  });
+
+  root.addEventListener('change', (event) => {
+    const el = event.target;
+    if (!el || typeof el.getAttribute !== 'function') return;
+    const field = el.getAttribute('data-hw-field');
+    if (!field) return;
+    if (field === 'consent') {
+      const key = el.getAttribute('data-consent');
+      if (key === 'screenShare' || key === 'remoteControl') {
+        HW.tc.consent[key] = Boolean(el.checked);
+        renderEv();
+      }
+      return;
+    }
+    if (field === 'step') {
+      const draft = HW.tc.drafts[el.getAttribute('data-step-id')];
+      if (draft) draft[el.getAttribute('data-field')] = el.value;
     }
   });
 
@@ -1695,5 +2707,14 @@ body.ahd-hw-open{overflow:hidden}
   installRailObserver();
   syncRailItem();
   setInterval(updateLauncher, 800);
+  // 残り時間だけを毎秒更新する（右ペイン全体は再描画しない）。
+  setInterval(() => {
+    if (!HW.open || !HW.tc.session || HW.tc.session.status !== 'active') return;
+    const el = document.getElementById('hw-tc-remain');
+    if (!el) return;
+    const remain = tcRemain(HW.tc.session);
+    el.textContent = tcRemainText(remain);
+    el.classList.toggle('bad', remain != null && remain <= 0);
+  }, 1000);
   updateLauncher();
 })();
