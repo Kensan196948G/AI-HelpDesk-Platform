@@ -128,3 +128,126 @@ node scripts/eval/run-eval.mjs --base http://127.0.0.1:19310 --as <email> --exec
    `docs/27` §5-3 の「解決率 / 診断止まり率 / モード別内訳」を出す。
 2. **ケースの拡張**: 現在は KB 9 件が上限。実問い合わせが増えたら KB とケースを同時に足す。
 3. **CI 組み込み**: `--fail-on-miss` を使い、KB 追加時に回帰を検出する。
+
+---
+
+## 7. CI への組み込み（30 件評価）
+
+### 7-1. なぜワークフローだけ人間が置くのか
+
+`.github/workflows/**` への書き込みは **DSH の self-evolution ポリシーで DEPLOY（critical）として拒否**される。
+迂回せず、以下を人間が追加する。リポジトリ側の準備（npm スクリプト・ハーネス）は完了している。
+
+### 7-2. 追加するファイル: `.github/workflows/eval.yml`
+
+```yaml
+name: Eval (answer path)
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/api/src/ai/**'
+      - 'apps/api/src/domain/ai.ts'
+      - 'apps/api/src/lib/knowledge-search.ts'
+      - 'apps/api/src/routes/prototype.ts'
+      - 'db/**'
+      - 'scripts/eval/**'
+      - '.github/workflows/eval.yml'
+permissions:
+  contents: read
+concurrency:
+  group: eval-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  eval-answer:
+    name: eval-answer
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: aihd
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: ai_helpdesk_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U aihd -d ai_helpdesk_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://aihd:ci-only-password@127.0.0.1:5432/ai_helpdesk_test
+      SESSION_SECRET: ci-only-session-secret-0123456789abcdef
+      SEED_PASSWORD: ci-only-seed-password
+      AUTH_MODE: local
+      DEV_AUTH_EMAIL: eval@example.local
+      PORT: '19311'
+      HOST: 127.0.0.1
+      LOG_LEVEL: warn
+      COOKIE_SECURE: 'false'
+      REQUIRE_PROXY_SECRET: 'false'
+    steps:
+      - name: Check DEEPSEEK_API_KEY
+        id: key
+        env:
+          HAVE_KEY: ${{ secrets.DEEPSEEK_API_KEY != '' }}
+        run: |
+          echo "run=${HAVE_KEY}" >> "$GITHUB_OUTPUT"
+          if [ "${HAVE_KEY}" != "true" ]; then
+            echo "::notice::DEEPSEEK_API_KEY 未設定のため評価をスキップします"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.key.outputs.run == 'true'
+      - uses: actions/setup-node@v4
+        if: steps.key.outputs.run == 'true'
+        with: { node-version: 22, cache: npm }
+      - name: Install
+        if: steps.key.outputs.run == 'true'
+        run: npm ci
+      - name: Migrate and seed
+        if: steps.key.outputs.run == 'true'
+        run: |
+          npm run db:migrate
+          npm run db:seed
+      - name: Build
+        if: steps.key.outputs.run == 'true'
+        run: npm run build
+      - name: Start API
+        if: steps.key.outputs.run == 'true'
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: |
+          npm run start:api > /tmp/api.log 2>&1 &
+          for i in $(seq 1 40); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${PORT}/api/health" 2>/dev/null || true)
+            [ "$code" = "200" ] && { echo "ready ${i}s"; break; }
+            sleep 1
+          done
+          curl -fsS "http://127.0.0.1:${PORT}/api/health" || { tail -60 /tmp/api.log; exit 1; }
+      - name: Run 30-case evaluation
+        if: steps.key.outputs.run == 'true'
+        run: node scripts/eval/run-eval.mjs --base "http://127.0.0.1:${PORT}" --execute --fail-on-miss --out eval-report.json
+      - name: Upload report
+        if: always() && steps.key.outputs.run == 'true'
+        uses: actions/upload-artifact@v4
+        with: { name: eval-report, path: eval-report.json, if-no-files-found: ignore }
+      - name: Show API log on failure
+        if: failure() && steps.key.outputs.run == 'true'
+        run: tail -80 /tmp/api.log
+```
+
+### 7-3. 依存する設定
+
+| 項目 | 値 |
+|---|---|
+| Repository secret | `DEEPSEEK_API_KEY`（未設定ならジョブは**何もせず成功**） |
+| 課金 | 1 回 30 リクエスト（3.2 秒間隔）。PR では AI/KB 関連の変更時のみ |
+| 落とし方 | 未達があれば `--fail-on-miss` が exit 4 → ジョブ失敗 |
+
+### 7-4. ローカルでの実行
+
+```bash
+npm run eval:answer        # dry-run（接続先とケース数を確認）
+npm run eval:answer:run    # 実行（未達で exit 4）
+```
