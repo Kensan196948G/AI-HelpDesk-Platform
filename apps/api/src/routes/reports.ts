@@ -6,6 +6,7 @@ import { sql } from '../db.js';
 import {
   contentDisposition,
   FinalReportSchema,
+  inlineContentDisposition,
   maskFinalReport,
   PdfBusyError,
   PdfUnavailableError,
@@ -19,6 +20,7 @@ import { checkRateLimit } from '../lib/rate-limit.js';
 
 const BodySchema = z.object({ report: FinalReportSchema });
 const IdSchema = z.object({ id: z.string().uuid() });
+const HtmlQuerySchema = z.object({ inline: z.enum(['1', '0']).optional() });
 // 1 利用者あたり 24 時間で 50 件まで（最大 512KiB × 50 = 25MiB）。
 const REPORT_DAILY_LIMIT = 50;
 
@@ -121,9 +123,15 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
     const row = await loadOwnedReport(id, request.uiEmail);
     if (!row) throw new ApiError(404, 'NOT_FOUND', '対象の最終報告書が見つかりません。');
 
+    const { inline } = HtmlQuerySchema.parse(request.query ?? {});
     reply
       .type('text/html; charset=utf-8')
-      .header('Content-Disposition', contentDisposition(row.html_filename))
+      .header(
+        'Content-Disposition',
+        inline === '1'
+          ? inlineContentDisposition(row.html_filename)
+          : contentDisposition(row.html_filename),
+      )
       .header('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'")
       .header('Cache-Control', 'no-store')
       .header('X-Content-Type-Options', 'nosniff')

@@ -142,10 +142,133 @@ async function callDeepSeek(
 }
 
 /**
- * 自由記述の相談に対して、承認済みナレッジを根拠に DeepSeek で回答する。
- * APIキー未設定・API障害時はローカルの承認済みナレッジにフォールバックする。
- * 診断・修復・セキュリティ初動などの安全装置は、プロトタイプ側の決定ルールが担当する。
+ * 担当者がRSPターミナルで手動実行するPowerShellの提案（[docs/35] §4-2）。
+ * サーバは実行しない。提案は記録であり、実行主体は担当者。
  */
+export interface PowerShellProposal {
+  command: string;
+  purpose: string;
+  risk: 'low' | 'medium' | 'high';
+  verify: string;
+  rollback: string;
+  warnings: string[];
+  model: string;
+}
+
+export interface PowerShellProposalInput {
+  context: string;
+  intent: string;
+  lastOutput?: string;
+}
+
+const POWERSHELL_PROPOSAL_PROMPT = [
+  'あなたはWindowsヘルプデスクの運用支援AIです。担当者がRSPターミナルで手動実行するPowerShellを1つ提案します。',
+  'あなたはコマンドを実行しません。担当者が内容を確認し、RSPターミナルで実行します。',
+  '- コマンドは1つだけ。複数行が必要なら1つのスクリプトブロックにまとめる。',
+  '- 破壊的・不可逆・本番影響・個人情報・認証情報に関わる場合は warnings に必ず書く。',
+  '- 対象や前提が不明で安全に提案できない場合は command を空にし、purpose に理由を書く。',
+  '- 日本語で、目的・確認方法・戻し方・警告を簡潔に書く。',
+  '- 出力は次のJSONのみ（前後に説明を付けない）:',
+  '{"command":"...","purpose":"...","risk":"low|medium|high","verify":"...","rollback":"...","warnings":["..."]}',
+].join('\n');
+
+function extractJsonObject(text: string): Record<string, unknown> {
+  const trimmed = String(text || '').trim();
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const candidate = fenced?.[1]?.trim() ?? trimmed;
+  try {
+    const value = JSON.parse(candidate) as unknown;
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  } catch {
+    const start = candidate.indexOf('{');
+    const end = candidate.lastIndexOf('}');
+    if (start >= 0 && end > start) {
+      try {
+        const value = JSON.parse(candidate.slice(start, end + 1)) as unknown;
+        return value && typeof value === 'object' && !Array.isArray(value)
+          ? (value as Record<string, unknown>)
+          : {};
+      } catch {
+        return {};
+      }
+    }
+    return {};
+  }
+}
+
+/**
+ * 担当者がRSPターミナルで手動実行するPowerShell案を生成する。
+ * サーバは実行しない。実行主体は担当者。
+ */
+export async function proposePowerShell(
+  input: PowerShellProposalInput,
+): Promise<PowerShellProposal> {
+  const apiKey = config.DEEPSEEK_API_KEY;
+  if (!apiKey) throw new Error('DEEPSEEK_API_KEY is not configured');
+  const context = redactPII(input.context).text;
+  const intent = redactPII(input.intent).text;
+  const lastOutput = input.lastOutput ? redactPII(input.lastOutput).text : '';
+  const userContent = [
+    '案件の文脈:',
+    context,
+    '',
+    '担当者の目的:',
+    intent,
+    lastOutput ? `\n直近の実行結果:\n${lastOutput}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+  const response = await fetch(`${config.DEEPSEEK_BASE_URL.replace(/\/$/, '')}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: config.DEEPSEEK_MODEL,
+      temperature: 0.1,
+      max_tokens: 800,
+      ...(config.DEEPSEEK_THINKING === 'disabled' ? { thinking: { type: 'disabled' } } : {}),
+      messages: [
+        { role: 'system', content: POWERSHELL_PROPOSAL_PROMPT },
+        { role: 'user', content: userContent },
+      ],
+    }),
+    signal: AbortSignal.timeout(config.DEEPSEEK_TIMEOUT_MS),
+  });
+  if (!response.ok) throw new Error(`DeepSeek API error: HTTP ${response.status}`);
+  const body = (await response.json()) as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+  const content = body.choices?.[0]?.message?.content?.trim();
+  if (!content) throw new Error('DeepSeek API returned an empty proposal');
+  const parsed = extractJsonObject(content);
+  const command = String(parsed.command ?? '').trim();
+  if (!command) {
+    throw new Error(String(parsed.purpose || 'AIが安全に提案できるコマンドを返しませんでした。'));
+  }
+  const riskValue = String(parsed.risk ?? 'medium').toLowerCase();
+  const risk: PowerShellProposal['risk'] =
+    riskValue === 'low' || riskValue === 'high' ? riskValue : 'medium';
+  const warnings = Array.isArray(parsed.warnings)
+    ? parsed.warnings
+        .map((warning) => String(warning))
+        .filter(Boolean)
+        .slice(0, 10)
+    : [];
+  return {
+    command,
+    purpose: String(parsed.purpose ?? '').trim(),
+    risk,
+    verify: String(parsed.verify ?? '').trim(),
+    rollback: String(parsed.rollback ?? '').trim(),
+    warnings,
+    model: config.DEEPSEEK_MODEL,
+  };
+}
+
 export interface AnswerOptions {
   /** 共有案件の PC 情報（B さんが A さんの案件を聞く場合）。指定すると本人の在庫は使わない。 */
   deviceContext?: string;
@@ -153,6 +276,11 @@ export interface AnswerOptions {
   extraContext?: string;
 }
 
+/**
+ * 自由記述の相談に対して、承認済みナレッジを根拠に DeepSeek で回答する。
+ * APIキー未設定・API障害時はローカルの承認済みナレッジにフォールバックする。
+ * 診断・修復・セキュリティ初動などの安全装置は、プロトタイプ側の決定ルールが担当する。
+ */
 export async function answerWithDeepSeek(
   input: string,
   email?: string,

@@ -131,6 +131,45 @@ const RemoteSchema = z.object({
   prompts: z.array(RemotePromptSchema).max(100).default([]),
 });
 
+const TerminalProposalSchema = z.object({
+  command: z.string().max(8000),
+  purpose: z.string().max(2000).optional(),
+  risk: z.enum(['low', 'medium', 'high']).default('medium'),
+  verify: z.string().max(2000).optional(),
+  rollback: z.string().max(2000).optional(),
+  warnings: z.array(z.string().max(500)).max(10).default([]),
+});
+
+const TerminalExecutedSchema = z.object({
+  command: z.string().max(8000),
+  output: z.string().max(20000).default(''),
+  outputSource: z.enum(['auto', 'manual']),
+  exitStatus: z.enum(['success', 'failure', 'unknown']),
+  note: z.string().max(1000).optional(),
+  sha256: z.string().max(64).optional(),
+});
+
+const TerminalStepSchema = z.object({
+  seq: z.number().int().min(1).max(20),
+  at: Iso.optional(),
+  intent: z.string().max(500).optional(),
+  proposal: TerminalProposalSchema,
+  executed: TerminalExecutedSchema.nullable().optional(),
+});
+
+const TerminalSchema = z.object({
+  sessionId: z.string().max(40),
+  device: z.string().max(120),
+  operator: z.string().max(120).optional(),
+  requester: z.string().max(120).optional(),
+  startedAt: Iso,
+  closedAt: Iso.optional(),
+  closeReason: z.enum(['resolved', 'stopped', 'escalated', 'expired']).optional(),
+  captureSupported: z.boolean().default(false),
+  steps: z.array(TerminalStepSchema).max(20).default([]),
+  unrecorded: z.array(z.string().max(300)).max(20).default([]),
+});
+
 const TimelineSchema = z.object({
   at: Iso.optional(),
   actor: z.string().max(120).optional(),
@@ -196,6 +235,7 @@ export const FinalReportSchema = z
     resolution: ResolutionSchema.nullable().optional(),
     knowledge: KnowledgeSchema.nullable().optional(),
     remote: RemoteSchema.nullable().optional(),
+    terminal: TerminalSchema.nullable().optional(),
     timeline: z.array(TimelineSchema).max(300).default([]),
   })
   .superRefine((report, ctx) => {
@@ -607,6 +647,74 @@ function renderRemote(report: FinalReport): string {
   )}${prompts}`;
 }
 
+function renderTerminal(report: FinalReport): string {
+  const terminal = report.terminal;
+  if (!terminal) return '';
+  const closeLabel: Record<string, string> = {
+    resolved: '解決として終了',
+    stopped: '中止',
+    escalated: 'エスカレーション',
+    expired: '期限切れで自動終了',
+  };
+  const rows = [
+    ['セッション', `<span class="case">${escapeHtml(terminal.sessionId)}</span>`],
+    ['対象端末', escapeHtml(terminal.device)],
+    ['実行した担当者', escapeHtml(terminal.operator ?? '')],
+    ['依頼者', escapeHtml(terminal.requester ?? '')],
+    ['開始', escapeHtml(terminal.startedAt)],
+    ['終了', escapeHtml(terminal.closedAt ?? '')],
+    [
+      '終了理由',
+      escapeHtml(
+        terminal.closeReason ? (closeLabel[terminal.closeReason] ?? terminal.closeReason) : '',
+      ),
+    ],
+    [
+      '出力の取込',
+      terminal.captureSupported
+        ? '自動取込（RSPのターミナルログ）'
+        : '手動貼り付け（自動取込は未対応）',
+    ],
+  ].filter((row) => row[1]);
+  const steps = terminal.steps
+    .map((step) => {
+      const executed = step.executed
+        ? [
+            '<h3>実行したコマンド</h3>',
+            `<pre class="memo">${safeText(step.executed.command, 8000)}</pre>`,
+            step.executed.output.trim()
+              ? `<h3>出力（${step.executed.outputSource === 'auto' ? '自動取込' : '手動貼り付け'}）</h3><pre class="memo">${safeText(step.executed.output, 20000)}</pre>`
+              : '<p class="muted">出力は記録されていません。</p>',
+            `<p class="muted">判定：${escapeHtml(step.executed.exitStatus)}${step.executed.sha256 ? ` ／ 記録ハッシュ：<span class="hash">${escapeHtml(step.executed.sha256)}</span>` : ''}${step.executed.note ? ` ／ 補足：${safeText(step.executed.note, 1000)}` : ''}</p>`,
+          ].join('')
+        : '<p class="note">このステップは実行結果が記録されていません。</p>';
+      const proposal = [
+        `<p class="muted">AIの提案（risk ${escapeHtml(step.proposal.risk)}）${step.proposal.purpose ? `：${safeText(step.proposal.purpose, 2000)}` : ''}</p>`,
+        `<pre class="memo">${safeText(step.proposal.command, 8000)}</pre>`,
+        step.proposal.verify
+          ? `<p class="muted">確認方法：${safeText(step.proposal.verify, 2000)}</p>`
+          : '',
+        step.proposal.rollback
+          ? `<p class="muted">戻し方：${safeText(step.proposal.rollback, 2000)}</p>`
+          : '',
+        step.proposal.warnings.length
+          ? `<p class="note">警告：${step.proposal.warnings.map((warning) => safeText(warning, 500)).join(' ／ ')}</p>`
+          : '',
+      ].join('');
+      return `<div class="proposal"><h3>ステップ ${step.seq}${step.at ? `（${escapeHtml(step.at)}）` : ''}</h3>${step.intent ? `<p class="muted">目的：${safeText(step.intent, 500)}</p>` : ''}${proposal}${executed}</div>`;
+    })
+    .join('');
+  const unrecorded = terminal.unrecorded.length
+    ? `<p class="note">未記録：${terminal.unrecorded.map((item) => safeText(item, 300)).join(' ／ ')}</p>`
+    : '';
+  return [
+    '<p class="note">このセクションは、担当者がRSPのターミナルで実行した内容の記録です。サーバーはコマンドを実行していません。AIの提案と実行結果は別物として扱います。</p>',
+    table(['項目', '内容'], rows),
+    steps,
+    unrecorded,
+  ].join('');
+}
+
 function renderTimeline(report: FinalReport): string {
   if (report.timeline.length === 0) return '';
   return table(
@@ -709,6 +817,7 @@ export function renderFinalReportHtml(report: FinalReport, meta: ReportRenderMet
   const resolution = renderResolution(report);
   const knowledge = renderKnowledge(report);
   const remote = renderRemote(report);
+  const terminal = renderTerminal(report);
 
   const body = `
 <div class="page">
@@ -729,6 +838,7 @@ export function renderFinalReportHtml(report: FinalReport, meta: ReportRenderMet
   ${section('AIの一次対応', ai)}
   ${section('担当者への引継ぎ', handover)}
   ${section('担当者の対応・解決記録', resolution)}
+  ${section('RSP実行セッション（AI提案と実行記録）', terminal)}
   ${section('ナレッジ化', knowledge)}
   ${section('遠隔支援（同意した範囲）', remote)}
 
@@ -765,6 +875,14 @@ export function reportPdfFilename(htmlFilename: string): string {
 export function contentDisposition(filename: string): string {
   const ascii = filename.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_');
   return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
+}
+
+/**
+ * ブラウザ内で表示するための Content-Disposition。
+ * ダウンロード（attachment）と同じファイル名を保ちつつ inline で返す。
+ */
+export function inlineContentDisposition(filename: string): string {
+  return contentDisposition(filename).replace(/^attachment;/, 'inline;');
 }
 
 const execFileAsync = promisify(execFile);
