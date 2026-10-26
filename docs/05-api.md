@@ -183,6 +183,8 @@ AI は 1 コマンドを「提案」するだけで、**サーバは実行しな
 
 | Method | Path | 権限 | 説明 |
 |---|---|---|---|
+| GET | `/api/terminal/context?caseId=` | 参照可 | 案件・依頼者・引継ぎ・PC情報（IP/シリアル/資産番号はマスク）・最新セッション |
+| GET | `/api/terminal/cases?hostname=&limit=` | 担当者 | 自分が claim した案件の一覧（RSP から案件を探す用） |
 | GET | `/api/terminal/sessions?caseId=` | 参照可 | その案件の最新セッション・ステップ（無ければ `session:null`） |
 | POST | `/api/terminal/sessions` | claim 済み担当者 | `{caseId, consent:{screenShare,remoteControl}, ttlMinutes?}`。同意必須・同時 1 件 |
 | GET | `/api/terminal/sessions/:id` | 参照可 | セッションとステップ |
@@ -199,6 +201,9 @@ AI は 1 コマンドを「提案」するだけで、**サーバは実行しな
 - エラー: `NOT_CLAIMED_OPERATOR` / `CONSENT_REQUIRED` / `SESSION_ACTIVE` / `SESSION_CLOSED` /
   `STEP_LIMIT` / `STEP_RECORDED` / `CAPTURE_UNAVAILABLE` / `NO_RECORDED_STEPS` / `AI_UNAVAILABLE` / `RATE_LIMITED`。
 - 自動取込は RSP のログ/API が未提供のため未対応。差し替え点は `apps/api/src/terminal/capture.ts`。
+- RSP の WebUI（AI支援パネル）からは、RSP のバックエンド経由で本 API を呼ぶ。
+  そのリクエストだけ `X-Helpdesk-Service-Key`（`RSP_INTEGRATION_KEY`）と `X-Operator-Email`、
+  loopback 送信元で認証する（[36-rsp-integration.md](36-rsp-integration.md) §2）。
 - SessionDTO / StepDTO の形は [35-terminal-session.md](35-terminal-session.md) §3・§4 を参照。作成済みの
   ナレッジは `session.knowledge = {id, kbNo, status, title}`、報告書は `session.report = {id, sha256}` で返す。
 

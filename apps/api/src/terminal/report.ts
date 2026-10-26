@@ -4,8 +4,8 @@ import { type CaseSnapshot, normalizeState } from '../lib/case-handover.js';
 import type { HandoverRow } from '../routes/case-handovers.js';
 import type { TerminalSessionRow, TerminalStepRow } from './session.js';
 
-/** 画面のカテゴリ（プロトタイプの CATS）→ 報告書の表記。 */
-const CATEGORY_LABEL: Record<string, string> = {
+/** 画面のカテゴリ（プロトタイプの CATS）→ 表示・報告書の表記。 */
+export const CATEGORY_LABEL: Record<string, string> = {
   account: 'アカウント・認証',
   mail: 'メール・Teams',
   network: 'ネットワーク・VPN',

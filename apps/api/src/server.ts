@@ -47,6 +47,7 @@ export async function buildServer(options?: { logger?: boolean }): Promise<Fasti
               'req.headers.authorization',
               'req.headers["x-proxy-secret"]',
               'req.headers["x-device-token"]',
+              'req.headers["x-helpdesk-service-key"]',
               'res.headers["set-cookie"]',
             ],
           },

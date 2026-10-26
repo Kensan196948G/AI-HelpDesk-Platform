@@ -23,6 +23,12 @@ const optionalText = z.preprocess(
   z.string().trim().min(1).optional(),
 );
 
+// サービス間の共有キー。短い値を誤って設定しても起動しない（fail-fast）。
+const optionalSecret = z.preprocess(
+  (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+  z.string().trim().min(32).optional(),
+);
+
 const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(18950),
@@ -69,6 +75,9 @@ const EnvSchema = z.object({
 
   // Phase 1 遠隔対応: RSP サービス認証（サーバ間のみ。ブラウザへ返さない）
   RSP_SERVICE_KEY: optionalText,
+  // RSP → HelpDesk の統合認証（RSP WebUI の AI支援パネル用）。
+  // 未設定なら統合経路は無効。32文字以上のランダム値を .env に設定する。
+  RSP_INTEGRATION_KEY: optionalSecret,
   // 担当者に返す RSP の公開 URL（ブラウザのリンク用。サーバ間接続には RSP_BASE_URL）
   RSP_PUBLIC_URL: z.string().url().default('https://rsp.mirai-remotetools.com'),
 

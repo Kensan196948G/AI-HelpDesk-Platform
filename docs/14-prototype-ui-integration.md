@@ -171,6 +171,14 @@
   引継ぎ自体の承認であり、ナレッジの状態は変えない。
 - 詳細・API・上限・未決事項は [35-terminal-session.md](35-terminal-session.md)。
 
+### 2-10. RSP WebUI との連携（2026-10-26 追加・ユーザー指示）
+
+- RSP の WebUI に「AI支援」パネルを追加し、HelpDesk の案件・PC情報・AI提案・実行記録・
+  解決後処理を RSP 側の1画面で扱えるようにした（RSP リポジトリ側の実装）。
+- HelpDesk 側は `/api/terminal/*` にサーバ間認証（サービスキー + 操作者メール + loopback）を追加し、
+  `GET /api/terminal/context` / `GET /api/terminal/cases` を公開した。
+- 契約・セキュリティ・フェーズは [36-rsp-integration.md](36-rsp-integration.md)。
+
 ## 3. 配備
 
 | リソース | 値 |

@@ -400,3 +400,44 @@
   証跡: `docs/evidence/terminal-session/`（01〜14＋報告書 HTML＋README）。
 - 既知の制約: RSP ログの自動取込は未対応（API 仕様待ち）／「中止」はブラウザ未操作（close API は共通）／
   コピーは Clipboard 権限の無いヘッドレスでスタブ確認／承認者は既存のナレッジ承認画面（承認者ロール）で行う。
+
+## Round 32 — RSP WebUI「AI支援」パネルと HelpDesk 連携（2026-10-26）
+
+ユーザー合意: RSP WebUI に AI支援パネルを追加し、HelpDesk の案件・PC情報・AI提案・実行記録・
+解決後処理を1画面で扱う。RSP＝実行・端末・監査、HelpDesk＝案件・AI・報告書・ナレッジ。
+契約は [36-rsp-integration.md](36-rsp-integration.md)。
+
+### HelpDesk 側
+- `/api/terminal/*` に **RSP サーバ間認証**を追加（`authenticateTerminal`）。統合ヘッダー
+  （`X-Helpdesk-Service-Key` + `X-Operator-Email`）があるときだけ、loopback + 32文字以上の
+  共有キー + 許可リストで認証する。無いときは従来の Access。適用範囲は `/api/terminal/*` と
+  報告書 GET に限定。
+- 新 API: `GET /api/terminal/context`（案件・依頼者・引継ぎ・PC情報・最新セッション）、
+  `GET /api/terminal/cases`（担当者が claim した案件一覧）。PC の IP・シリアル・資産番号はマスク。
+- 報告書 GET（`/api/reports/final/:id/html|pdf`）も統合認証に対応（作成者本人のみ）。
+- 監査の `terminal.*` に `via: rsp|ui` を追加。ログの redact に統合キーを追加。
+- 検証: typecheck / lint 緑、全 407 tests passed。
+
+### RSP 側
+- `/api/v1/helpdesk/*` プロキシ（10 ルート、`require_operator`）。loopback の HelpDesk へ
+  `X-Helpdesk-Service-Key` と `X-Operator-Email`（JWT のメール。`HELPDESK_OPERATOR_ALIASES` で読み替え）
+  を付与。キー未設定は 503、POST 非再試行、エラーは `{detail:{code,message}}` に正規化。
+- 報告書の返却 URL を RSP 同一オリジンへ書き換え、`/api/v1/helpdesk/reports/{id}/html|pdf` で
+  HelpDesk の報告書を中継（`Content-Disposition` を保持）。
+- WebUI: 左ナビ「AI支援」＋新ビュー（追加のみ、既存画面の削除・変更 0）。
+  案件/依頼者/PC情報、AI提案＋コピー、実行記録、同意→開始、解決/中止、報告書、ナレッジ下書き。
+  `?helpdeskCase=&hostname=` のディープリンク、`capture.supported=false` の明示。
+- 検証: `pytest` 741 passed（新規41を含む）、UI 15項目 OK（APIモック+Chromium）。既存画面の回帰確認済み。
+
+### 結合確認（実測）
+- RSP プロキシ（実 ASGI）→ HelpDesk 開発サーバ（localhost:18955）で、
+  context 200（IPマスク）/ cases 200 / 404 正規化 / セッション作成・終了 200 を確認。
+- 通し: 作成 → AI提案（モック）→ 記録（SHA-256）→ 解決終了 → 報告書（URL書換）→
+  HTML取得 200（RSP実行セッション節・コマンドを含む）→ ナレッジ下書き（KB番号）。5xx なし。
+- 証跡: `docs/evidence/terminal-session/`（HelpDesk 3ペイン）、
+  RSP `docs/evidence/helpdesk-ai-panel/`（AI支援ビュー）。
+
+### 制約・未実施
+- 実 Entra/MFA ログインでの UI 通し、RSP 本番サービスへの反映、`HELPDESK_SERVICE_KEY` の本番設定は未実施。
+- 実行はまだ手動（MeshCentral ターミナルへ貼り付け）。Phase 2 で W23 コマンド実行（出力自動取込）を接続する。
+- Entra UPN と HelpDesk の Access メールが異なる場合のエイリアス設定が必要（`HELPDESK_OPERATOR_ALIASES`）。

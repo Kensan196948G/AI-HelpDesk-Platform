@@ -6,7 +6,7 @@
 | 決定日 | 2026-10-26 |
 | 対象 | 引継ぎワークスペース（3ペイン） |
 | 決定 | 出力取り込みは**両方（自動優先・手動フォールバック）**、ナレッジは**下書き＋承認** |
-| 関連 | [34-operator-skill-rsp-session.md](34-operator-skill-rsp-session.md) / [33-handover-workspace.md](33-handover-workspace.md) / [21-final-report-export.md](21-final-report-export.md) |
+| 関連 | [34-operator-skill-rsp-session.md](34-operator-skill-rsp-session.md) / [33-handover-workspace.md](33-handover-workspace.md) / [21-final-report-export.md](21-final-report-export.md) / [36-rsp-integration.md](36-rsp-integration.md) |
 
 ## 1. 目的と原則
 
@@ -221,6 +221,12 @@ RSP のターミナルで実行**して、その実行記録から報告書と�
   - 再読み込み時は SessionDTO の `knowledge.kbNo` / `report.id` から作成済みを復元する
 - `capture.supported === false` のときは「自動取込は利用できません」と明示し、
   手動貼り付け欄を出す（黙って自動扱いにしない）。
+
+## 6-2. RSP WebUI からの利用
+
+RSP の「AI支援」パネルは、RSP のバックエンド経由で本 API を呼ぶ（[36-rsp-integration.md](36-rsp-integration.md)）。
+`/api/terminal/*` と報告書 GET だけが、統合ヘッダー（サービストークン + 操作者メール）と
+loopback 送信元で認証される。画面からの Access 認証は従来どおり。
 
 ## 7. セキュリティ・監査
 

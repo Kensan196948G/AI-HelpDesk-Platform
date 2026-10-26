@@ -9,6 +9,7 @@ let app: FastifyInstance;
 let fetchMock: ReturnType<typeof vi.fn>;
 const originalDevEmail = config.DEV_AUTH_EMAIL;
 const originalApiKey = config.DEEPSEEK_API_KEY;
+const originalIntegrationKey = config.RSP_INTEGRATION_KEY;
 
 const CASE_A = 'CASE-TERM-A';
 const CASE_B = 'CASE-TERM-B';
@@ -37,7 +38,11 @@ function coworkState(caseId: string) {
           snap: {
             at: '2026-10-26T00:10:00.000Z',
             device: 'MRK-NB-1000',
-            items: [{ grp: '周辺機器', k: '印刷スプーラ', v: '停止', lv: 'ng' }],
+            items: [
+              { grp: '周辺機器', k: '印刷スプーラ', v: '停止', lv: 'ng' },
+              { grp: 'ネットワーク', k: 'IPアドレス', v: '10.1.2.3', lv: 'ok' },
+              { grp: '端末', k: 'シリアル番号', v: 'SN123456', lv: 'ok' },
+            ],
           },
         },
       },
@@ -116,6 +121,7 @@ beforeEach(async () => {
   resetRateLimits();
   config.DEV_AUTH_EMAIL = OPERATOR;
   config.DEEPSEEK_API_KEY = 'test-key';
+  config.RSP_INTEGRATION_KEY = undefined;
   fetchMock = vi.fn(async () => {
     const content = JSON.stringify({
       command: 'Get-Service Spooler | Select-Object Status,Name',
@@ -146,6 +152,7 @@ afterAll(async () => {
   await sql`DELETE FROM prototype_states WHERE user_email = ${OPERATOR}`;
   config.DEV_AUTH_EMAIL = originalDevEmail;
   config.DEEPSEEK_API_KEY = originalApiKey;
+  config.RSP_INTEGRATION_KEY = originalIntegrationKey;
   await app.close();
 });
 
@@ -317,6 +324,29 @@ describe('RSP実行セッション API', () => {
     const preview = await app.inject({ method: 'GET', url: reportBody.files.html.previewUrl });
     expect(preview.statusCode, preview.body).toBe(200);
     expect(preview.headers['content-disposition']).toContain('inline');
+
+    // RSP 連携（サービスキー + 操作者メール）でも、作成者本人なら同じ報告書を取得できる。
+    const integrationKey = 'k'.repeat(48);
+    config.RSP_INTEGRATION_KEY = integrationKey;
+    const viaRsp = await app.inject({
+      method: 'GET',
+      url: reportBody.files.html.previewUrl,
+      headers: {
+        'x-helpdesk-service-key': integrationKey,
+        'x-operator-email': OPERATOR,
+      },
+    });
+    expect(viaRsp.statusCode, viaRsp.body).toBe(200);
+    expect(viaRsp.headers['content-disposition']).toContain('inline');
+    const notOwner = await app.inject({
+      method: 'GET',
+      url: reportBody.files.html.previewUrl,
+      headers: {
+        'x-helpdesk-service-key': integrationKey,
+        'x-operator-email': 'other-operator@example.com',
+      },
+    });
+    expect(notOwner.statusCode).toBe(404);
     expect(html.body).toContain('RSP実行セッション');
     expect(html.body).toContain('Get-Service Spooler');
     expect(html.body).toContain('スプーラが停止していた');
@@ -377,5 +407,95 @@ describe('RSP実行セッション API', () => {
     expect(linked[0]?.report_id).toBe(reportBody.id);
     expect(linked[0]?.knowledge_id).toBe(knowledge.id);
     expect(handoverId).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  it('RSP連携: 共有キーと操作者メールで案件文脈・PC情報・案件一覧を取得できる', async () => {
+    await setupClaimedHandover(CASE_A);
+
+    // 画面（Access）経由でも同じ context を取得できる。
+    const uiContext = await app.inject({
+      method: 'GET',
+      url: `/api/terminal/context?caseId=${CASE_A}`,
+    });
+    expect(uiContext.statusCode, uiContext.body).toBe(200);
+    const context = uiContext.json();
+    expect(context.case.id).toBe(CASE_A);
+    expect(context.requester.email).toBe(OPERATOR);
+    expect(context.handover.device).toBe('MRK-NB-1000');
+    expect(context.session).toBeNull();
+    // PC情報は表示してよいが、IP・シリアルは伏せる。
+    const values = context.pc.items.map((item: { k: string; v: string }) => `${item.k}=${item.v}`);
+    expect(values).toContain('IPアドレス=[IPアドレス]');
+    expect(values).toContain('シリアル番号=[シリアル番号]');
+    expect(JSON.stringify(context)).not.toContain('10.1.2.3');
+    expect(JSON.stringify(context)).not.toContain('SN123456');
+
+    // 統合キー未設定なら 401（fail-closed）。
+    const key = 'k'.repeat(48);
+    const unset = await app.inject({
+      method: 'GET',
+      url: `/api/terminal/context?caseId=${CASE_A}`,
+      headers: { 'x-helpdesk-service-key': key, 'x-operator-email': OPERATOR },
+    });
+    expect(unset.statusCode).toBe(401);
+
+    config.RSP_INTEGRATION_KEY = key;
+    const wrongKey = await app.inject({
+      method: 'GET',
+      url: `/api/terminal/context?caseId=${CASE_A}`,
+      headers: { 'x-helpdesk-service-key': 'x'.repeat(48), 'x-operator-email': OPERATOR },
+    });
+    expect(wrongKey.statusCode).toBe(401);
+
+    const missingOperator = await app.inject({
+      method: 'GET',
+      url: `/api/terminal/context?caseId=${CASE_A}`,
+      headers: { 'x-helpdesk-service-key': key },
+    });
+    expect(missingOperator.statusCode).toBe(401);
+
+    const integration = await app.inject({
+      method: 'GET',
+      url: `/api/terminal/context?caseId=${CASE_A}`,
+      headers: { 'x-helpdesk-service-key': key, 'x-operator-email': OPERATOR },
+    });
+    expect(integration.statusCode, integration.body).toBe(200);
+    expect(integration.json().case.subject).toContain('プリンタ');
+
+    const cases = await app.inject({
+      method: 'GET',
+      url: '/api/terminal/cases?hostname=mrk-nb-1000',
+      headers: { 'x-helpdesk-service-key': key, 'x-operator-email': OPERATOR },
+    });
+    expect(cases.statusCode, cases.body).toBe(200);
+    const item = cases.json().items.find((entry: { caseId: string }) => entry.caseId === CASE_A);
+    expect(item).toBeDefined();
+    expect(item.session).toBeNull();
+
+    const noMatch = await app.inject({
+      method: 'GET',
+      url: '/api/terminal/cases?hostname=NO-SUCH-DEVICE',
+      headers: { 'x-helpdesk-service-key': key, 'x-operator-email': OPERATOR },
+    });
+    expect(noMatch.statusCode).toBe(200);
+    expect(noMatch.json().items.some((entry: { caseId: string }) => entry.caseId === CASE_A)).toBe(
+      false,
+    );
+
+    // 統合経路の操作は監査に via=rsp を残す（セッション作成で確認）。
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/terminal/sessions',
+      headers: { 'x-helpdesk-service-key': key, 'x-operator-email': OPERATOR },
+      payload: { caseId: CASE_A, consent: { screenShare: false, remoteControl: true } },
+    });
+    expect(created.statusCode, created.body).toBe(200);
+    const audit = await sql<{ detail: unknown }[]>`
+      SELECT detail FROM audit_log
+      WHERE target_type = 'terminal_session' AND target_id = ${created.json().session.id}
+        AND action = 'terminal.session.start'
+      LIMIT 1
+    `;
+    expect((audit[0]?.detail as { via?: string })?.via).toBe('rsp');
   });
 });

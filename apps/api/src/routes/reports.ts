@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { authenticateTerminal } from '../auth/rsp-integration.js';
 import { authenticateUi } from '../auth/ui.js';
 import { sql } from '../db.js';
 import {
@@ -117,61 +118,73 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
-  app.get('/reports/final/:id/html', { preHandler: authenticateUi }, async (request, reply) => {
-    if (!request.uiEmail) throw badRequest('UI の認証情報がありません。');
-    const { id } = IdSchema.parse(request.params);
-    const row = await loadOwnedReport(id, request.uiEmail);
-    if (!row) throw new ApiError(404, 'NOT_FOUND', '対象の最終報告書が見つかりません。');
+  app.get(
+    '/reports/final/:id/html',
+    { preHandler: authenticateTerminal },
+    async (request, reply) => {
+      if (!request.uiEmail) throw badRequest('UI の認証情報がありません。');
+      const { id } = IdSchema.parse(request.params);
+      const row = await loadOwnedReport(id, request.uiEmail);
+      if (!row) throw new ApiError(404, 'NOT_FOUND', '対象の最終報告書が見つかりません。');
 
-    const { inline } = HtmlQuerySchema.parse(request.query ?? {});
-    reply
-      .type('text/html; charset=utf-8')
-      .header(
-        'Content-Disposition',
-        inline === '1'
-          ? inlineContentDisposition(row.html_filename)
-          : contentDisposition(row.html_filename),
-      )
-      .header('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'")
-      .header('Cache-Control', 'no-store')
-      .header('X-Content-Type-Options', 'nosniff')
-      .send(row.html);
-  });
-
-  app.get('/reports/final/:id/pdf', { preHandler: authenticateUi }, async (request, reply) => {
-    if (!request.uiEmail) throw badRequest('UI の認証情報がありません。');
-    if (!checkRateLimit(`final-report-pdf:${request.uiEmail}`, 10, 60_000)) {
-      throw new ApiError(429, 'RATE_LIMITED', 'PDF の生成が多すぎます。少し待ってください。');
-    }
-    const { id } = IdSchema.parse(request.params);
-    const row = await loadOwnedReport(id, request.uiEmail);
-    if (!row) throw new ApiError(404, 'NOT_FOUND', '対象の最終報告書が見つかりません。');
-
-    try {
-      const pdf = await renderFinalReportPdf(row.html);
+      const { inline } = HtmlQuerySchema.parse(request.query ?? {});
       reply
-        .type('application/pdf')
-        .header('Content-Disposition', contentDisposition(reportPdfFilename(row.html_filename)))
+        .type('text/html; charset=utf-8')
+        .header(
+          'Content-Disposition',
+          inline === '1'
+            ? inlineContentDisposition(row.html_filename)
+            : contentDisposition(row.html_filename),
+        )
+        .header('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'")
         .header('Cache-Control', 'no-store')
         .header('X-Content-Type-Options', 'nosniff')
-        .send(pdf);
-    } catch (error) {
-      if (error instanceof PdfBusyError) {
+        .send(row.html);
+    },
+  );
+
+  app.get(
+    '/reports/final/:id/pdf',
+    { preHandler: authenticateTerminal },
+    async (request, reply) => {
+      if (!request.uiEmail) throw badRequest('UI の認証情報がありません。');
+      if (!checkRateLimit(`final-report-pdf:${request.uiEmail}`, 10, 60_000)) {
+        throw new ApiError(429, 'RATE_LIMITED', 'PDF の生成が多すぎます。少し待ってください。');
+      }
+      const { id } = IdSchema.parse(request.params);
+      const row = await loadOwnedReport(id, request.uiEmail);
+      if (!row) throw new ApiError(404, 'NOT_FOUND', '対象の最終報告書が見つかりません。');
+
+      try {
+        const pdf = await renderFinalReportPdf(row.html);
+        reply
+          .type('application/pdf')
+          .header('Content-Disposition', contentDisposition(reportPdfFilename(row.html_filename)))
+          .header('Cache-Control', 'no-store')
+          .header('X-Content-Type-Options', 'nosniff')
+          .send(pdf);
+      } catch (error) {
+        if (error instanceof PdfBusyError) {
+          throw new ApiError(
+            503,
+            'PDF_BUSY',
+            'PDF の生成が混み合っています。少し待ってから再試行してください。',
+          );
+        }
+        if (error instanceof PdfUnavailableError) {
+          throw new ApiError(
+            503,
+            'PDF_UNAVAILABLE',
+            'PDF を生成するヘッドレスブラウザがありません。HTML を出力してください。',
+          );
+        }
+        request.log.warn({ err: error }, 'final report PDF generation failed');
         throw new ApiError(
-          503,
-          'PDF_BUSY',
-          'PDF の生成が混み合っています。少し待ってから再試行してください。',
+          502,
+          'PDF_FAILED',
+          'PDF の生成に失敗しました。HTML を出力してください。',
         );
       }
-      if (error instanceof PdfUnavailableError) {
-        throw new ApiError(
-          503,
-          'PDF_UNAVAILABLE',
-          'PDF を生成するヘッドレスブラウザがありません。HTML を出力してください。',
-        );
-      }
-      request.log.warn({ err: error }, 'final report PDF generation failed');
-      throw new ApiError(502, 'PDF_FAILED', 'PDF の生成に失敗しました。HTML を出力してください。');
-    }
-  });
+    },
+  );
 }

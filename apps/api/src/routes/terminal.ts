@@ -1,8 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { proposePowerShell } from '../ai/deepseek.js';
-import { authenticateUi } from '../auth/ui.js';
+import { authenticateTerminal } from '../auth/rsp-integration.js';
 import { config } from '../config.js';
 import { sql } from '../db.js';
 import {
@@ -23,6 +23,7 @@ import { findEmployeeByEmail } from '../lib/mirai-info.js';
 import { nextKbNo } from '../lib/numbers.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
 import { assertCaptureAllowed, captureCapability } from '../terminal/capture.js';
+import { buildTerminalCaseContext } from '../terminal/context.js';
 import { buildKnowledgeDraft, buildTerminalReport } from '../terminal/report.js';
 import {
   CloseSchema,
@@ -47,6 +48,15 @@ const CreateBodySchema = CreateSessionSchema.extend({
 });
 const SessionParamsSchema = z.object({ id: z.string().uuid() });
 const StepParamsSchema = z.object({ id: z.string().uuid() });
+const CasesQuerySchema = z.object({
+  hostname: z.string().trim().max(120).optional(),
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+});
+
+/** 監査の経路（Access の画面操作か、RSP からの連携か）。 */
+function auditVia(request: FastifyRequest): 'rsp' | 'ui' {
+  return request.integration === 'rsp' ? 'rsp' : 'ui';
+}
 const REPORT_DAILY_LIMIT = 50;
 
 function isUniqueViolation(error: unknown): boolean {
@@ -204,7 +214,7 @@ async function operatorName(email: string): Promise<string> {
 
 export async function terminalRoutes(app: FastifyInstance): Promise<void> {
   /** その案件の最新セッション（復元用）。 */
-  app.get('/terminal/sessions', { preHandler: authenticateUi }, async (request) => {
+  app.get('/terminal/sessions', { preHandler: authenticateTerminal }, async (request) => {
     if (!request.uiEmail) throw badRequest('UI の認証情報がありません。');
     const { caseId } = CaseQuerySchema.parse(request.query ?? {});
     const handover = await latestHandoverForCase(caseId);
@@ -235,7 +245,7 @@ export async function terminalRoutes(app: FastifyInstance): Promise<void> {
   /** セッションを作る（claim 済みの担当者のみ・同意必須）。 */
   app.post(
     '/terminal/sessions',
-    { preHandler: authenticateUi, bodyLimit: 16 * 1024 },
+    { preHandler: authenticateTerminal, bodyLimit: 16 * 1024 },
     async (request) => {
       if (!request.uiEmail) throw badRequest('UI の認証情報がありません。');
       const email = request.uiEmail;
@@ -308,6 +318,7 @@ export async function terminalRoutes(app: FastifyInstance): Promise<void> {
             targetType: 'terminal_session',
             targetId: session.id,
             detail: {
+              via: auditVia(request),
               actorEmail: email,
               caseId: handover.case_id,
               handoverId: handover.id,
@@ -333,7 +344,7 @@ export async function terminalRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
-  app.get('/terminal/sessions/:id', { preHandler: authenticateUi }, async (request) => {
+  app.get('/terminal/sessions/:id', { preHandler: authenticateTerminal }, async (request) => {
     if (!request.uiEmail) throw badRequest('UI の認証情報がありません。');
     const { id } = SessionParamsSchema.parse(request.params);
     const found = await loadSession(id);
@@ -349,10 +360,98 @@ export async function terminalRoutes(app: FastifyInstance): Promise<void> {
     };
   });
 
+  /**
+   * 案件の文脈（案件・依頼者・引継ぎ・PC情報・最新セッション）。
+   * RSP の AI支援パネルが最初に読む（[docs/36-rsp-integration.md] §3-1）。
+   */
+  app.get('/terminal/context', { preHandler: authenticateTerminal }, async (request) => {
+    if (!request.uiEmail) throw badRequest('UI の認証情報がありません。');
+    const { caseId } = CaseQuerySchema.parse(request.query ?? {});
+    const handover = await latestHandoverForCase(caseId);
+    if (!handover) throw notFound('この案件の引継ぎが見つかりません。');
+    if (request.uiEmail !== handover.claimed_by && request.uiEmail !== handover.owner_email) {
+      await requireHelpdesk(request.uiEmail);
+    }
+    const sessionRows = await sql<TerminalSessionRow[]>`
+      SELECT * FROM terminal_sessions
+      WHERE handover_id = ${handover.id}
+      ORDER BY started_at DESC
+      LIMIT 1
+    `;
+    let session = sessionRows[0];
+    if (session) session = await expireIfNeeded(session, request.uiEmail);
+    const steps = session ? await loadSteps(session.id) : [];
+    const requesterName = await operatorName(handover.owner_email);
+    const context = buildTerminalCaseContext(
+      handover,
+      requesterName && requesterName !== handover.owner_email ? requesterName : null,
+    );
+    return {
+      ok: true,
+      ...context,
+      session: session
+        ? sessionWithSteps(session, steps.length, await knowledgeSummaryOf(session))
+        : null,
+    };
+  });
+
+  /**
+   * 担当者が claim した案件の一覧（RSP の端末から案件を探す用）。
+   * hostname はスナップショットの対象端末名（大文字小文字無視）。
+   */
+  app.get('/terminal/cases', { preHandler: authenticateTerminal }, async (request) => {
+    if (!request.uiEmail) throw badRequest('UI の認証情報がありません。');
+    const email = request.uiEmail;
+    const query = CasesQuerySchema.parse(request.query ?? {});
+    const hostname = query.hostname?.trim() || null;
+    const rows = await sql<Array<HandoverRow & { updated_at: Date }>>`
+      SELECT id, case_id, owner_email, assignee_hint, recipient_no, recipient_name,
+             status, snapshot, claimed_by, approved_by, approved_at, self_approved,
+             created_at, updated_at
+      FROM case_handovers
+      WHERE claimed_by = ${email}
+        AND status IN ('claimed', 'resolved')
+        AND (
+          ${hostname}::text IS NULL
+          OR upper(snapshot #>> '{case,pc,snap,device}') = upper(${hostname})
+        )
+      ORDER BY updated_at DESC
+      LIMIT ${query.limit}
+    `;
+    const ids = rows.map((row) => row.id);
+    const sessions = ids.length
+      ? await sql<{ handover_id: string; id: string; status: string }[]>`
+          SELECT DISTINCT ON (handover_id) handover_id, id, status
+          FROM terminal_sessions
+          WHERE handover_id IN ${sql(ids)}
+          ORDER BY handover_id, started_at DESC
+        `
+      : [];
+    const byHandover = new Map(sessions.map((session) => [session.handover_id, session]));
+    return {
+      ok: true,
+      items: rows.map((row) => {
+        const context = buildTerminalCaseContext(row, null);
+        const session = byHandover.get(row.id);
+        return {
+          caseId: row.case_id,
+          subject: context.case.subject,
+          requesterEmail: row.owner_email,
+          device: context.handover.device,
+          handoverId: row.id,
+          handoverStatus: row.status,
+          claimedBy: row.claimed_by,
+          updatedAt: new Date(row.updated_at).toISOString(),
+          session: session ? { id: session.id, status: session.status } : null,
+        };
+      }),
+    };
+  });
+
   /** AI に次の一手を提案させる（実行はしない）。 */
   app.post(
     '/terminal/sessions/:id/steps',
-    { preHandler: authenticateUi, bodyLimit: 32 * 1024 },
+    { preHandler: authenticateTerminal, bodyLimit: 32 * 1024 },
     async (request) => {
       if (!request.uiEmail) throw badRequest('UI の認証情報がありません。');
       const email = request.uiEmail;
@@ -479,7 +578,7 @@ export async function terminalRoutes(app: FastifyInstance): Promise<void> {
   /** 担当者が実際に実行したコマンドと出力を記録する。 */
   app.post(
     '/terminal/steps/:id/record',
-    { preHandler: authenticateUi, bodyLimit: 128 * 1024 },
+    { preHandler: authenticateTerminal, bodyLimit: 128 * 1024 },
     async (request) => {
       if (!request.uiEmail) throw badRequest('UI の認証情報がありません。');
       const email = request.uiEmail;
@@ -540,6 +639,7 @@ export async function terminalRoutes(app: FastifyInstance): Promise<void> {
           targetType: 'terminal_session',
           targetId: session.id,
           detail: {
+            via: auditVia(request),
             actorEmail: email,
             caseId: session.case_id,
             stepId: step.id,
@@ -563,20 +663,24 @@ export async function terminalRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
-  app.get('/terminal/sessions/:id/capture', { preHandler: authenticateUi }, async (request) => {
-    if (!request.uiEmail) throw badRequest('UI の認証情報がありません。');
-    const { id } = SessionParamsSchema.parse(request.params);
-    const found = await loadSession(id);
-    if (!found) throw notFound('RSP実行セッションが見つかりません。');
-    const handover = await loadHandoverForSession(found);
-    await assertCanView(found, handover, request.uiEmail);
-    const capability = captureCapability();
-    return { ok: true, ...capability };
-  });
+  app.get(
+    '/terminal/sessions/:id/capture',
+    { preHandler: authenticateTerminal },
+    async (request) => {
+      if (!request.uiEmail) throw badRequest('UI の認証情報がありません。');
+      const { id } = SessionParamsSchema.parse(request.params);
+      const found = await loadSession(id);
+      if (!found) throw notFound('RSP実行セッションが見つかりません。');
+      const handover = await loadHandoverForSession(found);
+      await assertCanView(found, handover, request.uiEmail);
+      const capability = captureCapability();
+      return { ok: true, ...capability };
+    },
+  );
 
   app.post(
     '/terminal/sessions/:id/close',
-    { preHandler: authenticateUi, bodyLimit: 8 * 1024 },
+    { preHandler: authenticateTerminal, bodyLimit: 8 * 1024 },
     async (request) => {
       if (!request.uiEmail) throw badRequest('UI の認証情報がありません。');
       const email = request.uiEmail;
@@ -610,7 +714,12 @@ export async function terminalRoutes(app: FastifyInstance): Promise<void> {
           action: 'terminal.session.close',
           targetType: 'terminal_session',
           targetId: session.id,
-          detail: { actorEmail: email, caseId: session.case_id, reason: body.reason },
+          detail: {
+            via: auditVia(request),
+            actorEmail: email,
+            caseId: session.case_id,
+            reason: body.reason,
+          },
         });
         return rows[0];
       });
@@ -629,7 +738,7 @@ export async function terminalRoutes(app: FastifyInstance): Promise<void> {
    */
   app.post(
     '/terminal/sessions/:id/report',
-    { preHandler: authenticateUi, bodyLimit: 8 * 1024 },
+    { preHandler: authenticateTerminal, bodyLimit: 8 * 1024 },
     async (request) => {
       if (!request.uiEmail) throw badRequest('UI の認証情報がありません。');
       const email = request.uiEmail;
@@ -734,6 +843,7 @@ export async function terminalRoutes(app: FastifyInstance): Promise<void> {
           targetType: 'terminal_session',
           targetId: session.id,
           detail: {
+            via: auditVia(request),
             actorEmail: email,
             caseId: session.case_id,
             reportId,
@@ -771,7 +881,7 @@ export async function terminalRoutes(app: FastifyInstance): Promise<void> {
   /** ナレッジ下書き（status='draft'）を作る。公開は既存の承認フローで行う。 */
   app.post(
     '/terminal/sessions/:id/knowledge-draft',
-    { preHandler: authenticateUi, bodyLimit: 16 * 1024 },
+    { preHandler: authenticateTerminal, bodyLimit: 16 * 1024 },
     async (request) => {
       if (!request.uiEmail) throw badRequest('UI の認証情報がありません。');
       const email = request.uiEmail;
@@ -859,6 +969,7 @@ export async function terminalRoutes(app: FastifyInstance): Promise<void> {
           targetType: 'terminal_session',
           targetId: session.id,
           detail: {
+            via: auditVia(request),
             actorEmail: email,
             caseId: session.case_id,
             knowledgeId: row.id,

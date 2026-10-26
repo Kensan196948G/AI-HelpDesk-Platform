@@ -20,5 +20,7 @@ declare module 'fastify' {
     uiEmail?: string;
     // ログインに使われた生のメール（別名の正規化前）。表示用。
     loginEmail?: string;
+    // RSP のサーバ間連携で認証されたリクエスト（[docs/36-rsp-integration.md]）。
+    integration?: 'rsp';
   }
 }

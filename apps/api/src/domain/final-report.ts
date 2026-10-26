@@ -356,7 +356,7 @@ function safeInline(value: string | undefined, max = 300): string {
 }
 
 /** PC 基本情報の値。項目名で機微な値を判定し、必ず伏せる（伏せ字化のみ）。 */
-function maskPcValue(key: string, value: string): string {
+export function maskPcValue(key: string, value: string): string {
   if (/ipアドレス|ip address/i.test(key)) return '[IPアドレス]';
   if (/シリアル|serial/i.test(key)) return '[シリアル番号]';
   if (/資産番号|asset/i.test(key)) return '[資産番号]';
