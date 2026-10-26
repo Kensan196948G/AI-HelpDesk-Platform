@@ -102,6 +102,9 @@ describe('prototype UI integration', () => {
     expect(body.answer.length).toBeGreaterThan(0);
     expect(body.sources.length).toBeGreaterThan(0);
     expect(body.sources[0].kbNo).toMatch(/^KB-/);
+    // 画面の「プロンプトを見る」用に、実際に AI へ渡した内容を返す
+    expect(body.prompt.system).toContain('一次対応AI');
+    expect(body.prompt.user).toContain('共有フォルダ');
   });
 
   it('画面で承認したナレッジ（helpdesk 状態の active KB）を AI 回答の根拠に使う', async () => {

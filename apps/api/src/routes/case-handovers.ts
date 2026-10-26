@@ -569,6 +569,7 @@ export async function caseHandoverRoutes(app: FastifyInstance): Promise<void> {
         provider: answer.provider,
         model: answer.model,
         confidence: answer.confidence,
+        prompt: answer.prompt,
       };
     },
   );

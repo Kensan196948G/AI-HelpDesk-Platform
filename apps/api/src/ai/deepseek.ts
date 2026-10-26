@@ -13,6 +13,13 @@ export interface AiSource {
   title: string;
 }
 
+export interface AiPrompt {
+  /** サーバ側で固定のシステム指示。 */
+  system: string;
+  /** 実際に AI へ渡す利用者プロンプト（質問・PC情報・案件コンテキスト・ナレッジ）。 */
+  user: string;
+}
+
 export interface AiAnswer {
   answer: string;
   sources: AiSource[];
@@ -20,6 +27,8 @@ export interface AiAnswer {
   provider: 'deepseek' | 'fallback';
   model: string;
   device: { source: 'browser' | 'agent'; collectedAt: string } | null;
+  /** 画面の「プロンプトを見る」用。AI に実際に渡した内容。 */
+  prompt: AiPrompt;
 }
 
 const SYSTEM_PROMPT = [
@@ -39,6 +48,19 @@ function buildKnowledgeContext(knowledge: KnowledgeLike[]): string {
   return knowledge
     .map((k) => `[${k.kbNo}] ${k.title}\n症状: ${k.symptom}\n原因: ${k.cause}\n手順:\n${k.steps}`)
     .join('\n\n---\n\n');
+}
+
+function buildUserPrompt(
+  text: string,
+  knowledge: KnowledgeLike[],
+  deviceContext: string,
+  extraContext?: string,
+): string {
+  const deviceBlock = deviceContext
+    ? `\n\n利用者のPC基本情報（読み取りのみ）:\n${deviceContext}`
+    : '';
+  const extraBlock = extraContext ? `\n\n案件の文脈:\n${extraContext}` : '';
+  return `利用者の相談:\n${text}${deviceBlock}${extraBlock}\n\n承認済みナレッジ:\n${buildKnowledgeContext(knowledge)}`;
 }
 
 function fallbackAnswer(knowledge: KnowledgeLike[]): string {
@@ -84,10 +106,7 @@ async function callDeepSeek(
   const apiKey = config.DEEPSEEK_API_KEY;
   if (!apiKey) throw new Error('DEEPSEEK_API_KEY is not configured');
 
-  const deviceBlock = deviceContext
-    ? `\n\n利用者のPC基本情報（読み取りのみ）:\n${deviceContext}`
-    : '';
-  const extraBlock = extraContext ? `\n\n案件の文脈:\n${extraContext}` : '';
+  const userContent = buildUserPrompt(text, knowledge, deviceContext, extraContext);
   const response = await fetch(`${config.DEEPSEEK_BASE_URL.replace(/\/$/, '')}/chat/completions`, {
     method: 'POST',
     headers: {
@@ -103,7 +122,7 @@ async function callDeepSeek(
         { role: 'system', content: SYSTEM_PROMPT },
         {
           role: 'user',
-          content: `利用者の相談:\n${text}${deviceBlock}${extraBlock}\n\n承認済みナレッジ:\n${buildKnowledgeContext(knowledge)}`,
+          content: userContent,
         },
       ],
     }),
@@ -164,6 +183,10 @@ export async function answerWithDeepSeek(
     : inventory
       ? { source: inventory.source, collectedAt: inventory.collectedAt }
       : null;
+  const prompt: AiPrompt = {
+    system: SYSTEM_PROMPT,
+    user: buildUserPrompt(redacted.text, knowledge, deviceContext, options?.extraContext),
+  };
 
   if (!config.DEEPSEEK_API_KEY) {
     const answer = fallbackAnswer(knowledge);
@@ -175,6 +198,7 @@ export async function answerWithDeepSeek(
       provider: 'fallback',
       model: 'fallback',
       device,
+      prompt,
     };
   }
 
@@ -194,6 +218,7 @@ export async function answerWithDeepSeek(
       provider: 'deepseek',
       model: config.DEEPSEEK_MODEL,
       device,
+      prompt,
     };
   } catch {
     const answer = fallbackAnswer(knowledge);
@@ -205,6 +230,7 @@ export async function answerWithDeepSeek(
       provider: 'fallback',
       model: 'fallback',
       device,
+      prompt,
     };
   }
 }

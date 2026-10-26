@@ -725,7 +725,15 @@
       (item.confidence ? '<span class="hw-chip">確信度 ' + esc(item.confidence) + '</span>' : '') +
       '<span class="hw-chip">' +
       (item.mode === 'case' ? '案件コンテキスト' : 'ナレッジ') +
-      '</span></div></div>'
+      '</span></div>' +
+      (item.prompt
+        ? '<details class="hw-ai-prompt"><summary>プロンプトを見る / コピー <span class="hw-tag display">表示</span></summary><div class="hw-ai-prompt-actions"><button type="button" class="hw-btn sm" data-hw="copy-prompt">コピー</button></div><label>システム指示<textarea readonly rows="5">' +
+          esc(item.prompt.system) +
+          '</textarea></label><label>ユーザープロンプト<textarea readonly rows="7">' +
+          esc(item.prompt.user) +
+          '</textarea></label></details>'
+        : '') +
+      '</div>'
     );
   }
 
@@ -743,7 +751,7 @@
       (caseId ? '案件コンテキスト' : 'ナレッジ検索') +
       '</span></div><p class="hw-ai-note">' +
       esc(note) +
-      '</p><div class="hw-form-row"><label>質問<textarea id="hw-ai-input" rows="2" placeholder="例：この状態で次に確認すべきことは？">' +
+      '</p><p class="hw-ai-note">プロンプトには承認済みナレッジ本文と共有PC情報が含まれます。取扱いに注意してください。</p><div class="hw-form-row"><label>質問<textarea id="hw-ai-input" rows="2" placeholder="例：この状態で次に確認すべきことは？">' +
       esc(HW.aiDraft[t.id] || '') +
       '</textarea></label></div><div class="hw-form-row end"><button type="button" class="hw-btn pri" data-hw="ai"' +
       (busy ? ' disabled' : '') +
@@ -826,6 +834,7 @@
       confidence: (data && data.confidence) || '',
       mode,
       error: Boolean(error),
+      prompt: (data && data.prompt) || null,
       at: Date.now(),
     });
     if (HW.ai[t.id].length > 8) HW.ai[t.id] = HW.ai[t.id].slice(-8);
@@ -979,6 +988,42 @@
   }
 
   /** 既存処理が読む入力を、画面の先頭に一時的に置いてから呼ぶ（二重実装しない）。 */
+  async function copyText(text) {
+    try {
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        await navigator.clipboard.writeText(text);
+        hwToast('プロンプトをコピーしました。', 'ok');
+        return;
+      }
+    } catch {
+      // fall through
+    }
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.style.cssText = 'position:fixed;left:-9999px;top:0';
+    document.body.appendChild(area);
+    area.select();
+    try {
+      document.execCommand('copy');
+      hwToast('プロンプトをコピーしました。', 'ok');
+    } catch {
+      hwToast('コピーできませんでした。表示欄を選択してコピーしてください。', 'bad');
+    } finally {
+      area.remove();
+    }
+  }
+
+  function copyPrompt(button) {
+    const qa = button.closest('.hw-ai-qa');
+    if (!qa) return;
+    const areas = Array.from(qa.querySelectorAll('.hw-ai-prompt textarea'));
+    if (!areas.length) return;
+    const text = areas
+      .map((area, index) => (index === 0 ? 'SYSTEM' : 'USER') + ':\n' + area.value)
+      .join('\n\n---\n\n');
+    void copyText(text);
+  }
+
   function withTempInputs(html, values, fn) {
     const host = document.createElement('div');
     host.className = 'hw-temp-inputs';
@@ -1283,6 +1328,11 @@
 #ahd-hw .hw-ai-answer{background:var(--u-surface,#fff);border:1px solid var(--u-line,#e1ddd2);border-left:3px solid var(--u-teal,#0f9d9a);border-radius:6px;padding:6px 8px;font-size:10.8px;line-height:1.65;white-space:pre-wrap;word-break:break-word}
 #ahd-hw .hw-ai-answer.bad{border-left-color:var(--u-r,#c9302c);background:var(--u-r-soft,#fbe2e1)}
 #ahd-hw .hw-ai-meta{display:flex;gap:3px;flex-wrap:wrap;margin-top:4px}
+#ahd-hw .hw-ai-prompt{margin-top:7px;border-top:1px dashed var(--u-line,#e1ddd2);padding-top:5px}
+#ahd-hw .hw-ai-prompt summary{cursor:pointer;font-size:9.6px;font-weight:700;color:var(--u-muted,#5f6874);display:flex;gap:4px;align-items:center}
+#ahd-hw .hw-ai-prompt-actions{display:flex;justify-content:flex-end;margin:4px 0}
+#ahd-hw .hw-ai-prompt label{display:block;font-size:9.4px;font-weight:700;color:var(--u-muted,#5f6874);margin-top:5px}
+#ahd-hw .hw-ai-prompt textarea{width:100%;border:1px solid var(--u-line,#e1ddd2);border-radius:6px;background:var(--u-surface,#fff);color:var(--u-ink,#1b222b);font:9.8px/1.5 var(--mono,monospace);padding:5px 6px;resize:vertical;margin-top:2px}
 #ahd-hw .hw-inbox{border:1px solid var(--u-y,#e0a800);background:var(--u-safety-soft,#fff5d3);border-radius:9px;padding:7px;margin-bottom:2px}
 #ahd-hw .hw-inbox-h{display:flex;justify-content:space-between;font-size:10.2px;font-weight:700}
 #ahd-hw .hw-inbox-h span{background:var(--u-surface,#fff);border-radius:999px;padding:0 6px}
@@ -1582,6 +1632,7 @@ body.ahd-hw-open{overflow:hidden}
     if (action === 'legacy') return openLegacy(t);
     if (action === 'cowork') return openCowork(t);
     if (action === 'ai') return askAi(t);
+    if (action === 'copy-prompt') return copyPrompt(target);
     if (action === 'kb') return openKb(target.dataset.id);
   });
 
