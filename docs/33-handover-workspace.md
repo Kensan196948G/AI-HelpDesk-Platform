@@ -118,7 +118,8 @@
 | `prototypes/handover-3pane-v0.1.html` | 事前に合意した Standalone 試作（デモデータ） |
 
 既存 HTML（`Mirai_AIHelpdesk_Cowork_StepWizard_V3.1_PCinfo_Offline.html`）は変更していない。
-追加したのは右下の起動ボタンとオーバーレイのみで、既存の DOM / CSS / 画面遷移はそのまま。
+追加したのは右下の起動ボタン、左ナビ項目、既存コンテンツ内の表示領域。
+既存の DOM / CSS / 画面遷移そのものは変更していない（表示中だけ `.ux-content` の子を CSS で隠す）。
 
 ## 8. 検証（2026-10-26）
 
@@ -135,8 +136,8 @@
 | 承認者ロール | 担当開始・解決記録を非表示（閲覧のみ） |
 | 絞り込み / Esc / 再表示 | 動作確認 |
 | 左ナビ項目 | 非一般社員に表示、一般社員は非表示。クリックで開き、画面遷移（`S.ui.view`）を変えない。`uxShell` 再描画後も残る |
-| インライン表示 | `.ux-content` 内に表示。左ナビ・ヘッダーは残り、`#uxPage`/`#cw`/`#hd` を隠す。別ナビで閉じて元画面に戻る。`S.ui.view` は変わらない |
-| プレビュー反映 | 2026-10-26 13:19 に `ai-helpdesk-api.service` を再起動（`commit=57f73c7` / health 200 / 公開URLは Cloudflare Access へ 302） |
+| インライン表示 | `.ux-content` 内に表示。左ナビ・ヘッダーは残り、`#uxPage`/`#cw`/`#hd` を隠す。別ナビで閉じて元画面に戻る（開閉だけでは `S.ui.view` を変えない） |
+| プレビュー反映 | 2026-10-26 13:28 に `ai-helpdesk-api.service` を再起動（`commit=8a79b69` / health 200 / 公開URLは Cloudflare Access へ 302） |
 | AI窓口由来の案件（テスト用フィクスチャ） | 共有情報、会話、提案、承認ハッシュの表示を確認 |
 
 証跡: `docs/evidence/handover-workspace/`
@@ -148,8 +149,8 @@
 
 ## 9. 未完了・次段階
 
-1. **プレビュー環境への反映**: 2026-10-26 13:19 に `ai-helpdesk-api.service` を再起動済み
-   （`commit=57f73c7` / health 200 / 公開URLは Cloudflare Access のログインへ 302）。
+1. **プレビュー環境への反映**: 2026-10-26 13:28 に `ai-helpdesk-api.service` を再起動済み
+   （`commit=8a79b69` / health 200 / 公開URLは Cloudflare Access のログインへ 302）。
    配信 HTML はプロセス起動時にキャッシュされるため、ブリッジ変更時は再起動が必要。
 2. 引継ぎ受信（`case_handovers` の実データ）での claim からマージまでの実機確認。
 3. 解決ループの `Skill` / `verify` / 新しい承認ハッシュをこの画面に接続するかの設計。
