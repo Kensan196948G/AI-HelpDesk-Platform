@@ -143,10 +143,13 @@ const TerminalProposalSchema = z.object({
 const TerminalExecutedSchema = z.object({
   command: z.string().max(8000),
   output: z.string().max(20000).default(''),
-  outputSource: z.enum(['auto', 'manual']),
+  // 'rsp_command' は RSP の W23 コマンドキューで実行した実出力（Phase 2）。追加のみ。
+  outputSource: z.enum(['auto', 'manual', 'rsp_command']),
   exitStatus: z.enum(['success', 'failure', 'unknown']),
   note: z.string().max(1000).optional(),
   sha256: z.string().max(64).optional(),
+  // 相関ID（RSP の command log_id）。rsp_command のときだけ載る（任意・後方互換）。
+  rspCommandLogId: z.string().max(64).optional(),
 });
 
 const TerminalStepSchema = z.object({
@@ -166,6 +169,8 @@ const TerminalSchema = z.object({
   closedAt: Iso.optional(),
   closeReason: z.enum(['resolved', 'stopped', 'escalated', 'expired']).optional(),
   captureSupported: z.boolean().default(false),
+  // RSP の remote_session ID（Phase 2・任意。未相関なら載らない）。
+  rspSessionId: z.string().max(64).optional(),
   steps: z.array(TerminalStepSchema).max(20).default([]),
   unrecorded: z.array(z.string().max(300)).max(20).default([]),
 });
@@ -656,6 +661,21 @@ function renderTerminal(report: FinalReport): string {
     escalated: 'エスカレーション',
     expired: '期限切れで自動終了',
   };
+  // 出力ソースの表示。既存の auto / manual の文言は変えず、rsp_command のときだけ足す。
+  const outputSourceLabel = (source: string): string => {
+    if (source === 'auto') return '自動取込';
+    if (source === 'rsp_command') return 'RSPコマンドキューから自動取込';
+    return '手動貼り付け';
+  };
+  // 「出力の取込」の要約。RSP コマンドキュー由来の記録があるときだけ専用の文言にする。
+  const usedRspCommand = terminal.steps.some(
+    (step) => step.executed?.outputSource === 'rsp_command',
+  );
+  const captureLabel = usedRspCommand
+    ? 'RSPコマンドキューから自動取込'
+    : terminal.captureSupported
+      ? '自動取込（RSPのターミナルログ）'
+      : '手動貼り付け（自動取込は未対応）';
   const rows = [
     ['セッション', `<span class="case">${escapeHtml(terminal.sessionId)}</span>`],
     ['対象端末', escapeHtml(terminal.device)],
@@ -669,12 +689,7 @@ function renderTerminal(report: FinalReport): string {
         terminal.closeReason ? (closeLabel[terminal.closeReason] ?? terminal.closeReason) : '',
       ),
     ],
-    [
-      '出力の取込',
-      terminal.captureSupported
-        ? '自動取込（RSPのターミナルログ）'
-        : '手動貼り付け（自動取込は未対応）',
-    ],
+    ['出力の取込', captureLabel],
   ].filter((row) => row[1]);
   const steps = terminal.steps
     .map((step) => {
@@ -683,7 +698,7 @@ function renderTerminal(report: FinalReport): string {
             '<h3>実行したコマンド</h3>',
             `<pre class="memo">${safeText(step.executed.command, 8000)}</pre>`,
             step.executed.output.trim()
-              ? `<h3>出力（${step.executed.outputSource === 'auto' ? '自動取込' : '手動貼り付け'}）</h3><pre class="memo">${safeText(step.executed.output, 20000)}</pre>`
+              ? `<h3>出力（${outputSourceLabel(step.executed.outputSource)}）</h3><pre class="memo">${safeText(step.executed.output, 20000)}</pre>`
               : '<p class="muted">出力は記録されていません。</p>',
             `<p class="muted">判定：${escapeHtml(step.executed.exitStatus)}${step.executed.sha256 ? ` ／ 記録ハッシュ：<span class="hash">${escapeHtml(step.executed.sha256)}</span>` : ''}${step.executed.note ? ` ／ 補足：${safeText(step.executed.note, 1000)}` : ''}</p>`,
           ].join('')

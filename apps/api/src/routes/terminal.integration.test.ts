@@ -409,6 +409,165 @@ describe('RSP実行セッション API', () => {
     expect(handoverId).toMatch(/^[0-9a-f-]{36}$/);
   });
 
+  it('RSPコマンドキュー: rsp_command の実出力と相関IDを保存し、報告書に載せる', async () => {
+    await setupClaimedHandover(CASE_A);
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/terminal/sessions',
+      payload: { caseId: CASE_A, consent: { screenShare: true, remoteControl: true } },
+    });
+    expect(created.statusCode, created.body).toBe(200);
+    const sessionId = created.json().session.id as string;
+    expect(created.json().session.rspSessionId).toBeNull();
+
+    const proposed = await app.inject({
+      method: 'POST',
+      url: `/api/terminal/sessions/${sessionId}/steps`,
+      payload: { intent: 'スプーラの状態をRSPのコマンドキューで確認する' },
+    });
+    expect(proposed.statusCode, proposed.body).toBe(200);
+    const stepId = proposed.json().step.id as string;
+
+    // rsp_command なのに rspCommandLogId が無い記録は 400（どの実行結果か追えないため）。
+    const missingLogId = await app.inject({
+      method: 'POST',
+      url: `/api/terminal/steps/${stepId}/record`,
+      payload: {
+        command: 'Get-Service Spooler',
+        output: 'Running',
+        outputSource: 'rsp_command',
+        exitStatus: 'success',
+      },
+    });
+    expect(missingLogId.statusCode).toBe(400);
+    expect(missingLogId.json().error.code).toBe('VALIDATION_ERROR');
+
+    const recorded = await app.inject({
+      method: 'POST',
+      url: `/api/terminal/steps/${stepId}/record`,
+      payload: {
+        command: 'Get-Service Spooler | Select-Object Status,Name',
+        output: 'Status Name\nRunning Spooler\n連絡先: user@example.com',
+        outputSource: 'rsp_command',
+        exitStatus: 'success',
+        rspCommandLogId: 'cmdlog-20261026-0001',
+        rspSessionId: 'rsess-42',
+      },
+    });
+    expect(recorded.statusCode, recorded.body).toBe(200);
+    const body = recorded.json();
+    expect(body.step.executed.outputSource).toBe('rsp_command');
+    expect(body.step.executed.rspCommandLogId).toBe('cmdlog-20261026-0001');
+    expect(body.session.rspSessionId).toBe('rsess-42');
+    // 保存前に伏せ字化し、ハッシュはマスク後の値で計算される（既存方針のまま）。
+    expect(body.step.executed.output).not.toContain('user@example.com');
+    expect(body.step.executed.sha256).toMatch(/^[0-9a-f]{64}$/);
+
+    const savedStep = await sql<
+      { rsp_command_log_id: string | null; output: string | null; output_source: string | null }[]
+    >`
+      SELECT rsp_command_log_id, output, output_source FROM terminal_steps WHERE id = ${stepId}
+    `;
+    expect(savedStep[0]?.rsp_command_log_id).toBe('cmdlog-20261026-0001');
+    expect(savedStep[0]?.output_source).toBe('rsp_command');
+    expect(savedStep[0]?.output).not.toContain('user@example.com');
+    const savedSession = await sql<{ rsp_session_id: string | null }[]>`
+      SELECT rsp_session_id FROM terminal_sessions WHERE id = ${sessionId}
+    `;
+    expect(savedSession[0]?.rsp_session_id).toBe('rsess-42');
+
+    // 監査には相関IDだけを残す（コマンド・出力本文は入れない）。
+    const audit = await sql<
+      { detail: { rspCommandLogId?: string | null; rspSessionId?: string | null } | null }[]
+    >`
+      SELECT detail FROM audit_log
+      WHERE action = 'terminal.step.record' AND target_id = ${sessionId}
+      ORDER BY id DESC LIMIT 1
+    `;
+    expect(audit[0]?.detail?.rspCommandLogId).toBe('cmdlog-20261026-0001');
+    expect(audit[0]?.detail?.rspSessionId).toBe('rsess-42');
+
+    // 2 回目の record は既存挙動どおり 409。
+    const twice = await app.inject({
+      method: 'POST',
+      url: `/api/terminal/steps/${stepId}/record`,
+      payload: {
+        command: 'Get-Service Spooler',
+        output: 'again',
+        outputSource: 'rsp_command',
+        exitStatus: 'success',
+        rspCommandLogId: 'cmdlog-20261026-0001',
+      },
+    });
+    expect(twice.statusCode).toBe(409);
+    expect(twice.json().error.code).toBe('STEP_RECORDED');
+
+    // 相関済みのセッションは、別の rspSessionId で上書きしない（COALESCE）。
+    const secondProposal = await app.inject({
+      method: 'POST',
+      url: `/api/terminal/sessions/${sessionId}/steps`,
+      payload: { intent: '追加確認' },
+    });
+    expect(secondProposal.statusCode, secondProposal.body).toBe(200);
+    const secondRecorded = await app.inject({
+      method: 'POST',
+      url: `/api/terminal/steps/${secondProposal.json().step.id as string}/record`,
+      payload: {
+        command: 'Get-Service Spooler',
+        output: 'Running',
+        outputSource: 'rsp_command',
+        exitStatus: 'success',
+        rspCommandLogId: 'cmdlog-20261026-0002',
+        rspSessionId: 'rsess-99',
+      },
+    });
+    expect(secondRecorded.statusCode, secondRecorded.body).toBe(200);
+    expect(secondRecorded.json().session.rspSessionId).toBe('rsess-42');
+
+    const fetched = await app.inject({ method: 'GET', url: `/api/terminal/sessions/${sessionId}` });
+    expect(fetched.statusCode, fetched.body).toBe(200);
+    expect(fetched.json().session.rspSessionId).toBe('rsess-42');
+    expect(fetched.json().steps[0].executed.rspCommandLogId).toBe('cmdlog-20261026-0001');
+
+    const closed = await app.inject({
+      method: 'POST',
+      url: `/api/terminal/sessions/${sessionId}/close`,
+      payload: { reason: 'resolved', note: 'RSPのコマンドキューで復旧を確認' },
+    });
+    expect(closed.statusCode, closed.body).toBe(200);
+
+    const report = await app.inject({
+      method: 'POST',
+      url: `/api/terminal/sessions/${sessionId}/report`,
+      payload: {},
+    });
+    expect(report.statusCode, report.body).toBe(200);
+    const reportBody = report.json().report;
+    reportIds.push(reportBody.id);
+
+    const reportRows = await sql<
+      {
+        payload: {
+          terminal?: {
+            rspSessionId?: string;
+            steps: Array<{ executed?: { rspCommandLogId?: string; outputSource?: string } }>;
+          };
+        };
+      }[]
+    >`
+      SELECT payload FROM final_reports WHERE id = ${reportBody.id}
+    `;
+    const payload = reportRows[0]?.payload;
+    expect(payload?.terminal?.rspSessionId).toBe('rsess-42');
+    expect(payload?.terminal?.steps[0]?.executed?.outputSource).toBe('rsp_command');
+    expect(payload?.terminal?.steps[0]?.executed?.rspCommandLogId).toBe('cmdlog-20261026-0001');
+
+    const html = await app.inject({ method: 'GET', url: reportBody.files.html.previewUrl });
+    expect(html.statusCode, html.body).toBe(200);
+    expect(html.body).toContain('RSPコマンドキューから自動取込');
+    expect(html.body).not.toContain('user@example.com');
+  });
+
   it('RSP連携: 共有キーと操作者メールで案件文脈・PC情報・案件一覧を取得できる', async () => {
     await setupClaimedHandover(CASE_A);
 

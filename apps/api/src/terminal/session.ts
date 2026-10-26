@@ -20,6 +20,18 @@ export const DEFAULT_TTL_MINUTES = 30;
 /** セッションの最大 TTL（分）。 */
 export const MAX_TTL_MINUTES = 120;
 
+/**
+ * 実行記録の出力ソース。
+ *
+ * - `auto`: RSP のターミナルログからの自動取込（Phase 4・未対応）。
+ * - `manual`: 担当者が実行して貼り付けた出力。
+ * - `rsp_command`: RSP の W23 コマンドキューで実行した実出力の取込（Phase 2）。
+ */
+export type OutputSource = 'auto' | 'manual' | 'rsp_command';
+
+/** 相関ID（RSP 側の command log_id / remote_session_id）の最大文字数。 */
+export const MAX_CORRELATION_ID_CHARS = 64;
+
 export const ConsentSchema = z.object({
   screenShare: z.boolean().default(false),
   // ターミナル操作は「操作支援」に含める。false ではセッションを作れない。
@@ -36,13 +48,28 @@ export const ProposeSchema = z.object({
   lastOutput: z.string().max(MAX_LAST_OUTPUT_CHARS).optional(),
 });
 
-export const RecordSchema = z.object({
-  command: z.string().trim().min(1).max(MAX_COMMAND_CHARS),
-  output: z.string().max(MAX_OUTPUT_CHARS).optional(),
-  outputSource: z.enum(['auto', 'manual']),
-  exitStatus: z.enum(['success', 'failure', 'unknown']),
-  note: z.string().trim().max(MAX_NOTE_CHARS).optional(),
-});
+export const RecordSchema = z
+  .object({
+    command: z.string().trim().min(1).max(MAX_COMMAND_CHARS),
+    output: z.string().max(MAX_OUTPUT_CHARS).optional(),
+    outputSource: z.enum(['auto', 'manual', 'rsp_command']),
+    exitStatus: z.enum(['success', 'failure', 'unknown']),
+    note: z.string().trim().max(MAX_NOTE_CHARS).optional(),
+    // RSP のコマンドキューで実行した場合の出所（Phase 2）。
+    rspCommandLogId: z.string().trim().min(1).max(MAX_CORRELATION_ID_CHARS).optional(),
+    // RSP の remote_session との相互参照（任意）。
+    rspSessionId: z.string().trim().min(1).max(MAX_CORRELATION_ID_CHARS).optional(),
+  })
+  .superRefine((value, ctx) => {
+    // rsp_command は「どの実行結果か」を追えなければ意味がないため必須にする。
+    if (value.outputSource === 'rsp_command' && !value.rspCommandLogId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['rspCommandLogId'],
+        message: 'outputSource が rsp_command のときは rspCommandLogId が必要です。',
+      });
+    }
+  });
 
 export const CloseSchema = z.object({
   reason: z.enum(['resolved', 'stopped', 'escalated']),
@@ -84,7 +111,7 @@ export interface StepHashInput {
   seq: number;
   command: string;
   output: string;
-  outputSource: 'auto' | 'manual';
+  outputSource: OutputSource;
   exitStatus: 'success' | 'failure' | 'unknown';
 }
 
@@ -109,6 +136,8 @@ export interface TerminalSessionRow {
   knowledge_id: string | null;
   report_id: string | null;
   report_sha256: string | null;
+  /** RSP の remote_session ID（Phase 2 で追加・相互参照用）。 */
+  rsp_session_id: string | null;
   started_at: Date;
   expires_at: Date;
   closed_at: Date | null;
@@ -131,10 +160,12 @@ export interface TerminalStepRow {
   ai_model: string | null;
   executed_command: string | null;
   output: string | null;
-  output_source: 'auto' | 'manual' | null;
+  output_source: OutputSource | null;
   exit_status: 'success' | 'failure' | 'unknown' | null;
   note: string | null;
   sha256: string | null;
+  /** RSP の command log_id（Phase 2 で追加・rsp_command の出所）。 */
+  rsp_command_log_id: string | null;
   proposed_at: Date;
   recorded_at: Date | null;
 }
@@ -157,6 +188,8 @@ export interface TerminalSessionDto {
   knowledgeId: string | null;
   knowledge: { id: string; kbNo: string; status: string; title: string } | null;
   report: { id: string | null; sha256: string | null };
+  /** RSP の remote_session ID（未相関なら null）。 */
+  rspSessionId: string | null;
   stepCount: number;
   limits: { maxSteps: number; maxOutputChars: number };
   capture: { supported: boolean; reason: string | null };
@@ -200,6 +233,7 @@ export function sessionDto(
     knowledgeId: row.knowledge_id,
     knowledge: input.knowledge ?? null,
     report: { id: row.report_id, sha256: row.report_sha256 },
+    rspSessionId: row.rsp_session_id,
     stepCount: input.stepCount,
     limits: { maxSteps: MAX_STEPS, maxOutputChars: MAX_OUTPUT_CHARS },
     capture: input.capture,
@@ -215,6 +249,8 @@ export function stepDto(row: TerminalStepRow) {
         exitStatus: row.exit_status ?? 'unknown',
         note: row.note,
         sha256: row.sha256,
+        // 未相関（Phase 2 以前・手動記録）は null を返す（キー自体は常に返す）。
+        rspCommandLogId: row.rsp_command_log_id,
         recordedAt: iso(row.recorded_at),
       }
     : null;

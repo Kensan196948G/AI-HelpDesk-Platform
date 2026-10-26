@@ -617,7 +617,7 @@ export async function terminalRoutes(app: FastifyInstance): Promise<void> {
       });
       const note = body.note ? maskText(body.note, 1_000).text : null;
 
-      const updated = await sql.begin(async (tx) => {
+      const saved = await sql.begin(async (tx) => {
         const rows = await tx<TerminalStepRow[]>`
           UPDATE terminal_steps
           SET executed_command = ${command.text},
@@ -626,12 +626,27 @@ export async function terminalRoutes(app: FastifyInstance): Promise<void> {
               exit_status = ${body.exitStatus},
               note = ${note},
               sha256 = ${sha256},
+              rsp_command_log_id = ${body.rspCommandLogId ?? null},
               recorded_at = now()
           WHERE id = ${step.id} AND recorded_at IS NULL
           RETURNING *
         `;
-        if (!rows[0]) {
+        const updatedStep = rows[0];
+        if (!updatedStep) {
           throw new ApiError(409, 'STEP_RECORDED', 'このステップはすでに記録されています。');
+        }
+        // RSP の remote_session との相関をセッション側にも保存する（Phase 2）。
+        // 既に相関済みなら上書きしない（先に紐づいた ID を尊重する）。
+        let updatedSession = session;
+        if (body.rspSessionId) {
+          const sessionRows = await tx<TerminalSessionRow[]>`
+            UPDATE terminal_sessions
+            SET rsp_session_id = COALESCE(rsp_session_id, ${body.rspSessionId}),
+                updated_at = now()
+            WHERE id = ${session.id}
+            RETURNING *
+          `;
+          if (sessionRows[0]) updatedSession = sessionRows[0];
         }
         await appendAudit(tx, {
           actorId: await userIdForEmail(email),
@@ -646,19 +661,22 @@ export async function terminalRoutes(app: FastifyInstance): Promise<void> {
             seq: step.seq,
             exitStatus: body.exitStatus,
             outputSource: body.outputSource,
+            // 相関IDのみ。コマンド・出力本文は監査に入れない（現行方針）。
+            rspCommandLogId: body.rspCommandLogId ?? null,
+            rspSessionId: body.rspSessionId ?? null,
             outputTruncated: output.truncated,
             commandFindings: command.findings,
             outputFindings: output.findings,
             sha256,
           },
         });
-        return rows[0];
+        return { step: updatedStep, session: updatedSession };
       });
       const steps = await loadSteps(session.id);
       return {
         ok: true,
-        step: stepDto(updated),
-        session: sessionWithSteps(session, steps.length),
+        step: stepDto(saved.step),
+        session: sessionWithSteps(saved.session, steps.length),
       };
     },
   );

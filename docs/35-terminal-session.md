@@ -2,7 +2,7 @@
 
 | 項目 | 値 |
 |---|---|
-| 版 | v0.1（実装） |
+| 版 | v0.2（実装・Phase 2 相関ID/コマンドキュー取込を追加） |
 | 決定日 | 2026-10-26 |
 | 対象 | 引継ぎワークスペース（3ペイン） |
 | 決定 | 出力取り込みは**両方（自動優先・手動フォールバック）**、ナレッジは**下書き＋承認** |
@@ -17,6 +17,10 @@ RSP のターミナルで実行**して、その実行記録から報告書と�
 - AI の提案は記録であって証拠ではない。**実際に実行したコマンド**を担当者が記録し、
   その内容をハッシュで固定する。
 - 出力は自動取込を優先し、**取込口が無い場合は手動貼り付け**に落とす（黙って欠落させない）。
+  Phase 2 で **RSP の W23 コマンドキュー経由の実出力取込**に対応した（下記 §4-4）。
+  MeshCentral のターミナルログからの取込は Phase 4 のまま。
+- HelpDesk の `terminal_session` と RSP の `remote_session` は**相互に ID を保存して相関**する
+  （HelpDesk 側は `terminal_sessions.rsp_session_id` / `terminal_steps.rsp_command_log_id`）。
 - ナレッジは自動公開しない。**下書き＋別承認者**（既存の `knowledge` 承認フロー）。
 - 画面（`Mirai_AIHelpdesk_Cowork_StepWizard_V3.1_PCinfo_Offline.html`）の
   レイアウト・CSS は変更しない。拡張はブリッジ JS（`handover-workspace-bridge.js`）に閉じる。
@@ -34,7 +38,7 @@ RSP のターミナルで実行**して、その実行記録から報告書と�
 - 上限: **20 ステップ**、1 出力 **20,000 文字**、1 コマンド **8,000 文字**。
 - セッションを作れるのは **claim 済みの担当者本人**のみ（`case_handovers.claimed_by`）。
 
-## 3. データ（additive migration `019_terminal_sessions.sql`）
+## 3. データ（additive migration `019_terminal_sessions.sql` / `020_add_rsp_correlation.sql`）
 
 `terminal_sessions`
 
@@ -54,6 +58,7 @@ RSP のターミナルで実行**して、その実行記録から報告書と�
 | `ai_model` | 提案に使ったモデル |
 | `knowledge_id` | uuid → `knowledge(id)`（作成済みなら再作成しない） |
 | `report_sha256` | 作成した最終報告書のハッシュ（表示用） |
+| `rsp_session_id` | text（RSP の `remote_session` ID。Phase 2・NULL 可。既存値は上書きしない） |
 
 `terminal_steps`
 
@@ -65,10 +70,11 @@ RSP のターミナルで実行**して、その実行記録から報告書と�
 | `operator_email` | 記録した担当者 |
 | `ai_command` / `ai_purpose` / `ai_risk` / `ai_verify` / `ai_rollback` / `ai_warnings` / `ai_model` | AI 提案 |
 | `executed_command` | **実際に実行した**コマンド（提案と異なってよい） |
-| `output` / `output_source` | 出力（PII マスク済み）と `auto` / `manual` |
+| `output` / `output_source` | 出力（PII マスク済み）と `auto` / `manual` / `rsp_command`（Phase 2 で追加） |
 | `exit_status` | `success` / `failure` / `unknown` |
 | `note` | 補足（1000 文字） |
 | `sha256` | 実行記録のハッシュ（下記） |
+| `rsp_command_log_id` | text（RSP W23 コマンドキューの command log_id。`rsp_command` の出所・NULL 可） |
 | `recorded_at` | timestamptz |
 
 ハッシュ対象（`stableStringify` でキー順を固定）:
@@ -79,6 +85,8 @@ RSP のターミナルで実行**して、その実行記録から報告書と�
 
 出力は保存前に `redactPII` で伏せ字化する（パスワード・トークン・個人情報）。
 ハッシュは**マスク後の値**で計算し、保存値と検証手段を一致させる。
+`outputSource` は `auto` / `manual` / `rsp_command` のいずれかで、ハッシュ計算方法は変えない
+（既存 `auto` / `manual` 行の sha256 は不変）。
 
 ## 4. API（すべて `/api` 配下・`authenticateUi`）
 
@@ -131,18 +139,41 @@ RSP のターミナルで実行**して、その実行記録から報告書と�
 }
 ```
 
+RSP のコマンドキュー（W23）で実行した実出力を取り込む場合（Phase 2）:
+
+```json
+{
+  "command": "Get-Service Spooler | Select-Object Status,Name",
+  "output": "Status Name\nRunning Spooler",
+  "outputSource": "rsp_command",
+  "exitStatus": "success",
+  "rspCommandLogId": "cmdlog-20261026-0001",
+  "rspSessionId": "rsess-42"
+}
+```
+
 - 記録できるのは 1 ステップ 1 回（再記録は 409 `STEP_RECORDED`）。
 - `outputSource: "auto"` は取込口が有効なときだけ受理。無効なら 400 `CAPTURE_UNAVAILABLE`。
-- → `{ ok, step, session }`
+- `outputSource: "rsp_command"` は `rspCommandLogId` が**必須**（欠落は 400 `VALIDATION_ERROR`）。
+  RSP のキューが実行主体で実出力を取得済みのため、取込口の有無に関係なく受理する。
+- `rspSessionId` は任意。セッション側へ一度だけ保存し、**既存値は上書きしない**
+  （応答 `session.rspSessionId` に反映される）。
+- 監査 `terminal.step.record` の detail には相関IDだけを残す（コマンド・出力本文は入れない）。
+- → `{ ok, step, session }`（`step.executed.rspCommandLogId`、`session.rspSessionId` を含む）
 
-### 4-4. 出力の自動取込（能力の申告）
+### 4-4. 出力の自動取込（能力の申告と Phase の区別）
 
 `GET /api/terminal/sessions/:id/capture`
 → `{ ok, supported: false, reason: "RSPのターミナルログAPIが未提供のため、手動貼り付けを使用します。" }`
 
-- 実装の差し替え点は `apps/api/src/terminal/capture.ts` の 1 箇所。
-- RSP 側のログ/API が利用可能になったら `supported: true` と取り込み結果を返す。
-  **現時点で対応していないことを `false` で明示する**（自動取込が動いているように見せない）。
+- **コマンドキュー経由（Phase 2・実装済み）**: RSP の W23 コマンドキューで実行した実出力は
+  `outputSource: "rsp_command"` として §4-3 の record API で取り込む。
+  実行主体は RSP のキューで、HelpDesk は取得済みの出力を保存するだけなので、
+  下記 `capture.supported` とは独立して**常に受理**する（別経路）。
+- **ターミナルログ経由（Phase 4・未対応）**: MeshCentral のターミナルログからの取込
+  （`outputSource: "auto"`）は未対応のまま。`capture.supported === false` はこの話であり、
+  自動取込が動いているように見せることはしない。対応時は `supported: true` と取り込み結果を返す。
+- 実装の差し替え点は `apps/api/src/terminal/capture.ts` の 1 箇所（ターミナルログ側）。
 
 ### 4-5. 終了
 
@@ -196,12 +227,13 @@ RSP のターミナルで実行**して、その実行記録から報告書と�
   "closedAt": "…",
   "closeReason": "resolved",
   "captureSupported": false,
+  "rspSessionId": "rsess-42",
   "steps": [{
     "seq": 1,
     "at": "…",
     "intent": "…",
     "proposal": { "command": "…", "purpose": "…", "risk": "low", "verify": "…", "rollback": "…", "warnings": [] },
-    "executed": { "command": "…", "output": "…", "outputSource": "manual", "exitStatus": "success", "note": "…" },
+    "executed": { "command": "…", "output": "…", "outputSource": "rsp_command", "exitStatus": "success", "note": "…", "rspCommandLogId": "cmdlog-20261026-0001" },
     "sha256": "…"
   }],
   "unrecorded": ["ステップ2の出力は未記録"]
@@ -209,6 +241,10 @@ RSP のターミナルで実行**して、その実行記録から報告書と�
 ```
 
 - `unrecorded` は**記録できなかったもの**を正直に列挙する（空配列でも可）。
+- `terminal.rspSessionId` と `executed.rspCommandLogId` は Phase 2 の追加（任意）。
+  未相関のときは載らない（既存の報告書と後方互換）。
+- `captureSupported` は従来どおり**ターミナルログの自動取込**（`auto`）の有無を表す。
+  RSP コマンドキュー由来かどうかは各ステップの `outputSource: "rsp_command"` で判別する。
 
 ## 6. UI（3ペイン）
 
@@ -227,10 +263,13 @@ RSP のターミナルで実行**して、その実行記録から報告書と�
 RSP の「AI支援」パネルは、RSP のバックエンド経由で本 API を呼ぶ（[36-rsp-integration.md](36-rsp-integration.md)）。
 `/api/terminal/*` と報告書 GET だけが、統合ヘッダー（サービストークン + 操作者メール）と
 loopback 送信元で認証される。画面からの Access 認証は従来どおり。
+Phase 2 では、RSP のコマンドキューで実行した結果を `outputSource: "rsp_command"` と
+相関ID（`rspCommandLogId` / `rspSessionId`）付きで record に送る（§4-3）。
 
 ## 7. セキュリティ・監査
 
-- サーバはコマンドを実行しない。RSP の資格情報・セッション ID は保存しない。
+- サーバはコマンドを実行しない。RSP の資格情報は保存しない。
+  相関用の ID（`rsp_session_id` / `rsp_command_log_id`）だけを保存する（秘密情報ではない）。
 - 出力は `redactPII` でマスクし、長さ上限を超えた分は切り詰めて「切り詰め」を明示する。
 - 監査（`audit_log`）: `terminal.session.start` / `terminal.step.propose` /
   `terminal.step.record` / `terminal.session.close` / `terminal.session.expire` /
@@ -246,11 +285,14 @@ loopback 送信元で認証される。画面からの Access 認証は従来ど
 | 1 | セッション API・AI 提案・記録・終了・監査 | 実装 |
 | 2 | 報告書（引継ぎメモ＋全ステップ） | 実装 |
 | 3 | ナレッジ下書き＋承認 | 実装（承認は既存フロー） |
-| 4 | RSP ログ/API の自動取込 | 未（`capture.ts` の差し替え） |
+| 4 | RSP ログ/API（MeshCentral ターミナルログ）の自動取込 | 未（`capture.ts` の差し替え） |
+| RSP Phase 2 | RSP コマンドキュー（W23）連携・実出力の取込・相関ID | 実装（HelpDesk 側。`020_add_rsp_correlation.sql`） |
 
 ## 9. 未決事項
 
 1. RSP ターミナルのログ/API 仕様（提供可否・取得単位・保持期間）。
+   — コマンドキュー（W23）経由の取込は Phase 2 で実装済み。残るのは MeshCentral の
+   ターミナルログ（Phase 4）。
 2. 依頼者本人の同意をセッション開始時に取るか（現状は担当者の同意のみ）。
 3. 出力の保存期間と閲覧範囲（監査目的の保持）。
 4. リスク `high` の提案を担当者だけで実行してよい範囲（現状は警告表示のみ）。

@@ -56,7 +56,7 @@ function handoverRow(): HandoverRow {
   };
 }
 
-function sessionRow(): TerminalSessionRow {
+function sessionRow(overrides: Partial<TerminalSessionRow> = {}): TerminalSessionRow {
   return {
     id: '11111111-1111-1111-1111-111111111111',
     case_id: CASE_ID,
@@ -73,11 +73,13 @@ function sessionRow(): TerminalSessionRow {
     knowledge_id: null,
     report_id: null,
     report_sha256: null,
+    rsp_session_id: null,
     started_at: new Date('2026-10-26T01:00:00Z'),
     expires_at: new Date('2026-10-26T01:30:00Z'),
     closed_at: new Date('2026-10-26T01:12:00Z'),
     created_at: new Date('2026-10-26T01:00:00Z'),
     updated_at: new Date('2026-10-26T01:12:00Z'),
+    ...overrides,
   };
 }
 
@@ -101,6 +103,7 @@ function step(seq: number, overrides: Partial<TerminalStepRow> = {}): TerminalSt
     exit_status: 'success',
     note: null,
     sha256: 'b'.repeat(64),
+    rsp_command_log_id: null,
     proposed_at: new Date('2026-10-26T01:01:00Z'),
     recorded_at: new Date('2026-10-26T01:02:00Z'),
     ...overrides,
@@ -132,6 +135,27 @@ describe('RSP実行セッションの報告書', () => {
     expect(report.resolution?.steps[0]).toContain('Get-Service Spooler');
     // 未記録があることは警告としても返す（黙って落とさない）。
     expect(result.warnings).toEqual([]);
+  });
+
+  it('rsp_command の実行記録は相関IDつきで報告書に載る', () => {
+    const result = buildTerminalReport({
+      handover: handoverRow(),
+      session: sessionRow({ rsp_session_id: 'rsess-42' }),
+      steps: [
+        step(1, {
+          output_source: 'rsp_command',
+          rsp_command_log_id: 'cmdlog-20261026-0001',
+        }),
+      ],
+      operatorName: '佐藤 奨太',
+      requesterName: '山田 太郎',
+      knowledge: null,
+    });
+    const terminal = result.report.terminal;
+    expect(terminal?.rspSessionId).toBe('rsess-42');
+    expect(terminal?.steps[0]?.executed?.outputSource).toBe('rsp_command');
+    expect(terminal?.steps[0]?.executed?.rspCommandLogId).toBe('cmdlog-20261026-0001');
+    expect(terminal?.steps[0]?.executed?.sha256).toBe('b'.repeat(64));
   });
 
   it('引継ぎスナップショットが無い場合は最小限で組み立て、警告を返す', () => {
