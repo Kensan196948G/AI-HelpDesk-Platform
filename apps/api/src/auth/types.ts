@@ -1,4 +1,6 @@
-export type Role = 'requester' | 'helpdesk' | 'approver';
+// 4 職務の分離（docs/43 Phase B）。`auditor` は読み取り専用、`itops` は端末系の担当。
+// 既存の 3 ロールは挙動を変えない（移行期は Access グループ未設定でも現行動作を維持する）。
+export type Role = 'requester' | 'helpdesk' | 'approver' | 'auditor' | 'itops';
 
 export interface AuthUser {
   id: string;

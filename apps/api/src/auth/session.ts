@@ -42,6 +42,23 @@ export async function authenticate(request: FastifyRequest): Promise<void> {
   };
   request.authUser = user;
   request.sessionTokenHash = tokenHash;
+  assertNotAuditorWrite(user, request);
+}
+
+/**
+ * 監査ロールは読み取り専用（docs/43 §3-4）。
+ * GET/HEAD/OPTIONS とログアウトだけを許可し、それ以外の API 呼び出しは 403 で止める。
+ * 「監査の閲覧」と「業務の書込み」を同じアカウントに持たせないためのサーバ側の境界。
+ */
+export function assertNotAuditorWrite(user: AuthUser, request: FastifyRequest): void {
+  if (user.role !== 'auditor') return;
+  const method = request.method.toUpperCase();
+  if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return;
+  const url = request.url.split('?')[0] ?? '';
+  if (url === '/api/auth/logout') return;
+  // 監査チェーンの検証は読み取り専用の計算（監査ロールの本来の職務）。
+  if (url === '/api/audit/verify') return;
+  throw forbidden('監査ロールは閲覧のみです（書込みはできません）。');
 }
 
 export function requireRole(...roles: Role[]) {
