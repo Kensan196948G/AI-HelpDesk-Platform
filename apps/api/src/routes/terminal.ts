@@ -22,6 +22,7 @@ import { jsonbValue } from '../lib/jsonb-value.js';
 import { findEmployeeByEmail } from '../lib/mirai-info.js';
 import { nextKbNo } from '../lib/numbers.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
+import { fetchRspCommandCorrelation, isRspConfigured } from '../remote-support/rsp.js';
 import { assertCaptureAllowed, captureCapability } from '../terminal/capture.js';
 import { buildTerminalCaseContext } from '../terminal/context.js';
 import { buildKnowledgeDraft, buildTerminalReport } from '../terminal/report.js';
@@ -637,6 +638,56 @@ export async function terminalRoutes(app: FastifyInstance): Promise<void> {
         throw new ApiError(409, 'STEP_RECORDED', 'このステップはすでに記録されています。');
       }
 
+      // SM-09: RSP のコマンド実行ログが「この案件の端末」の実行かを相関APIで確認する。
+      // - 一致: 記録し、監査に rspDevice / rspOperator / rspStatus を残す
+      // - 不一致: 409 RSP_DEVICE_MISMATCH（記録しない）
+      // - RSP未設定: 従来どおり記録（rspVerified:false）
+      // - RSP呼び出し失敗: 記録は許可し、warnings を返す（rspVerified:false）
+      const warnings: string[] = [];
+      const rspVerification: {
+        verified: boolean;
+        device?: string;
+        operator?: string | null;
+        status?: string;
+      } = { verified: false };
+      if (body.outputSource === 'rsp_command' && body.rspCommandLogId) {
+        if (isRspConfigured()) {
+          const correlation = await fetchRspCommandCorrelation(body.rspCommandLogId);
+          if (correlation.kind === 'ok') {
+            const sessionDevice = String(session.device ?? '').trim();
+            const rspHostname = correlation.correlation.hostname;
+            if (!sessionDevice) {
+              warnings.push(
+                'セッションの端末名が無いため、RSPの実行ログとの端末一致を確認できませんでした。',
+              );
+            } else if (sessionDevice.toLowerCase() !== rspHostname.toLowerCase()) {
+              throw new ApiError(
+                409,
+                'RSP_DEVICE_MISMATCH',
+                `RSPの実行ログは別の端末（${rspHostname}）のものです。このセッションの端末（${sessionDevice}）と一致しないため記録しません。`,
+              );
+            } else {
+              rspVerification.verified = true;
+              rspVerification.device = rspHostname;
+              rspVerification.operator = correlation.correlation.operatorEmail;
+              rspVerification.status = correlation.correlation.status;
+            }
+          } else if (correlation.kind === 'not_found') {
+            throw new ApiError(
+              409,
+              'RSP_COMMAND_NOT_FOUND',
+              `RSPに実行ログ（${body.rspCommandLogId}）が見つかりません。端末の相関を確認できないため記録しません。`,
+            );
+          } else {
+            request.log.warn(
+              { reason: correlation.reason, stepId: step.id },
+              'RSP のコマンド相関確認に失敗しました（記録は継続します）',
+            );
+            warnings.push('RSPの相関確認ができなかったため、端末の一致確認は行っていません。');
+          }
+        }
+      }
+
       const command = maskText(body.command, 8_000);
       const output = maskText(body.output ?? '', MAX_OUTPUT_CHARS);
       const sha256 = computeStepHash({
@@ -697,6 +748,15 @@ export async function terminalRoutes(app: FastifyInstance): Promise<void> {
             // 相関IDのみ。コマンド・出力本文は監査に入れない（現行方針）。
             rspCommandLogId: body.rspCommandLogId ?? null,
             rspSessionId: body.rspSessionId ?? null,
+            // SM-09: RSP の相関確認結果（一致した場合のみ端末名・担当者・状態を残す）。
+            rspVerified: rspVerification.verified,
+            ...(rspVerification.verified
+              ? {
+                  rspDevice: rspVerification.device ?? null,
+                  rspOperator: rspVerification.operator ?? null,
+                  rspStatus: rspVerification.status ?? null,
+                }
+              : {}),
             outputTruncated: output.truncated,
             commandFindings: command.findings,
             outputFindings: output.findings,
@@ -710,6 +770,7 @@ export async function terminalRoutes(app: FastifyInstance): Promise<void> {
         ok: true,
         step: stepDto(saved.step),
         session: sessionWithSteps(saved.session, steps.length),
+        warnings,
       };
     },
   );

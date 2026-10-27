@@ -10,6 +10,7 @@ let fetchMock: ReturnType<typeof vi.fn>;
 const originalDevEmail = config.DEV_AUTH_EMAIL;
 const originalApiKey = config.DEEPSEEK_API_KEY;
 const originalIntegrationKey = config.RSP_INTEGRATION_KEY;
+const originalRspServiceKey = config.RSP_SERVICE_KEY;
 
 const CASE_A = 'CASE-TERM-A';
 const CASE_B = 'CASE-TERM-B';
@@ -112,6 +113,31 @@ async function setupClaimedHandover(caseId: string): Promise<string> {
 let reportIds: string[] = [];
 let knowledgeIds: string[] = [];
 
+/** セッション作成＋AI提案まで進め、記録テスト用の step を用意する（SM-09）。 */
+async function createSessionWithStep(
+  caseId: string,
+): Promise<{ sessionId: string; stepId: string; device: string }> {
+  await setupClaimedHandover(caseId);
+  const created = await app.inject({
+    method: 'POST',
+    url: '/api/terminal/sessions',
+    payload: { caseId, consent: { screenShare: true, remoteControl: true } },
+  });
+  expect(created.statusCode, created.body).toBe(200);
+  const sessionId = created.json().session.id as string;
+  const proposed = await app.inject({
+    method: 'POST',
+    url: `/api/terminal/sessions/${sessionId}/steps`,
+    payload: { intent: 'RSPのコマンド結果を記録する' },
+  });
+  expect(proposed.statusCode, proposed.body).toBe(200);
+  return {
+    sessionId,
+    stepId: proposed.json().step.id as string,
+    device: String(created.json().session.device),
+  };
+}
+
 beforeAll(async () => {
   app = await buildServer({ logger: false });
   await app.ready();
@@ -122,6 +148,8 @@ beforeEach(async () => {
   config.DEV_AUTH_EMAIL = OPERATOR;
   config.DEEPSEEK_API_KEY = 'test-key';
   config.RSP_INTEGRATION_KEY = undefined;
+  // SM-09: 既定では RSP のサービスキーを未設定にして、従来どおりの記録経路を保つ。
+  config.RSP_SERVICE_KEY = undefined;
   fetchMock = vi.fn(async () => {
     const content = JSON.stringify({
       command: 'Get-Service Spooler | Select-Object Status,Name',
@@ -153,6 +181,7 @@ afterAll(async () => {
   config.DEV_AUTH_EMAIL = originalDevEmail;
   config.DEEPSEEK_API_KEY = originalApiKey;
   config.RSP_INTEGRATION_KEY = originalIntegrationKey;
+  config.RSP_SERVICE_KEY = originalRspServiceKey;
   await app.close();
 });
 
@@ -837,5 +866,198 @@ describe('RSP実行セッション API', () => {
     });
     expect(again.statusCode, again.body).toBe(200);
     expect(again.json().warnings).toHaveLength(1);
+  });
+
+  it('SM-09: RSP相関の端末が一致すれば記録し、監査にrsp情報を残す', async () => {
+    const { sessionId, stepId, device } = await createSessionWithStep(CASE_A);
+    config.RSP_SERVICE_KEY = 'k'.repeat(40);
+    fetchMock.mockImplementationOnce(async (url: unknown, init: unknown) => {
+      const urlText = String(url);
+      expect(urlText).toContain('/api/v1/service/commands/cmdlog-sm09-1/correlation');
+      const headers = (init as { headers?: Record<string, string> } | undefined)?.headers;
+      expect(headers?.['X-RSP-Service-Key']).toBe(config.RSP_SERVICE_KEY);
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: {
+            log_id: 'cmdlog-sm09-1',
+            device_id: 'device-abc',
+            hostname: device,
+            status: 'completed',
+            channel: 'meshagent',
+            operator_email: 'operator@example.com',
+            created_at: '2026-10-27T00:00:00.000Z',
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    });
+
+    const recorded = await app.inject({
+      method: 'POST',
+      url: `/api/terminal/steps/${stepId}/record`,
+      payload: {
+        command: 'Get-Service Spooler',
+        output: 'Running',
+        outputSource: 'rsp_command',
+        exitStatus: 'success',
+        rspCommandLogId: 'cmdlog-sm09-1',
+      },
+    });
+    expect(recorded.statusCode, recorded.body).toBe(200);
+    expect(recorded.json().step.executed.rspCommandLogId).toBe('cmdlog-sm09-1');
+    expect(recorded.json().warnings).toEqual([]);
+
+    const audit = await sql<{ detail: Record<string, unknown> }[]>`
+      SELECT detail FROM audit_log
+      WHERE action = 'terminal.step.record' AND target_id = ${sessionId}
+      ORDER BY id DESC LIMIT 1
+    `;
+    expect(audit[0]?.detail.rspVerified).toBe(true);
+    expect(audit[0]?.detail.rspDevice).toBe(device);
+    expect(audit[0]?.detail.rspOperator).toBe('operator@example.com');
+    expect(audit[0]?.detail.rspStatus).toBe('completed');
+  });
+
+  it('SM-09: RSP相関の端末が一致しなければ409で記録しない', async () => {
+    const { sessionId, stepId, device } = await createSessionWithStep(CASE_A);
+    config.RSP_SERVICE_KEY = 'k'.repeat(40);
+    fetchMock.mockImplementationOnce(
+      async () =>
+        new Response(
+          JSON.stringify({
+            success: true,
+            data: {
+              log_id: 'cmdlog-sm09-other',
+              device_id: 'device-other',
+              hostname: '202307036M',
+              status: 'completed',
+              channel: 'meshagent',
+              operator_email: 'operator@example.com',
+              created_at: '2026-10-27T00:00:00.000Z',
+            },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+    );
+
+    const mismatched = await app.inject({
+      method: 'POST',
+      url: `/api/terminal/steps/${stepId}/record`,
+      payload: {
+        command: 'Get-Service Spooler',
+        output: 'Running',
+        outputSource: 'rsp_command',
+        exitStatus: 'success',
+        rspCommandLogId: 'cmdlog-sm09-other',
+      },
+    });
+    expect(mismatched.statusCode, mismatched.body).toBe(409);
+    expect(mismatched.json().error.code).toBe('RSP_DEVICE_MISMATCH');
+    const message = String(mismatched.json().error.message);
+    expect(message).toContain('202307036M');
+    expect(message).toContain(device);
+
+    // 記録されていない（ステップは未実行のまま・監査にも記録行なし）。
+    const sessions = await app.inject({
+      method: 'GET',
+      url: `/api/terminal/sessions/${sessionId}`,
+    });
+    expect(sessions.statusCode, sessions.body).toBe(200);
+    expect(sessions.json().steps[0].executed).toBeNull();
+    const audit = await sql<{ id: string }[]>`
+      SELECT id FROM audit_log
+      WHERE action = 'terminal.step.record' AND target_id = ${sessionId}
+    `;
+    expect(audit).toHaveLength(0);
+  });
+
+  it('SM-09: RSP未設定なら従来どおり記録し、監査はrspVerified:false', async () => {
+    const { sessionId, stepId } = await createSessionWithStep(CASE_B);
+    config.RSP_SERVICE_KEY = undefined;
+
+    const recorded = await app.inject({
+      method: 'POST',
+      url: `/api/terminal/steps/${stepId}/record`,
+      payload: {
+        command: 'Get-Service Spooler',
+        output: 'Running',
+        outputSource: 'rsp_command',
+        exitStatus: 'success',
+        rspCommandLogId: 'cmdlog-sm09-unset',
+      },
+    });
+    expect(recorded.statusCode, recorded.body).toBe(200);
+    expect(recorded.json().warnings).toEqual([]);
+    // AI提案の1回だけ。RSPへの相関問い合わせは行わない。
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    const audit = await sql<{ detail: Record<string, unknown> }[]>`
+      SELECT detail FROM audit_log
+      WHERE action = 'terminal.step.record' AND target_id = ${sessionId}
+      ORDER BY id DESC LIMIT 1
+    `;
+    expect(audit[0]?.detail.rspVerified).toBe(false);
+    expect(audit[0]?.detail.rspDevice).toBeUndefined();
+  });
+
+  it('SM-09: RSP呼び出しが5xxなら記録は許可し、warningsを返す', async () => {
+    const { sessionId, stepId } = await createSessionWithStep(CASE_A);
+    config.RSP_SERVICE_KEY = 'k'.repeat(40);
+    fetchMock.mockImplementationOnce(
+      async () =>
+        new Response(JSON.stringify({ success: false, message: 'upstream error' }), {
+          status: 503,
+          headers: { 'content-type': 'application/json' },
+        }),
+    );
+
+    const recorded = await app.inject({
+      method: 'POST',
+      url: `/api/terminal/steps/${stepId}/record`,
+      payload: {
+        command: 'Get-Service Spooler',
+        output: 'Running',
+        outputSource: 'rsp_command',
+        exitStatus: 'success',
+        rspCommandLogId: 'cmdlog-sm09-503',
+      },
+    });
+    expect(recorded.statusCode, recorded.body).toBe(200);
+    expect(recorded.json().warnings).toHaveLength(1);
+    expect(String(recorded.json().warnings[0])).toContain('RSPの相関確認');
+
+    const audit = await sql<{ detail: Record<string, unknown> }[]>`
+      SELECT detail FROM audit_log
+      WHERE action = 'terminal.step.record' AND target_id = ${sessionId}
+      ORDER BY id DESC LIMIT 1
+    `;
+    expect(audit[0]?.detail.rspVerified).toBe(false);
+  });
+
+  it('SM-09: RSP相関が404なら記録せず409 RSP_COMMAND_NOT_FOUND', async () => {
+    const { stepId } = await createSessionWithStep(CASE_B);
+    config.RSP_SERVICE_KEY = 'k'.repeat(40);
+    fetchMock.mockImplementationOnce(
+      async () =>
+        new Response(JSON.stringify({ success: false, error_code: 'COMMAND_NOT_FOUND' }), {
+          status: 404,
+          headers: { 'content-type': 'application/json' },
+        }),
+    );
+
+    const missing = await app.inject({
+      method: 'POST',
+      url: `/api/terminal/steps/${stepId}/record`,
+      payload: {
+        command: 'Get-Service Spooler',
+        output: 'Running',
+        outputSource: 'rsp_command',
+        exitStatus: 'success',
+        rspCommandLogId: 'cmdlog-sm09-missing',
+      },
+    });
+    expect(missing.statusCode, missing.body).toBe(409);
+    expect(missing.json().error.code).toBe('RSP_COMMAND_NOT_FOUND');
   });
 });
