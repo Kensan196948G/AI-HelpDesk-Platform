@@ -179,6 +179,8 @@ typecheck / lint / build / secret scan / migrate 冪等はすべて成功（修�
 
 ## 6. デプロイ手順（G5 で GO の場合）
 
+> **実施済み（2026-10-27 10:23〜10:52 JST）**: 本節の手順で本番へデプロイした（commit `804295c`・migration 020 適用・`COMMIT_SHA` 是正・再起動）。スモークは **S1/S2/S3/S4/S6/S7 PASS・S5 は BLOCKED（RSP 未ログイン）**。実行記録・ロールバック資産・24h 監視は [docs/40](40-deploy-20261027.md) を参照。
+
 > コードは未配備（1bde379）。デプロイの実体は「84bba83＋本修正のビルド＋migration 020＋再起動＋COMMIT_SHA 是正」。
 
 1. `pg_dump ai_helpdesk_preview`（`/tmp`・0600）と現行 `apps/api/dist` の tar + digest を退避（ロールバック用。H-04 で成立を実測）
