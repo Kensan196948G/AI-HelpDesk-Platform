@@ -436,7 +436,7 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
             action: 'knowledge.create',
             targetType: 'knowledge',
             targetId: id,
-            detail: { kbNo, clientRef: input.clientRef, via: 'ui' },
+            detail: { kbNo, clientRef: input.clientRef, via: 'ui', actorEmail: email },
           });
         }
 
@@ -458,7 +458,7 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
               action: 'knowledge.submit',
               targetType: 'knowledge',
               targetId: id,
-              detail: { clientRef: input.clientRef, via: 'ui' },
+              detail: { clientRef: input.clientRef, via: 'ui', actorEmail: email },
             });
           }
         } else if (input.status === 'approved') {
@@ -484,6 +484,7 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
               clientRef: input.clientRef,
               selfApproved,
               via: 'ui',
+              actorEmail: email,
               comment: input.comment ?? '',
             },
           });
@@ -499,7 +500,12 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
             action: 'knowledge.reject',
             targetType: 'knowledge',
             targetId: id,
-            detail: { clientRef: input.clientRef, via: 'ui', comment: input.comment ?? '' },
+            detail: {
+              clientRef: input.clientRef,
+              via: 'ui',
+              actorEmail: email,
+              comment: input.comment ?? '',
+            },
           });
         }
 
