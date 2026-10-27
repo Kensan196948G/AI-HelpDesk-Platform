@@ -664,7 +664,7 @@ function renderRemote(report: FinalReport): string {
         ]),
       )}`
     : '';
-  return `<p class="note">画面の遠隔操作は行わず、本人の同意を得たうえで、読み取り情報と案内文だけを共有します。</p>${table(
+  return `<p class="note">本人の同意を得たうえで、読み取り情報・案内文・RSP コンソールでの操作支援を共有します。画面録画は行いません。端末操作のログは RSP のコマンド実行履歴に残ります。</p>${table(
     ['項目', '内容'],
     rows,
   )}${prompts}`;

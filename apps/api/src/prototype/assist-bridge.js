@@ -6,7 +6,8 @@
  *   Standalone HTML / PDF の最終報告書を出力する。
  * - STEP 5 の引継ぎ後に、担当者（Bさん）が本人（Aさん）の同意を得て
  *   案内文を送る「遠隔支援コンソール」を追加する。
- *   画面の遠隔操作はせず、共有された PC 情報と案内文だけを扱う。
+ *   画面の遠隔操作は RSP 側で行い、このブリッジは同意・案内・記録を扱う。
+ *   画面録画は行わない（端末操作のログは RSP のコマンド実行履歴に残る）。
  *
  * 依存: paneHtml / wizSoft / uxRender / curCase / link / me / isHdRole など
  * （同じ classic script のグローバル lexical 環境から参照する）
@@ -882,7 +883,8 @@
       return (
         '<div class="ahd-box" id="ahdRemoteBox">' +
         header +
-        '<div class="ahd-msg">Aさんの同意を得て、共有された PC 情報と案内文だけを扱います。<b>画面の遠隔操作・ファイル閲覧・キー入力は行いません。</b></div>' +
+        '<div class="ahd-msg">Aさんの同意を得て、読み取り情報の共有・案内文の送信・RSP コンソールでの操作支援を行います。' +
+        '<b>画面録画は行いません。</b>端末操作のログは RSP の「コマンド実行」に残ります（対話ターミナルは残りません）。</div>' +
         '<div class="ahd-msg">対象：' +
         ahEsc(ahName(c.userId)) +
         ' さん／' +
@@ -2146,7 +2148,7 @@
       requestedAt: ahNow(),
       expiresAt: ahAfter(24 * 60 * 60 * 1000),
       scope:
-        '読み取り情報の共有 + 案内文の送信（画面の遠隔操作・ファイル閲覧・キー入力は含みません）',
+        '読み取り情報の共有 + 案内文の送信 + RSP コンソールでの操作支援（画面録画は行いません。端末操作のログは RSP のコマンド実行に残ります）',
       prompts: [],
     };
     if (typeof auditAdd === 'function')
