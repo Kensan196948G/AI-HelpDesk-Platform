@@ -919,6 +919,47 @@ describe('RSP実行セッション API', () => {
     expect(audit[0]?.detail.rspStatus).toBe('completed');
   });
 
+  it('SM-09: RSP相関の扁平な応答（{success,data}ラップなし）でも端末一致を検証する', async () => {
+    const { sessionId, stepId, device } = await createSessionWithStep(CASE_A);
+    config.RSP_SERVICE_KEY = 'k'.repeat(40);
+    fetchMock.mockImplementationOnce(
+      async () =>
+        new Response(
+          JSON.stringify({
+            log_id: 'cmdlog-sm09-flat',
+            device_id: 'device-abc',
+            hostname: device,
+            status: 'completed',
+            channel: 'meshagent',
+            operator_email: 'operator@example.com',
+            created_at: '2026-10-27T00:00:00.000Z',
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+    );
+
+    const recorded = await app.inject({
+      method: 'POST',
+      url: `/api/terminal/steps/${stepId}/record`,
+      payload: {
+        command: 'Get-Service Spooler',
+        output: 'Running',
+        outputSource: 'rsp_command',
+        exitStatus: 'success',
+        rspCommandLogId: 'cmdlog-sm09-flat',
+      },
+    });
+    expect(recorded.statusCode, recorded.body).toBe(200);
+    expect(recorded.json().warnings).toEqual([]);
+    const audit = await sql<{ detail: Record<string, unknown> }[]>`
+      SELECT detail FROM audit_log
+      WHERE action = 'terminal.step.record' AND target_id = ${sessionId}
+      ORDER BY id DESC LIMIT 1
+    `;
+    expect(audit[0]?.detail.rspVerified).toBe(true);
+    expect(audit[0]?.detail.rspDevice).toBe(device);
+  });
+
   it('SM-09: RSP相関の端末が一致しなければ409で記録しない', async () => {
     const { sessionId, stepId, device } = await createSessionWithStep(CASE_A);
     config.RSP_SERVICE_KEY = 'k'.repeat(40);

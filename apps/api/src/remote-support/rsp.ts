@@ -133,20 +133,21 @@ export async function fetchRspCommandCorrelation(logId: string): Promise<RspCorr
   } catch {
     return { kind: 'unavailable', reason: 'RSP に接続できませんでした。' };
   }
-  const body = (await response.json().catch(() => null)) as {
-    success?: boolean;
-    data?: unknown;
-    error_code?: string;
-    message?: string;
-  } | null;
+  const body = (await response.json().catch(() => null)) as Record<string, unknown> | null;
   if (response.status === 404) return { kind: 'not_found' };
-  if (!response.ok || !body || body.success !== true || !body.data) {
+  if (!response.ok || !body) {
     return { kind: 'unavailable', reason: `RSP が HTTP ${response.status} を返しました。` };
   }
-  if (typeof body.data !== 'object') {
+  // RSP の相関 API はフラットな JSON を返す（{success,data} 形式ではない）。
+  // 既存のサービス API と同じくラップ形式も許容し、両方をパースする。
+  const wrapped = body.success === true && body.data && typeof body.data === 'object';
+  if (body.success === false) {
+    return { kind: 'unavailable', reason: String(body.message ?? 'RSP が失敗を返しました。') };
+  }
+  const data = (wrapped ? body.data : body) as Record<string, unknown>;
+  if (!data || typeof data !== 'object') {
     return { kind: 'unavailable', reason: 'RSP の応答形式が不正です。' };
   }
-  const data = body.data as Record<string, unknown>;
   const hostname = String(data.hostname ?? '').trim();
   if (!hostname) {
     return { kind: 'unavailable', reason: 'RSP の応答に hostname がありません。' };
