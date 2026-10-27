@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { config } from '../config.js';
 import { sql } from '../db.js';
 import { buildServer } from '../server.js';
@@ -8,6 +8,7 @@ import { hashSessionToken } from './password.js';
 import { loadUserRoles, validateRoleSet } from './roles.js';
 import { assertNotAuditorWrite } from './session.js';
 import type { AuthUser } from './types.js';
+import { clearUiRoleCache } from './ui.js';
 
 const PREFIX = 'role-test-';
 const auditorEmail = `${PREFIX}auditor@example.com`;
@@ -65,6 +66,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  await sql`DELETE FROM prototype_states WHERE user_email LIKE ${`${PREFIX}%`}`;
   await sql`DELETE FROM users WHERE email LIKE ${`${PREFIX}%`}`;
   await app.close();
 });
@@ -164,5 +166,40 @@ describe('複数ロール（docs/49）', () => {
     `;
     const roles = await loadUserRoles(requesterId[0]!.id, 'requester');
     expect(roles).toEqual(['requester']);
+  });
+});
+
+describe('UI 経路のロール適用（docs/49 §3）', () => {
+  const originalDevEmail = config.DEV_AUTH_EMAIL;
+
+  afterEach(() => {
+    config.DEV_AUTH_EMAIL = originalDevEmail;
+    clearUiRoleCache();
+  });
+
+  it('auditor は UI の書込みが 403・閲覧は 200', async () => {
+    config.DEV_AUTH_EMAIL = auditorEmail;
+    clearUiRoleCache();
+    const read = await app.inject({ method: 'GET', url: '/api/state' });
+    expect(read.statusCode, read.body).toBe(200);
+
+    const write = await app.inject({
+      method: 'PUT',
+      url: '/api/state/cowork',
+      payload: { data: { v: 31 } },
+    });
+    expect(write.statusCode, write.body).toBe(403);
+    expect(write.body).toContain('監査ロールは閲覧のみ');
+  });
+
+  it('一般のロールは UI の書込みを従来どおり許可される', async () => {
+    config.DEV_AUTH_EMAIL = requesterEmail;
+    clearUiRoleCache();
+    const write = await app.inject({
+      method: 'PUT',
+      url: '/api/state/cowork',
+      payload: { data: { v: 31 } },
+    });
+    expect(write.statusCode, write.body).toBe(200);
   });
 });
