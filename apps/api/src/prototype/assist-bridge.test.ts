@@ -4,9 +4,38 @@ import { describe, expect, it } from 'vitest';
 
 const code = readFileSync(new URL('./assist-bridge.js', import.meta.url), 'utf8');
 
+interface SyncedCase {
+  id?: string;
+  step?: number;
+  handoverStatus?: string;
+  handoverApprovedAt?: string;
+  handoverApprovedBy?: string;
+  handoverSelfApproved?: boolean;
+  handoverClaimedBy?: string;
+  handoverSyncedAt?: string;
+}
+
+interface HandoverInfo {
+  status?: string;
+  approvedAt?: string;
+  approvedBy?: string;
+  selfApproved?: boolean;
+  claimedByName?: string;
+}
+
+interface LinkResult {
+  chat?: unknown;
+  tkt?: unknown;
+  inc?: Record<string, unknown> | null;
+  dr?: unknown;
+  kb?: unknown;
+}
+
 interface AssistBridge {
   version: number;
   rspDeepLink: (c: unknown) => string;
+  applyHandoverStatus: (c: SyncedCase, handover: HandoverInfo) => boolean;
+  linkWithHandover: (c: SyncedCase, L: LinkResult) => LinkResult;
 }
 
 interface SandboxWindow {
@@ -87,5 +116,81 @@ describe('assist-bridge: RSP ディープリンク (Phase 3)', () => {
     expect(bridge.rspDeepLink({ id: 'CASE-1' })).toBe(
       'https://rsp.mirai-remotetools.com/?helpdeskCase=CASE-1',
     );
+  });
+});
+
+describe('assist-bridge: 依頼者側の引継ぎ状態反映 (F-13)', () => {
+  const bridge = () => loadBridge({}, () => true);
+
+  it('completed は案件を STEP7（完了）へ進め、承認情報を保存する', () => {
+    const b = bridge();
+    const c: SyncedCase = { id: 'CASE-1', step: 4 };
+    const changed = b.applyHandoverStatus(c, {
+      status: 'completed',
+      approvedAt: '2026-10-27T03:00:00.000Z',
+      approvedBy: 'dx@example.com',
+      selfApproved: true,
+      claimedByName: 'dx@example.com',
+    });
+    expect(changed).toBe(true);
+    expect(c.step).toBe(7);
+    expect(c.handoverStatus).toBe('completed');
+    expect(c.handoverApprovedAt).toBe('2026-10-27T03:00:00.000Z');
+    expect(c.handoverApprovedBy).toBe('dx@example.com');
+    expect(c.handoverSelfApproved).toBe(true);
+    expect(c.handoverClaimedBy).toBe('dx@example.com');
+  });
+
+  it('claimed / resolved は STEP5（対応中）へ進める', () => {
+    const b = bridge();
+    const claimed: SyncedCase = { id: 'CASE-2', step: 4 };
+    expect(b.applyHandoverStatus(claimed, { status: 'claimed' })).toBe(true);
+    expect(claimed.step).toBe(5);
+    const resolved: SyncedCase = { id: 'CASE-3', step: 4 };
+    expect(b.applyHandoverStatus(resolved, { status: 'resolved' })).toBe(true);
+    expect(resolved.step).toBe(5);
+  });
+
+  it('同じ状態なら変更なし（changed=false）。未知の状態は無視する', () => {
+    const b = bridge();
+    const c: SyncedCase = { id: 'CASE-4', step: 4, handoverStatus: 'completed' };
+    expect(b.applyHandoverStatus(c, { status: 'completed' })).toBe(false);
+    const d: SyncedCase = { id: 'CASE-5', step: 4 };
+    expect(b.applyHandoverStatus(d, { status: 'cancelled' })).toBe(false);
+    expect(d.step).toBe(4);
+  });
+
+  it('link() の結果に completed を重ねると、既存の stage 判定が「完了」になる', () => {
+    const b = bridge();
+    const c: SyncedCase = { id: 'CASE-6', step: 7, handoverStatus: 'completed' };
+    const L: LinkResult = { chat: null, tkt: { id: 'TKT-1' }, inc: null, dr: null, kb: null };
+    const merged = b.linkWithHandover(c, L);
+    expect(merged.inc?.status).toBe('resolved');
+    expect(merged.inc?.draftId).toBe('');
+    expect(merged.inc?.kbId).toBe('');
+    const resolution = merged.inc?.resolution as { cause?: string } | undefined;
+    expect(resolution?.cause).toContain('DX推進部');
+    // 既存のチャット・チケット参照は壊さない。
+    expect(merged.tkt).toBe(L.tkt);
+    expect(merged.chat).toBeNull();
+  });
+
+  it('link() の結果に claimed を重ねると「対応中」になる', () => {
+    const b = bridge();
+    const c: SyncedCase = {
+      id: 'CASE-7',
+      handoverStatus: 'claimed',
+      handoverClaimedBy: 'dx@example.com',
+    };
+    const L: LinkResult = { chat: null, tkt: { id: 'TKT-1' }, inc: null, dr: null, kb: null };
+    const merged = b.linkWithHandover(c, L);
+    expect(merged.inc?.status).toBe('in_progress');
+    expect(merged.inc?.assignee).toBe('dx@example.com');
+  });
+
+  it('同期状態が無い案件は link() の結果をそのまま返す', () => {
+    const b = bridge();
+    const L: LinkResult = { chat: null, tkt: { id: 'TKT-1' }, inc: null, dr: null, kb: null };
+    expect(b.linkWithHandover({ id: 'CASE-8' }, L)).toBe(L);
   });
 });
