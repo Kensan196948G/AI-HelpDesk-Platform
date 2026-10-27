@@ -105,3 +105,36 @@ Unix ソケットは peer 認証のみで、`postgres.js` は URL 形式でソ�
 - アプリ: 本 PR を revert すれば画面は従来のクライアント状態のみに戻る（サーバの列は無害）。
 - DB: `022` は列と部分インデックスの追加のみ。戻す場合は
   `DROP INDEX IF EXISTS knowledge_client_ref_uq; ALTER TABLE knowledge DROP COLUMN IF EXISTS client_ref;`
+
+---
+
+## 6. 追加実装（2026-10-27）— 承認者向け pending 一覧と別ID承認
+
+PR #79 の実装だけでは、**承認者（別ID）の画面に他人の下書きが出ない**（下書きは自分のクライアント状態にしか無い）。実測で確認したため、差分を追加した（PR #82）。
+
+### 6-1. 変更
+
+| 側 | 内容 |
+|---|---|
+| サーバ | `GET /api/knowledge/pending`（`authenticateUi` + `requireHelpdeskActor`）。`client_ref` 付きの `draft`/`pending` を最大50件、`authorEmail` 付きで返す（`/knowledge/:id` より先に登録） |
+| UI | 「⑥ 承認者の確認」に **サーバ下書き（承認待ち）** セクション。4項目ONで承認可。承認は既存 `POST /api/knowledge/ui-sync` を再送（専用 API は追加しない）。却下は理由必須。障害時はローカル画面を維持 |
+
+### 6-2. 本番での職務分離の実測
+
+同一社員の別アドレスを使うため `EMAIL_ALIASES` を一時的に外して別ID化し、**作者と承認者を分けて**承認した（検証後に設定は復元）。
+
+| 項目 | 実測 |
+|---|---|
+| 下書き（KB-2026-0103） | 作成者 = **gmail**（別名ありの状態で作成） |
+| 承認 | `EMAIL_ALIASES` を外した状態で、**社内アドレス**のセッションが `/api/knowledge/ui-sync`（画面の承認と同じ経路）で承認 → 200 |
+| knowledge | `status=approved` / `version=2` / `author=gmail` / **`approver=社内アドレス`** |
+| 監査 | `knowledge.approve` の `detail.selfApproved` = **false**（`clientRef`・comment 付き） |
+| reviews | `approved` / reviewer = **社内アドレス** |
+
+> 補足: 本番の社員名簿は実質1名のため、別ID化には `EMAIL_ALIASES` の一時解除が必要。**解除中は gmail が名簿に解決できず 403** になるため、「gmail で作成 → 別名解除 → 社内アドレスで承認」の順で行う必要がある（この順序を実測で確認）。
+> 画面のクリック操作そのものは検証インスタンス（API モック）で確認済み。本番では同じエンドポイントを直接呼んで確認した。
+
+### 6-3. 残課題
+
+- `knowledge.approve` の監査 `detail` に **actorEmail が無い**（`approver_id` と `knowledge_reviews` には残る）。監査画面で一行で追うなら追加が望ましい（SM-11）。
+- 承認待ちのテストデータ `KB-2026-0102`（作成者=社内アドレス）が残置。不要なら却下（`ui-sync` status=rejected）で整理する。
