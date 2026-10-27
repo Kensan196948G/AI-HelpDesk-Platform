@@ -205,6 +205,13 @@ typecheck / lint / build / secret scan / migrate 冪等はすべて成功（修�
 6. **本番書込みは行っていない**: テスト案件の作成・状態復元・メール送信（D2=送らない）は未実施。本番 DB は読み取りのみ。
 7. **負荷試験・ペネトレーションテスト**は対象外（計画どおり）。
 
+> **2026-10-27 14:50 追記（F-06 完了後）**
+>
+> - 上記 **5（別担当者による承認は BLOCKED）は解消**。ナレッジのサーバ永続化（PR #79・migration 022）と承認者向け pending 一覧（PR #82）により、**UI から**別 ID での承認が成立することを実測した。`KB-2026-0103`: author=`kensan1969@gmail.com` / approver=`k-aritoh@mirai-const.co.jp` / `self_approved=false`。さらに 14:48 に `KB-2026-0102`（作成者=社内アドレス）を UI から承認し、pending→approved・version 2・監査 `knowledge.approve`（`selfApproved=false`）を確認した（`docs/42` §7）。
+> - ただし **4 ロール（担当／承認／監査／IT 端末管理）のサーバ分離は未実装**で、`ALLOW_SELF_APPROVAL=true` を維持している。設計案と移行計画は `docs/43` に提案として起案した（実装は別判断）。
+> - 上記 **6（本番書込みは行っていない）は当時の記述**であり、10/27 のデプロイと本検証で本番 DB への書込み（`knowledge` 行の更新・`audit_log` 追記・migration 022 の適用）が発生している。
+> - 即時スモーク監視の結果は `docs/42` §8（今回の変更に起因する 5xx・error は 0 件）。
+
 ---
 
 ## 8. 次アクション
