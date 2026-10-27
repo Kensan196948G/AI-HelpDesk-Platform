@@ -6,6 +6,7 @@ import {
 } from '../domain/device.js';
 import { asJsonObject } from './json.js';
 import { jsonbValue } from './jsonb-value.js';
+import { sanitizeForJson } from './unicode.js';
 
 interface StoredRow {
   data: unknown;
@@ -99,12 +100,17 @@ export async function storeDeviceInventory(
   email: string,
   inventory: DeviceInventoryData,
 ): Promise<void> {
+  // 端末エージェントの文字列には U+0000 や単独サロゲートが混ざりうる。
+  // jsonb / text へ入れると PostgreSQL が 500 で拒否するため、取り込み境界で落とす
+  // （2026-10-27: `POST /api/device/agent` が `unsupported Unicode escape sequence`
+  // で失敗し、PC 情報の更新が止まった）。
+  const safe = sanitizeForJson(inventory);
   await sql`
     INSERT INTO device_inventories (
       user_email, source, device_id, hostname, os, data, collected_at, updated_at
     ) VALUES (
-      ${email}, ${inventory.source}, ${inventory.deviceId}, ${inventory.hostname ?? null},
-      ${inventory.os ?? null}, ${jsonbValue(inventory)}, ${inventory.collectedAt}, now()
+      ${email}, ${safe.source}, ${safe.deviceId}, ${safe.hostname ?? null},
+      ${safe.os ?? null}, ${jsonbValue(safe)}, ${safe.collectedAt}, now()
     )
     ON CONFLICT (user_email, source, device_id) DO UPDATE SET
       hostname = EXCLUDED.hostname,

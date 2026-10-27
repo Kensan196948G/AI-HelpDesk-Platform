@@ -129,6 +129,33 @@ describe('device routes', () => {
     expect(merged.snapshot.items.length).toBeGreaterThanOrEqual(31);
   });
 
+  it('U+0000 を含む端末情報でも 500 にならず、保存時に除去する', async () => {
+    // 2026-10-27: Windows エージェントの文字列に NUL が混ざり、jsonb への INSERT が
+    // `unsupported Unicode escape sequence` で 500 になっていた。取り込み境界で落とす。
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/device/agent',
+      headers: { 'x-device-token': agentToken, 'x-device-id': AGENT_DEVICE },
+      payload: {
+        ...agentPayload,
+        deviceId: 'route-agent-nul',
+        hostname: 'PC-NUL\u0000-01',
+        software: [{ name: 'Broken\u0000 App', version: '1.0' }],
+        browserDeviceId: undefined,
+        collectedAt: new Date().toISOString(),
+      },
+    });
+    expect(response.statusCode, response.body).toBe(200);
+
+    const rows = await sql<{ hostname: string; data: unknown }[]>`
+      SELECT hostname, data FROM device_inventories
+      WHERE user_email = ${EMAIL} AND device_id = 'route-agent-nul'
+      LIMIT 1
+    `;
+    expect(rows[0]?.hostname).toBe('PC-NUL-01');
+    expect(JSON.stringify(rows[0]?.data)).not.toContain('\\u0000');
+  });
+
   it('別端末の未リンクエージェントはブラウザのスナップショットを上書きしない', async () => {
     // 直前のテストでリンク済み agent が残っているため、未リンクの検証前に取り除く。
     await sql`
