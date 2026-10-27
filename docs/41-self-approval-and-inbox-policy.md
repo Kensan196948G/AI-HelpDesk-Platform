@@ -221,3 +221,21 @@ npm run lint
 4. ロールバックは `true` に戻して再起動（既定に復帰）
 
 > 注意: 2人目が **DX 推進部でない**場合、または名簿に存在しない場合は 403 になる（fail-closed）。その場合は名簿（Mirai-Info）の所属・アカウントを先に整備する。
+
+---
+
+## 2026-10-27 実測: 別ID承認（職務分離）の検証
+
+**方法**: `EMAIL_ALIASES` から「owner 社内アドレス → gmail」の別名を一時的に外し、社内アドレスを別IDとして扱った（同一人物の別IDによる技術検証）。検証後に設定は復元（`ALLOW_SELF_APPROVAL=true`）。
+
+| 段階 | 実測 |
+|---|---|
+| 別名解除後 | `prototype_states` に社内アドレスの新しい状態行（13:45:44）が作成され、**別IDとして扱われる**ことを確認 |
+| 一人目（gmail） | CASE-39196 を作成・共有・claim・解決（claimed_by = gmail） |
+| 二人目（社内アドレス） | `POST /api/case-handovers/{id}/approve` → **200** |
+| DB | `status=completed` / `claimed_by=gmail` / **`approved_by=社内アドレス`** / **`self_approved=false`** |
+| 監査 | `case_handover.approve` の actor = 社内アドレス、`selfApproved=false` |
+
+**判明した制約（F-06）**: ナレッジ下書きはクライアント状態（ユーザー単位）にあるため、**二人目の「⑥ 承認者の確認」に一人目の下書きは表示されない**。今回の承認はサーバ API を直接呼んで検証した。UI から職務分離を完結させるには F-06 の「2: 最小のサーバ記録（下書き・承認のサーバ正本化）」が必要。
+
+**残**: 同一IDでの `ALLOW_SELF_APPROVAL=false` → 403 は本番未実測（統合テストで固定）。設定は `true` に戻したため、現状の単一ID運用では自己承認が許可される。
