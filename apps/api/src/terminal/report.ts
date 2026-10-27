@@ -204,7 +204,11 @@ export function buildTerminalReport(input: TerminalReportInput): TerminalReportR
 
   const payload = {
     reportVersion: 1 as const,
-    kind: 'helpdesk_resolved' as const,
+    // SM-12: 中止・エスカレーションで終えたセッションを「解決」報告書にしない。
+    // 解決（resolved）だけを helpdesk_resolved とし、それ以外は未解決として扱う。
+    kind: (session.close_reason === 'resolved' ? 'helpdesk_resolved' : 'helpdesk_stopped') as
+      | 'helpdesk_resolved'
+      | 'helpdesk_stopped',
     generatedAt: new Date().toISOString(),
     generatedBy: {
       name: text(operatorName, 120) || session.operator_email,

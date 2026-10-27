@@ -21,7 +21,7 @@ import { redactPII } from './pii.js';
 const Text = (max: number) => z.string().max(max);
 const Iso = z.string().trim().min(4).max(40);
 
-export const FINAL_REPORT_KINDS = ['ai_resolved', 'helpdesk_resolved'] as const;
+export const FINAL_REPORT_KINDS = ['ai_resolved', 'helpdesk_resolved', 'helpdesk_stopped'] as const;
 export type FinalReportKind = (typeof FINAL_REPORT_KINDS)[number];
 
 const PersonSchema = z.object({
@@ -325,6 +325,8 @@ export interface RenderedReport {
 const KIND_LABEL: Record<FinalReportKind, string> = {
   ai_resolved: 'AIの一次対応で解決',
   helpdesk_resolved: '担当者の対応で解決',
+  // SM-12: 中止・エスカレーションで終了したセッションを「解決」と誤認させない。
+  helpdesk_stopped: '担当者の対応を終了（未解決）',
 };
 
 const PF = {
@@ -418,7 +420,9 @@ function badge(label: string, color: string): string {
 }
 
 function statusColor(report: FinalReport): string {
-  return report.kind === 'ai_resolved' ? '#1d7a4d' : '#245b9c';
+  if (report.kind === 'ai_resolved') return '#1d7a4d';
+  if (report.kind === 'helpdesk_stopped') return '#6b7280';
+  return '#245b9c';
 }
 
 /**
@@ -603,11 +607,13 @@ function renderHandover(report: FinalReport): string {
 function renderResolution(report: FinalReport): string {
   const resolution = report.resolution;
   if (!resolution) return '';
+  // 中止・エスカレーション終了の報告書では「解決日時」ではなく「終了日時」。
+  const ended = report.kind === 'helpdesk_stopped';
   const rows = [
     ['原因', safeText(resolution.cause, 4000)],
     ['担当', escapeHtml(resolution.by ?? '')],
     ['所要時間', typeof resolution.minutes === 'number' ? `${resolution.minutes}分` : ''],
-    ['解決日時', escapeHtml(resolution.at ?? '')],
+    [ended ? '終了日時' : '解決日時', escapeHtml(resolution.at ?? '')],
     ['備考', safeText(resolution.note, 4000)],
   ].filter((row) => row[1]);
   const steps = resolution.steps.length
@@ -821,7 +827,9 @@ export function renderFinalReportHtml(report: FinalReport, meta: ReportRenderMet
   const color = statusColor(report);
   const safeCaseId = report.case.id.replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 40) || 'case';
   const date = report.generatedAt.slice(0, 10).replace(/[^0-9]/g, '') || 'report';
-  const filename = `AIHelpDesk-${safeCaseId}-${report.kind === 'ai_resolved' ? 'AI' : 'HD'}-${date}.html`;
+  const suffix =
+    report.kind === 'ai_resolved' ? 'AI' : report.kind === 'helpdesk_stopped' ? 'HD-STOP' : 'HD';
+  const filename = `AIHelpDesk-${safeCaseId}-${suffix}-${date}.html`;
 
   const summaryRows = [
     ['案件番号', `<span class="case">${escapeHtml(report.case.id)}</span>`],
@@ -871,7 +879,7 @@ export function renderFinalReportHtml(report: FinalReport, meta: ReportRenderMet
   ${section('PC基本情報（読み取りのみ）', pc)}
   ${section('AIの一次対応', ai)}
   ${section('担当者への引継ぎ', handover)}
-  ${section('担当者の対応・解決記録', resolution)}
+  ${section(report.kind === 'helpdesk_stopped' ? '担当者の対応・実行記録' : '担当者の対応・解決記録', resolution)}
   ${section('RSP実行セッション（AI提案と実行記録）', terminal)}
   ${section('ナレッジ化', knowledge)}
   ${section('遠隔支援（同意した範囲）', remote)}
