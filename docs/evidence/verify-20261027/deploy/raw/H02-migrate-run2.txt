@@ -1,0 +1,21 @@
+[migrate] skip 001_init.sql
+[migrate] skip 002_prototype_states.sql
+[migrate] skip 003_device_inventory.sql
+[migrate] skip 004_device_scoped_inventory.sql
+[migrate] skip 005_device_commands.sql
+[migrate] skip 006_final_reports.sql
+[migrate] skip 007_case_handovers.sql
+[migrate] skip 008_case_handover_recipient_approval.sql
+[migrate] skip 009_handover_notifications.sql
+[migrate] skip 010_jsonb_objects.sql
+[migrate] skip 011_resolution_loop.sql
+[migrate] skip 012_device_command_skill_hash.sql
+[migrate] skip 013_resolution_phase_c.sql
+[migrate] skip 014_resolution_phase_c_backfill.sql
+[migrate] skip 015_remote_support.sql
+[migrate] skip 016_agent_privilege.sql
+[migrate] skip 017_step_verify_result.sql
+[migrate] skip 018_verify_followup.sql
+[migrate] skip 019_terminal_sessions.sql
+[migrate] skip 020_add_rsp_correlation.sql
+[migrate] done

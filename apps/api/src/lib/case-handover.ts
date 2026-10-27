@@ -86,14 +86,148 @@ function nowLocal(): string {
   )}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
 
+/** 1 行にそろえて長さを制限する（メールの件名・ヘッダーに使う）。 */
+function oneLine(value: unknown, maxLength = 120): string {
+  return String(value ?? '')
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maxLength);
+}
+
+/** 案件に件名が無いとき、他の実データから補うためのチャット件名の除外値。 */
+const CHAT_TITLE_PLACEHOLDERS = new Set(['新しい相談', '(件名なし)']);
+
+/**
+ * 引継ぎスナップショットへ載せる案件件名を決める（F-05）。
+ *
+ * 通知メールの件名は snapshot.case.subject から作られるが、STEP4 直後の共有では
+ * サーバ側の状態保存が追いつかず subject が空のまま保存されることがある。
+ * そのため subject が空のときは、同じ状態に残っている
+ * チケット概要 → INC 件名 → チャット件名 の順で実データから補う。
+ * どれも無い場合だけ空文字を返す（通知側で「(件名なし)」になる）。
+ */
+export function resolveSnapshotSubject(
+  caseRecord: JsonRecord,
+  related: { chat?: JsonRecord | null; ticket?: JsonRecord | null; inc?: JsonRecord | null } = {},
+): string {
+  const direct = oneLine(caseRecord.subject);
+  if (direct) return direct;
+  const ticketSummary = oneLine(related.ticket?.summary);
+  if (ticketSummary) return ticketSummary;
+  const incSubject = oneLine(related.inc?.subject);
+  if (incSubject) return incSubject;
+  const chatTitle = oneLine(related.chat?.title);
+  if (chatTitle && !CHAT_TITLE_PLACEHOLDERS.has(chatTitle)) return chatTitle;
+  return '';
+}
+
+/** PC 基本情報の項目名（k）ごとに、値（v）を伏せる対象。 */
+const PC_SENSITIVE_LABELS: Array<{ pattern: RegExp; replacement: string }> = [
+  { pattern: /ipアドレス|ip address/i, replacement: '[IPアドレス]' },
+  { pattern: /シリアル|serial/i, replacement: '[シリアル番号]' },
+  { pattern: /資産番号|asset/i, replacement: '[資産番号]' },
+];
+
+/** フィールド名がシリアル番号を表す場合（例: `{ serial: 'SN-0001' }`）も伏せる。 */
+const SERIAL_FIELD = /serial|シリアル/i;
+
+/** PC 基本情報の項目名（k）が端末識別子を表す場合。表示用でも値は保持する。 */
+const IDENTIFIER_PC_LABEL = /コンピュータ名|端末名|ホスト名|hostname|端末id|デバイスid|device/i;
+
+/**
+ * 端末照合・相関に使う識別子のフィールド名。
+ * 値を伏せ字にすると `pc.snap.device` が RSP のホスト名照合
+ * （`snapshot #>> '{case,pc,snap,device}'`）や提案ハッシュの `deviceId` と
+ * 一致しなくなるため、これらはそのまま保存する（F-04 回帰修正）。
+ * 比較時は小文字化し、`_` `-` 空白を除く（deviceId / device_id を同一視）。
+ */
+const IDENTIFIER_FIELDS = new Set(
+  ['device', 'deviceId', 'agentId', 'hostname', 'machineId', 'terminalId'].map((value) =>
+    value.toLowerCase(),
+  ),
+);
+
+function isIdentifierField(key: string | undefined): boolean {
+  if (!key) return false;
+  return IDENTIFIER_FIELDS.has(key.toLowerCase().replace(/[-_\s]/g, ''));
+}
+
+function sensitivePcLabel(value: unknown): string | null {
+  const label = oneLine(value, 40);
+  if (!label) return null;
+  const hit = PC_SENSITIVE_LABELS.find((rule) => rule.pattern.test(label));
+  return hit ? hit.replacement : null;
+}
+
+/**
+ * 保存前にスナップショット全体（ネストしたオブジェクト・配列を含む）の
+ * 文字列を redactPII で伏せ字にする（F-04）。
+ *
+ * - クライアント側の置換には依存しない。
+ * - キー名はマージ時の ID 引き当てに使うため変更しない（値だけを伏せる）。
+ * - 端末の識別子（device / deviceId / agentId / hostname 等）は照合・相関に
+ *   使うため伏せない（`MRK-NB-1000` が資産番号と誤判定される回帰の修正）。
+ * - PC 基本情報の `{ k: 'シリアル', v: 'SN-0001' }` のように、項目名でしか
+ *   判別できない表示用の値は、項目名（k）に合わせて伏せる。
+ */
+export function redactSnapshotValue(value: unknown, key?: string): unknown {
+  if (typeof value === 'string') {
+    if (value === '') return value;
+    // 端末識別子はそのまま残す（シリアル・資産番号の誤判定より優先する）。
+    if (isIdentifierField(key)) return value;
+    if (key && SERIAL_FIELD.test(key)) return '[シリアル番号]';
+    return redactPII(value).text;
+  }
+  if (Array.isArray(value)) return value.map((item) => redactSnapshotValue(item, key));
+  if (value && typeof value === 'object') {
+    const record = value as JsonRecord;
+    const labelReplacement = sensitivePcLabel(record.k);
+    const identifierLabel = IDENTIFIER_PC_LABEL.test(oneLine(record.k, 40));
+    const result: JsonRecord = {};
+    for (const [childKey, child] of Object.entries(record)) {
+      if ((childKey === 'v' || childKey === 'value') && typeof child === 'string' && child !== '') {
+        // 表示用のシリアル・IP・資産番号は項目名で伏せる。
+        if (labelReplacement) {
+          result[childKey] = labelReplacement;
+          continue;
+        }
+        // 端末名などの識別子項目は照合に使えるようそのまま残す。
+        if (identifierLabel) {
+          result[childKey] = child;
+          continue;
+        }
+      }
+      result[childKey] = redactSnapshotValue(child, childKey);
+    }
+    return result;
+  }
+  return value;
+}
+
+/** スナップショットを丸ごと伏せ字にした複製を返す（元の状態は変更しない）。 */
+export function redactCaseSnapshot(snapshot: CaseSnapshot): CaseSnapshot {
+  return redactSnapshotValue(snapshot) as CaseSnapshot;
+}
+
+export interface ExtractCaseSnapshotOptions {
+  /**
+   * クライアントが送った案件件名。状態の保存が追いつく前でも件名を確定させる。
+   * 現行の routes/case-handovers.ts は渡していない（報告参照）。
+   */
+  subject?: string;
+}
+
 /**
  * A さんの状態から、1 案件分の引継ぎスナップショットを作る。
  * 見つからない場合は null（推測で作らない）。
+ * 返すスナップショットは保存可能な形に伏せ字化済み（F-04）。
  */
 export function extractCaseSnapshot(
   coworkInput: unknown,
   helpdeskInput: unknown,
   caseId: string,
+  options?: ExtractCaseSnapshotOptions,
 ): CaseSnapshot | null {
   const cowork = normalizeState(coworkInput);
   const helpdesk = normalizeState(helpdeskInput);
@@ -131,9 +265,14 @@ export function extractCaseSnapshot(
       String((item as JsonRecord).chatId ?? '') === idOf(chat),
   );
 
-  return {
+  // 件名は「クライアントが送った値 → 案件の subject → 他の実データ」の順で決める。
+  const subject =
+    oneLine(options?.subject) || resolveSnapshotSubject(targetCase, { chat, ticket, inc });
+  const caseRecord: JsonRecord = subject ? { ...targetCase, subject } : targetCase;
+
+  return redactCaseSnapshot({
     caseId,
-    case: targetCase,
+    case: caseRecord,
     chat,
     ticket,
     inc,
@@ -141,7 +280,7 @@ export function extractCaseSnapshot(
     kb,
     proposals,
     extractedAt: new Date().toISOString(),
-  };
+  });
 }
 
 /**

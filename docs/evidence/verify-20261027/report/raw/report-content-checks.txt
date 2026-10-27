@@ -1,0 +1,38 @@
+# HTML/PDF 検査
+PII 生値の出現回数（HTML）:
+  k.verif@example.com = 0
+  03-1234-5678 = 0
+  10.20.30.40 = 0
+PDF テキストの文字化け（U+FFFD）: 0
+PDF ページ数: 9
+
+フォント（pdffonts）:
+name                                 type              encoding         emb sub uni object ID
+------------------------------------ ----------------- ---------------- --- --- --- ---------
+AAAAAA+IPAGothic                     CID TrueType      Identity-H       yes yes yes      4  0
+BAAAAA+IPAGothic                     Type 3            Custom           yes yes yes      5  0
+
+セクション（<h2>）:
+<h2>概要</h2>
+<h2>相談内容</h2>
+<h2>対応の経過</h2>
+<h2>PC基本情報（読み取りのみ）</h2>
+<h2>AIの一次対応</h2>
+<h2>担当者への引継ぎ</h2>
+<h2>担当者の対応・解決記録</h2>
+<h2>ナレッジ化</h2>
+
+表紙バッジ: STEP 5 完了
+アンカー(<a )数: 0
+
+ナレッジ化セクション:
+<h2>ナレッジ化</h2><table><thead><tr><th>項目</th><th>内容</th></tr></thead><tbody><tr><td>下書き</td><td>DR-004</td></tr><tr><td>状態</td><td>approved</td></tr><tr><td>ナレッジ</td><td>KB-111</td></tr><tr><td>タイトル</td><td>【検証F2】共有フォルダの権限申請で連絡先が通じない（[メールアドレス]）。共有フォルダの権限申請をときの対処</td></tr><tr><td>版</td><td>1.0</td></tr><tr><td>承認者</td><td>***</td></tr></tbody></table></section>
+  
+
+  <div class="footer">
+    <div>この報告書は AI HelpDesk Platf
+
+解決記録セクション:
+<h2>担当者の対応・解決記録</h2><table><thead><tr><th>項目</th><th>内容</th></tr></thead><tbody><tr><td>原因</td><td>共有フォルダの申請先が旧所属のままで、権限申請の連絡先が本人に届いていなかった。申請先を現所属に更新して再申請。</td></tr><tr><td>担当</td><td>***</td></tr></tbody></table><h3>対応手順</h3><ol class="steps"><li>申請先マスタを現所属（施工・技術部門）に更新</li><li>本人へ電話（[電話番号]）とメール（[メールアドレス]）で連絡</li><li>再申請の完了を確認（端末 [IPアドレス] からアクセス確認）</li></ol></section>
+  
+  <section class="sec"><h2>ナレッジ化</h2><table><thead><tr><th>項目</th><th>内容</th></tr></thead><tbody><tr><td>下書き</td><td>DR-004</td></tr><tr><td>状態</td><td>approved</td></tr><tr><td>ナレッジ</td><td>KB-111</td></tr><tr><td>タイトル</td><td

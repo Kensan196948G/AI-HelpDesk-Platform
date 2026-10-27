@@ -1,0 +1,12 @@
+# F: STEP別 報告書作成 API マトリクス（2026-10-27 09:25-09:26 JST / :18962 / DB ai_helpdesk_f）
+# リクエストは UI が送った payload をそのまま使い、kind と case.step だけを差し替えた
+
+kind=ai_resolved        step=5 -> 400
+  body: {"error":{"code":"VALIDATION_ERROR",...,"fieldErrors":{"report":["AI解決の報告書は STEP 7 で作成してください。"]}}}
+kind=ai_resolved        step=7 -> 200
+
+kind=helpdesk_resolved  step=4 -> 400
+  body: {"error":{"code":"VALIDATION_ERROR",...,"fieldErrors":{"report":["担当者解決の報告書は STEP 5〜7 で作成してください。"]}}}
+kind=helpdesk_resolved  step=5 -> 200
+kind=helpdesk_resolved  step=6 -> 200
+kind=helpdesk_resolved  step=7 -> 200

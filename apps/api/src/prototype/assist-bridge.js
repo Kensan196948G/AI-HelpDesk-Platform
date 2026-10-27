@@ -1132,6 +1132,9 @@
       if (c._handoverId) return;
       try {
         const payload = { caseId: c.id };
+        // STEP4 直後の共有でも通知メールの件名が空にならないよう、画面の件名も送る。
+        // 件名が無い場合は従来どおり caseId だけで共有する（サーバ側で補完される）。
+        if (c.subject) payload.subject = c.subject;
         if (recipientNo) payload.recipientNo = recipientNo;
         const data = await ahJsonFetch('/api/case-handovers', {
           method: 'POST',
@@ -1188,7 +1191,7 @@
   function ahSharedCaseForDraft(draftId) {
     const cases = (S.cases || []).filter((item) => item.handoverId);
     if (!cases.length) return null;
-    const draft = draftId && typeof drById === 'function' ? drById(draftId) || null : null;
+    const draft = draftId ? ahDraftInfo(draftId) : null;
     if (draft) {
       const linked = cases.find((item) => {
         try {
@@ -1213,6 +1216,113 @@
     }
     const current = ahCurrentCase();
     return current && current.handoverId ? current : null;
+  }
+
+  /**
+   * 下書き情報を取る。
+   * ヘルプデスク側の state / drById は IIFE に閉じているため、公開 API
+   * `window.HD.draftInfo()` を使う（使えない画面ではグローバル関数へフォールバック）。
+   */
+  function ahDraftInfo(draftId) {
+    try {
+      if (window.HD && typeof window.HD.draftInfo === 'function') {
+        return window.HD.draftInfo(draftId) || null;
+      }
+    } catch (error) {
+      // 公開 API が使えない環境では下のフォールバックへ。
+    }
+    try {
+      return typeof drById === 'function' ? drById(draftId) || null : null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  /** 現在の操作者名（ヘルプデスク側 state.actor は window.HD.actor() で公開されている）。 */
+  function ahActorName() {
+    try {
+      if (window.HD && typeof window.HD.actor === 'function') {
+        const name = window.HD.actor();
+        if (name) return String(name);
+      }
+    } catch (error) {
+      // 下のフォールバックへ。
+    }
+    try {
+      return typeof state !== 'undefined' && state ? String(state.actor || '') : '';
+    } catch (error) {
+      return '';
+    }
+  }
+
+  /**
+   * 承認画面のチェックリスト（#ck0〜#ck3）の状態。
+   * 画面上に4件そろっていない場合は null を返す（検証不能として扱う）。
+   */
+  function ahApproveChecklist() {
+    if (typeof document === 'undefined' || typeof document.getElementById !== 'function')
+      return null;
+    const boxes = [];
+    for (let index = 0; index < 4; index += 1) {
+      const input = document.getElementById('ck' + index);
+      if (!input) return null;
+      boxes.push(input);
+    }
+    return boxes;
+  }
+
+  /**
+   * 承認前のクライアント検証。
+   * - 内部状態は window.HD（公開 API）と DOM だけから判定する。
+   * - 判定できない項目・状態はブロックしない（従来動作へフォールバックし、
+   *   「見つかりません」のような誤った中断を出さない）。
+   */
+  function ahClientApproveBlockReason(draftId) {
+    const draft = ahDraftInfo(draftId);
+    if (!draft) return null;
+    const actor = ahActorName();
+    if (actor && draft.applicant && actor === draft.applicant) {
+      return '申請者本人は承認できません（申請した人と承認する人を分けるため）';
+    }
+    const boxes = ahApproveChecklist();
+    if (boxes && boxes.some((input) => !input.checked)) {
+      return 'チェックリストをすべて確認してください';
+    }
+    return null;
+  }
+
+  /**
+   * サーバー承認が成立した後にローカル承認が失敗した場合の補償（F-12）。
+   * 引継ぎを resolved に戻して再承認できる状態にする。戻せない場合は明示する。
+   */
+  function ahRecoverHandoverAfterLocalApproveFailure(handoverId, localError) {
+    if (localError) console.error('[assist] local approve failed', localError);
+    return ahJsonFetch('/api/case-handovers/' + encodeURIComponent(handoverId), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'resolved', note: '画面側の承認失敗による補償（F-12）' }),
+    })
+      .then(() => {
+        if (typeof toast === 'function') {
+          toast(
+            'サーバーの承認は成立しましたが、画面の承認に失敗したため、引継ぎを「対応中」に戻しました。チェックリストを確認して、もう一度承認してください。',
+            'bad',
+          );
+        }
+      })
+      .catch((error) => {
+        console.error('[assist] handover recovery failed', error);
+        if (typeof toast === 'function') {
+          toast(
+            'サーバーの承認は完了しましたが、画面の承認に失敗し、状態も自動で戻せませんでした（' +
+              String(error.message || error).slice(0, 120) +
+              '）。引継ぎ「' +
+              handoverId +
+              '」を status=resolved に戻す必要があります。管理者に連絡してください。',
+            'bad',
+          );
+        }
+      });
   }
 
   async function ahSyncHandoverStatus(status, draftId) {
@@ -1746,15 +1856,44 @@
             if (typeof toast === 'function') toast('承認を確認しています…');
             return undefined;
           }
+          // F-12: クライアント検証（申請者の分離・チェックリスト4件）を先に済ませる。
+          // 不成立のままサーバー承認を先に実行すると status=completed になり、
+          // 以後 409 NOT_CLAIMED で再承認できなくなる。
+          // 判定できない場合はブロックせず従来動作に任せる（回帰防止）。
+          const draftBefore = ahDraftInfo(id);
+          const canInspect = Boolean(draftBefore);
+          const blocked = ahClientApproveBlockReason(id);
+          if (blocked) {
+            if (typeof toast === 'function') toast(blocked, 'bad');
+            return undefined;
+          }
           AH.approving = true;
           const args = arguments;
-          ahJsonFetch('/api/case-handovers/' + encodeURIComponent(target.handoverId) + '/approve', {
+          const handoverId = target.handoverId;
+          ahJsonFetch('/api/case-handovers/' + encodeURIComponent(handoverId) + '/approve', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: '{}',
           })
             .then((data) => {
-              const result = originalApprove.apply(this, args);
+              // サーバー承認が成立した後にローカル承認（画面の反映）を行う。
+              let localError = null;
+              try {
+                originalApprove.apply(this, args);
+              } catch (error) {
+                localError = error;
+              }
+              // 内部状態を参照できる場合だけ成否を判定する。参照できない場合は
+              // 従来どおりローカル実行結果をそのまま扱う（誤検知で補償しない）。
+              let localApproved = true;
+              if (canInspect) {
+                const after = ahDraftInfo(id);
+                localApproved = Boolean(after && after.status === 'approved' && after.kbId);
+              }
+              if (!localApproved) {
+                // 画面側が失敗しても引継ぎを completed のまま放置せず、再承認できる状態へ戻す。
+                return ahRecoverHandoverAfterLocalApproveFailure(handoverId, localError);
+              }
               const approved = data && data.handover ? data.handover : {};
               if (typeof toast === 'function') {
                 if (approved.selfApproved) {
@@ -1770,7 +1909,7 @@
                   );
                 }
               }
-              return result;
+              return undefined;
             })
             .catch((error) => {
               console.error('[assist] approve failed', error);

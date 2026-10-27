@@ -1,0 +1,12 @@
+== clean 84bba83 build vs running (main repo apps/api/dist) ==
+Files /tmp/aihd-h-build/dist-84bba83/domain/final-report.js and /home/<user>/Projects/Mirai-Admin-Platform/AI-HelpDesk-Platform/apps/api/dist/domain/final-report.js differ
+Files /tmp/aihd-h-build/dist-84bba83/domain/final-report.js.map and /home/<user>/Projects/Mirai-Admin-Platform/AI-HelpDesk-Platform/apps/api/dist/domain/final-report.js.map differ
+Files /tmp/aihd-h-build/dist-84bba83/routes/terminal.js and /home/<user>/Projects/Mirai-Admin-Platform/AI-HelpDesk-Platform/apps/api/dist/routes/terminal.js differ
+Files /tmp/aihd-h-build/dist-84bba83/routes/terminal.js.map and /home/<user>/Projects/Mirai-Admin-Platform/AI-HelpDesk-Platform/apps/api/dist/routes/terminal.js.map differ
+Files /tmp/aihd-h-build/dist-84bba83/terminal/capture.js and /home/<user>/Projects/Mirai-Admin-Platform/AI-HelpDesk-Platform/apps/api/dist/terminal/capture.js differ
+Files /tmp/aihd-h-build/dist-84bba83/terminal/capture.js.map and /home/<user>/Projects/Mirai-Admin-Platform/AI-HelpDesk-Platform/apps/api/dist/terminal/capture.js.map differ
+Files /tmp/aihd-h-build/dist-84bba83/terminal/report.js and /home/<user>/Projects/Mirai-Admin-Platform/AI-HelpDesk-Platform/apps/api/dist/terminal/report.js differ
+Files /tmp/aihd-h-build/dist-84bba83/terminal/report.js.map and /home/<user>/Projects/Mirai-Admin-Platform/AI-HelpDesk-Platform/apps/api/dist/terminal/report.js.map differ
+Files /tmp/aihd-h-build/dist-84bba83/terminal/session.js and /home/<user>/Projects/Mirai-Admin-Platform/AI-HelpDesk-Platform/apps/api/dist/terminal/session.js differ
+Files /tmp/aihd-h-build/dist-84bba83/terminal/session.js.map and /home/<user>/Projects/Mirai-Admin-Platform/AI-HelpDesk-Platform/apps/api/dist/terminal/session.js.map differ
+exit=1 lines=10

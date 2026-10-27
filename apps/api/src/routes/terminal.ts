@@ -149,7 +149,13 @@ async function expireIfNeeded(
       action: 'terminal.session.expire',
       targetType: 'terminal_session',
       targetId: session.id,
-      detail: { actorEmail, caseId: session.case_id, expiresAt: session.expires_at },
+      // 監査 detail は jsonb に保存されるため、Date のまま渡さず ISO 文字列にする（G-01-F1）。
+      // Date を渡すと保存値（ISO 文字列）とハッシュ計算時（{}）が食い違い、鎖が破断する。
+      detail: {
+        actorEmail,
+        caseId: session.case_id,
+        expiresAt: session.expires_at.toISOString(),
+      },
     });
     return rows[0];
   });

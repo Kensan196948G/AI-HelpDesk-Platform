@@ -1,0 +1,7 @@
+== 020 が要求する列をコードが参照しているか ==
+[84bba83] rsp_session_id occurrences: 3 / rsp_command_log_id: 2
+[running] rsp_session_id occurrences: 0 / rsp_command_log_id: 0
+
+== 84bba83 dist の SQL 断片 ==
+rsp_command_log_id
+rsp_session_id

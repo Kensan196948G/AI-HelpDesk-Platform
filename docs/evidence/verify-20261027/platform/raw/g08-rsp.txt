@@ -1,0 +1,22 @@
+# G-08 RSP 連携 /api/v1/helpdesk/* と HelpDesk /api/terminal/* の 401/200 境界 — 2026-10-27T09:29:27+09:00
+
+## HelpDesk :18959 /api/terminal/cases
+ヘッダーなし(局所UI認証)         | 200
+誤ったサービスキー               | 401
+正しいキー+operator(loopback)    | 200
+正しいキー+不正operator          | 401
+正しいキー+proxy-secret(公開経路)| 403
+
+## RSP :8130 /api/v1/helpdesk/*
+/api/v1/helpdesk/sessions | 401
+/api/v1/helpdesk/cases | 401
+/api/v1/helpdesk/context | 401
+
+## RSP 側の 200 経路（RSP セッション必要）: 本検証では RSP 資格情報が無く BLOCKED
+## 認証仕様（実装）
+21:const LOOPBACK_ADDRESSES = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
+39:export function hasRspIntegrationHeaders(request: FastifyRequest): boolean {
+49:  if (!hasRspIntegrationHeaders(request)) {
+54:  const expectedKey = config.RSP_INTEGRATION_KEY;
+69:  if (request.headers['x-proxy-secret'] !== undefined) {
+75:  if (!LOOPBACK_ADDRESSES.has(address)) {

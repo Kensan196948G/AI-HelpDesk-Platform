@@ -1,0 +1,6 @@
+# dist tree digest (sha256 of sorted per-file sha256, relative paths)
+candidate_84bba83(/tmp/aihd-h-build/dist-84bba83) f77351e81c0fdc68b9dd68882928a04b031607d9e634586c9f99920329f83113
+head(/tmp/aihd-head/apps/api/dist) f77351e81c0fdc68b9dd68882928a04b031607d9e634586c9f99920329f83113
+running(/home/<user>/Projects/Mirai-Admin-Platform/AI-HelpDesk-Platform/apps/api/dist) 6edeb5936aedf6319500e9a82a248d41a5f7aa7d928c4abd24e05332abc6537d
+rollback_old_copy(/tmp/aihd-h-run/dist-old) 6edeb5936aedf6319500e9a82a248d41a5f7aa7d928c4abd24e05332abc6537d
+file_count_84bba83 128

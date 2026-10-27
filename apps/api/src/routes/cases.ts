@@ -162,7 +162,8 @@ export async function caseRoutes(app: FastifyInstance): Promise<void> {
         detail: { caseNo, category, signal, pcEnabled },
       });
       await appendAudit(tx, {
-        actorId: null,
+        // AI 一次対応もこのリクエストの利用者が実行主体（G-01-F2）。
+        actorId: user.id,
         action: 'case.ai_assess',
         targetType: 'case',
         targetId: caseId,

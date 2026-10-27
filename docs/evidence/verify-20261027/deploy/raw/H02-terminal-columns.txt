@@ -1,0 +1,46 @@
+      column_name       |        data_type         | is_nullable 
+------------------------+--------------------------+-------------
+ id                     | uuid                     | NO
+ case_id                | text                     | NO
+ handover_id            | uuid                     | YES
+ device                 | text                     | NO
+ operator_email         | text                     | NO
+ requester_email        | text                     | YES
+ status                 | text                     | NO
+ close_reason           | text                     | YES
+ close_note             | text                     | YES
+ consent_screen_share   | boolean                  | NO
+ consent_remote_control | boolean                  | NO
+ ai_model               | text                     | YES
+ knowledge_id           | uuid                     | YES
+ report_id              | uuid                     | YES
+ report_sha256          | text                     | YES
+ started_at             | timestamp with time zone | NO
+ expires_at             | timestamp with time zone | NO
+ closed_at              | timestamp with time zone | YES
+ created_at             | timestamp with time zone | NO
+ updated_at             | timestamp with time zone | NO
+ rsp_session_id         | text                     | YES
+ id                     | uuid                     | NO
+ session_id             | uuid                     | NO
+ seq                    | integer                  | NO
+ operator_email         | text                     | NO
+ intent                 | text                     | YES
+ ai_command             | text                     | YES
+ ai_purpose             | text                     | YES
+ ai_risk                | text                     | YES
+ ai_verify              | text                     | YES
+ ai_rollback            | text                     | YES
+ ai_warnings            | jsonb                    | NO
+ ai_model               | text                     | YES
+ executed_command       | text                     | YES
+ output                 | text                     | YES
+ output_source          | text                     | YES
+ exit_status            | text                     | YES
+ note                   | text                     | YES
+ sha256                 | text                     | YES
+ proposed_at            | timestamp with time zone | NO
+ recorded_at            | timestamp with time zone | YES
+ rsp_command_log_id     | text                     | YES
+(42 行)
+

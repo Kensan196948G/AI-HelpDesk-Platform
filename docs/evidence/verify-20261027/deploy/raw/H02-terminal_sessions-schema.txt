@@ -1,0 +1,38 @@
+                                テーブル"public.terminal_sessions"
+           列           |          タイプ          | 照合順序 | Null 値を許容 |    デフォルト     
+------------------------+--------------------------+----------+---------------+-------------------
+ id                     | uuid                     |          | not null      | gen_random_uuid()
+ case_id                | text                     |          | not null      | 
+ handover_id            | uuid                     |          |               | 
+ device                 | text                     |          | not null      | 'unknown'::text
+ operator_email         | text                     |          | not null      | 
+ requester_email        | text                     |          |               | 
+ status                 | text                     |          | not null      | 'active'::text
+ close_reason           | text                     |          |               | 
+ close_note             | text                     |          |               | 
+ consent_screen_share   | boolean                  |          | not null      | false
+ consent_remote_control | boolean                  |          | not null      | false
+ ai_model               | text                     |          |               | 
+ knowledge_id           | uuid                     |          |               | 
+ report_id              | uuid                     |          |               | 
+ report_sha256          | text                     |          |               | 
+ started_at             | timestamp with time zone |          | not null      | now()
+ expires_at             | timestamp with time zone |          | not null      | 
+ closed_at              | timestamp with time zone |          |               | 
+ created_at             | timestamp with time zone |          | not null      | now()
+ updated_at             | timestamp with time zone |          | not null      | now()
+ rsp_session_id         | text                     |          |               | 
+インデックス:
+    "terminal_sessions_pkey" PRIMARY KEY, btree (id)
+    "terminal_sessions_active_handover_uidx" UNIQUE, btree (handover_id) WHERE status = 'active'::text AND handover_id IS NOT NULL
+    "terminal_sessions_case_idx" btree (case_id, started_at DESC)
+    "terminal_sessions_rsp_session_idx" btree (rsp_session_id)
+Check 制約:
+    "terminal_sessions_close_reason_check" CHECK (close_reason IS NULL OR (close_reason = ANY (ARRAY['resolved'::text, 'stopped'::text, 'escalated'::text, 'expired'::text])))
+    "terminal_sessions_status_check" CHECK (status = ANY (ARRAY['active'::text, 'closed'::text]))
+外部キー制約:
+    "terminal_sessions_handover_id_fkey" FOREIGN KEY (handover_id) REFERENCES case_handovers(id) ON DELETE SET NULL
+    "terminal_sessions_knowledge_id_fkey" FOREIGN KEY (knowledge_id) REFERENCES knowledge(id) ON DELETE SET NULL
+参照元:
+    TABLE "terminal_steps" CONSTRAINT "terminal_steps_session_id_fkey" FOREIGN KEY (session_id) REFERENCES terminal_sessions(id) ON DELETE CASCADE
+

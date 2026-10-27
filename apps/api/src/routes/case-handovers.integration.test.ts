@@ -1,14 +1,104 @@
 import type { FastifyInstance } from 'fastify';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { config } from '../config.js';
 import { sql } from '../db.js';
 import { flushHandoverNotifications } from '../lib/handover-notify.js';
+import { jsonbValue } from '../lib/jsonb-value.js';
 import { resetRateLimits } from '../lib/rate-limit.js';
 import { buildServer } from '../server.js';
+
+// 名簿（Mirai-Info）は外部 DB。テストでは固定名簿に差し替えて、
+// 「DX 推進部」「一般社員」を決定的に再現する（F-01 の回帰テスト用）。
+const directory = vi.hoisted(() => ({
+  byEmail: new Map<string, Record<string, unknown>>(),
+  staff: [] as Record<string, unknown>[],
+}));
+
+// メール送信はテストでは無効（実メールを送らない）。F-05 の通知件名だけ、
+// 送信キューに積めるよう一時的に sendmail 相当へ差し替える。
+const mailState = vi.hoisted(() => ({
+  transport: { name: 'disabled', send: async () => {} } as {
+    name: string;
+    send: (message: unknown) => Promise<void>;
+  },
+}));
+
+vi.mock('../lib/mailer.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../lib/mailer.js')>();
+  return {
+    ...actual,
+    getMailTransport: () => mailState.transport,
+    resetMailTransport: () => {},
+  };
+});
+
+vi.mock('../lib/mirai-info.js', () => ({
+  findEmployeeByEmail: async (email: string) =>
+    directory.byEmail.get(String(email || '').toLowerCase()) ?? null,
+  findEmployeeEmailByNo: async (employeeNo: string) => {
+    for (const [email, employee] of directory.byEmail) {
+      if (employee.employeeNo === employeeNo) {
+        return { email, name: String(employee.name ?? '') };
+      }
+    }
+    return null;
+  },
+  listEmployees: async (scope: 'staff' | 'all') => {
+    const employees = scope === 'staff' ? directory.staff : directory.staff;
+    return {
+      employees,
+      total: employees.length,
+      cachedAt: new Date().toISOString(),
+    };
+  },
+  filterStaff: (rows: Record<string, unknown>[]) =>
+    rows.filter((row) => row.section === 'DX推進部'),
+}));
+
+const DX1 = {
+  employeeNo: 'MK1073',
+  name: '佐藤 奨太',
+  section: 'DX推進部',
+  division: 'DX推進部',
+};
+const DX2 = {
+  employeeNo: 'MK0370',
+  name: '加藤 里美',
+  section: 'DX推進部',
+  division: 'DX推進部',
+};
+const GENERAL = {
+  employeeNo: 'MK0122',
+  name: '一般 社員',
+  section: '総務部',
+  division: '管理本部',
+};
+const DX1_EMAIL = 'dx1@example.com';
+const DX2_EMAIL = 'dx2@example.com';
+const GENERAL_EMAIL = 'general@example.com';
+const AUTHZ_CASE_PREFIX = 'CASE-H-AUTHZ';
+const originalDevEmail = config.DEV_AUTH_EMAIL;
+const originalNotifyEmail = config.HANDOVER_NOTIFY_EMAIL;
 
 let app: FastifyInstance;
 
 const CASE_ID = 'CASE-H1';
+
+/** 監査一覧（/api/audit）確認用のレガシーログイン（approver）。 */
+async function loginApprover(): Promise<string> {
+  const password = process.env.SEED_PASSWORD ?? '';
+  expect(password).not.toBe('');
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/auth/login',
+    payload: { email: 'watanabe@example.com', password },
+  });
+  expect(response.statusCode, response.body).toBe(200);
+  const raw = response.headers['set-cookie'];
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  if (typeof value !== 'string') throw new Error('set-cookie missing');
+  return value.split(';')[0] ?? '';
+}
 
 function coworkState() {
   return {
@@ -71,15 +161,49 @@ function helpdeskState() {
   };
 }
 
+/** 指定したアカウントで画面状態を保存する（引継ぎ作成・claim の前提）。 */
+async function putStatesFor(email: string): Promise<void> {
+  config.DEV_AUTH_EMAIL = email;
+  const cowork = await app.inject({
+    method: 'PUT',
+    url: '/api/state/cowork',
+    payload: { data: coworkState() },
+  });
+  expect(cowork.statusCode, cowork.body).toBe(200);
+  const helpdesk = await app.inject({
+    method: 'PUT',
+    url: '/api/state/helpdesk',
+    payload: { data: helpdeskState() },
+  });
+  expect(helpdesk.statusCode, helpdesk.body).toBe(200);
+}
+
 beforeAll(async () => {
   resetRateLimits();
+  directory.byEmail.clear();
+  directory.staff.length = 0;
+  for (const employee of [DX1, DX2]) directory.staff.push(employee);
+  directory.byEmail.set(DX1_EMAIL, DX1);
+  directory.byEmail.set(DX2_EMAIL, DX2);
+  directory.byEmail.set(GENERAL_EMAIL, GENERAL);
   app = await buildServer({ logger: false });
   await app.ready();
 });
 
+beforeEach(() => {
+  resetRateLimits();
+  config.DEV_AUTH_EMAIL = originalDevEmail;
+  config.HANDOVER_NOTIFY_EMAIL = originalNotifyEmail;
+  mailState.transport = { name: 'disabled', send: async () => {} };
+});
+
 afterAll(async () => {
+  config.DEV_AUTH_EMAIL = originalDevEmail;
+  config.HANDOVER_NOTIFY_EMAIL = originalNotifyEmail;
   await sql`DELETE FROM case_handovers WHERE case_id = ${CASE_ID}`;
+  await sql`DELETE FROM case_handovers WHERE case_id LIKE ${`${AUTHZ_CASE_PREFIX}%`}`;
   await sql`DELETE FROM prototype_states WHERE user_email = ${config.DEV_AUTH_EMAIL}`;
+  await sql`DELETE FROM prototype_states WHERE user_email IN (${DX1_EMAIL}, ${DX2_EMAIL}, ${GENERAL_EMAIL})`;
   await app.close();
 });
 
@@ -341,6 +465,367 @@ describe('案件引継ぎ API', () => {
       DELETE FROM case_handover_notifications
       WHERE handover_id = ${handoverId} AND recipient_email = 'notify-fail@example.com'
     `;
+    });
+  });
+
+  describe('引継ぎの権限（F-01）とサーバ監査（F-02）', () => {
+    let authzSeq = 0;
+
+    function validSnapshot(caseId: string) {
+      return {
+        caseId,
+        case: { id: caseId, subject: '権限テスト案件' },
+        chat: null,
+        ticket: null,
+        inc: null,
+        draft: null,
+        kb: null,
+        proposals: [],
+        extractedAt: new Date().toISOString(),
+      };
+    }
+
+    async function insertHandover(input: {
+      ownerEmail: string;
+      recipientNo?: string | null;
+      recipientName?: string | null;
+      status?: 'pending' | 'claimed';
+      claimedBy?: string | null;
+    }): Promise<{ id: string; caseId: string }> {
+      authzSeq += 1;
+      const caseId = `${AUTHZ_CASE_PREFIX}-${authzSeq}`;
+      const rows = await sql<{ id: string }[]>`
+        INSERT INTO case_handovers (
+          case_id, owner_email, recipient_no, recipient_name, status, claimed_by, snapshot
+        ) VALUES (
+          ${caseId},
+          ${input.ownerEmail},
+          ${input.recipientNo ?? null},
+          ${input.recipientName ?? null},
+          ${input.status ?? 'pending'},
+          ${input.claimedBy ?? null},
+          ${jsonbValue(validSnapshot(caseId))}
+        )
+        RETURNING id
+      `;
+      const id = rows[0]?.id;
+      expect(id, '引継ぎの作成').toBeDefined();
+      return { id: id as string, caseId };
+    }
+
+    async function putStates(email: string): Promise<void> {
+      await putStatesFor(email);
+    }
+
+    async function auditRows(
+      handoverId: string,
+      action: string,
+    ): Promise<{ action: string; detail: Record<string, unknown>; created_at: Date }[]> {
+      return sql<{ action: string; detail: Record<string, unknown>; created_at: Date }[]>`
+        SELECT action, detail, created_at FROM audit_log
+        WHERE target_type = 'case_handover'
+          AND target_id = ${handoverId}
+          AND action = ${action}
+        ORDER BY id ASC
+      `;
+    }
+
+    it('一般社員は受信箱・claim・PATCH・承認が 403、自分の案件の詳細だけ閲覧できる', async () => {
+      const other = await insertHandover({ ownerEmail: DX1_EMAIL });
+
+      config.DEV_AUTH_EMAIL = GENERAL_EMAIL;
+      const inbox = await app.inject({ method: 'GET', url: '/api/case-handovers/inbox' });
+      expect(inbox.statusCode, inbox.body).toBe(403);
+      expect(inbox.json().error.code).toBe('FORBIDDEN');
+
+      const claim = await app.inject({
+        method: 'POST',
+        url: `/api/case-handovers/${other.id}/claim`,
+        payload: {},
+      });
+      expect(claim.statusCode, claim.body).toBe(403);
+
+      const patch = await app.inject({
+        method: 'PATCH',
+        url: `/api/case-handovers/${other.id}`,
+        payload: { status: 'resolved' },
+      });
+      expect(patch.statusCode, patch.body).toBe(403);
+
+      const approve = await app.inject({
+        method: 'POST',
+        url: `/api/case-handovers/${other.id}/approve`,
+        payload: {},
+      });
+      expect(approve.statusCode, approve.body).toBe(403);
+
+      // 自分の案件（owner）の詳細だけは参照できる。
+      const own = await insertHandover({ ownerEmail: GENERAL_EMAIL });
+      const ownDetail = await app.inject({ method: 'GET', url: `/api/case-handovers/${own.id}` });
+      expect(ownDetail.statusCode, ownDetail.body).toBe(200);
+      expect(ownDetail.json().handover.id).toBe(own.id);
+
+      const otherDetail = await app.inject({
+        method: 'GET',
+        url: `/api/case-handovers/${other.id}`,
+      });
+      expect(otherDetail.statusCode, otherDetail.body).toBe(403);
+    });
+
+    it('指名外の DX 担当は claim できず、受信箱にも指名分は出ない', async () => {
+      // DX1（MK1073）宛の指名。
+      const designated = await insertHandover({
+        ownerEmail: GENERAL_EMAIL,
+        recipientNo: DX1.employeeNo,
+        recipientName: DX1.name,
+      });
+      // 指名なし（グループ宛）。
+      const group = await insertHandover({ ownerEmail: GENERAL_EMAIL });
+
+      config.DEV_AUTH_EMAIL = DX2_EMAIL;
+      const dx2Inbox = await app.inject({ method: 'GET', url: '/api/case-handovers/inbox' });
+      expect(dx2Inbox.statusCode, dx2Inbox.body).toBe(200);
+      const dx2Ids = (dx2Inbox.json().items as { id: string }[]).map((item) => item.id);
+      expect(dx2Ids).toContain(group.id);
+      expect(dx2Ids).not.toContain(designated.id);
+
+      const mismatch = await app.inject({
+        method: 'POST',
+        url: `/api/case-handovers/${designated.id}/claim`,
+        payload: {},
+      });
+      expect(mismatch.statusCode, mismatch.body).toBe(403);
+      expect(mismatch.json().error.code).toBe('RECIPIENT_MISMATCH');
+
+      config.DEV_AUTH_EMAIL = DX1_EMAIL;
+      const dx1Inbox = await app.inject({ method: 'GET', url: '/api/case-handovers/inbox' });
+      expect(dx1Inbox.statusCode, dx1Inbox.body).toBe(200);
+      const dx1Ids = (dx1Inbox.json().items as { id: string }[]).map((item) => item.id);
+      expect(dx1Ids).toContain(designated.id);
+    });
+
+    it('別の DX 担当が claim 済みなら 409 で横取りできない', async () => {
+      const claimed = await insertHandover({
+        ownerEmail: GENERAL_EMAIL,
+        status: 'claimed',
+        claimedBy: DX1_EMAIL,
+      });
+
+      config.DEV_AUTH_EMAIL = DX2_EMAIL;
+      const result = await app.inject({
+        method: 'POST',
+        url: `/api/case-handovers/${claimed.id}/claim`,
+        payload: {},
+      });
+      expect(result.statusCode, result.body).toBe(409);
+      expect(result.json().error.code).toBe('ALREADY_CLAIMED');
+    });
+
+    it('claim・解決記録・承認の監査は 1 操作 1 行で、actor は実行者メール', async () => {
+      await putStates(DX1_EMAIL);
+      const target = await insertHandover({ ownerEmail: GENERAL_EMAIL });
+      config.DEV_AUTH_EMAIL = DX1_EMAIL;
+
+      const claimed = await app.inject({
+        method: 'POST',
+        url: `/api/case-handovers/${target.id}/claim`,
+        payload: {},
+      });
+      expect(claimed.statusCode, claimed.body).toBe(200);
+
+      // 再送（冪等）では監査行を増やさない。
+      const claimedAgain = await app.inject({
+        method: 'POST',
+        url: `/api/case-handovers/${target.id}/claim`,
+        payload: {},
+      });
+      expect(claimedAgain.statusCode, claimedAgain.body).toBe(200);
+
+      const claimAudit = await auditRows(target.id, 'case_handover.claim');
+      expect(claimAudit, 'claim の監査は 1 行だけ').toHaveLength(1);
+      expect(claimAudit[0]?.detail.actorEmail).toBe(DX1_EMAIL);
+      expect(claimAudit[0]?.detail.caseId).toBe(target.caseId);
+      expect(claimAudit[0]?.created_at).toBeInstanceOf(Date);
+
+      const resolved = await app.inject({
+        method: 'PATCH',
+        url: `/api/case-handovers/${target.id}`,
+        payload: { status: 'resolved' },
+      });
+      expect(resolved.statusCode, resolved.body).toBe(200);
+      const resolveAudit = await auditRows(target.id, 'case_handover.resolve');
+      expect(resolveAudit).toHaveLength(1);
+      expect(resolveAudit[0]?.detail.actorEmail).toBe(DX1_EMAIL);
+
+      const approved = await app.inject({
+        method: 'POST',
+        url: `/api/case-handovers/${target.id}/approve`,
+        payload: { note: '監査テスト' },
+      });
+      expect(approved.statusCode, approved.body).toBe(200);
+      const approveAudit = await auditRows(target.id, 'case_handover.approve');
+      expect(approveAudit).toHaveLength(1);
+      expect(approveAudit[0]?.detail.actorEmail).toBe(DX1_EMAIL);
+      expect(approveAudit[0]?.detail.selfApproved).toBe(true);
+    });
+
+    it('名簿で本人確認できないアカウントは指名 claim を拒否する（fail-closed）', async () => {
+      const target = await insertHandover({
+        ownerEmail: GENERAL_EMAIL,
+        recipientNo: DX1.employeeNo,
+        recipientName: DX1.name,
+      });
+      config.DEV_AUTH_EMAIL = 'not-in-directory@example.com';
+      const result = await app.inject({
+        method: 'POST',
+        url: `/api/case-handovers/${target.id}/claim`,
+        payload: {},
+      });
+      expect(result.statusCode, result.body).toBe(403);
+      expect(result.json().error.code).toBe('RECIPIENT_UNVERIFIED');
+    });
+
+    it('作成・claim・承認がそれぞれ監査1行になる（F-02 create の漏れ）', async () => {
+      // 作成（依頼者）。作成成功時点で case_handover.create が1行だけ入る。
+      await putStatesFor(config.DEV_AUTH_EMAIL);
+      const shared = await app.inject({
+        method: 'POST',
+        url: '/api/case-handovers',
+        payload: { caseId: CASE_ID },
+      });
+      expect(shared.statusCode, shared.body).toBe(200);
+      const handoverId = shared.json().handover.id as string;
+
+      const createAudit = await auditRows(handoverId, 'case_handover.create');
+      expect(createAudit, 'create の監査は1行だけ').toHaveLength(1);
+      expect(createAudit[0]?.detail.actorEmail).toBe(config.DEV_AUTH_EMAIL);
+      expect(createAudit[0]?.detail.caseId).toBe(CASE_ID);
+      expect(createAudit[0]?.detail.recipient_no).toBeNull();
+      expect(createAudit[0]?.created_at).toBeInstanceOf(Date);
+
+      // claim（DX 担当）→ 承認（DX 担当）。
+      await putStatesFor(DX1_EMAIL);
+      const claimed = await app.inject({
+        method: 'POST',
+        url: `/api/case-handovers/${handoverId}/claim`,
+        payload: {},
+      });
+      expect(claimed.statusCode, claimed.body).toBe(200);
+
+      const approved = await app.inject({
+        method: 'POST',
+        url: `/api/case-handovers/${handoverId}/approve`,
+        payload: { note: 'create監査テスト' },
+      });
+      expect(approved.statusCode, approved.body).toBe(200);
+
+      const claimAudit = await auditRows(handoverId, 'case_handover.claim');
+      expect(claimAudit, 'claim の監査は1行だけ').toHaveLength(1);
+      expect(claimAudit[0]?.detail.actorEmail).toBe(DX1_EMAIL);
+      const approveAudit = await auditRows(handoverId, 'case_handover.approve');
+      expect(approveAudit, 'approve の監査は1行だけ').toHaveLength(1);
+      expect(approveAudit[0]?.detail.actorEmail).toBe(DX1_EMAIL);
+
+      // 監査 action 名は一意で、/api/audit の action としてそのまま判別できる。
+      const actions = await sql<{ action: string; count: string }[]>`
+        SELECT action, count(*)::text AS count FROM audit_log
+        WHERE target_type = 'case_handover' AND target_id = ${handoverId}
+        GROUP BY action ORDER BY action ASC
+      `;
+      expect(actions.map((row) => row.action)).toEqual([
+        'case_handover.approve',
+        'case_handover.claim',
+        'case_handover.create',
+      ]);
+      for (const row of actions) expect(row.count).toBe('1');
+
+      // /api/audit の一覧でも action 名と対象で判別できる。
+      const cookie = await loginApprover();
+      const auditList = await app.inject({
+        method: 'GET',
+        url: '/api/audit?limit=100',
+        headers: { cookie },
+      });
+      expect(auditList.statusCode, auditList.body).toBe(200);
+      const entry = (auditList.json().audit as Array<{ action: string; targetId: string }>).find(
+        (row) => row.action === 'case_handover.create' && row.targetId === handoverId,
+      );
+      expect(entry, '/api/audit に case_handover.create が出る').toBeDefined();
+    });
+  });
+
+  describe('引継ぎの件名（F-05）と保存前 PII 伏せ字（F-04）', () => {
+    it('クライアントが送った件名を snapshot と通知件名に使う', async () => {
+      await putStatesFor(config.DEV_AUTH_EMAIL);
+      // 通知キューに積めるよう、このテストだけ送信手段を差し替える（実メールは送らない）。
+      mailState.transport = { name: 'sendmail', send: async () => {} };
+      config.HANDOVER_NOTIFY_EMAIL = 'notify-subject@example.com';
+      const subject = '画面の件名（F-05 回帰テスト）';
+
+      const shared = await app.inject({
+        method: 'POST',
+        url: '/api/case-handovers',
+        payload: { caseId: CASE_ID, subject },
+      });
+      expect(shared.statusCode, shared.body).toBe(200);
+      expect(shared.json().notify.queued).toBe(1);
+      const handoverId = shared.json().handover.id as string;
+
+      const snapshots = await sql<{ subject: string | null }[]>`
+        SELECT snapshot #>> '{case,subject}' AS subject
+        FROM case_handovers WHERE id = ${handoverId}
+      `;
+      expect(snapshots[0]?.subject).toBe(subject);
+
+      const notified = await sql<{ subject: string }[]>`
+        SELECT subject FROM case_handover_notifications
+        WHERE handover_id = ${handoverId}
+      `;
+      expect(notified.length).toBeGreaterThan(0);
+      expect(notified[0]?.subject).toContain(subject);
+    });
+
+    it('AI 追加質問で snapshot を更新する前に PII を伏せ字にする', async () => {
+      config.DEV_AUTH_EMAIL = DX1_EMAIL;
+      const caseId = `${AUTHZ_CASE_PREFIX}-PII`;
+      // 旧データ（保存前に伏せ字化されていないスナップショット）を再現する。
+      const snapshot = {
+        caseId,
+        case: {
+          id: caseId,
+          subject: 'PII テスト',
+          body: '連絡先は taro@example.com、電話は 090-1234-5678 です。',
+        },
+        chat: {
+          id: `chat-${caseId}`,
+          messages: [{ id: 'm1', kind: 'user', text: 'taro@example.com に連絡しました' }],
+        },
+        ticket: null,
+        inc: null,
+        draft: null,
+        kb: null,
+        proposals: [],
+        extractedAt: new Date().toISOString(),
+      };
+      const rows = await sql<{ id: string }[]>`
+        INSERT INTO case_handovers (case_id, owner_email, status, snapshot)
+        VALUES (${caseId}, ${DX1_EMAIL}, 'pending', ${jsonbValue(snapshot)})
+        RETURNING id
+      `;
+      const handoverId = rows[0]?.id as string;
+
+      const answer = await app.inject({
+        method: 'POST',
+        url: '/api/ai/answer-case',
+        payload: { caseId, text: '次に電話 090-1234-5678 へ確認してよいですか？' },
+      });
+      expect(answer.statusCode, answer.body).toBe(200);
+
+      const stored = await sql<{ text: string }[]>`
+        SELECT snapshot::text AS text FROM case_handovers WHERE id = ${handoverId}
+      `;
+      expect(stored[0]?.text).not.toContain('taro@example.com');
+      expect(stored[0]?.text).not.toContain('090-1234-5678');
     });
   });
 });

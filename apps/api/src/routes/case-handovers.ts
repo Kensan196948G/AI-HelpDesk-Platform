@@ -1,10 +1,16 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { answerWithDeepSeek } from '../ai/deepseek.js';
+import {
+  type HelpdeskActor,
+  recipientDecision,
+  requireHelpdeskActor,
+} from '../auth/helpdesk-scope.js';
 import { authenticateUi } from '../auth/ui.js';
 import { config } from '../config.js';
 import { sql } from '../db.js';
-import { ApiError, badRequest, forbidden } from '../errors.js';
+import { ApiError, badRequest } from '../errors.js';
+import { appendAudit } from '../lib/audit-log.js';
 import {
   buildCaseContext,
   buildPcContext,
@@ -12,6 +18,7 @@ import {
   extractCaseSnapshot,
   mergeCaseSnapshot,
   normalizeState,
+  redactCaseSnapshot,
 } from '../lib/case-handover.js';
 import {
   enqueueHandoverNotifications,
@@ -20,17 +27,14 @@ import {
 } from '../lib/handover-notify.js';
 import { jsonbValue } from '../lib/jsonb-value.js';
 import { getMailTransport } from '../lib/mailer.js';
-import {
-  type EmployeeRow,
-  findEmployeeByEmail,
-  findEmployeeEmailByNo,
-  listEmployees,
-} from '../lib/mirai-info.js';
+import { type EmployeeRow, findEmployeeEmailByNo, listEmployees } from '../lib/mirai-info.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
 
 const CaseIdSchema = z.string().trim().min(1).max(40);
 const ShareBodySchema = z.object({
   caseId: CaseIdSchema,
+  // 案件の件名（クライアントが表示している値）。状態保存が追いつく前でも通知件名を確定させる。
+  subject: z.string().trim().max(200).optional(),
   // 宛先（DX 推進部グループの社員番号）。省略時はグループ全員宛。
   recipientNo: z.string().trim().min(1).max(20).optional(),
   assigneeHint: z.string().trim().max(120).optional(),
@@ -84,25 +88,74 @@ function escapeHtml(value: string): string {
   });
 }
 
-function isDemoAccount(email: string): boolean {
-  return config.PERSONA_SWITCH_ALLOWLIST.split(',')
-    .map((value) => value.trim().toLowerCase())
-    .filter(Boolean)
-    .includes(email.toLowerCase());
+/**
+ * 引継ぎの受信・claim・閲覧・対応・承認は「ヘルプデスク相当」だけが行う（F-01）。
+ * 判定の実装は `auth/helpdesk-scope.ts`。名簿で解決できない場合は fail-closed。
+ * 既存の呼び出し元（terminal.ts）との互換のため関数名は残す。
+ */
+export async function requireHelpdesk(email: string): Promise<void> {
+  await requireHelpdeskActor(email);
 }
 
 /**
- * 本番（cloudflare-access）では DX 推進部（ヘルプデスク）だけが
- * 引継ぎの受信・claim・AI 追加質問・承認を行う。
- * 名簿が取得できない場合は fail-closed。開発/テストは許可する。
+ * 引継ぎ操作のサーバ側監査（F-02）。
+ * - `audit_log` のハッシュチェーンに、実行者メール・対象・時刻を 1 操作 1 行で記録する。
+ * - `audit_log.actor_id` は `users` への FK のため、UI 認証の利用者（users に行が無い）は
+ *   NULL とし、実行者メールは detail.actorEmail に残す（偽の user id を作らない）。
+ * - 呼び出し側は必ず `sql.begin(...)` の中から呼ぶ（appendAudit の前提）。
  */
-export async function requireHelpdesk(email: string): Promise<void> {
-  if (config.AUTH_MODE !== 'cloudflare-access') return;
-  if (isDemoAccount(email)) return;
-  const employee = await findEmployeeByEmail(email);
-  if (!employee || employee.section !== 'DX推進部') {
-    throw forbidden('この操作は DX 推進部（ヘルプデスク）のみ利用できます。');
+async function recordHandoverAudit(
+  tx: any,
+  input: {
+    actorEmail: string;
+    action:
+      | 'case_handover.create'
+      | 'case_handover.claim'
+      | 'case_handover.resolve'
+      | 'case_handover.status'
+      | 'case_handover.approve';
+    handoverId: string;
+    caseId: string;
+    detail?: Record<string, unknown>;
+  },
+): Promise<void> {
+  await appendAudit(tx, {
+    actorId: null,
+    action: input.action,
+    targetType: 'case_handover',
+    targetId: input.handoverId,
+    detail: {
+      actorEmail: input.actorEmail,
+      caseId: input.caseId,
+      ...(input.detail ?? {}),
+    },
+  });
+}
+
+/**
+ * 宛先指名の照合。指名なし（グループ）は DX 推進部メンバー全員が引き受けられる。
+ * 指名ありは指名された本人だけ。本人確認ができない場合は fail-closed。
+ */
+function assertClaimRecipient(
+  recipientNo: string | null,
+  actor: HelpdeskActor,
+  handoverId: string,
+): void {
+  const decision = recipientDecision(recipientNo, actor);
+  if (decision === 'open' || decision === 'match') return;
+  if (decision === 'unknown') {
+    throw new ApiError(
+      403,
+      'RECIPIENT_UNVERIFIED',
+      '宛先が指名された引継ぎを引き受けるには、社員名簿で本人の社員番号を確認できる必要があります。',
+    );
   }
+  throw new ApiError(
+    403,
+    'RECIPIENT_MISMATCH',
+    'この引継ぎは別の担当者に指名されています。指名された本人だけが引き受けられます。',
+    { handoverId },
+  );
 }
 
 /**
@@ -211,7 +264,9 @@ export async function caseHandoverRoutes(app: FastifyInstance): Promise<void> {
       }
       const body = ShareBodySchema.parse(request.body);
       const states = await loadStates(email);
-      const snapshot = extractCaseSnapshot(states.cowork, states.helpdesk, body.caseId);
+      const snapshot = extractCaseSnapshot(states.cowork, states.helpdesk, body.caseId, {
+        subject: body.subject,
+      });
       if (!snapshot) {
         throw new ApiError(404, 'NOT_FOUND', '対象の案件が見つかりません。');
       }
@@ -240,28 +295,44 @@ export async function caseHandoverRoutes(app: FastifyInstance): Promise<void> {
       const assigneeHint = recipient ? employeeLabel(recipient) : (body.assigneeHint ?? null);
 
       // 進行中の同じ案件の共有は置き換える（部分一意 index と衝突させない）。
-      await sql`
-        UPDATE case_handovers
-        SET status = 'cancelled', updated_at = now()
-        WHERE case_id = ${body.caseId}
-          AND owner_email = ${email}
-          AND status IN ('pending', 'claimed')
-      `;
-      const rows = await sql<{ id: string }[]>`
-        INSERT INTO case_handovers (
-          case_id, owner_email, assignee_hint, recipient_no, recipient_name, snapshot
-        )
-        VALUES (
-          ${body.caseId},
-          ${email},
-          ${assigneeHint},
-          ${recipient?.employeeNo ?? null},
-          ${recipient?.name ?? null},
-          ${jsonbValue(snapshot)}
-        )
-        RETURNING id
-      `;
-      const handoverId = rows[0]?.id;
+      // 作成と監査は同じトランザクションで行い、監査は成功時だけ1行残す（F-02）。
+      const handoverId = await sql.begin(async (tx) => {
+        await tx`
+          UPDATE case_handovers
+          SET status = 'cancelled', updated_at = now()
+          WHERE case_id = ${body.caseId}
+            AND owner_email = ${email}
+            AND status IN ('pending', 'claimed')
+        `;
+        const rows = await tx<{ id: string }[]>`
+          INSERT INTO case_handovers (
+            case_id, owner_email, assignee_hint, recipient_no, recipient_name, snapshot
+          )
+          VALUES (
+            ${body.caseId},
+            ${email},
+            ${assigneeHint},
+            ${recipient?.employeeNo ?? null},
+            ${recipient?.name ?? null},
+            ${jsonbValue(snapshot)}
+          )
+          RETURNING id
+        `;
+        const id = rows[0]?.id;
+        if (!id) throw new Error('引継ぎの作成に失敗しました。');
+        await recordHandoverAudit(tx, {
+          actorEmail: email,
+          action: 'case_handover.create',
+          handoverId: id,
+          caseId: body.caseId,
+          detail: {
+            recipient_no: recipient?.employeeNo ?? null,
+            recipientName: recipient?.name ?? null,
+            assigneeHint,
+          },
+        });
+        return id;
+      });
 
       // 通知は best-effort。メールが失敗しても引継ぎは成功させる。
       let queued = 0;
@@ -336,7 +407,7 @@ export async function caseHandoverRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/case-handovers/inbox', { preHandler: authenticateUi }, async (request) => {
     if (!request.uiEmail) throw badRequest('UI の認証情報がありません。');
-    await requireHelpdesk(request.uiEmail);
+    const actor = await requireHelpdeskActor(request.uiEmail);
     // 開発/テストは A と B が同じログインでも動作確認できるよう自分の分も返す。
     const includeOwn = config.AUTH_MODE === 'local';
     const rows = await sql<HandoverRow[]>`
@@ -345,6 +416,8 @@ export async function caseHandoverRoutes(app: FastifyInstance): Promise<void> {
       FROM case_handovers
       WHERE status IN ('pending', 'claimed')
         AND (${includeOwn}::boolean OR owner_email <> ${request.uiEmail})
+        -- 宛先が指名された引継ぎは、指名された本人の受信箱にだけ出す（F-01 / D-01）。
+        AND (recipient_no IS NULL OR recipient_no = ${actor.employeeNo ?? ''})
       ORDER BY created_at DESC
       LIMIT 50
     `;
@@ -354,7 +427,7 @@ export async function caseHandoverRoutes(app: FastifyInstance): Promise<void> {
   app.post('/case-handovers/:id/claim', { preHandler: authenticateUi }, async (request) => {
     if (!request.uiEmail) throw badRequest('UI の認証情報がありません。');
     const email = request.uiEmail;
-    await requireHelpdesk(email);
+    const actor = await requireHelpdeskActor(email);
     const { id } = ClaimParamsSchema.parse(request.params);
     const rows = await sql<HandoverRow[]>`
         SELECT id, case_id, owner_email, assignee_hint, recipient_no, recipient_name,
@@ -370,6 +443,16 @@ export async function caseHandoverRoutes(app: FastifyInstance): Promise<void> {
     }
     if (row.claimed_by && row.claimed_by !== email) {
       throw new ApiError(409, 'ALREADY_CLAIMED', '別の担当者が引き受けています。');
+    }
+    // 宛先が指名されている場合は、指名された本人だけが引き受けられる（F-01）。
+    assertClaimRecipient(row.recipient_no, actor, row.id);
+    // 同じ人がすでに引き受けている場合は冪等に成功させる（再送で監査行を増やさない）。
+    if (row.status === 'claimed' && row.claimed_by === email) {
+      return {
+        ok: true,
+        handover: { id: row.id, caseId: row.case_id, status: 'claimed' },
+        caseId: row.case_id,
+      };
     }
     const snapshot = normalizeState(row.snapshot) as CaseSnapshot | null;
     if (!snapshot) throw new ApiError(409, 'INVALID_SNAPSHOT', '引継ぎデータが不正です。');
@@ -405,6 +488,14 @@ export async function caseHandoverRoutes(app: FastifyInstance): Promise<void> {
               updated_at = now()
           WHERE id = ${row.id}
         `;
+      // F-02: サーバ監査に「誰が・何を・いつ」を 1 行だけ記録する。
+      await recordHandoverAudit(tx, {
+        actorEmail: email,
+        action: 'case_handover.claim',
+        handoverId: row.id,
+        caseId: row.case_id,
+        detail: { status: 'claimed', recipientNo: row.recipient_no },
+      });
     });
 
     return {
@@ -426,12 +517,16 @@ export async function caseHandoverRoutes(app: FastifyInstance): Promise<void> {
     `;
     const row = rows[0];
     if (!row) throw new ApiError(404, 'NOT_FOUND', '引継ぎが見つかりません。');
-    if (row.owner_email !== request.uiEmail) await requireHelpdesk(request.uiEmail);
+    // 依頼者本人は自分の案件の詳細だけ参照できる。それ以外はヘルプデスク相当のみ。
+    if (row.owner_email !== request.uiEmail) await requireHelpdeskActor(request.uiEmail);
     return { ok: true, handover: snapshotSummary(row, request.uiEmail ?? '') };
   });
 
   app.patch('/case-handovers/:id', { preHandler: authenticateUi }, async (request) => {
     if (!request.uiEmail) throw badRequest('UI の認証情報がありません。');
+    const email = request.uiEmail;
+    // 対応状況の更新（解決記録など）はヘルプデスク相当のみ（F-01）。
+    await requireHelpdeskActor(email);
     const { id } = ClaimParamsSchema.parse(request.params);
     const body = PatchBodySchema.parse(request.body);
     const rows = await sql<HandoverRow[]>`
@@ -443,9 +538,6 @@ export async function caseHandoverRoutes(app: FastifyInstance): Promise<void> {
     `;
     const row = rows[0];
     if (!row) throw new ApiError(404, 'NOT_FOUND', '引継ぎが見つかりません。');
-    if (row.owner_email !== request.uiEmail && row.claimed_by !== request.uiEmail) {
-      await requireHelpdesk(request.uiEmail);
-    }
     // 「完了」はナレッジ承認を通したときだけ。承認なしの完了で承認を迂回させない。
     if (body.status === 'completed' && !row.approved_by) {
       throw new ApiError(
@@ -454,12 +546,25 @@ export async function caseHandoverRoutes(app: FastifyInstance): Promise<void> {
         '完了にする前に、DX 推進部の担当者がナレッジを承認してください。',
       );
     }
-    await sql`
-      UPDATE case_handovers
-      SET status = ${body.status},
-          updated_at = now()
-      WHERE id = ${row.id}
-    `;
+    await sql.begin(async (tx) => {
+      await tx`
+        UPDATE case_handovers
+        SET status = ${body.status},
+            updated_at = now()
+        WHERE id = ${row.id}
+      `;
+      // F-02: 解決記録もサーバ監査に 1 行だけ記録する。
+      await recordHandoverAudit(tx, {
+        actorEmail: email,
+        action: body.status === 'resolved' ? 'case_handover.resolve' : 'case_handover.status',
+        handoverId: row.id,
+        caseId: row.case_id,
+        detail: {
+          status: body.status,
+          ...(body.note ? { note: body.note } : {}),
+        },
+      });
+    });
     return { ok: true, handover: { id: row.id, caseId: row.case_id, status: body.status } };
   });
 
@@ -475,7 +580,7 @@ export async function caseHandoverRoutes(app: FastifyInstance): Promise<void> {
     async (request) => {
       if (!request.uiEmail) throw badRequest('UI の認証情報がありません。');
       const email = request.uiEmail;
-      await requireHelpdesk(email);
+      const actor = await requireHelpdeskActor(email);
       const { id } = ClaimParamsSchema.parse(request.params);
       const body = ApproveBodySchema.parse(request.body ?? {});
 
@@ -499,19 +604,32 @@ export async function caseHandoverRoutes(app: FastifyInstance): Promise<void> {
         );
       }
 
-      const approver = await findEmployeeByEmail(email);
-      const approverName = approver?.name ?? email;
+      const approverName = actor.name ?? email;
       const selfApproved = row.claimed_by === email;
 
-      await sql`
-        UPDATE case_handovers
-        SET status = 'completed',
-            approved_by = ${email},
-            approved_at = now(),
-            self_approved = ${selfApproved},
-            updated_at = now()
-        WHERE id = ${row.id}
-      `;
+      await sql.begin(async (tx) => {
+        await tx`
+          UPDATE case_handovers
+          SET status = 'completed',
+              approved_by = ${email},
+              approved_at = now(),
+              self_approved = ${selfApproved},
+              updated_at = now()
+          WHERE id = ${row.id}
+        `;
+        // F-02: 承認もサーバ監査に 1 行だけ記録する。
+        await recordHandoverAudit(tx, {
+          actorEmail: email,
+          action: 'case_handover.approve',
+          handoverId: row.id,
+          caseId: row.case_id,
+          detail: {
+            status: 'completed',
+            selfApproved,
+            ...(body.note ? { note: body.note } : {}),
+          },
+        });
+      });
 
       return {
         ok: true,
@@ -560,9 +678,12 @@ export async function caseHandoverRoutes(app: FastifyInstance): Promise<void> {
 
       appendChat(snapshot, { role: 'user', text: body.text, who: 'DX推進部' });
       appendChat(snapshot, { role: 'ai', text: answer.answer });
+      // F-04: サーバ側で保存する直前に、スナップショット全体の PII を伏せ字にする。
+      // （クライアント側の置換に依存しない。AI 追加質問の履歴も含めて保存する。）
+      const redactedSnapshot = redactCaseSnapshot(snapshot);
       await sql`
         UPDATE case_handovers
-        SET snapshot = ${jsonbValue(snapshot)},
+        SET snapshot = ${jsonbValue(redactedSnapshot)},
             updated_at = now()
         WHERE id = ${row.id}
       `;

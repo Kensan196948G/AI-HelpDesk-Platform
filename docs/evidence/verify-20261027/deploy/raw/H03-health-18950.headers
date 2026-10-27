@@ -1,0 +1,12 @@
+HTTP/1.1 200 OK
+x-content-type-options: nosniff
+referrer-policy: no-referrer
+x-frame-options: DENY
+cache-control: no-store
+x-request-id: req-17
+content-type: application/json; charset=utf-8
+content-length: 139
+date: Tue, 27 Oct 2026 00:12:08 GMT
+connection: keep-alive
+keep-alive: timeout=72
+

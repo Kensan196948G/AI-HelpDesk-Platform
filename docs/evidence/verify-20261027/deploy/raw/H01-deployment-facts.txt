@@ -1,0 +1,23 @@
+=== /tmp/aihd-head worktree ===
+gitdir: /home/<user>/Projects/Mirai-Admin-Platform/AI-HelpDesk-Platform/.git/worktrees/aihd-head
+84bba838db3589b35b52a2bb27541dfcc426cd21
+dist_files=128
+
+=== 稼働プロセス :18950 ===
+MainPID=2095152
+ExecStart={ path=/home/<user>/.nvm/versions/node/v22.22.3/bin/node ; argv[]=/home/<user>/.nvm/versions/node/v22.22.3/bin/node apps/api/dist/index.js ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }
+WorkingDirectory=/home/<user>/Projects/Mirai-Admin-Platform/AI-HelpDesk-Platform
+ActiveEnterTimestamp=Mon 2026-10-26 22:41:15 JST
+
+=== /proc/PID/cwd, cmdline ===
+lrwxrwxrwx 1 <user> <user> 0 10月 27 09:13 /proc/2095152/cwd -> /home/<user>/Projects/Mirai-Admin-Platform/AI-HelpDesk-Platform
+/home/<user>/.nvm/versions/node/v22.22.3/bin/node apps/api/dist/index.js 
+
+=== 本番 dist build 時刻 (repo apps/api/dist) ===
+2026-10-26 17:36:44.792486862 +0900 /home/<user>/Projects/Mirai-Admin-Platform/AI-HelpDesk-Platform/apps/api/dist/index.js
+2026-10-26 17:36:44.785486332 +0900 /home/<user>/Projects/Mirai-Admin-Platform/AI-HelpDesk-Platform/apps/api/dist/routes/terminal.js
+
+=== commits ===
+84bba838db3589b35b52a2bb27541dfcc426cd21 2026-10-26 22:34:29 +0900 feat(api): rsp_command の出力取込と RSP 相関IDを保存する（Phase 2） (#63)
+1bde3796f2f22ea77255cee7c4307dcb0ccaa22e 2026-10-26 21:24:39 +0900 feat(ui): RSPのAI支援を案件・端末付きで開く（Phase 3 ディープリンク） (#62)
+609d37e0729408e68f903220900c18f881375c67 2026-10-26 11:30:39 +0900 docs: UI 実ブラウザ E2E の結果を記録 (#61)

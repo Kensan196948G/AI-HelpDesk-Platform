@@ -1,0 +1,41 @@
+# DB 突合（ai_helpdesk_f, 2026-10-27 09:29 JST）
+
+## final_reports
+    id    |  case_id  |       kind        |      sha16       |          created_at           
+----------+-----------+-------------------+------------------+-------------------------------
+ c787998f | CASE-0002 | helpdesk_resolved | 0e8e935b880da072 | 2026-10-27 00:25:08.634269+00
+ 02b4aa61 | CASE-0002 | ai_resolved       | dd5c7b38b05169c9 | 2026-10-27 00:26:06.035371+00
+ 0842df5e | CASE-0002 | helpdesk_resolved | cc3aed10f87bd923 | 2026-10-27 00:26:06.074838+00
+ b6e97790 | CASE-0002 | helpdesk_resolved | 0e8e935b880da072 | 2026-10-27 00:26:06.098026+00
+ ace60458 | CASE-0002 | helpdesk_resolved | cff6111832c4a144 | 2026-10-27 00:26:06.121066+00
+ 07c87b4a | CASE-0002 | helpdesk_resolved | cff6111832c4a144 | 2026-10-27 00:26:11.042799+00
+ 5cd8cdb3 | CASE-0002 | helpdesk_resolved | cff6111832c4a144 | 2026-10-27 00:26:11.116728+00
+ 738be248 | CASE-0002 | helpdesk_resolved | 257ec22f722186b2 | 2026-10-27 00:28:48.831614+00
+(8 行)
+
+## audit_log
+ audit_rows 
+------------
+          0
+(1 行)
+
+## case_handovers
+  case_id  |  status   | claimed | approved | self_approved |          approved_at          
+-----------+-----------+---------+----------+---------------+-------------------------------
+ CASE-0001 | completed | t       | t        | t             | 2026-10-27 00:20:21.932055+00
+ CASE-0002 | completed | t       | t        | t             | 2026-10-27 00:27:04.473817+00
+(2 行)
+
+## knowledge / knowledge_reviews
+ knowledge_rows | review_rows 
+----------------+-------------
+              0 |           0
+(1 行)
+
+## case_handovers.snapshot の PII（保存時マスクの有無）
+  case_id  | email_plain | phone_plain | ip_plain | ip2_plain 
+-----------+-------------+-------------+----------+-----------
+ CASE-0001 | t           | t           | t        | f
+ CASE-0002 | f           | f           | f        | t
+(2 行)
+

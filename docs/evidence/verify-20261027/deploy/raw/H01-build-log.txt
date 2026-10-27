@@ -1,0 +1,12 @@
+node=v22.22.3 npm=10.9.8 tsc=Version 5.9.3
+worktree=84bba838db3589b35b52a2bb27541dfcc426cd21
+cmd: npm run build (tsc -p apps/api/tsconfig.json)
+---
+
+> ai-helpdesk-platform@0.1.0 build
+> npm run build -w @aihd/api
+
+
+> @aihd/api@0.1.0 build
+> tsc -p tsconfig.json
+
