@@ -60,3 +60,11 @@
 
 - migration 024 は CHECK 制約の許可値追加のみ。戻す場合は `auditor`/`itops` の行が 0 件であることを確認してから 3 値へ戻す。
 - コードは revert → build → restart。
+
+## 4. 追記（2026-10-27 19:26）— ロールモデルの決定と複数ロール実装
+
+- docs/43 §7 の未決事項 3（単一/複数）と 4（Access と名簿の優先）を決定し、実装した。決定の正本は [docs/49](49-role-model-decision.md)。
+  - **複数ロール**（`user_roles` が正本・`users.role` は主ロール）/ **Access の明示マッピング優先**（未設定時は従来どおり）
+  - `auditor` は他ロールと併存不可 / 同期は `scripts/sync-roles.ts`（dry-run 既定・`auth.role.sync` 監査）
+- migration **025** を本番へ適用（`user_roles` 8 行＝既存 8 ユーザーのバックフィル）。`requireRole` はロール集合で判定。
+- 上記 2-2 のうち「Access グループ → ロールの同期」は**仕組みを実装済み**（入力のマッピングはグループ作成後に運用）。**UI（Access）経路はまだロール集合を参照しない**点は未実装のまま（[docs/49](49-role-model-decision.md) §3）。
