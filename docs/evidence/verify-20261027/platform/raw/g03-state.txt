@@ -1,0 +1,11 @@
+# G-03 状態保存 14 キー / 欠落時の復元 — 2026-10-27T09:28:53+09:00
+
+general: keys= 14 ['v', 'ui', 'faqs', 'audit', 'cases', 'chats', 'estop', 'stats', 'devices', 'tickets', 'counters', 'failNext', 'proposals', 'faqCandidates']
+dx     : keys= 14
+missing-key boot: {"whiteScreen": false, "textLen": 8595, "keysAfterBoot": ["v", "ui", "chats", "proposals", "tickets", "audit", "devices", "faqCandidates", "faqs", "estop", "failNext", "counters", "stats", "cases"], "navButtons": ["ホーム", "新しい相談", "ボード", "一覧", "業務ツール", "データ"], "consoleErrors": [], "casesAfterBoot": 0, "listViewTextLen": 7944}
+restored keys  : 14 ['v', 'ui', 'faqs', 'audit', 'cases', 'chats', 'estop', 'stats', 'devices', 'tickets', 'counters', 'failNext', 'proposals', 'faqCandidates']
+
+## DB の 14 キー（一般社員・DX の cowork 状態）
+a***@***|14
+preview@***|14
+k***@***|14

@@ -1,0 +1,74 @@
+INVENTORY=73 HITS=85 UNIQUE_HIT_PATHS=73 5xx=0 UNREACHED=0
+GET    /api/audit                                   routes/audit.ts        L14   -> 200   
+POST   /api/audit/verify                            routes/audit.ts        L26   -> 200   
+POST   /api/auth/login                              routes/auth.ts         L58   -> 200   
+POST   /api/auth/logout                             routes/auth.ts         L107  -> 200   
+GET    /api/auth/me                                 routes/auth.ts         L126  -> 200   
+POST   /api/case-handovers                          routes/case-handovers.ts L203  -> 200   
+GET    /api/case-handovers/recipients               routes/case-handovers.ts L320  -> 200   
+GET    /api/case-handovers/inbox                    routes/case-handovers.ts L337  -> 200   
+POST   /api/case-handovers/:id/claim                routes/case-handovers.ts L354  -> 200   
+GET    /api/case-handovers/:id                      routes/case-handovers.ts L417  -> 200   
+PATCH  /api/case-handovers/:id                      routes/case-handovers.ts L433  -> 200   
+POST   /api/case-handovers/:id/approve              routes/case-handovers.ts L472  -> 200   
+POST   /api/ai/answer-case                          routes/case-handovers.ts L532  -> 200   
+POST   /api/cases                                   routes/cases.ts        L55   -> 200   
+GET    /api/cases                                   routes/cases.ts        L184  -> 200   
+GET    /api/cases/:id                               routes/cases.ts        L208  -> 200   
+POST   /api/cases/:id/resolve                       routes/cases.ts        L216  -> 409   CONFLICT
+POST   /api/cases/:id/handoff                       routes/cases.ts        L256  -> 200   
+GET    /api/dashboard                               routes/dashboard.ts    L7    -> 200   
+GET    /api/desk/queue                              routes/desk.ts         L48   -> 200   
+PATCH  /api/tickets/:id                             routes/desk.ts         L85   -> 200   
+POST   /api/tickets/:id/resolution                  routes/desk.ts         L135  -> 200   
+POST   /api/cases/:id/knowledge-draft               routes/desk.ts         L196  -> 409   CONFLICT
+POST   /api/device/browser                          routes/device.ts       L312  -> 400   VALIDATION_ERROR
+GET    /api/device/inventory                        routes/device.ts       L325  -> 200   
+POST   /api/device/command                          routes/device.ts       L347  -> 400   VALIDATION_ERROR
+GET    /api/device/command                          routes/device.ts       L381  -> 401   UNAUTHORIZED
+POST   /api/device/command/:id/result               routes/device.ts       L432  -> 401   UNAUTHORIZED
+GET    /api/device/command/:id                      routes/device.ts       L477  -> 404   NOT_FOUND
+POST   /api/device/agent                            routes/device.ts       L490  -> 401   UNAUTHORIZED
+GET    /api/employees                               routes/employees.ts    L12   -> 200   
+GET    /api/health                                  routes/health.ts       L8    -> 200   
+GET    /api/knowledge                               routes/knowledge.ts    L52   -> 200   
+GET    /api/knowledge/:id                           routes/knowledge.ts    L70   -> 200   
+PATCH  /api/knowledge/:id                           routes/knowledge.ts    L99   -> 409   CONFLICT
+POST   /api/knowledge/:id/submit                    routes/knowledge.ts    L138  -> 409   CONFLICT
+POST   /api/knowledge/:id/review                    routes/knowledge.ts    L169  -> 200   
+GET    /api/me                                      routes/me.ts           L15   -> 200   
+GET    /                                            routes/prototype.ts    L237  -> 200   
+GET    /index.html                                  routes/prototype.ts    L247  -> 200   
+GET    /api/state                                   routes/prototype.ts    L257  -> 200   
+PUT    /api/state/:name                             routes/prototype.ts    L263  -> 200   
+POST   /api/ai/answer                               routes/prototype.ts    L283  -> 200   
+POST   /api/ai/remote-prompt                        routes/remote-assist.ts L52   -> 400   VALIDATION_ERROR
+POST   /api/reports/final                           routes/reports.ts      L56   -> 200   
+GET    /api/reports/final/:id/html                  routes/reports.ts      L121  -> 200   
+GET    /api/reports/final/:id/pdf                   routes/reports.ts      L146  -> 200   
+GET    /api/terminal/sessions                       routes/terminal.ts     L217  -> 200   
+POST   /api/terminal/sessions                       routes/terminal.ts     L246  -> 200   
+GET    /api/terminal/sessions/:id                   routes/terminal.ts     L347  -> 200   
+GET    /api/terminal/context                        routes/terminal.ts     L367  -> 200   
+GET    /api/terminal/cases                          routes/terminal.ts     L402  -> 200   
+POST   /api/terminal/sessions/:id/steps             routes/terminal.ts     L452  -> 200   
+POST   /api/terminal/steps/:id/record               routes/terminal.ts     L579  -> 200   
+GET    /api/terminal/sessions/:id/capture           routes/terminal.ts     L684  -> 200   
+POST   /api/terminal/sessions/:id/close             routes/terminal.ts     L699  -> 200   
+POST   /api/terminal/sessions/:id/report            routes/terminal.ts     L757  -> 200   
+POST   /api/terminal/sessions/:id/knowledge-draft   routes/terminal.ts     L900  -> 200   
+GET    /api/resolve/skills                          resolve/routes.ts      L1455 -> 200   
+GET    /api/resolve/admin/pending                   resolve/routes.ts      L1487 -> 403   FORBIDDEN
+POST   /api/resolve/steps/:id/admin-approve         resolve/routes.ts      L1540 -> 403   FORBIDDEN
+POST   /api/resolve/sessions                        resolve/routes.ts      L1710 -> 404   NOT_FOUND
+POST   /api/resolve/steps/:id/approve               resolve/routes.ts      L1793 -> 404   NOT_FOUND
+GET    /api/resolve/steps/:id                       resolve/routes.ts      L2110 -> 404   NOT_FOUND
+POST   /api/resolve/steps/:id/continue              resolve/routes.ts      L2152 -> 404   NOT_FOUND
+POST   /api/resolve/sessions/:id/stop               resolve/routes.ts      L2431 -> 200   
+POST   /api/resolve/sessions/:id/resolve            resolve/routes.ts      L2465 -> 409   SESSION_TERMINAL
+POST   /api/resolve/sessions/:id/escalate           resolve/routes.ts      L2483 -> 409   SESSION_TERMINAL
+GET    /api/resolve/sessions/:id                    resolve/routes.ts      L2498 -> 200   
+GET    /api/remote-support/session                  remote-support/routes.ts L157  -> 403   FORBIDDEN
+POST   /api/remote-support/lookup                   remote-support/routes.ts L181  -> 403   FORBIDDEN
+POST   /api/remote-support/link                     remote-support/routes.ts L195  -> 403   FORBIDDEN
+POST   /api/remote-support/ensure                   remote-support/routes.ts L245  -> 403   FORBIDDEN

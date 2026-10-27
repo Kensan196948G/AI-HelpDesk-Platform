@@ -33,6 +33,17 @@ describe('引継ぎ通知メール', () => {
     expect(sanitizeHeader('a\r\nb', 10)).toBe('a b');
   });
 
+  it('件名が空のときだけ「(件名なし)」にする', () => {
+    for (const subject of ['', '   ', '\r\n']) {
+      const built = buildHandoverSubject({ ...base, subject });
+      expect(built).toContain('(件名なし)');
+      expect(built).toContain('CASE-0001');
+      expect(buildHandoverBody({ ...base, subject })).toContain('件名    : (件名なし)');
+    }
+    // 件名があれば「(件名なし)」は出さない。
+    expect(buildHandoverSubject(base)).not.toContain('(件名なし)');
+  });
+
   it('本文に案件 ID・件名・依頼者・URL を載せ、相談本文や PC 情報は載せない', () => {
     const body = buildHandoverBody(base);
     expect(body).toContain('CASE-0001');

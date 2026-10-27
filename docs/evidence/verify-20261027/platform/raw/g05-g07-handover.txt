@@ -1,0 +1,55 @@
+# G-05 PII / G-06 メール通知 / G-07 二重引継ぎ — 2026-10-27T09:28:53+09:00
+
+## 実測ログ（g0507/g07b）
+state_put {"status":200}
+state_readback {"found":true,"keys":14,"pii_in_saved_state":true}
+share1 {"status":200,"handover":{"id":"60df28be-acf2-438f-9367-4c4b9c2dedae","caseId":"CASE-G5-1","status":"pending","recipientNo":"MK0623","recipientName":"［DX担当者］"},"notify":{"queued":1,"transport":"smtp"}}
+share2_same_case {"status":200,"handover":{"id":"e25cadca-c082-4063-b3fe-267687cec35c","caseId":"CASE-G5-1","status":"pending","recipientNo":"MK0623","recipientName":"［DX担当者］"},"notify":{"queued":1,"transport":"smtp"}}
+dx_inbox {"status":200,"count":3,"ids":["e25cadca-c082-4063-b3fe-267687cec35c","b5ce0947-3cf8-45be-8e55-5bfc520202c6","b7927ca7-1121-473a-a821-ae8476d67692"]}
+claim1 {"status":200,"status2":"claimed"}
+claim2_same_user {"status":200}
+general_employee_inbox_F01 {"status":200,"count":3,"note":"一般社員セッションで DX 宛の引継ぎが見えるか（F-01）"}
+
+share 200 df2e77ca-0cb7-4a65-ad71-abba36d67c6d { queued: 1, transport: 'smtp' }
+claim_by_general_employee 200 {"ok":true,"handover":{"id":"df2e77ca-0cb7-4a65-ad71-abba36d67c6d","caseId":"CASE-G5-2","status":"claimed"},"caseId":"CASE-G5-2"}
+parallel_share 200 200  
+
+## DB: snapshot の平文 PII（G-05）
+CASE-G5-1|t|t|t|t
+CASE-G5-1|t|t|t|t
+CASE-G5-1|t|t|t|t
+CASE-G5-1|t|t|t|t
+CASE-G5-2|f|f|f|f
+CASE-G5-2|f|f|f|f
+CASE-G5-2|f|f|f|f
+CASE-G5-2|f|f|f|f
+CASE-G5-2|f|f|f|f
+CASE-G5-4|f|f|f|f
+CASE-G5-4|f|f|f|f
+CASE-G5-4|f|f|f|f
+CASE-G5-5|f|f|f|f
+CASE-G5-4|f|f|f|f
+CASE-G5-5|f|f|f|f
+CASE-G5-5|f|f|f|f
+CASE-G5-2|f|f|f|f
+CASE-G5-2|f|f|f|f
+CASE-G5-2|f|f|f|f
+
+## DB: 同じ案件の同時共有（G-07）
+CASE-G5-1|cancelled|3
+CASE-G5-1|claimed|1
+CASE-G5-2|cancelled|5
+CASE-G5-2|completed|2
+CASE-G5-2|pending|1
+
+## 通知キュー（G-06）
+sent|1|20
+
+## 通知の件名例（F-05 の再確認・PII なし）
+[AIヘルプデスク] 引継ぎ: 【検証G07】二重引継ぎ防止（CASE-G5-2）
+[AIヘルプデスク] 引継ぎ: 【検証G07】二重引継ぎ防止（CASE-G5-2）
+[AIヘルプデスク] 引継ぎ: 【検証G07】二重引継ぎ防止（CASE-G5-2）
+[AIヘルプデスク] 引継ぎ: 【検証G04】端末セッション2（CASE-G5-5）
+
+## 部分一意インデックス
+case_handovers_active_case_idx

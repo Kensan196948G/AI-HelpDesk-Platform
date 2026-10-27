@@ -1,0 +1,17 @@
+HTTP/1.1 200 Connection Established
+
+HTTP/2 302 
+date: Mon, 26 Oct 2026 23:40:12 GMT
+content-type: text/html; charset=UTF-8
+location: https://winter-lake-f4c9.cloudflareaccess.com/cdn-cgi/access/login/ai-helpdesk.mirai-dx-platform.com?kid=df503c7ffa8b5e519a87c62c4dc98d8554cacecf7ac7c262d1671a6d24a41598&meta=<redacted>&redirect_url=%2F
+cache-control: private, max-age=0, no-store, no-cache, must-revalidate, post-check=0, pre-check=0
+set-cookie: CF_AppSession=<redacted>; Expires=Tue, 27 Oct 2026 23:40:12 GMT; Path=/; Secure; HttpOnly
+www-authenticate: Cloudflare-Access resource_metadata="https://ai-helpdesk.mirai-dx-platform.com/.well-known/cloudflare-access-protected-resource/"
+access-control-allow-credentials: true
+expires: Thu, 01 Jan 1970 00:00:01 GMT
+report-to: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=Ibl%2BcfY7I8mGQStJHsi03Fkf8Pac7f0hOHtXgiPf5WO1JmSTarAhiQMhvq2O4olvJvB6iOvs1AbrMjcgtUP7asv%2BpRWbyKF%2BQpPO09M%2BnVIAgXvRgGD1WXNd4brVvv5z7LpKqycAZ4%2Bl8L9VQkTd2A0TOehCM1s9WgmoZbqom8A%3D"}]}
+nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
+server: cloudflare
+cf-ray: a50d4e040f65e373-NRT
+alt-svc: h3=":443"; ma=86400
+

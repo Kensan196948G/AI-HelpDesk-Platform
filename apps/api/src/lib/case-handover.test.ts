@@ -90,6 +90,217 @@ describe('extractCaseSnapshot', () => {
   });
 });
 
+describe('F-04: 保存するスナップショットの PII 伏せ字', () => {
+  function piiCoworkState() {
+    return {
+      v: 31,
+      ui: { user: 'u1', screen: 'home' },
+      cases: [
+        {
+          id: 'CASE-0002',
+          userId: 'u1',
+          chatId: 'chat-2',
+          subject: '連絡先 taro.yamada@example.com の件',
+          body: '電話は 090-1234-5678、IP は 192.168.10.25、カードは 4111 1111 1111 1111 です。',
+          step: 4,
+          device: { serial: 'SN-9999', assetNo: 'PC-22222' },
+          pc: {
+            state: 'done',
+            snap: {
+              items: [
+                { grp: 'ネットワーク', k: 'IPアドレス', v: '192.168.10.26' },
+                { grp: '端末', k: 'シリアル', v: 'SN-0001' },
+                { grp: '資産', k: '資産番号', v: 'PC-12345' },
+                { grp: 'OS', k: 'エディション', v: 'Windows 11 Pro' },
+                { grp: '通知', k: '連絡先', v: 'taro.yamada@example.com' },
+              ],
+            },
+          },
+        },
+      ],
+      chats: [
+        {
+          id: 'chat-2',
+          userId: 'u1',
+          title: '件名',
+          messages: [{ id: 'm1', kind: 'user', text: 'IP は 10.0.0.5、電話は 090-1234-5678 です' }],
+        },
+      ],
+      tickets: [{ id: 'TKT-2026-0002', chatId: 'chat-2', incId: 'INC-1002', userId: 'u1' }],
+      proposals: {
+        'OP-0002': {
+          id: 'OP-0002',
+          chatId: 'chat-2',
+          note: { contacts: ['support@example.com'], card: '4111 1111 1111 1111' },
+        },
+      },
+    };
+  }
+
+  it('ネスト・配列を含む snapshot に平文のメール/電話/IP/カード/資産番号/シリアルを残さない', () => {
+    const snapshot = extractCaseSnapshot(piiCoworkState(), null, 'CASE-0002');
+    expect(snapshot).not.toBeNull();
+    const json = JSON.stringify(snapshot);
+    for (const raw of [
+      'taro.yamada@example.com',
+      'support@example.com',
+      '090-1234-5678',
+      '192.168.10.25',
+      '192.168.10.26',
+      '10.0.0.5',
+      '4111 1111 1111 1111',
+      'SN-0001',
+      'SN-9999',
+      'PC-12345',
+      'PC-22222',
+    ]) {
+      expect(json).not.toContain(raw);
+    }
+    expect(json).toContain('[メールアドレス]');
+    expect(json).toContain('[電話番号]');
+    expect(json).toContain('[IPアドレス]');
+    expect(json).toContain('[カード番号]');
+    expect(json).toContain('[資産番号]');
+    expect(json).toContain('[シリアル番号]');
+    // 伏せ字対象でない値は残す。
+    expect(json).toContain('Windows 11 Pro');
+  });
+
+  it('抽出元の状態オブジェクトを書き換えない', () => {
+    const cowork = piiCoworkState();
+    extractCaseSnapshot(cowork, null, 'CASE-0002');
+    expect(cowork.cases[0].subject).toBe('連絡先 taro.yamada@example.com の件');
+    expect(cowork.cases[0].body).toContain('090-1234-5678');
+    expect(cowork.chats[0].messages[0].text).toContain('10.0.0.5');
+  });
+
+  it('ID など伏せ字対象でない文字列はそのまま残す', () => {
+    const snapshot = extractCaseSnapshot(piiCoworkState(), null, 'CASE-0002');
+    expect(snapshot?.caseId).toBe('CASE-0002');
+    expect(snapshot?.ticket?.id).toBe('TKT-2026-0002');
+  });
+
+  it('端末識別子（device / deviceId / agentId / hostname）は伏せ字にしない', () => {
+    const cowork = {
+      v: 31,
+      ui: {},
+      cases: [
+        {
+          id: 'CASE-0005',
+          userId: 'u1',
+          chatId: 'chat-5',
+          subject: '端末がつながらない',
+          body: '連絡先は taro.yamada@example.com、電話は 090-1234-5678 です。',
+          step: 4,
+          device: 'MRK-NB-1000',
+          remote: { agentId: 'AGENT-MRK-2000', hostname: 'MRK-NB-1000' },
+          pc: {
+            state: 'done',
+            snap: {
+              device: 'MRK-NB-1000',
+              items: [
+                { grp: '端末', k: 'コンピュータ名', v: 'MRK-NB-1000', lv: 'ok' },
+                { grp: '端末', k: 'シリアル番号', v: 'SN123456', lv: 'ok' },
+                { grp: 'ネットワーク', k: 'IPアドレス', v: '10.1.2.3', lv: 'ok' },
+              ],
+            },
+          },
+        },
+      ],
+      chats: [{ id: 'chat-5', userId: 'u1', title: '端末', messages: [] }],
+      tickets: [],
+      proposals: { 'OP-0005': { id: 'OP-0005', chatId: 'chat-5', deviceId: 'MRK-NB-1000' } },
+    };
+    const snapshot = extractCaseSnapshot(cowork, null, 'CASE-0005');
+    expect(snapshot).not.toBeNull();
+    const json = JSON.stringify(snapshot);
+    // 照合・相関に使う識別子は保持する（'MRK-NB-1000' の NB-1000 を資産番号と誤判定しない）。
+    expect(snapshot?.case.device).toBe('MRK-NB-1000');
+    expect((snapshot?.case.pc as { snap?: { device?: string } })?.snap?.device).toBe('MRK-NB-1000');
+    expect((snapshot?.case.remote as { agentId?: string })?.agentId).toBe('AGENT-MRK-2000');
+    expect((snapshot?.case.remote as { hostname?: string })?.hostname).toBe('MRK-NB-1000');
+    expect(snapshot?.proposals[0]?.deviceId).toBe('MRK-NB-1000');
+    // 端末情報内の表示用の識別子項目（コンピュータ名）も保持する。
+    expect(json).toContain('コンピュータ名');
+    expect(json.match(/MRK-NB-1000/g)?.length).toBeGreaterThanOrEqual(4);
+    // 表示用のシリアル・IP は従来どおり伏せる。
+    expect(json).not.toContain('SN123456');
+    expect(json).not.toContain('10.1.2.3');
+    expect(json).toContain('[シリアル番号]');
+    expect(json).toContain('[IPアドレス]');
+    // 自由記述のメール・電話は従来どおり伏せる。
+    expect(json).not.toContain('taro.yamada@example.com');
+    expect(json).not.toContain('090-1234-5678');
+    expect(json).toContain('[メールアドレス]');
+    expect(json).toContain('[電話番号]');
+  });
+});
+
+describe('F-05: 引継ぎ通知に使う案件件名', () => {
+  it('案件の件名があればそのまま使う', () => {
+    const snapshot = extractCaseSnapshot(coworkState(), helpdeskState(), 'CASE-0001');
+    expect(snapshot?.case.subject).toBe('共有フォルダが開けません');
+  });
+
+  it('件名が空でもチケット概要から補う（STEP4 直後の共有向け）', () => {
+    const cowork = {
+      v: 31,
+      ui: {},
+      cases: [{ id: 'CASE-0003', userId: 'u1', chatId: 'chat-3', subject: '', body: '', step: 4 }],
+      chats: [{ id: 'chat-3', userId: 'u1', title: '新しい相談', messages: [] }],
+      tickets: [
+        {
+          id: 'TKT-2026-0003',
+          chatId: 'chat-3',
+          incId: 'INC-1003',
+          userId: 'u1',
+          summary: '共有フォルダの権限申請で連絡先が通じない',
+        },
+      ],
+      proposals: {},
+    };
+    const snapshot = extractCaseSnapshot(cowork, null, 'CASE-0003');
+    expect(snapshot?.case.subject).toBe('共有フォルダの権限申請で連絡先が通じない');
+  });
+
+  it('クライアントが送った件名を最優先する（シグネチャ拡張）', () => {
+    const snapshot = extractCaseSnapshot(coworkState(), helpdeskState(), 'CASE-0001', {
+      subject: '  【検証20261027】共有フォルダの権限申請で連絡先が通じない  ',
+    });
+    expect(snapshot?.case.subject).toBe('【検証20261027】共有フォルダの権限申請で連絡先が通じない');
+  });
+
+  it('クライアントが送った件名も伏せ字にする', () => {
+    const snapshot = extractCaseSnapshot(coworkState(), helpdeskState(), 'CASE-0001', {
+      subject: '連絡先 a@example.com の件',
+    });
+    expect(snapshot?.case.subject).toBe('連絡先 [メールアドレス] の件');
+  });
+
+  it('件名がどこにも無いときだけ空のまま返す（通知側で「(件名なし)」）', () => {
+    const cowork = {
+      v: 31,
+      ui: {},
+      cases: [
+        {
+          id: 'CASE-0004',
+          userId: 'u1',
+          chatId: 'chat-4',
+          subject: '',
+          // 本文があっても件名の代用にはしない（件名は件名フィールドだけ）。
+          body: '共有フォルダの権限申請で連絡先が通じない',
+          step: 4,
+        },
+      ],
+      chats: [{ id: 'chat-4', userId: 'u1', title: '新しい相談', messages: [] }],
+      tickets: [],
+      proposals: {},
+    };
+    const snapshot = extractCaseSnapshot(cowork, null, 'CASE-0004');
+    expect(snapshot?.case.subject).toBe('');
+  });
+});
+
 describe('mergeCaseSnapshot', () => {
   const snapshot = (): CaseSnapshot => {
     const extracted = extractCaseSnapshot(coworkState(), helpdeskState(), 'CASE-0001');

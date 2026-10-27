@@ -1,0 +1,5 @@
+# 正規化スキーマの比較（\restrict/\unrestrict のランダムトークン行を除外）
+run1_normalized_sha256=dd4eea0fb477e0b26ee66968548024e52c8fa730db9996a9faf9e9d5c881dfd4
+run2_normalized_sha256=dd4eea0fb477e0b26ee66968548024e52c8fa730db9996a9faf9e9d5c881dfd4
+diff_lines=0
+note: 未正規化の diff は \restrict トークン2行のみ（pg_dump 18 が毎回ランダム生成）

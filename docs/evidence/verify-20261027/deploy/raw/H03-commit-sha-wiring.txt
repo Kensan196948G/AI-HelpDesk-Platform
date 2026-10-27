@@ -1,0 +1,25 @@
+=== H-03: health の commit は環境変数のみ（ビルド由来ではない） ===
+      const rows = await sql<{ now: Date }[]>`SELECT now() AS now`;
+      return {
+        ok: true,
+        service: 'ai-helpdesk-api',
+        version: VERSION,
+        commit: config.COMMIT_SHA ?? '',
+        db: 'ok',
+        time: rows[0]?.now ?? new Date().toISOString(),
+        env: config.NODE_ENV,
+      };
+    } catch {
+--- config.ts ---
+apps/api/src/config.ts:49:  COMMIT_SHA: z.string().optional(),
+apps/api/src/index.ts:18:      commit: config.COMMIT_SHA ?? '',
+
+=== api.conf の該当行（COMMIT_SHA は秘密情報ではない） ===
+1:NODE_ENV=production
+2:PORT=18950
+32:COMMIT_SHA=ac8085e
+
+=== 環境変数の適用タイミング（起動時） ===
+8:WorkingDirectory=/home/<user>/Projects/Mirai-Admin-Platform/AI-HelpDesk-Platform
+9:EnvironmentFile=%h/.config/ai-helpdesk/api.conf
+10:ExecStart=/home/<user>/.nvm/versions/node/v22.22.3/bin/node apps/api/dist/index.js

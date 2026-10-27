@@ -1,0 +1,18 @@
+# G-02 権限分離（サーバ 3 ロール境界 + UI 表示）— 2026-10-27T09:28:48+09:00
+
+## サーバ API のロール境界
+requester | GET | /api/audit | 403 | FORBIDDEN
+helpdesk | GET | /api/audit | 403 | FORBIDDEN
+approver | GET | /api/audit | 200 | 
+requester | GET | /api/desk/queue | 403 | FORBIDDEN
+helpdesk | GET | /api/desk/queue | 200 | 
+requester | POST | /api/knowledge/de5018da-7877-4344-b8b3-e42a33f16367/review | 403 | FORBIDDEN
+requester | GET | /api/dashboard | 200 | 
+requester(dashboard scope) | GET | /api/dashboard | 200 | total=5 role=requester
+
+## UI の可視ラベル（可視要素のみ・実名は除外）
+http://127.0.0.1:18959 visible= ['STEP 4\n引継ぎ', 'STEP 6\nナレッジ化'] errors= ['403 /api/resolve/admin/pending', '403 /api/remote-support/session?caseId=CASE-G5-2']
+http://127.0.0.1:18964 visible= ['引継ぎ', 'STEP 4\n引継ぎ', 'STEP 6\nナレッジ化'] errors= ['403 /api/resolve/admin/pending', '404 /api/remote-support/session?caseId=CASE-G5-5']
+
+## 追加: ヘルプデスクが POST /api/knowledge/:id/review を実行
+helpdesk | POST /api/knowledge/:id/review | 403 | FORBIDDEN(requireRole approver)

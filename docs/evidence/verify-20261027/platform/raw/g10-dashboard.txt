@@ -1,0 +1,10 @@
+# G-10 ダッシュボード/統計の件数整合 — 2026-10-27T09:29:30+09:00
+
+## API（helpdesk ロール）
+counts: {'total': 9, 'awaitingDecision': 2, 'inProgress': 3, 'knowledgePending': 0, 'completed': 4, 'aiResolved': 0, 'aiResolvedRate': 0}
+signal: {'blue': 4, 'amber': 4, 'red': 1}
+myQueueCount: 2 pendingKnowledge: 0
+
+## DB COUNT
+9|3|4|0|0|4|4|1
+tickets(queued/assigned/in_progress)=3  knowledge(pending)=0

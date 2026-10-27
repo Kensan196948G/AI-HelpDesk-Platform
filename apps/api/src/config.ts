@@ -29,12 +29,23 @@ const optionalSecret = z.preprocess(
   z.string().trim().min(32).optional(),
 );
 
+// 監査ハッシュ鎖の「既知の移行点」（`id:保存hash:再計算hash` のカンマ区切り）。
+// 既定値は 2026-10-26 に ai_helpdesk_ui で実測した 2 行。環境ごとに
+// `scripts/audit-find-breaks.ts` の出力で上書きする（本番は env AUDIT_KNOWN_BREAKS を設定）。
+// 形式が不正な場合は起動時に fail-fast する（domain/audit.ts の parseKnownAuditBreaks）。
+const DEFAULT_AUDIT_KNOWN_BREAKS = [
+  '10010:08fcd225c456240c3bdb687a98522456af67270a5134a70385455227e6f3ed84:db7c5e9993ee16452ce3e5cb1d6ac9a03c7af72e433e0c85438ad888b832286b',
+  '10013:2b892d4c52a54a1d5e39669e8df427ec92c8d67ed789950dfd308acdef07c61a:d1313e1ac06025670722e685d701dc09fb35a1bbc222e50d630f7e9c0a9f022a',
+].join(',');
+
 const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(18950),
   HOST: z.string().default('127.0.0.1'),
   DATABASE_URL: z.string().min(1),
   SESSION_SECRET: z.string().min(32),
+  // 監査ハッシュ鎖の既知破断。空文字なら「既知破断なし」。
+  AUDIT_KNOWN_BREAKS: z.string().default(DEFAULT_AUDIT_KNOWN_BREAKS),
   PROXY_SECRET: z.string().min(16).optional(),
   REQUIRE_PROXY_SECRET: z
     .enum(['true', 'false'])

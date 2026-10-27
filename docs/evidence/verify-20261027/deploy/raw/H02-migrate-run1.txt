@@ -1,0 +1,21 @@
+[migrate] applied 001_init.sql
+[migrate] applied 002_prototype_states.sql
+[migrate] applied 003_device_inventory.sql
+[migrate] applied 004_device_scoped_inventory.sql
+[migrate] applied 005_device_commands.sql
+[migrate] applied 006_final_reports.sql
+[migrate] applied 007_case_handovers.sql
+[migrate] applied 008_case_handover_recipient_approval.sql
+[migrate] applied 009_handover_notifications.sql
+[migrate] applied 010_jsonb_objects.sql
+[migrate] applied 011_resolution_loop.sql
+[migrate] applied 012_device_command_skill_hash.sql
+[migrate] applied 013_resolution_phase_c.sql
+[migrate] applied 014_resolution_phase_c_backfill.sql
+[migrate] applied 015_remote_support.sql
+[migrate] applied 016_agent_privilege.sql
+[migrate] applied 017_step_verify_result.sql
+[migrate] applied 018_verify_followup.sql
+[migrate] applied 019_terminal_sessions.sql
+[migrate] applied 020_add_rsp_correlation.sql
+[migrate] done

@@ -1,0 +1,10 @@
+# 回帰6 実行サマリー（2026-10-27 09:15〜09:25 JST / 実行: /tmp/aihd-head 84bba83）
+# unit は初回、シェル継承の DATABASE_URL（他システム向け）で globalSetup が失敗したため破棄。
+# 専用 DB ai_helpdesk_g_test + 検証用 SEED_PASSWORD を明示して再実行したログを unit2.log とする。
+unit(再実行)  exit=0  50 files / 420 tests passed   -> unit2.log
+typecheck     exit=0                                -> typecheck.log
+lint          exit=0  warnings=198 infos=110 errors=0 -> lint.log
+secret-scan   exit=0  No obvious secret patterns found. -> secret-scan.log
+migrate(既存DB ai_helpdesk_g)  1回目/2回目とも skip（適用0） -> migrate-1.log / migrate-2.log
+migrate(空DB ai_helpdesk_g_mig) 1回目 20 適用 / 2回目 20 skip -> migrate-fresh-1.log / migrate-fresh-2.log / migrate-fresh-count.txt
+build         exit=0                                -> build.log

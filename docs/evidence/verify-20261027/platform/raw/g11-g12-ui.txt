@@ -1,0 +1,5 @@
+# G-11 表示幅 1280/1600 と G-12 キーボード/Esc — 2026-10-27T09:29:30+09:00
+
+general layout: {'1280': {'scrollW': 1280, 'clientW': 1280, 'hOverflow': False}, '1600': {'scrollW': 1600, 'clientW': 1600, 'hOverflow': False}}
+dx layout: {'1280': {'scrollW': 1280, 'clientW': 1280, 'hOverflow': False}, '1600': {'scrollW': 1600, 'clientW': 1600, 'hOverflow': False}}
+esc: {"before": "BODY", "trigger": "STEP 6\nナレッジ化", "openErr": "ReferenceError: openKb is not defined", "modalOpen": false, "focusInsideModal": false, "activeAfterOpen": "BODY:ホーム\n新しい相談\nボード\n一覧\n業務ツ", "modalOpenAfterEsc": false, "activeAfterEsc": "BODY:ホーム\n新しい相談\nボード\n一覧\n業務ツ", "focusReturnedToTrigger": false, "tabSequence": [{"tag": "BUTTON", "txt": "ホーム", "outline": true}, {"tag": "BUTTON", "txt": "新しい相談", "outline": true}, {"tag": "BUTTON", "txt": "ボード", "outline": true}, {"tag": "BUTTON", "txt": "一覧", "outline": true}]}

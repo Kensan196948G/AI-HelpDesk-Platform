@@ -1,0 +1,43 @@
+# G-01 監査（横断）実測 — 2026-10-27T09:28:39+09:00  DB=ai_helpdesk_g  instance=:18959/:18964
+
+## audit_log 件数と actor 欠落
+76|26|6|6
+
+## actor 欠落の内訳（action 別）
+case.ai_assess|6
+terminal.session.start|4
+resolution.session_started|3
+resolution.proposed|3
+terminal.session.expire|2
+terminal.step.propose|2
+resolution.stopped|1
+terminal.step.record|1
+resolution.escalated|1
+seed_demo_data|1
+terminal.session.close|1
+terminal.report.build|1
+
+## 直近 12 行（actor は users 名で解決・メールは出さない）
+10075|auth.logout|user|33333333-3333-4333-8333-333333333333|***|10-27 00:23:26
+10074|case.ai_assess|case|42b10d0b-9e52-4a96-ab2b-a9d1a77dbe10|(actorなし)|10-27 00:23:26
+10073|case.create|case|42b10d0b-9e52-4a96-ab2b-a9d1a77dbe10|***|10-27 00:23:26
+10072|auth.login|user|33333333-3333-4333-8333-333333333333|***|10-27 00:23:26
+10071|auth.logout|user|33333333-3333-4333-8333-333333333333|***|10-27 00:23:21
+10070|case.ai_assess|case|340e718d-abe7-4a8f-8407-cf96ffe664c2|(actorなし)|10-27 00:23:21
+10069|case.create|case|340e718d-abe7-4a8f-8407-cf96ffe664c2|***|10-27 00:23:21
+10068|auth.login|user|33333333-3333-4333-8333-333333333333|***|10-27 00:23:21
+10067|terminal.knowledge.draft|terminal_session|5b2cd958-54a5-476d-b160-48899b0225f9|k***@***|10-27 00:23:01
+10066|terminal.report.build|terminal_session|5b2cd958-54a5-476d-b160-48899b0225f9|k***@***|10-27 00:23:01
+10065|terminal.session.close|terminal_session|5b2cd958-54a5-476d-b160-48899b0225f9|k***@***|10-27 00:23:01
+10064|terminal.step.record|terminal_session|5b2cd958-54a5-476d-b160-48899b0225f9|k***@***|10-27 00:23:01
+
+## ハッシュチェーン検証（POST /api/audit/verify, approver セッション）
+{"ok":false,"checked":10,"brokenAtId":10010,"expected":"db7c5e9993ee16452ce3e5cb1d6ac9a03c7af72e433e0c85438ad888b832286b","actual":"08fcd225c456240c3bdb687a98522456af67270a5134a70385455227e6f3ed84"}
+## 同じ検証を源流DB ai_helpdesk_ui でも実施（clone 依存でないことの確認）
+ai_helpdesk_ui rows=15 {"ok":false,"checked":10,"brokenAtId":10010,"expected":"db7c5e9993ee16452ce3e5cb1d6ac9a03c7af72e433e0c85438ad888b832286b","actual":"08fcd225c456240c3bdb687a98522456af67270a5134a70385455227e6f3ed84"}
+  broken row: terminal.session.expire 
+ai_helpdesk_g rows=76 {"ok":false,"checked":10,"brokenAtId":10010,"expected":"db7c5e9993ee16452ce3e5cb1d6ac9a03c7af72e433e0c85438ad888b832286b","actual":"08fcd225c456240c3bdb687a98522456af67270a5134a70385455227e6f3ed84"}
+  broken row: terminal.session.expire 
+
+## 引継ぎ操作のサーバ監査（F-02 の再確認）: case_handovers に対する action の有無
+0

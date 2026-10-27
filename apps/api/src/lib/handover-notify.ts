@@ -38,9 +38,15 @@ function formatJst(date: Date): string {
   }).format(date);
 }
 
+/** メールに載せる件名。空白だけの件名も「(件名なし)」にそろえる。 */
+function displaySubject(value: string, maxLength: number): string {
+  const subject = String(value ?? '').trim();
+  return sanitizeHeader(redactPII(subject || '(件名なし)').text, maxLength);
+}
+
 /** メールに載せる件名（個人情報を伏せたうえで短くする）。 */
 export function buildHandoverSubject(input: HandoverNoticeInput): string {
-  const subject = sanitizeHeader(redactPII(input.subject || '(件名なし)').text, 80);
+  const subject = displaySubject(input.subject, 80);
   return sanitizeHeader(`[AIヘルプデスク] 引継ぎ: ${subject}（${input.caseId}）`, 160);
 }
 
@@ -57,7 +63,7 @@ export function buildHandoverBody(input: HandoverNoticeInput): string {
     'AI 一次対応で解決しなかった案件が、DX 推進部へ引き継がれました。',
     '',
     `案件 ID : ${input.caseId}`,
-    `件名    : ${sanitizeHeader(redactPII(input.subject || '(件名なし)').text, 120)}`,
+    `件名    : ${displaySubject(input.subject, 120)}`,
   ];
   if (requester) lines.push(`依頼者  : ${requester} さん`);
   lines.push(

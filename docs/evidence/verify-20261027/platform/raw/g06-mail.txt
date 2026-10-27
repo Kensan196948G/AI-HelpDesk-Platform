@@ -1,0 +1,17 @@
+# G-06 メール通知（キュー→送信→再試行5回→failed）— 2026-10-27T09:29:06+09:00
+
+## 成功経路（:18959 MAIL_TRANSPORT=smtp → SMTP シンク :2526）
+sent|1|20
+
+## 失敗経路（専用DB ai_helpdesk_g_mail / SMTP 2599=未 listen）
+1 {"sent":0,"failed":1,"remaining":1,"transport":"smtp"} pending/1/connect ECONNREFUSED 127.0.0.1:2599
+2 {"sent":0,"failed":1,"remaining":1,"transport":"smtp"} pending/2/connect ECONNREFUSED 127.0.0.1:2599
+3 {"sent":0,"failed":1,"remaining":1,"transport":"smtp"} pending/3/connect ECONNREFUSED 127.0.0.1:2599
+4 {"sent":0,"failed":1,"remaining":1,"transport":"smtp"} pending/4/connect ECONNREFUSED 127.0.0.1:2599
+5 {"sent":0,"failed":1,"remaining":0,"transport":"smtp"} failed/5/connect ECONNREFUSED 127.0.0.1:2599
+6 {"sent":0,"failed":0,"remaining":0,"transport":"smtp"} failed/5/connect ECONNREFUSED 127.0.0.1:2599
+
+## 実装（MAX_ATTEMPTS / 再試行の境界）
+28:const MAX_ATTEMPTS = 5;
+154:      WHERE status = 'pending' AND attempts < ${MAX_ATTEMPTS}
+178:              status = CASE WHEN attempts + 1 >= ${MAX_ATTEMPTS} THEN 'failed' ELSE 'pending' END
