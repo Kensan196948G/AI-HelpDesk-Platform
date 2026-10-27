@@ -97,6 +97,58 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
     return { knowledge: rows.map(knowledgeDto) };
   });
 
+  /**
+   * F-06 不足分: 承認者（別 Access ID）向けの承認待ち一覧。
+   * 承認者は自分のクライアント状態に他人の下書きを持たないため、
+   * client_ref（画面の下書き ID）で同期された行をサーバから一覧できるようにする。
+   * 承認操作自体は既存の POST /knowledge/ui-sync をクライアントが再送する。
+   *
+   * 注意: `/knowledge/:id` より先に登録する（pending が id として解釈されないように）。
+   */
+  app.get('/knowledge/pending', { preHandler: authenticateUi }, async (request) => {
+    if (!request.uiEmail) throw badRequest('UI の認証情報がありません。');
+    await requireHelpdeskActor(request.uiEmail);
+    const rows = await sql<
+      {
+        id: string;
+        client_ref: string;
+        kb_no: string;
+        status: string;
+        title: string;
+        symptom: string;
+        cause: string;
+        steps: string;
+        keywords: string[] | null;
+        author_email: string | null;
+        created_at: Date;
+      }[]
+    >`
+      SELECT k.id, k.client_ref, k.kb_no, k.status, k.title, k.symptom, k.cause, k.steps,
+             k.keywords, u.email AS author_email, k.created_at
+      FROM knowledge k
+      LEFT JOIN users u ON u.id = k.author_id
+      WHERE k.client_ref IS NOT NULL
+        AND k.status IN ('draft', 'pending')
+      ORDER BY k.created_at DESC
+      LIMIT 50
+    `;
+    return {
+      items: rows.map((row) => ({
+        id: row.id,
+        clientRef: row.client_ref,
+        kbNo: row.kb_no,
+        status: row.status,
+        title: row.title,
+        symptom: row.symptom,
+        cause: row.cause,
+        steps: row.steps,
+        keywords: Array.isArray(row.keywords) ? row.keywords : [],
+        authorEmail: row.author_email ?? null,
+        createdAt: row.created_at,
+      })),
+    };
+  });
+
   app.get('/knowledge/:id', { preHandler: authenticate }, async (request) => {
     const user = request.authUser!;
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);

@@ -22,6 +22,11 @@
     // F-13 の単体テスト用（DOM に依存しない純粋関数）。
     applyHandoverStatus: (c, handover) => ahApplyHandoverStatus(c, handover),
     linkWithHandover: (c, L) => ahLinkWithHandover(c, L),
+    // F-06 不足分（承認者向けサーバ下書き）の単体テスト用。
+    pendingApprovePayload: (item, checklist, comment) =>
+      ahPendingApprovePayload(item, checklist, comment),
+    pendingRejectPayload: (item, reason) => ahPendingRejectPayload(item, reason),
+    pendingSectionHtml: (items, errorCode) => ahPendingSectionHtml(items, errorCode),
   };
 
   const AH = {
@@ -41,6 +46,12 @@
     caseAiBusy: false,
     handoverStatusSyncing: false,
     handoverStatusSyncedAt: 0,
+    // F-06 不足分: 承認者向けサーバ下書き（GET /api/knowledge/pending）
+    pending: [],
+    pendingLoaded: false,
+    pendingLoadedAt: 0,
+    pendingError: '',
+    pendingBusy: false,
   };
   window.__AIHD_ASSIST__ = AH;
 
@@ -1343,6 +1354,317 @@
     return input ? String(input.value || '').trim() : '';
   }
 
+  // ---------------------------------------------------------------------
+  // F-06 不足分: 承認者（別ID）向けのサーバ下書き一覧
+  //
+  // ローカルの下書きはブラウザの state にしか無いため、別 ID の承認者には見えない。
+  // ⑥ 承認者の確認を表示したときに GET /api/knowledge/pending を取得し、
+  // 既存の POST /api/knowledge/ui-sync（UiSyncSchema）で承認/却下する。
+  // サーバ未実装・障害時は「取得できませんでした」表示だけでローカル画面は通常動作。
+  // ---------------------------------------------------------------------
+  const AH_PENDING_CHECKS = [
+    { key: 'reproducible', label: '技術的に正確で、第三者が再現できる手順になっている' },
+    { key: 'noSecrets', label: '個人情報・認証情報・IPアドレス等の機密情報が含まれていない' },
+    { key: 'noBlame', label: '特定の個人を評価・非難する記述がない（事実と手順のみ）' },
+    { key: 'scopeClear', label: '適用範囲（対象拠点・端末・バージョン）が明確である' },
+  ];
+
+  /** ui-sync のエラーコードをトースト用ラベルにする。 */
+  function ahUiSyncErrorLabel(error) {
+    if (!error) return '不明なエラー';
+    if (error.code) return String(error.code);
+    if (error.status) return 'HTTP ' + String(error.status);
+    return String(error.message || error).slice(0, 120);
+  }
+
+  /** サーバ下書きの承認ペイロード（UiSyncSchema に一致させる）。 */
+  function ahPendingApprovePayload(item, checklist, comment) {
+    const source = item || {};
+    return {
+      clientRef: String(source.clientRef || 'ui-' + String(source.id || '')),
+      status: 'approved',
+      title: String(source.title || '').slice(0, 160) || '（無題）',
+      symptom: String(source.symptom || ''),
+      cause: String(source.cause || ''),
+      steps: String(source.steps || ''),
+      keywords: Array.isArray(source.keywords)
+        ? source.keywords.map((keyword) => String(keyword)).slice(0, 12)
+        : [],
+      checklist: {
+        reproducible: Boolean(checklist && checklist.reproducible),
+        noSecrets: Boolean(checklist && checklist.noSecrets),
+        noBlame: Boolean(checklist && checklist.noBlame),
+        scopeClear: Boolean(checklist && checklist.scopeClear),
+      },
+      comment: String(comment || '').slice(0, 2000),
+    };
+  }
+
+  /** サーバ下書きの却下ペイロード（理由必須・checklist は送らない）。 */
+  function ahPendingRejectPayload(item, reason) {
+    const payload = ahPendingApprovePayload(item, null, reason);
+    payload.status = 'rejected';
+    delete payload.checklist;
+    return payload;
+  }
+
+  /** 承認者ビューに差し込む「サーバ下書き」セクションの HTML（純粋関数・テスト対象）。 */
+  function ahPendingSectionHtml(items, errorCode) {
+    const list = Array.isArray(items) ? items : [];
+    const head =
+      '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px">' +
+      '<b>サーバ下書き（承認待ち）</b>' +
+      '<button class="btn ghost sm" data-ahd="pd-refresh">再読込</button>' +
+      '</div><div class="hint">ローカルの下書きとは別に、サーバに保存された下書きです。承認するとサーバ側のナレッジになります。</div>';
+    const errorNote = errorCode
+      ? '<div class="note n-warn" style="margin-top:6px">サーバ下書きを取得できませんでした（' +
+        ahEsc(errorCode) +
+        '）。ローカルの下書きのみ表示しています。</div>'
+      : '';
+    if (list.length === 0) {
+      return (
+        head +
+        errorNote +
+        '<div class="empty" style="margin-top:6px">サーバの承認待ちはありません</div>'
+      );
+    }
+    const rows = list
+      .map((item) => {
+        const id = String(item.id || '');
+        const status = String(item.status || '');
+        const approved = status === 'approved' || item._localState === 'approved';
+        const rejected = status === 'rejected' || item._localState === 'rejected';
+        const kbNo = String(item.kbNo || '');
+        const checks =
+          approved || rejected
+            ? ''
+            : AH_PENDING_CHECKS.map(
+                (check) =>
+                  '<label class="chk"><input type="checkbox" data-pd-check="' +
+                  ahEsc(id) +
+                  '" data-pd-key="' +
+                  check.key +
+                  '">' +
+                  ahEsc(check.label) +
+                  '</label>',
+              ).join('');
+        const actions = approved
+          ? '<span class="badge b-ok">承認済み' +
+            (kbNo ? '（' + ahEsc(kbNo) + '）' : '') +
+            '</span>'
+          : rejected
+            ? '<span class="badge b-bad">却下済み</span>'
+            : '<div class="btns"><button class="btn ok sm" data-ahd="pd-approve" data-id="' +
+              ahEsc(id) +
+              '" disabled>承認</button><button class="btn bad sm" data-ahd="pd-reject" data-id="' +
+              ahEsc(id) +
+              '">却下</button></div>';
+        return (
+          '<li style="border-top:1px solid var(--u-line,#d9e2ec);padding:8px 0" data-pd-item="' +
+          ahEsc(id) +
+          '">' +
+          '<div><span class="mono">' +
+          ahEsc(kbNo || id) +
+          '</span> <b>' +
+          ahEsc(item.title || '(件名なし)') +
+          '</b></div>' +
+          '<div class="hint">作成者 ' +
+          ahEsc(item.authorEmail || '-') +
+          '／状態 ' +
+          ahEsc(status || '-') +
+          (item.createdAt ? '／作成 ' + ahEsc(String(item.createdAt)) : '') +
+          '</div>' +
+          checks +
+          actions +
+          '</li>'
+        );
+      })
+      .join('');
+    return (
+      head + errorNote + '<ul style="list-style:none;margin:8px 0 0;padding:0">' + rows + '</ul>'
+    );
+  }
+
+  function ahIsApproveView() {
+    try {
+      const hd = document.getElementById('hd');
+      if (hd && hd.classList.contains('hide')) return false;
+      const main = document.getElementById('hdMain');
+      if (!main) return false;
+      const heading = main.querySelector('h1');
+      return Boolean(heading && /承認者の確認/.test(heading.textContent || ''));
+    } catch (error) {
+      return false;
+    }
+  }
+
+  function ahPendingSignature() {
+    const items = Array.isArray(AH.pending) ? AH.pending : [];
+    return (
+      (AH.pendingError || '') +
+      '|' +
+      items.map((item) => [item.id, item.status, item.kbNo, item._localState].join(':')).join(',')
+    );
+  }
+
+  function ahSyncPendingSection() {
+    try {
+      const main = document.getElementById('hdMain');
+      if (!main) return;
+      const existing = document.getElementById('ahServerPending');
+      if (!ahIsApproveView()) {
+        if (existing) existing.remove();
+        return;
+      }
+      if (!AH.pendingLoaded) {
+        void ahRefreshPending(false);
+        return;
+      }
+      const signature = ahPendingSignature();
+      if (existing && existing.getAttribute('data-sig') === signature) return;
+      if (existing) existing.remove();
+      const box = document.createElement('div');
+      box.id = 'ahServerPending';
+      box.className = 'card';
+      box.style.marginTop = '12px';
+      box.setAttribute('data-sig', signature);
+      box.innerHTML = ahPendingSectionHtml(AH.pending, AH.pendingError);
+      main.appendChild(box);
+    } catch (error) {
+      console.warn('[assist] pending draft section failed', error);
+    }
+  }
+
+  async function ahRefreshPending(force) {
+    const now = Date.now();
+    if (!force && AH.pendingLoaded && now - AH.pendingLoadedAt < 10_000) {
+      ahSyncPendingSection();
+      return;
+    }
+    try {
+      const data = await ahJsonFetch('/api/knowledge/pending');
+      AH.pending = Array.isArray(data && data.items)
+        ? data.items.map((item) => Object.assign({}, item))
+        : [];
+      AH.pendingError = '';
+    } catch (error) {
+      AH.pending = Array.isArray(AH.pending) ? AH.pending : [];
+      AH.pendingError = ahUiSyncErrorLabel(error);
+      console.warn('[assist] pending drafts failed', error);
+    } finally {
+      AH.pendingLoaded = true;
+      AH.pendingLoadedAt = now;
+      ahSyncPendingSection();
+    }
+  }
+
+  function ahFindPending(id) {
+    const target = String(id || '');
+    return (AH.pending || []).find((item) => String(item.id) === target) || null;
+  }
+
+  async function ahApprovePending(item) {
+    if (!item) return;
+    const boxes = Array.from(document.querySelectorAll('[data-pd-check]')).filter(
+      (box) => box.getAttribute('data-pd-check') === String(item.id),
+    );
+    const checklist = {};
+    for (const check of AH_PENDING_CHECKS) {
+      const box = boxes.find((candidate) => candidate.getAttribute('data-pd-key') === check.key);
+      checklist[check.key] = Boolean(box && box.checked);
+    }
+    if (!AH_PENDING_CHECKS.every((check) => checklist[check.key])) {
+      if (typeof toast === 'function') toast('チェックリストをすべて確認してください', 'bad');
+      return;
+    }
+    if (AH.pendingBusy) return;
+    AH.pendingBusy = true;
+    try {
+      const data = await ahJsonFetch('/api/knowledge/ui-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(ahPendingApprovePayload(item, checklist, '')),
+      });
+      const kbNo = data && data.knowledge ? String(data.knowledge.kbNo || '') : '';
+      item.status = 'approved';
+      item._localState = 'approved';
+      if (kbNo) item.kbNo = kbNo;
+      if (typeof toast === 'function') {
+        toast('サーバのナレッジを承認しました' + (kbNo ? '（' + kbNo + '）' : ''), 'ok');
+      }
+      // 承認済みは pending 一覧から消えるため、サーバから取り直す。
+      await ahRefreshPending(true);
+    } catch (error) {
+      if (typeof toast === 'function') {
+        toast('サーバ承認に失敗しました：' + ahUiSyncErrorLabel(error), 'bad');
+      }
+    } finally {
+      AH.pendingBusy = false;
+    }
+  }
+
+  async function ahRejectPending(item) {
+    if (!item) return;
+    const reason =
+      typeof window.prompt === 'function'
+        ? String(window.prompt('却下の理由を入力してください（必須）') || '').trim()
+        : '';
+    if (!reason) {
+      if (typeof toast === 'function') toast('却下の理由を入力してください', 'bad');
+      return;
+    }
+    if (AH.pendingBusy) return;
+    AH.pendingBusy = true;
+    try {
+      await ahJsonFetch('/api/knowledge/ui-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(ahPendingRejectPayload(item, reason)),
+      });
+      item.status = 'rejected';
+      item._localState = 'rejected';
+      if (typeof toast === 'function') toast('サーバ下書きを却下しました', 'ok');
+      await ahRefreshPending(true);
+    } catch (error) {
+      if (typeof toast === 'function') {
+        toast('サーバ却下に失敗しました：' + ahUiSyncErrorLabel(error), 'bad');
+      }
+    } finally {
+      AH.pendingBusy = false;
+    }
+  }
+
+  function ahHandlePendingClick(event) {
+    const target = event && event.target;
+    const trigger = target && target.closest ? target.closest('[data-ahd]') : null;
+    if (!trigger) return;
+    const action = trigger.getAttribute('data-ahd');
+    const id = trigger.getAttribute('data-id');
+    if (action === 'pd-refresh') {
+      void ahRefreshPending(true);
+    } else if (action === 'pd-approve') {
+      void ahApprovePending(ahFindPending(id));
+    } else if (action === 'pd-reject') {
+      void ahRejectPending(ahFindPending(id));
+    }
+  }
+
+  function ahHandlePendingChange(event) {
+    const target = event && event.target;
+    if (!target || !target.getAttribute) return;
+    const id = target.getAttribute('data-pd-check');
+    if (!id) return;
+    const boxes = Array.from(document.querySelectorAll('[data-pd-check]')).filter(
+      (box) => box.getAttribute('data-pd-check') === id,
+    );
+    const button = Array.from(document.querySelectorAll('[data-ahd="pd-approve"]')).find(
+      (candidate) => candidate.getAttribute('data-id') === id,
+    );
+    if (button) {
+      button.disabled = !(boxes.length === 4 && boxes.every((box) => box.checked));
+    }
+  }
+
   /** 引継ぎ案件ではない下書きを、サーバーへ承認として保存してから画面を更新する。 */
   function ahApproveLocalKnowledge(draftId, originalApprove, context, args) {
     const full =
@@ -2247,8 +2569,36 @@
             return result;
           };
         }
+
+        // F-06 不足分: ⑥ 承認者の確認を表示したらサーバ下書きを取得する。
+        const originalGo = app.go;
+        if (typeof originalGo === 'function') {
+          app.go = function () {
+            const result = originalGo.apply(this, arguments);
+            setTimeout(ahSyncPendingSection, 30);
+            return result;
+          };
+        }
       }
     }
+
+    // F-06 不足分: 承認者向けサーバ下書きセクションの差し込みと操作。
+    document.addEventListener('click', ahHandlePendingClick, true);
+    document.addEventListener('change', ahHandlePendingChange, true);
+    const hdMainElement = document.getElementById('hdMain');
+    if (hdMainElement && typeof MutationObserver === 'function') {
+      let pendingScheduled = false;
+      const pendingObserver = new MutationObserver(() => {
+        if (pendingScheduled) return;
+        pendingScheduled = true;
+        setTimeout(() => {
+          pendingScheduled = false;
+          ahSyncPendingSection();
+        }, 60);
+      });
+      pendingObserver.observe(hdMainElement, { childList: true });
+    }
+    setTimeout(ahSyncPendingSection, 800);
 
     const page = document.getElementById('uxPage');
     if (page && typeof MutationObserver === 'function') {

@@ -36,6 +36,13 @@ interface AssistBridge {
   rspDeepLink: (c: unknown) => string;
   applyHandoverStatus: (c: SyncedCase, handover: HandoverInfo) => boolean;
   linkWithHandover: (c: SyncedCase, L: LinkResult) => LinkResult;
+  pendingApprovePayload: (
+    item: Record<string, unknown>,
+    checklist: Record<string, boolean>,
+    comment: string,
+  ) => Record<string, unknown>;
+  pendingRejectPayload: (item: Record<string, unknown>, reason: string) => Record<string, unknown>;
+  pendingSectionHtml: (items: Array<Record<string, unknown>>, errorCode?: string) => string;
 }
 
 interface SandboxWindow {
@@ -192,5 +199,92 @@ describe('assist-bridge: 依頼者側の引継ぎ状態反映 (F-13)', () => {
     const b = bridge();
     const L: LinkResult = { chat: null, tkt: { id: 'TKT-1' }, inc: null, dr: null, kb: null };
     expect(b.linkWithHandover({ id: 'CASE-8' }, L)).toBe(L);
+  });
+});
+
+describe('assist-bridge: F-06 承認者向けサーバ下書き（別ID承認）', () => {
+  const bridge = () => loadBridge({}, () => true);
+  const checklist = {
+    reproducible: true,
+    noSecrets: true,
+    noBlame: true,
+    scopeClear: true,
+  };
+  const item = {
+    id: 'srv-1',
+    clientRef: 'ui-DR-004',
+    kbNo: 'KB-2026-0101',
+    status: 'pending',
+    title: '<b>共有フォルダ</b>の対処',
+    symptom: '開けない',
+    cause: '権限なし',
+    steps: '確認する\n追加する',
+    keywords: ['共有', '権限'],
+    authorEmail: 'author@example.com',
+    createdAt: '2026-10-27T00:00:00.000Z',
+  };
+
+  it('承認時は ui-sync の UiSyncSchema に一致する body を作る', () => {
+    const b = bridge();
+    const body = b.pendingApprovePayload(item, checklist, '');
+    expect(body).toEqual({
+      clientRef: 'ui-DR-004',
+      status: 'approved',
+      title: '<b>共有フォルダ</b>の対処',
+      symptom: '開けない',
+      cause: '権限なし',
+      steps: '確認する\n追加する',
+      keywords: ['共有', '権限'],
+      checklist: {
+        reproducible: true,
+        noSecrets: true,
+        noBlame: true,
+        scopeClear: true,
+      },
+      comment: '',
+    });
+    // clientRef が欠けている場合は id から補う（server の min(1) 対策）。
+    const fallback = b.pendingApprovePayload({ id: 'srv-2', title: 't' }, checklist, '');
+    expect(fallback.clientRef).toBe('ui-srv-2');
+  });
+
+  it('却下時は status=rejected・理由を comment に載せ、checklist は送らない', () => {
+    const b = bridge();
+    const body = b.pendingRejectPayload(item, '根拠が不足しています');
+    expect(body.status).toBe('rejected');
+    expect(body.comment).toBe('根拠が不足しています');
+    expect(body.clientRef).toBe('ui-DR-004');
+    expect('checklist' in body).toBe(false);
+  });
+
+  it('一覧 HTML はエスケープし、4項目チェックと承認/却下ボタン・KB番号・作成者を表示する', () => {
+    const b = bridge();
+    const html = b.pendingSectionHtml([item], '');
+    expect(html).toContain('サーバ下書き');
+    expect(html).toContain('KB-2026-0101');
+    expect(html).toContain('author@example.com');
+    expect(html).toContain('&lt;b&gt;共有フォルダ&lt;/b&gt;の対処');
+    expect(html).not.toContain('<b>共有フォルダ</b>');
+    expect(html).toContain('data-ahd="pd-approve"');
+    expect(html).toContain('data-ahd="pd-reject"');
+    expect(html).toContain('data-pd-key="reproducible"');
+    expect(html).toContain('data-pd-key="scopeClear"');
+    expect((html.match(/data-pd-check=/g) ?? []).length).toBe(4);
+    // 4項目ONまで承認ボタンは無効。
+    expect(html).toContain('disabled>承認</button>');
+  });
+
+  it('取得失敗時は「取得できませんでした」を表示し、空一覧は案内を出す', () => {
+    const b = bridge();
+    const failed = b.pendingSectionHtml([], 'HTTP 404');
+    expect(failed).toContain('取得できませんでした');
+    expect(failed).toContain('HTTP 404');
+    expect(failed).toContain('サーバの承認待ちはありません');
+
+    const approved = b.pendingSectionHtml([{ ...item, status: 'approved', kbNo: 'KB-1' }], '');
+    expect(approved).toContain('承認済み');
+    expect(approved).toContain('KB-1');
+    expect(approved).not.toContain('data-pd-check=');
+    expect(approved).not.toContain('data-ahd="pd-approve"');
   });
 });
