@@ -44,8 +44,15 @@ const DX2 = {
   section: 'DX推進部',
   division: 'DX推進部',
 };
+const GENERAL = {
+  employeeNo: 'MK0122',
+  name: '一般 社員',
+  section: '総務部',
+  division: '管理本部',
+};
 const DX1_EMAIL = 'dx1@example.com';
 const DX2_EMAIL = 'dx2@example.com';
+const GENERAL_EMAIL = 'general@example.com';
 const REF = 'ui-test-f06-draft';
 const REF_PREFIX = 'ui-test-f06%';
 const originalDevEmail = config.DEV_AUTH_EMAIL;
@@ -91,6 +98,7 @@ beforeAll(async () => {
   resetRateLimits();
   directory.byEmail.set(DX1_EMAIL, DX1);
   directory.byEmail.set(DX2_EMAIL, DX2);
+  directory.byEmail.set(GENERAL_EMAIL, GENERAL);
   directory.staff.push(DX1, DX2);
   app = await buildServer({ logger: false });
   await app.ready();
@@ -217,5 +225,65 @@ describe('F-06: 画面ナレッジのサーバ永続化', () => {
     );
     expect(rejected.statusCode, rejected.body).toBe(200);
     expect(rejected.json().knowledge.status).toBe('rejected');
+  });
+
+  it('承認者向け pending 一覧: 他人の draft/pending が見え、approved は出ない', async () => {
+    config.DEV_AUTH_EMAIL = DX1_EMAIL;
+    const draftRef = `${REF}-draft`;
+    const pendingRef = `${REF}-pending`;
+    const approvedRef = `${REF}-approved`;
+    expect((await sync(draftPayload({ clientRef: draftRef, status: 'draft' }))).statusCode).toBe(
+      200,
+    );
+    expect(
+      (await sync(draftPayload({ clientRef: pendingRef, status: 'pending' }))).statusCode,
+    ).toBe(200);
+    expect(
+      (
+        await sync(
+          draftPayload({ clientRef: approvedRef, status: 'approved', checklist: FULL_CHECKLIST }),
+        )
+      ).statusCode,
+    ).toBe(200);
+
+    // 別 ID（承認者）で一覧を取得する。
+    config.DEV_AUTH_EMAIL = DX2_EMAIL;
+    const list = await app.inject({ method: 'GET', url: '/api/knowledge/pending' });
+    expect(list.statusCode, list.body).toBe(200);
+    const items = list.json().items as Array<Record<string, unknown>>;
+    const draftItem = items.find((item) => item.clientRef === draftRef);
+    const pendingItem = items.find((item) => item.clientRef === pendingRef);
+
+    expect(draftItem?.status).toBe('draft');
+    expect(pendingItem?.status).toBe('pending');
+    expect(draftItem?.authorEmail).toBe(DX1_EMAIL);
+    expect(draftItem?.title).toBe('共有フォルダが開けないときの対処');
+    expect(draftItem?.symptom).toContain('共有フォルダ');
+    expect(draftItem?.steps).toContain('ショートカット');
+    expect(draftItem?.keywords).toEqual(['共有フォルダ']);
+    expect(typeof draftItem?.kbNo).toBe('string');
+    expect(draftItem?.id).toBeTruthy();
+    expect(draftItem?.createdAt).toBeTruthy();
+
+    // 承認済みは pending に出さない。
+    expect(items.some((item) => item.clientRef === approvedRef)).toBe(false);
+  });
+
+  it('pending 一覧は一般社員 403、DX 担当は 200', async () => {
+    await sync(draftPayload({ clientRef: `${REF}-auth`, status: 'pending' }));
+
+    config.DEV_AUTH_EMAIL = GENERAL_EMAIL;
+    const denied = await app.inject({ method: 'GET', url: '/api/knowledge/pending' });
+    expect(denied.statusCode, denied.body).toBe(403);
+    expect(denied.json().error.code).toBe('FORBIDDEN');
+
+    config.DEV_AUTH_EMAIL = DX2_EMAIL;
+    const allowed = await app.inject({ method: 'GET', url: '/api/knowledge/pending' });
+    expect(allowed.statusCode, allowed.body).toBe(200);
+    expect(
+      (allowed.json().items as Array<{ clientRef: string }>).some(
+        (item) => item.clientRef === `${REF}-auth`,
+      ),
+    ).toBe(true);
   });
 });
