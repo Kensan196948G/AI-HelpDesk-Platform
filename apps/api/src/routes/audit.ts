@@ -11,7 +11,7 @@ const LimitSchema = z.object({
 });
 
 export async function auditRoutes(app: FastifyInstance): Promise<void> {
-  app.get('/audit', { preHandler: requireRole('approver') }, async (request) => {
+  app.get('/audit', { preHandler: requireRole('approver', 'auditor') }, async (request) => {
     const query = LimitSchema.parse(request.query);
     const rows = await sql<any[]>`
       SELECT a.*, u.name AS actor_name
@@ -23,7 +23,7 @@ export async function auditRoutes(app: FastifyInstance): Promise<void> {
     return { audit: rows.map(auditDto) };
   });
 
-  app.post('/audit/verify', { preHandler: requireRole('approver') }, async () => {
+  app.post('/audit/verify', { preHandler: requireRole('approver', 'auditor') }, async () => {
     const rows = await sql<any[]>`
       SELECT id, actor_id, action, target_type, target_id, detail, prev_hash, hash
       FROM audit_log
