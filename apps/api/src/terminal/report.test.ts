@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { renderFinalReportHtml } from '../domain/final-report.js';
 import type { HandoverRow } from '../routes/case-handovers.js';
 import { buildKnowledgeDraft, buildTerminalReport } from './report.js';
 import type { TerminalSessionRow, TerminalStepRow } from './session.js';
@@ -195,5 +196,27 @@ describe('RSP実行セッションの報告書', () => {
       steps: [step(1)],
     });
     expect(content.cause).toContain('原因は記録されていません');
+  });
+
+  it('中止（stopped）のセッションは「解決」ではなく未解決の報告書になる（SM-12）', () => {
+    const result = buildTerminalReport({
+      handover: handoverRow(),
+      session: sessionRow({ close_reason: 'stopped' }),
+      steps: [step(1)],
+      operatorName: '佐藤 奨太',
+      requesterName: '山田 太郎',
+      knowledge: null,
+    });
+    expect(result.report.kind).toBe('helpdesk_stopped');
+    expect(result.report.terminal?.closeReason).toBe('stopped');
+
+    const rendered = renderFinalReportHtml(result.report, {
+      id: '11111111-1111-4111-8111-111111111111',
+      sha256: 'c'.repeat(64),
+    });
+    expect(rendered.html).toContain('担当者の対応を終了（未解決）');
+    expect(rendered.html).toContain('終了日時');
+    expect(rendered.html).not.toContain('担当者の対応で解決');
+    expect(rendered.filename).toContain('-HD-STOP-');
   });
 });
