@@ -19,6 +19,9 @@
     version: 2,
     at: new Date().toISOString(),
     rspDeepLink: (c) => ahRspDeepLink(c),
+    // F-13 の単体テスト用（DOM に依存しない純粋関数）。
+    applyHandoverStatus: (c, handover) => ahApplyHandoverStatus(c, handover),
+    linkWithHandover: (c, L) => ahLinkWithHandover(c, L),
   };
 
   const AH = {
@@ -36,6 +39,8 @@
     shareOpen: false,
     approving: false,
     caseAiBusy: false,
+    handoverStatusSyncing: false,
+    handoverStatusSyncedAt: 0,
   };
   window.__AIHD_ASSIST__ = AH;
 
@@ -1325,6 +1330,201 @@
       });
   }
 
+  /**
+   * F-13: 依頼者側の画面にサーバの引継ぎ状態を反映する。
+   *
+   * 案件（prototype_states の cowork 状態）はブラウザ側にあり、サーバの
+   * case_handovers.status と二重管理になっている。ここでは起動時・再表示時・
+   * 定期（45秒）に GET /api/case-handovers/{id} を取得し、
+   *   claimed / resolved → STEP5（担当者の対応＝対応中）
+   *   completed          → STEP7（完了）
+   * として表示する。取得できない場合（403/404/通信断）は従来表示のままにする。
+   */
+  function ahHandoverIdOf(c) {
+    if (!c) return '';
+    const id = c.handoverId || c._handoverId;
+    return typeof id === 'string' ? id : '';
+  }
+
+  function ahApplyHandoverStatus(c, handover) {
+    if (!c || !handover) return false;
+    const status = String(handover.status || '');
+    if (!['claimed', 'resolved', 'completed'].includes(status)) return false;
+    const previous = String(c.handoverStatus || '');
+    c.handoverStatus = status;
+    c.handoverSyncedAt = new Date().toISOString();
+    if (handover.claimedByName) c.handoverClaimedBy = String(handover.claimedByName);
+    if (handover.approvedAt) c.handoverApprovedAt = String(handover.approvedAt);
+    if (handover.approvedBy) c.handoverApprovedBy = String(handover.approvedBy);
+    if (typeof handover.selfApproved === 'boolean') c.handoverSelfApproved = handover.selfApproved;
+    const step = Number(c.step || 0);
+    if (status === 'completed') {
+      if (step < 7) c.step = 7;
+    } else if (step < 5) {
+      c.step = 5;
+    }
+    return previous !== status;
+  }
+
+  /**
+   * 表示用 link() にサーバ状態を重ねる。
+   * HTML は正本のため変更せず、`L.inc` を解決済み／対応中として扱うことで
+   * stageLabel / reach / ボード件数が既存ロジックのまま「対応中」「完了」になる。
+   */
+  function ahLinkWithHandover(c, L) {
+    const status = String((c && c.handoverStatus) || '');
+    if (!status || !['claimed', 'resolved', 'completed'].includes(status)) return L;
+    const base = L && L.inc ? L.inc : null;
+    const assignee = String((c && c.handoverClaimedBy) || '');
+    const inc = Object.assign(
+      { id: 'SYNCED-' + String((c && c.id) || ''), status: 'in_progress', assignee },
+      base || {},
+    );
+    if (status === 'completed') {
+      inc.status = 'resolved';
+      inc.draftId = '';
+      inc.kbId = '';
+      if (!inc.resolution) {
+        inc.resolution = {
+          cause: 'DX推進部の担当者が対応しました。',
+          steps: [],
+          by: assignee,
+          minutes: 0,
+        };
+      }
+    } else {
+      inc.status = 'in_progress';
+    }
+    return Object.assign({}, L, { inc });
+  }
+
+  function ahFormatHandoverDate(value) {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    try {
+      return date.toLocaleString('ja-JP', { dateStyle: 'medium', timeStyle: 'short' });
+    } catch (error) {
+      return date.toISOString();
+    }
+  }
+
+  /** 状態が変わったときだけ、トースト・監査・チャットに通知する（F-13）。 */
+  function ahAnnounceHandoverChange(c, handover, previousStatus) {
+    const status = String(handover.status || '');
+    const approvedAt = ahFormatHandoverDate(handover.approvedAt);
+    const selfApproved = Boolean(handover.selfApproved);
+    try {
+      if (typeof auditAdd === 'function') {
+        auditAdd(S, 'system', 'hd_synced', {
+          case: c.id,
+          handover: ahHandoverIdOf(c),
+          status,
+          ...(approvedAt ? { approvedAt, selfApproved } : {}),
+        });
+      }
+    } catch (error) {
+      // 監査ログが無い画面でも状態反映は続ける。
+    }
+    if (status === 'completed') {
+      const detail = approvedAt
+        ? `承認: ${approvedAt}${selfApproved ? '（自己承認）' : ''}`
+        : selfApproved
+          ? '自己承認'
+          : '';
+      if (typeof toast === 'function') {
+        toast(`DX推進部の対応が完了しました${detail ? `（${detail}）` : ''}`, 'ok');
+      }
+      try {
+        const chat =
+          Array.isArray(S.chats) && c.chatId ? S.chats.find((item) => item.id === c.chatId) : null;
+        const marker = 'sys-handover-complete-' + ahHandoverIdOf(c);
+        if (chat && Array.isArray(chat.messages) && !chat.messages.some((m) => m.id === marker)) {
+          chat.messages.push({
+            id: marker,
+            kind: 'ai',
+            model: 'AIヘルプデスク連携',
+            html: `<p>DX推進部の対応が完了しました。</p>${
+              detail ? `<p class="small">${detail}</p>` : ''
+            }<p class="small muted">内容はSTEP7の完了画面で確認できます。</p>`,
+            at: new Date().toISOString(),
+          });
+        }
+      } catch (error) {
+        // チャットが無い画面でも状態反映は続ける。
+      }
+    } else if (status === 'claimed' && previousStatus !== 'claimed') {
+      if (typeof toast === 'function') toast('DX推進部の担当者が対応を開始しました', 'ok');
+    } else if (status === 'resolved' && previousStatus !== 'resolved') {
+      if (typeof toast === 'function') toast('DX推進部が対応を完了しました（承認待ち）', 'ok');
+    }
+  }
+
+  async function ahSyncHandoverStatuses() {
+    ahInstallHandoverLinkOverlay();
+    if (AH.handoverStatusSyncing) return;
+    if (typeof S === 'undefined' || !S || !Array.isArray(S.cases)) return;
+    AH.handoverStatusSyncing = true;
+    AH.handoverStatusSyncedAt = Date.now();
+    let changed = false;
+    try {
+      for (const c of S.cases.slice()) {
+        const handoverId = ahHandoverIdOf(c);
+        if (!handoverId) continue;
+        let data = null;
+        try {
+          data = await ahJsonFetch(`/api/case-handovers/${encodeURIComponent(handoverId)}`);
+        } catch (error) {
+          // 403（他人の案件）・404・通信断は静かにスキップし、画面は従来表示のままにする。
+          continue;
+        }
+        const handover = data && data.handover ? data.handover : null;
+        if (!handover) continue;
+        const previous = String(c.handoverStatus || '');
+        if (ahApplyHandoverStatus(c, handover)) {
+          changed = true;
+          ahAnnounceHandoverChange(c, handover, previous);
+        }
+      }
+    } catch (error) {
+      console.warn('[assist] handover status sync failed', error);
+    } finally {
+      AH.handoverStatusSyncing = false;
+    }
+    if (changed) {
+      try {
+        save();
+      } catch (error) {
+        // 保存できなくても画面表示は更新する。
+      }
+      try {
+        if (typeof uxLater === 'function') uxLater();
+      } catch (error) {
+        // 画面が無い環境では何もしない。
+      }
+    }
+  }
+
+  /** link() を1回だけラップし、サーバ状態を重ねて表示する（F-13）。 */
+  function ahInstallHandoverLinkOverlay() {
+    try {
+      const original = window.link;
+      if (typeof original !== 'function' || original.__ahHandoverOverlay) return;
+      const wrapped = function (c) {
+        const L = original.apply(this, arguments);
+        try {
+          return ahLinkWithHandover(c, L);
+        } catch (error) {
+          return L;
+        }
+      };
+      wrapped.__ahHandoverOverlay = true;
+      window.link = wrapped;
+    } catch (error) {
+      console.warn('[assist] handover link overlay failed', error);
+    }
+  }
+
   async function ahSyncHandoverStatus(status, draftId) {
     const current = ahCurrentCase();
     const candidates = (S.cases || []).filter((item) => item.handoverId);
@@ -1943,6 +2143,21 @@
     setTimeout(ahInject, 300);
     window.addEventListener('load', () => setTimeout(ahInject, 0));
     document.addEventListener('click', () => setTimeout(ahInject, 30), true);
+
+    // F-13: 依頼者側の画面にもサーバの引継ぎ状態（対応中／完了）を反映する。
+    // 起動時・再表示時（タブ復帰/フォーカス）・定期（45秒）に取得する。
+    ahInstallHandoverLinkOverlay();
+    const ahSyncHandoverSoon = () => {
+      if (Date.now() - AH.handoverStatusSyncedAt < 5_000) return;
+      void ahSyncHandoverStatuses();
+    };
+    setTimeout(() => void ahSyncHandoverStatuses(), 1_200);
+    setInterval(() => void ahSyncHandoverStatuses(), 45_000);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') ahSyncHandoverSoon();
+    });
+    window.addEventListener('focus', ahSyncHandoverSoon);
+
     console.log('[assist] loaded');
   }
 
