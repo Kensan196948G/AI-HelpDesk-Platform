@@ -86,3 +86,81 @@ export async function ensureRspAgent(rspDeviceId: string): Promise<RspEnsureResu
     method: 'POST',
   });
 }
+
+/** RSP のコマンド実行ログ相関（SM-09）。PII は最小限（担当者メールのみ）。 */
+export interface RspCommandCorrelation {
+  logId: string;
+  deviceId: string;
+  hostname: string;
+  status: string;
+  channel: string;
+  operatorEmail: string | null;
+  createdAt: string | null;
+}
+
+export type RspCorrelationResult =
+  | { kind: 'ok'; correlation: RspCommandCorrelation }
+  | { kind: 'not_found' }
+  | { kind: 'unavailable'; reason: string };
+
+/** 相関確認に必要な設定（サービスキー）があるか。RSP_BASE_URL は既定値を持つ。 */
+export function isRspConfigured(): boolean {
+  return Boolean(config.RSP_SERVICE_KEY);
+}
+
+/**
+ * コマンド実行ログの相関情報を RSP から取得する（SM-09）。
+ * - 200: 実行端末（hostname）などを返す
+ * - 404: 存在しない log_id（not_found）
+ * - それ以外（タイムアウト・5xx・不正応答）: unavailable（呼び出し側は記録を許可し警告）
+ *
+ * URL は設定値（RSP_BASE_URL）だけから組み立て、log_id は encodeURIComponent する（SSRF 対策）。
+ */
+export async function fetchRspCommandCorrelation(logId: string): Promise<RspCorrelationResult> {
+  if (!isRspConfigured()) {
+    return { kind: 'unavailable', reason: 'RSP のサービスキーが未設定です。' };
+  }
+  const url = `${rspBaseUrl()}/api/v1/service/commands/${encodeURIComponent(logId)}/correlation`;
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      headers: {
+        'X-RSP-Service-Key': serviceKey(),
+        Accept: 'application/json',
+      },
+      signal: AbortSignal.timeout(8000),
+    });
+  } catch {
+    return { kind: 'unavailable', reason: 'RSP に接続できませんでした。' };
+  }
+  const body = (await response.json().catch(() => null)) as {
+    success?: boolean;
+    data?: unknown;
+    error_code?: string;
+    message?: string;
+  } | null;
+  if (response.status === 404) return { kind: 'not_found' };
+  if (!response.ok || !body || body.success !== true || !body.data) {
+    return { kind: 'unavailable', reason: `RSP が HTTP ${response.status} を返しました。` };
+  }
+  if (typeof body.data !== 'object') {
+    return { kind: 'unavailable', reason: 'RSP の応答形式が不正です。' };
+  }
+  const data = body.data as Record<string, unknown>;
+  const hostname = String(data.hostname ?? '').trim();
+  if (!hostname) {
+    return { kind: 'unavailable', reason: 'RSP の応答に hostname がありません。' };
+  }
+  return {
+    kind: 'ok',
+    correlation: {
+      logId: String(data.log_id ?? logId),
+      deviceId: String(data.device_id ?? ''),
+      hostname,
+      status: String(data.status ?? ''),
+      channel: String(data.channel ?? ''),
+      operatorEmail: data.operator_email ? String(data.operator_email) : null,
+      createdAt: data.created_at ? String(data.created_at) : null,
+    },
+  };
+}
