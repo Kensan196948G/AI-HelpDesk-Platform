@@ -3054,7 +3054,7 @@ function hdStaff(){const real=(window.__AIHD_EMPLOYEES__&&Array.isArray(window._
 function suggestHdFor(cat){const m={'IT端末':'田中','ID・アクセス権':'高橋','セキュリティ事故':'伊藤','業務・規程':'佐藤','AI窓口':'佐藤'};return m[cat]||''}
 function consentCard(chat,category,priority,after,propId,opts){const rev=[...chat.messages].reverse();const dg=rev.find(m=>m.kind==='diag');const um=rev.find(m=>m.kind==='user');const u=USERS[chat.userId];
  const reason=(opts&&opts.reason)||'';const realStaff=(window.__AIHD_EMPLOYEES__&&window.__AIHD_EMPLOYEES__.staff)||[];const assignee=(opts&&opts.assignee)||(realStaff[0]&&realStaff[0].employeeNo)||suggestHdFor(category)||'';
- return addMsg(chat,{kind:'consent',after,category,priority:priority||'通常',propId:propId||null,state:'pending',reason,assignee,sel:{diag:true,device:true,atts:false,pc:true},ctx:{pc:pcLinesForChat(chat.id),summary:um?um.text:chat.title,diag:dg?dg.steps.map(s=>s[0]+'：'+s[1]):[],device:u.device+'／'+S.devices[u.device].os,atts:um&&um.atts?um.atts.map(a=>a.name):[]}})}
+ return addMsg(chat,{kind:'consent',after,category,priority:priority||'通常',propId:propId||null,state:'pending',reason,assignee,sel:{diag:true,device:true,atts:false,pc:true},ctx:{pc:pcLinesForChat(chat.id),summary:chat.title||(um?um.text:''),diag:dg?dg.steps.map(s=>s[0]+'：'+s[1]):[],device:u.device+'／'+S.devices[u.device].os,atts:um&&um.atts?um.atts.map(a=>a.name):[]}})}
 
 /* ============ 意図判定と応答（ルールベースの模擬AI） ============ */
 function detectIntent(t,atts){const has=r=>r.test(t);
