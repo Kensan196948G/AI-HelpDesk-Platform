@@ -3,6 +3,7 @@ import { config } from '../config.js';
 import { sql } from '../db.js';
 import { forbidden, unauthorized } from '../errors.js';
 import { hashSessionToken } from './password.js';
+import { loadUserRoles, rolesInclude } from './roles.js';
 import type { AuthUser, Role } from './types.js';
 
 export const SESSION_COOKIE = 'aihd_session';
@@ -40,6 +41,8 @@ export async function authenticate(request: FastifyRequest): Promise<void> {
     name: row.name,
     role: row.role,
   };
+  // 複数ロール（docs/49）。user_roles が空なら主ロールへフォールバックする。
+  user.roles = await loadUserRoles(row.id, row.role);
   request.authUser = user;
   request.sessionTokenHash = tokenHash;
   assertNotAuditorWrite(user, request);
@@ -51,7 +54,8 @@ export async function authenticate(request: FastifyRequest): Promise<void> {
  * 「監査の閲覧」と「業務の書込み」を同じアカウントに持たせないためのサーバ側の境界。
  */
 export function assertNotAuditorWrite(user: AuthUser, request: FastifyRequest): void {
-  if (user.role !== 'auditor') return;
+  const roles = user.roles ?? [user.role];
+  if (!roles.includes('auditor')) return;
   const method = request.method.toUpperCase();
   if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return;
   const url = request.url.split('?')[0] ?? '';
@@ -65,7 +69,9 @@ export function requireRole(...roles: Role[]) {
   return async (request: FastifyRequest): Promise<void> => {
     await authenticate(request);
     const user = request.authUser;
-    if (!user || !roles.includes(user.role)) throw forbidden();
+    if (!user) throw forbidden();
+    const userRoles = user.roles ?? [user.role];
+    if (!rolesInclude(userRoles, roles)) throw forbidden();
   };
 }
 
