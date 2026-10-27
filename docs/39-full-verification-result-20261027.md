@@ -179,7 +179,7 @@ typecheck / lint / build / secret scan / migrate 冪等はすべて成功（修�
 
 ## 6. デプロイ手順（G5 で GO の場合）
 
-> **実施済み（2026-10-27 10:23〜10:52 JST）**: 本節の手順で本番へデプロイした（commit `804295c`・migration 020 適用・`COMMIT_SHA` 是正・再起動）。スモークは **S1/S2/S3/S4/S6/S7 PASS・S5 は BLOCKED（RSP 未ログイン）**。実行記録・ロールバック資産・24h 監視は [docs/40](40-deploy-20261027.md) を参照。
+> **実施済み（2026-10-27 10:23〜10:52 JST）**: 本節の手順で本番へデプロイした（commit `804295c`・migration 020 適用・`COMMIT_SHA` 是正・再起動）。スモークは **S1/S2/S3/S4/S6/S7 PASS・S5 は RSP ローカルログイン経由で UI 経路まで実測**（実行は端末オフラインで不成立・15:20 追記参照）。実行記録・ロールバック資産・24h 監視は [docs/40](40-deploy-20261027.md) を参照。
 
 > コードは未配備（1bde379）。デプロイの実体は「84bba83＋本修正のビルド＋migration 020＋再起動＋COMMIT_SHA 是正」。
 
@@ -211,6 +211,13 @@ typecheck / lint / build / secret scan / migrate 冪等はすべて成功（修�
 > - ただし **4 ロール（担当／承認／監査／IT 端末管理）のサーバ分離は未実装**で、`ALLOW_SELF_APPROVAL=true` を維持している。設計案と移行計画は `docs/43` に提案として起案した（実装は別判断）。
 > - 上記 **6（本番書込みは行っていない）は当時の記述**であり、10/27 のデプロイと本検証で本番 DB への書込み（`knowledge` 行の更新・`audit_log` 追記・migration 022 の適用）が発生している。
 > - 即時スモーク監視の結果は `docs/42` §8（今回の変更に起因する 5xx・error は 0 件）。
+
+> **2026-10-27 15:20 追記（S5 の RSP UI 経路）**
+>
+> - 上記 **S5「BLOCKED（RSP 未ログイン）」は解消**。RSP のローカルログインで `rspadmin`（System Admin）として UI に入り、AI支援パネルで CASE-39192 の読込→同意→セッション開始→AI提案→実行試行→記録→中止終了までを実測した（[`smoke-S5-ui.md`](evidence/verify-20261027/deploy/smoke-S5-ui.md)・`docs/40` §12）。
+> - **RSP 実行だけは不成立**: 対象端末 `DESKTOP-TMQM61D` が `agent_status=offline`（`last_seen=2026-10-26T11:39:35Z`）で、UI はキュー投入の手前で停止（`POST /devices/…/commands` は 0 件・実行なし）。実行記録は `output_source=manual` / `exit_status=failure` / 出力空で、**虚偽の出力は入れていない**。
+> - したがって「記録・報告書反映」のうち **報告書は未作成**（中止セッションでも `kind=helpdesk_resolved` になるため・**SM-12**）。報告書への RSP 節の反映自体は API 実測（[`smoke-S5.md`](evidence/verify-20261027/deploy/smoke-S5.md)）で確認済み。
+> - 上記 **4（F-04 の実行記録）は一部解消**: Phase 2（`rsp_command` 取込・相関・報告書反映）は `docs/40` §9 で実測済み。残るは端末オンライン時の UI 自動取込のみ。
 
 ---
 
