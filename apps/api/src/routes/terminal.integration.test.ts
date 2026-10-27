@@ -237,6 +237,34 @@ describe('RSP実行セッション API', () => {
     expect(listed.json().steps).toEqual([]);
   });
 
+  it('SM-04: 完了案件でも実行セッションを参照でき、新規開始は409で拒否される', async () => {
+    await setupClaimedHandover(CASE_B);
+    await sql`UPDATE case_handovers SET status = 'completed' WHERE case_id = ${CASE_B}`;
+
+    // 参照（完了後も実行記録・文脈を読める）
+    const read = await app.inject({
+      method: 'GET',
+      url: `/api/terminal/sessions?caseId=${CASE_B}`,
+    });
+    expect(read.statusCode, read.body).toBe(200);
+    expect(read.json().session).toBeNull();
+
+    const context = await app.inject({
+      method: 'GET',
+      url: `/api/terminal/context?caseId=${CASE_B}`,
+    });
+    expect(context.statusCode, context.body).toBe(200);
+
+    // 新規開始は従来どおり拒否（完了済みの引継ぎでは開始しない）
+    const create = await app.inject({
+      method: 'POST',
+      url: '/api/terminal/sessions',
+      payload: { caseId: CASE_B, consent: { screenShare: false, remoteControl: true } },
+    });
+    expect(create.statusCode, create.body).toBe(409);
+    expect(create.json().error.code).toBe('HANDOVER_NOT_ACTIVE');
+  });
+
   it('提案→記録→終了→報告書→ナレッジ下書きまで通り、未対応の自動取込は拒否される', async () => {
     const handoverId = await setupClaimedHandover(CASE_B);
     const created = await app.inject({

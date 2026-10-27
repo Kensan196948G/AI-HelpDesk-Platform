@@ -217,7 +217,11 @@ export async function latestHandoverForCase(caseId: string): Promise<HandoverRow
         OR snapshot #>> '{inc,id}' = ${caseId}
         OR snapshot #>> '{ticket,id}' = ${caseId}
       )
-      AND status IN ('pending', 'claimed', 'resolved')
+      -- SM-04: 完了（completed）も参照できるようにする。完了案件の実行セッション・文脈を
+      -- 読む経路（GET /terminal/sessions・/terminal/context）が 404 になっていたため。
+      -- セッションの新規開始は呼び出し側（POST /terminal/sessions）が claimed/resolved を
+      -- 要求し、completed は 409 HANDOVER_NOT_ACTIVE で拒否する。
+      AND status IN ('pending', 'claimed', 'resolved', 'completed')
     ORDER BY created_at DESC
     LIMIT 1
   `;
