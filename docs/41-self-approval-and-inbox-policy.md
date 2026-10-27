@@ -198,3 +198,26 @@ npx vitest run apps/api/src/routes/case-handovers.integration.test.ts apps/api/s
 npm run typecheck
 npm run lint
 ```
+
+---
+
+## 付録: 2人目の Access ID を用意するための要件（2026-10-27 実測）
+
+`ALLOW_SELF_APPROVAL=false` に切り替えて職務分離を強制するには、**別の DX 推進部メンバー**が自分の ID でログインできる必要がある。2026-10-27 に Cloudflare API と実装を確認した結果、**Cloudflare 側の設定変更は不要**だった。
+
+| # | 要件 | 実測・根拠 |
+|---|---|---|
+| 1 | **@mirai-const.co.jp のメールアドレス**（One-time PIN を受信できること） | Cloudflare Access アプリ `Mirai AI HelpDesk MVP` のポリシーは `email_domain: mirai-const.co.jp` と owner の Gmail を allow。**社内ドメインなら追加変更なし** |
+| 2 | **Mirai-Info 名簿に存在し、所属（section / division）が「DX推進部」** | `requireHelpdeskActor` が名簿の所属でヘルプデスク相当を判定。解決できない場合は **fail-closed 403** |
+| 3 | HelpDesk のアプリ許可リストに載っていること | 正本 `docs/MailAddress.txt` は `k***@gmail.com` と **`@mirai-const.co.jp`（ドメイン一致）** を許可済み。社内ドメインなら追記不要（別ドメインの場合のみ追記＋API 再起動） |
+| 4 | ログインは各自のブラウザ（別プロファイル可） | Access のセッションは 12h。One-time PIN のみ（Entra SSO ではない） |
+| 5 | `PERSONA_SWITCH_ALLOWLIST` の変更は不要 | 2人目は `switchMode=self`（本人以外に切替不可）。これにより「他人の案件を自分の名前で操作」はできない |
+| 6 | 承認者として動くには DX 推進部であること | 一般社員のままだと inbox / claim / approve が 403（設計どおり） |
+
+**手順（運用）**
+1. 2人目（DX メンバー）が `https://ai-helpdesk.mirai-dx-platform.com/` を開き、社内メールで One-time PIN を取得してログイン
+2. 1人目が案件を共有 → 2人目が受信箱から claim → 承認（`claimed_by` が別人なので `self_approved=false`）
+3. 両方の操作が確認できたら `~/.config/ai-helpdesk/api.conf` に `ALLOW_SELF_APPROVAL=false` を設定して再起動
+4. ロールバックは `true` に戻して再起動（既定に復帰）
+
+> 注意: 2人目が **DX 推進部でない**場合、または名簿に存在しない場合は 403 になる（fail-closed）。その場合は名簿（Mirai-Info）の所属・アカウントを先に整備する。
