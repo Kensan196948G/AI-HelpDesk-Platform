@@ -161,6 +161,20 @@ export interface PowerShellProposalInput {
   lastOutput?: string;
 }
 
+/**
+ * AI が「情報不足で安全なコマンドを特定できない」として見送った結果（SM-06）。
+ * AI 呼び出しの失敗（例外）とは区別する。
+ */
+export interface PowerShellProposalDeclined {
+  declined: true;
+  reason: string;
+  model: string;
+}
+
+export type PowerShellProposalOutcome =
+  | { declined: false; proposal: PowerShellProposal }
+  | PowerShellProposalDeclined;
+
 const POWERSHELL_PROPOSAL_PROMPT = [
   'あなたはWindowsヘルプデスクの運用支援AIです。担当者がRSPターミナルで手動実行するPowerShellを1つ提案します。',
   'あなたはコマンドを実行しません。担当者が内容を確認し、RSPターミナルで実行します。',
@@ -172,7 +186,7 @@ const POWERSHELL_PROPOSAL_PROMPT = [
   '{"command":"...","purpose":"...","risk":"low|medium|high","verify":"...","rollback":"...","warnings":["..."]}',
 ].join('\n');
 
-function extractJsonObject(text: string): Record<string, unknown> {
+function extractJsonObject(text: string): Record<string, unknown> | null {
   const trimmed = String(text || '').trim();
   const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
   const candidate = fenced?.[1]?.trim() ?? trimmed;
@@ -180,7 +194,7 @@ function extractJsonObject(text: string): Record<string, unknown> {
     const value = JSON.parse(candidate) as unknown;
     return value && typeof value === 'object' && !Array.isArray(value)
       ? (value as Record<string, unknown>)
-      : {};
+      : null;
   } catch {
     const start = candidate.indexOf('{');
     const end = candidate.lastIndexOf('}');
@@ -189,22 +203,25 @@ function extractJsonObject(text: string): Record<string, unknown> {
         const value = JSON.parse(candidate.slice(start, end + 1)) as unknown;
         return value && typeof value === 'object' && !Array.isArray(value)
           ? (value as Record<string, unknown>)
-          : {};
+          : null;
       } catch {
-        return {};
+        return null;
       }
     }
-    return {};
+    return null;
   }
 }
 
 /**
  * 担当者がRSPターミナルで手動実行するPowerShell案を生成する。
  * サーバは実行しない。実行主体は担当者。
+ *
+ * AI が安全なコマンドを特定できず command を空で返した場合は「辞退」として返す
+ * （SM-06）。API エラー・タイムアウト・パース不能は例外のまま 502 にさせる。
  */
 export async function proposePowerShell(
   input: PowerShellProposalInput,
-): Promise<PowerShellProposal> {
+): Promise<PowerShellProposalOutcome> {
   const apiKey = config.DEEPSEEK_API_KEY;
   if (!apiKey) throw new Error('DEEPSEEK_API_KEY is not configured');
   const context = redactPII(input.context).text;
@@ -245,9 +262,16 @@ export async function proposePowerShell(
   const content = body.choices?.[0]?.message?.content?.trim();
   if (!content) throw new Error('DeepSeek API returned an empty proposal');
   const parsed = extractJsonObject(content);
+  if (!parsed) throw new Error('DeepSeek API returned an unparsable proposal');
   const command = String(parsed.command ?? '').trim();
+  const purpose = String(parsed.purpose ?? '').trim();
   if (!command) {
-    throw new Error(String(parsed.purpose || 'AIが安全に提案できるコマンドを返しませんでした。'));
+    // 情報不足などで「安全なコマンドを特定できない」という辞退。AI 障害ではない。
+    return {
+      declined: true,
+      reason: purpose || 'AIが安全に提案できるコマンドを特定できませんでした。',
+      model: config.DEEPSEEK_MODEL,
+    };
   }
   const riskValue = String(parsed.risk ?? 'medium').toLowerCase();
   const risk: PowerShellProposal['risk'] =
@@ -259,13 +283,16 @@ export async function proposePowerShell(
         .slice(0, 10)
     : [];
   return {
-    command,
-    purpose: String(parsed.purpose ?? '').trim(),
-    risk,
-    verify: String(parsed.verify ?? '').trim(),
-    rollback: String(parsed.rollback ?? '').trim(),
-    warnings,
-    model: config.DEEPSEEK_MODEL,
+    declined: false,
+    proposal: {
+      command,
+      purpose,
+      risk,
+      verify: String(parsed.verify ?? '').trim(),
+      rollback: String(parsed.rollback ?? '').trim(),
+      warnings,
+      model: config.DEEPSEEK_MODEL,
+    },
   };
 }
 

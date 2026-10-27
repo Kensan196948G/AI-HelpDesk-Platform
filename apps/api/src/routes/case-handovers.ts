@@ -407,15 +407,15 @@ export async function caseHandoverRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/case-handovers/inbox', { preHandler: authenticateUi }, async (request) => {
     if (!request.uiEmail) throw badRequest('UI の認証情報がありません。');
+    // 受信箱はヘルプデスク相当だけが開ける（一般社員は 403）。
     const actor = await requireHelpdeskActor(request.uiEmail);
-    // 開発/テストは A と B が同じログインでも動作確認できるよう自分の分も返す。
-    const includeOwn = config.AUTH_MODE === 'local';
+    // 単一 Access ID 運用では依頼者と担当者が同じ人になるため、自分の案件も受信箱に返す
+    // （SM-01）。宛先指名の絞り込みだけは維持する。
     const rows = await sql<HandoverRow[]>`
       SELECT id, case_id, owner_email, assignee_hint, recipient_no, recipient_name,
              status, snapshot, claimed_by, approved_by, approved_at, self_approved, created_at
       FROM case_handovers
       WHERE status IN ('pending', 'claimed')
-        AND (${includeOwn}::boolean OR owner_email <> ${request.uiEmail})
         -- 宛先が指名された引継ぎは、指名された本人の受信箱にだけ出す（F-01 / D-01）。
         AND (recipient_no IS NULL OR recipient_no = ${actor.employeeNo ?? ''})
       ORDER BY created_at DESC
@@ -606,6 +606,15 @@ export async function caseHandoverRoutes(app: FastifyInstance): Promise<void> {
 
       const approverName = actor.name ?? email;
       const selfApproved = row.claimed_by === email;
+
+      // 職務分離を強制する設定（SM-02）。単一 Access ID 運用の間は既定 true。
+      if (selfApproved && !config.ALLOW_SELF_APPROVAL) {
+        throw new ApiError(
+          403,
+          'SELF_APPROVAL_FORBIDDEN',
+          '自分が引き受けた案件は承認できません（職務分離）。別の DX 推進部メンバーに承認を依頼してください。',
+        );
+      }
 
       await sql.begin(async (tx) => {
         await tx`

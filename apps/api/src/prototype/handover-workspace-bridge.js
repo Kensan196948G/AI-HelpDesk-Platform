@@ -1582,7 +1582,14 @@
       }
       return res;
     });
-    if (data) hwToast('AIが次の一手を提案しました。内容を確認してから実行してください。', 'ok');
+    if (data) {
+      // SM-06: AI の辞退（提案なし＋理由）と、提案成功を区別して表示する。
+      if (data.declined) {
+        hwToast('AIは提案を見送りました：' + String(data.reason || ''), 'bad');
+      } else {
+        hwToast('AIが次の一手を提案しました。内容を確認してから実行してください。', 'ok');
+      }
+    }
   }
 
   async function tcRecord(step) {
@@ -1633,6 +1640,11 @@
           : 'セッションを中止しました。',
         'ok',
       );
+      // SM-07: 実行記録が無いまま終了した場合は、報告書が作れないことを警告する。
+      const warnings = Array.isArray(data.warnings)
+        ? data.warnings.map((item) => String(item))
+        : [];
+      if (warnings.length > 0) hwToast(warnings[0], 'bad');
     }
   }
 

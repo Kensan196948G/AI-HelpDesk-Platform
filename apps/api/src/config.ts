@@ -52,6 +52,12 @@ const EnvSchema = z.object({
     .default('false')
     .transform((value) => value === 'true'),
   ALLOWED_ORIGINS: z.string().default(''),
+  // 引継ぎの自己承認を許可するか（既定 true）。職務分離を強制する場合は false。
+  // z.coerce.boolean('false') は true になるため、必ず enum で厳密にパースする。
+  ALLOW_SELF_APPROVAL: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((value) => value === 'true'),
   COOKIE_SECURE: z
     .enum(['true', 'false'])
     .default('false')
