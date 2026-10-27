@@ -138,3 +138,10 @@ PR #79 の実装だけでは、**承認者（別ID）の画面に他人の下書
 
 - `knowledge.approve` の監査 `detail` に **actorEmail が無い**（`approver_id` と `knowledge_reviews` には残る）。監査画面で一行で追うなら追加が望ましい（SM-11）。
 - 承認待ちのテストデータ `KB-2026-0102`（作成者=社内アドレス）が残置。不要なら却下（`ui-sync` status=rejected）で整理する。
+
+### 6-4. SM-11 の修正とテストデータの整理（2026-10-27）
+
+- `POST /api/knowledge/ui-sync` の監査 detail に **`actorEmail`** を追加（`knowledge.create` / `submit` / `approve` / `reject`）。`actor_id`（users FK）に加えて、Access の実行者メールを1行で追えるようにした（PR #84）。
+- 本番実測: 新しい `knowledge.approve` の detail が
+  `{"via":"ui","comment":"SM-11 検証","clientRef":"…","actorEmail":"k…@gmail.com","selfApproved":true}` となり、`actorEmail` が記録されることを確認（修正前の行には無い）。
+- テストデータの整理: 画面/API 検証で作成した `client_ref LIKE 'ui-f06%' / 'ui-sm11%'` の knowledge 4行と knowledge_reviews 4行を削除。**knowledge はシード9行に復帰**（監査ログは append-only のため削除せず履歴として残置）。
