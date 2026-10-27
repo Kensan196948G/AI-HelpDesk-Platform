@@ -1297,6 +1297,83 @@
   }
 
   /**
+   * F-06: 画面のナレッジ下書き・承認をサーバーへ永続化する。
+   *
+   * 従来はブラウザの state だけを更新していたため knowledge テーブルが空の
+   * ままだった。画面の下書き ID を clientRef にして冪等に同期する。
+   */
+  function ahKnowledgeSyncPayload(draft, status, extra) {
+    const payload = {
+      clientRef: 'ui-' + String(draft.id),
+      status: status,
+      title: String(draft.title || '').slice(0, 160) || '（無題）',
+      symptom: String(draft.symptom || ''),
+      cause: String(draft.cause || ''),
+      steps: String(draft.steps || ''),
+      keywords: [],
+    };
+    if (extra && extra.comment) payload.comment = String(extra.comment).slice(0, 2000);
+    if (extra && extra.checklist) payload.checklist = extra.checklist;
+    return payload;
+  }
+
+  function ahSyncKnowledge(draft, status, extra) {
+    return ahJsonFetch('/api/knowledge/ui-sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(ahKnowledgeSyncPayload(draft, status, extra)),
+    });
+  }
+
+  /** 承認画面のチェックリスト4件の状態（取得できなければ null）。 */
+  function ahApproveChecklistValues() {
+    const boxes = ahApproveChecklist();
+    if (!boxes || boxes.length < 4) return null;
+    return {
+      reproducible: Boolean(boxes[0] && boxes[0].checked),
+      noSecrets: Boolean(boxes[1] && boxes[1].checked),
+      noBlame: Boolean(boxes[2] && boxes[2].checked),
+      scopeClear: Boolean(boxes[3] && boxes[3].checked),
+    };
+  }
+
+  /** 承認画面のコメント（差戻し理由にも使う）。 */
+  function ahApproveComment() {
+    const input = document.getElementById('ap_c');
+    return input ? String(input.value || '').trim() : '';
+  }
+
+  /** 引継ぎ案件ではない下書きを、サーバーへ承認として保存してから画面を更新する。 */
+  function ahApproveLocalKnowledge(draftId, originalApprove, context, args) {
+    const full =
+      window.HD && typeof window.HD.draftForSync === 'function'
+        ? window.HD.draftForSync(draftId)
+        : null;
+    if (!full) return originalApprove.apply(context, args);
+    const blocked = ahClientApproveBlockReason(draftId);
+    if (blocked) {
+      if (typeof toast === 'function') toast(blocked, 'bad');
+      return undefined;
+    }
+    return ahSyncKnowledge(full, 'approved', {
+      checklist: ahApproveChecklistValues(),
+      comment: ahApproveComment(),
+    })
+      .then(() => originalApprove.apply(context, args))
+      .catch((error) => {
+        console.error('[assist] knowledge sync (approve) failed', error);
+        if (typeof toast === 'function') {
+          toast(
+            'ナレッジをサーバーへ保存できなかったため、承認は行っていません：' +
+              String(error.message || error).slice(0, 120),
+            'bad',
+          );
+        }
+        return undefined;
+      });
+  }
+
+  /**
    * サーバー承認が成立した後にローカル承認が失敗した場合の補償（F-12）。
    * 引継ぎを resolved に戻して再承認できる状態にする。戻せない場合は明示する。
    */
@@ -2051,7 +2128,10 @@
       if (typeof originalApprove === 'function') {
         app.approve = function (id) {
           const target = ahSharedCaseForDraft(id);
-          if (!target || !target.handoverId) return originalApprove.apply(this, arguments);
+          if (!target || !target.handoverId) {
+            // 引継ぎ案件ではない下書きも、承認をサーバーへ永続化する（F-06）。
+            return ahApproveLocalKnowledge(id, originalApprove, this, arguments);
+          }
           if (AH.approving) {
             if (typeof toast === 'function') toast('承認を確認しています…');
             return undefined;
@@ -2122,6 +2202,51 @@
             });
           return undefined;
         };
+
+        // F-06: 承認申請（下書き→承認待ち）もサーバーへ残す。失敗しても画面操作は
+        // 妨げない（承認時に改めて永続化する）。
+        const originalSubmitDraft = app.submitDraft;
+        if (typeof originalSubmitDraft === 'function') {
+          app.submitDraft = function (id) {
+            const result = originalSubmitDraft.apply(this, arguments);
+            const full =
+              window.HD && typeof window.HD.draftForSync === 'function'
+                ? window.HD.draftForSync(id)
+                : null;
+            const draft = ahDraftInfo(id);
+            if (full && draft && draft.status === 'review') {
+              ahSyncKnowledge(full, 'pending').catch((error) => {
+                console.error('[assist] knowledge sync (submit) failed', error);
+                if (typeof toast === 'function') {
+                  toast('ナレッジをサーバーへ保存できませんでした（承認時に再試行します）', 'bad');
+                }
+              });
+            }
+            return result;
+          };
+        }
+
+        // F-06: 差戻しもサーバーへ残す（理由は画面のコメント欄）。
+        const originalReturnDraft = app.returnDraft;
+        if (typeof originalReturnDraft === 'function') {
+          app.returnDraft = function (id) {
+            const result = originalReturnDraft.apply(this, arguments);
+            const full =
+              window.HD && typeof window.HD.draftForSync === 'function'
+                ? window.HD.draftForSync(id)
+                : null;
+            const draft = ahDraftInfo(id);
+            if (full && draft && draft.status === 'returned') {
+              ahSyncKnowledge(full, 'rejected', { comment: ahApproveComment() }).catch((error) => {
+                console.error('[assist] knowledge sync (return) failed', error);
+                if (typeof toast === 'function') {
+                  toast('差戻しをサーバーへ保存できませんでした', 'bad');
+                }
+              });
+            }
+            return result;
+          };
+        }
       }
     }
 

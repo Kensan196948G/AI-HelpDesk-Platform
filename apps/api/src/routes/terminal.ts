@@ -22,6 +22,7 @@ import { jsonbValue } from '../lib/jsonb-value.js';
 import { findEmployeeByEmail } from '../lib/mirai-info.js';
 import { nextKbNo } from '../lib/numbers.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
+import { ensureAuthorUser, userIdForEmail } from '../lib/users.js';
 import { fetchRspCommandCorrelation, isRspConfigured } from '../remote-support/rsp.js';
 import { assertCaptureAllowed, captureCapability } from '../terminal/capture.js';
 import { buildTerminalCaseContext } from '../terminal/context.js';
@@ -64,32 +65,6 @@ function isUniqueViolation(error: unknown): boolean {
   return Boolean(
     error && typeof error === 'object' && (error as { code?: string }).code === '23505',
   );
-}
-
-async function userIdForEmail(email: string): Promise<string | null> {
-  const rows = await sql<{ id: string }[]>`
-    SELECT id FROM users WHERE lower(email) = lower(${email}) LIMIT 1
-  `;
-  return rows[0]?.id ?? null;
-}
-
-/**
- * ナレッジの作成者（author_id）を解決する。
- *
- * Access 認証の担当者は `users` に居ないことがあるため、下書き作成時に限り
- * パスワードではログインできない行（password_hash が scrypt 形式でない）を作る。
- * 作成者を別の人にすり替えない（監査のため）。
- */
-async function ensureAuthorUser(email: string, name: string): Promise<string> {
-  const existing = await userIdForEmail(email);
-  if (existing) return existing;
-  const rows = await sql<{ id: string }[]>`
-    INSERT INTO users (email, name, role, password_hash)
-    VALUES (${email}, ${name.slice(0, 120)}, 'helpdesk', 'access-only$no-login')
-    ON CONFLICT (lower(email)) DO UPDATE SET updated_at = now()
-    RETURNING id
-  `;
-  return rows[0]?.id ?? '';
 }
 
 function deviceOf(handover: HandoverRow): string {

@@ -1,12 +1,17 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { requireHelpdeskActor } from '../auth/helpdesk-scope.js';
 import { authenticate, requireRole } from '../auth/session.js';
+import { authenticateUi } from '../auth/ui.js';
+import { config } from '../config.js';
 import { sql } from '../db.js';
 import { redactPII } from '../domain/pii.js';
-import { badRequest, conflict, notFound } from '../errors.js';
+import { ApiError, badRequest, conflict, notFound } from '../errors.js';
 import { appendAudit } from '../lib/audit-log.js';
 import { jsonbValue } from '../lib/jsonb-value.js';
+import { nextKbNo } from '../lib/numbers.js';
 import { caseSummary, knowledgeDto } from '../lib/serializers.js';
+import { ensureAuthorUser } from '../lib/users.js';
 
 const ListQuerySchema = z.object({
   status: z.enum(['draft', 'pending', 'approved', 'rejected']).optional(),
@@ -34,6 +39,31 @@ const ReviewSchema = z.object({
     noBlame: z.boolean(),
     scopeClear: z.boolean(),
   }),
+});
+
+/**
+ * F-06: 画面（プロトタイプ UI）から送る同期ペイロード。
+ *
+ * 画面の下書きはタイトル・症状・原因・手順を 1 つの文字列で持つため、
+ * サーバの text 列にそのまま合わせる。
+ */
+const UiSyncSchema = z.object({
+  clientRef: z.string().trim().min(1).max(120),
+  status: z.enum(['draft', 'pending', 'approved', 'rejected']),
+  title: z.string().trim().min(1).max(160),
+  symptom: z.string().trim().max(4000).default(''),
+  cause: z.string().trim().max(4000).default(''),
+  steps: z.string().trim().max(8000).default(''),
+  keywords: z.array(z.string().trim().min(1).max(40)).max(12).default([]),
+  comment: z.string().trim().max(2000).optional(),
+  checklist: z
+    .object({
+      reproducible: z.boolean(),
+      noSecrets: z.boolean(),
+      noBlame: z.boolean(),
+      scopeClear: z.boolean(),
+    })
+    .optional(),
 });
 
 async function loadKnowledge(id: string) {
@@ -269,4 +299,163 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
       case: caseDetail[0] ? caseSummary(caseDetail[0]) : null,
     };
   });
+
+  /**
+   * F-06: 画面（プロトタイプ UI）のナレッジ下書き・承認・差戻しをサーバへ永続化する。
+   *
+   * 従来 STEP6 の下書き・承認はブラウザの state だけを更新しており、knowledge
+   * テーブルは空のままだった（docs/39 F-06）。画面の下書き ID（clientRef）を
+   * キーに冪等に同期し、再送や二重クリックでも行を増やさない。
+   *
+   * 承認は画面の運用（単一 Access ID）を壊さないよう SM-02 と同じ
+   * ALLOW_SELF_APPROVAL に従う（既定 true ＝ 自己承認を許可）。自己承認かどうかは
+   * 応答と監査に残し、黙って通さない。
+   */
+  app.post(
+    '/knowledge/ui-sync',
+    { preHandler: authenticateUi, bodyLimit: 16 * 1024 },
+    async (request) => {
+      if (!request.uiEmail) throw badRequest('UI の認証情報がありません。');
+      const email = request.uiEmail;
+      const actor = await requireHelpdeskActor(email);
+      const input = UiSyncSchema.parse(request.body ?? {});
+
+      const title = redactPII(input.title);
+      const symptom = redactPII(input.symptom);
+      const cause = redactPII(input.cause);
+      const steps = redactPII(input.steps);
+
+      const authorId = await ensureAuthorUser(email, actor.name ?? email);
+
+      const existingRows = await sql<any[]>`
+        SELECT * FROM knowledge WHERE client_ref = ${input.clientRef} LIMIT 1
+      `;
+      const existing = existingRows[0];
+      const recordAuthorId = existing ? String(existing.author_id) : authorId;
+      const selfApproved = recordAuthorId === authorId;
+
+      if (existing && existing.status === 'approved' && input.status !== 'approved') {
+        throw conflict('公開済みのナレッジは更新できません。');
+      }
+
+      if (input.status === 'approved') {
+        if (existing && !['draft', 'pending', 'rejected'].includes(existing.status)) {
+          throw conflict('承認待ちのナレッジではありません。');
+        }
+        const checklist = input.checklist;
+        if (
+          !checklist ||
+          !checklist.reproducible ||
+          !checklist.noSecrets ||
+          !checklist.noBlame ||
+          !checklist.scopeClear
+        ) {
+          throw badRequest('承認には4項目のチェックリストすべての確認が必要です。');
+        }
+        if (selfApproved && !config.ALLOW_SELF_APPROVAL) {
+          throw new ApiError(
+            403,
+            'SELF_APPROVAL_FORBIDDEN',
+            '自分が作成したナレッジは承認できません（職務分離）。別の DX 推進部メンバーに承認を依頼してください。',
+          );
+        }
+      }
+      if (input.status === 'rejected' && !input.comment) {
+        throw badRequest('差戻しには理由を入力してください。');
+      }
+
+      const savedId = await sql.begin(async (tx) => {
+        let id = existing?.id as string | undefined;
+        if (!id) {
+          const kbNo = await nextKbNo(tx);
+          const inserted = await tx<any[]>`
+            INSERT INTO knowledge (
+              kb_no, title, symptom, cause, steps, keywords, status, author_id,
+              client_ref, version
+            ) VALUES (
+              ${kbNo}, ${title.text}, ${symptom.text}, ${cause.text}, ${steps.text},
+              ${input.keywords}, 'draft', ${authorId}, ${input.clientRef}, 1
+            )
+            RETURNING id
+          `;
+          id = inserted[0]?.id as string;
+          await appendAudit(tx, {
+            actorId: authorId,
+            action: 'knowledge.create',
+            targetType: 'knowledge',
+            targetId: id,
+            detail: { kbNo, clientRef: input.clientRef, via: 'ui' },
+          });
+        }
+
+        await tx`
+          UPDATE knowledge SET
+            title = ${title.text},
+            symptom = ${symptom.text},
+            cause = ${cause.text},
+            steps = ${steps.text},
+            keywords = ${input.keywords}
+          WHERE id = ${id}
+        `;
+
+        if (input.status === 'draft' || input.status === 'pending') {
+          await tx`UPDATE knowledge SET status = ${input.status} WHERE id = ${id}`;
+          if (input.status === 'pending') {
+            await appendAudit(tx, {
+              actorId: authorId,
+              action: 'knowledge.submit',
+              targetType: 'knowledge',
+              targetId: id,
+              detail: { clientRef: input.clientRef, via: 'ui' },
+            });
+          }
+        } else if (input.status === 'approved') {
+          await tx`
+            INSERT INTO knowledge_reviews (knowledge_id, reviewer_id, decision, comment, checklist)
+            VALUES (${id}, ${authorId}, 'approved', ${input.comment ?? ''},
+              ${jsonbValue(input.checklist)})
+          `;
+          await tx`
+            UPDATE knowledge SET
+              status = 'approved',
+              approver_id = ${authorId},
+              approved_at = now(),
+              version = version + 1
+            WHERE id = ${id}
+          `;
+          await appendAudit(tx, {
+            actorId: authorId,
+            action: 'knowledge.approve',
+            targetType: 'knowledge',
+            targetId: id,
+            detail: {
+              clientRef: input.clientRef,
+              selfApproved,
+              via: 'ui',
+              comment: input.comment ?? '',
+            },
+          });
+        } else {
+          await tx`
+            INSERT INTO knowledge_reviews (knowledge_id, reviewer_id, decision, comment, checklist)
+            VALUES (${id}, ${authorId}, 'rejected', ${input.comment ?? ''},
+              ${jsonbValue(input.checklist ?? {})})
+          `;
+          await tx`UPDATE knowledge SET status = 'rejected' WHERE id = ${id}`;
+          await appendAudit(tx, {
+            actorId: authorId,
+            action: 'knowledge.reject',
+            targetType: 'knowledge',
+            targetId: id,
+            detail: { clientRef: input.clientRef, via: 'ui', comment: input.comment ?? '' },
+          });
+        }
+
+        return id as string;
+      });
+
+      const updated = await loadKnowledge(savedId);
+      return { knowledge: knowledgeDto(updated), selfApproved };
+    },
+  );
 }
