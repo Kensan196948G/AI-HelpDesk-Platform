@@ -138,3 +138,46 @@ PR #79 の実装だけでは、**承認者（別ID）の画面に他人の下書
 
 - `knowledge.approve` の監査 `detail` に **actorEmail が無い**（`approver_id` と `knowledge_reviews` には残る）。監査画面で一行で追うなら追加が望ましい（SM-11）。
 - 承認待ちのテストデータ `KB-2026-0102`（作成者=社内アドレス）が残置。不要なら却下（`ui-sync` status=rejected）で整理する。
+
+## 7. UI 完結確認（2026-10-27 14:48）— 残置の pending を別 ID で承認
+
+§3 の「統合テストはサーバ経路のみ」に対し、**本番 UI からの完結**を実測した。
+
+| 項目 | 値 |
+|---|---|
+| 操作 | 本番 `https://ai-helpdesk.mirai-dx-platform.com/` をブラウザで開き（Access セッション）、承認画面の「サーバ下書き（承認待ち）」→ `KB-2026-0102` のチェックリスト4件を確認 → 承認 |
+| 操作前 | `knowledge` 合計 **12 行**（approved 11 / pending 1）。`KB-2026-0102` = pending・version 1・作成者 `k-aritoh@mirai-const.co.jp` |
+| 操作後 | `knowledge` 合計 **12 行**（approved 12）。`KB-2026-0102` = **approved**・version **2**・承認者 **`kensan1969@gmail.com`**・`approved_at` `2026-10-27T05:48:52Z` |
+| 監査 | `knowledge.approve` / `detail.selfApproved=false` / `2026-10-27T05:48:52Z` |
+| ゲート | チェックリスト4件が未チェックの間は「承認」ボタンが **disabled**（実測） |
+
+確認できたこと:
+
+- **行が増えず更新される**（`clientRef` による冪等更新。pending → approved で version+1）
+- **別 ID による承認が UI から成立**する（作成者=社内アドレス、承認者=gmail、`self_approved=false`）
+- 承認はサーバ保存が成功した後に画面へ反映される（F-06 の再発防止の設計どおり）
+
+これにより「下書き → 承認申請 → 承認」の全段が UI 経由でサーバに残ることを、申請（`KB-2026-0102` の
+`knowledge.submit` / `clientRef=ui-f06b-…`）と承認（本節）の両方で確認した。
+§6-3 の残置データは本操作で approved となったため、未処理の pending は 0 件。
+
+## 8. 即時スモーク監視（2026-10-27 14:50）
+
+24h 監視（翌 10:45）を待たずに一度点検した。**今回の変更に起因する異常は無し**。
+
+| 項目 | 実測 |
+|---|---|
+| health `:18950` / `:18949` | `ok:true` / `db:ok` / `commit:"d9fb7da"` / `env:"production"` |
+| RSP `/health`（:8130） | `status:ok` / `database:ok` |
+| `ai-helpdesk-api.service` | active / `NRestarts=0` / メモリ 55.6MB |
+| 24h のログ | 4,190 行。**5xx 4 件・error 3 件はすべて 10/26 18:11〜20:12 の `unsupported Unicode escape` と 10/27 11:13 の 502**（いずれも今回のデプロイ前）。**14:24 / 14:44 のデプロイ以降は 0 件** |
+| ホスト | ディスク 83% 使用 / load 2.61 3.15 3.15 |
+
+留意: 10/26 の `unsupported Unicode escape`（PostgresError → 500）は未修正の既存事象であり、
+本変更とは無関係。再発時に別件として調査する。本節は 24h 監視の**代替ではない**。
+
+## 9. 残課題（4 ロール職務分離）
+
+F-06 の残りは「4 ロール（担当／承認／監査／IT 端末管理）のサーバ分離」であり、
+`ALLOW_SELF_APPROVAL=true` を維持している間は職務分離が設定依存である。
+設計案と移行計画（Phase A〜C・受入条件・未決事項）は **`docs/43-role-separation-design.md`** に提案として起案した（実装は未着手）。
