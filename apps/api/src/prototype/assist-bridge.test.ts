@@ -43,6 +43,7 @@ interface AssistBridge {
   ) => Record<string, unknown>;
   pendingRejectPayload: (item: Record<string, unknown>, reason: string) => Record<string, unknown>;
   pendingSectionHtml: (items: Array<Record<string, unknown>>, errorCode?: string) => string;
+  approvalNoteHtml: (c: SyncedCase) => string;
 }
 
 interface SandboxWindow {
@@ -286,5 +287,43 @@ describe('assist-bridge: F-06 承認者向けサーバ下書き（別ID承認）
     expect(approved).toContain('KB-1');
     expect(approved).not.toContain('data-pd-check=');
     expect(approved).not.toContain('data-ahd="pd-approve"');
+  });
+});
+
+describe('assist-bridge: 承認情報の常設表示（F-13 追記）', () => {
+  const bridge = () => loadBridge({}, () => true);
+
+  it('completed は承認者・承認日時・別ID承認を表示する', () => {
+    const html = bridge().approvalNoteHtml({
+      id: 'CASE-1',
+      step: 7,
+      handoverStatus: 'completed',
+      handoverApprovedBy: 'dx@example.com',
+      handoverApprovedAt: '2026-10-27T03:00:00.000Z',
+      handoverSelfApproved: false,
+    });
+    expect(html).toContain('DX推進部の対応が完了しました');
+    expect(html).toContain('承認者: dx@example.com');
+    expect(html).toContain('承認日時:');
+    expect(html).toContain('別ID承認');
+    expect(html).not.toContain('自己承認');
+  });
+
+  it('自己承認は「自己承認」と表示する', () => {
+    const html = bridge().approvalNoteHtml({
+      id: 'CASE-2',
+      handoverStatus: 'completed',
+      handoverApprovedAt: '2026-10-27T03:00:00.000Z',
+      handoverSelfApproved: true,
+    });
+    expect(html).toContain('自己承認');
+    expect(html).not.toContain('別ID承認');
+  });
+
+  it('未完了・承認情報なしは何も表示しない', () => {
+    const b = bridge();
+    expect(b.approvalNoteHtml({ id: 'CASE-3', handoverStatus: 'claimed' })).toBe('');
+    expect(b.approvalNoteHtml({ id: 'CASE-4', handoverStatus: 'completed' })).toBe('');
+    expect(b.approvalNoteHtml({ id: 'CASE-5' })).toBe('');
   });
 });

@@ -23,6 +23,8 @@
     // F-13 の単体テスト用（DOM に依存しない純粋関数）。
     applyHandoverStatus: (c, handover) => ahApplyHandoverStatus(c, handover),
     linkWithHandover: (c, L) => ahLinkWithHandover(c, L),
+    // F-13 追記: 完了案件の承認情報表示（STEP7）の単体テスト用。
+    approvalNoteHtml: (c) => ahApprovalNoteHtml(c),
     // F-06 不足分（承認者向けサーバ下書き）の単体テスト用。
     pendingApprovePayload: (item, checklist, comment) =>
       ahPendingApprovePayload(item, checklist, comment),
@@ -998,8 +1000,37 @@
     );
   }
 
+  /**
+   * F-13 追記: 完了案件の承認者・承認日時を STEP7（ウィザード画面）に常設表示する。
+   * これまでは同期時のトースト/チャットだけで、後から画面で確認できなかった。
+   * 純粋関数（DOM 非依存）にしてテストする。
+   */
+  function ahApprovalNoteHtml(c) {
+    if (!c || String(c.handoverStatus || '') !== 'completed') return '';
+    const at = ahFormatHandoverDate(c.handoverApprovedAt);
+    const by = String(c.handoverApprovedBy || '');
+    if (!at && !by) return '';
+    const kind = Boolean(c.handoverSelfApproved) ? '自己承認' : '別ID承認';
+    const rows = [];
+    if (by) rows.push('承認者: ' + ahEsc(by));
+    if (at) rows.push('承認日時: ' + ahEsc(at) + '（' + kind + '）');
+    else rows.push(kind);
+    return (
+      '<div class="ahd-box ahd-consent" id="ahdApprovalNote">' +
+      '<h4>✅ DX推進部の対応が完了しました</h4>' +
+      '<div class="ahd-msg">' +
+      rows.join('<br>') +
+      '</div></div>'
+    );
+  }
+
   function ahAssistHtml(c, L) {
     let html = '';
+    try {
+      html += ahApprovalNoteHtml(c);
+    } catch (error) {
+      console.error('[assist] approval note failed', error);
+    }
     try {
       html += ahReportSection(c, L);
     } catch (error) {
