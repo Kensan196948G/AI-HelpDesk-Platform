@@ -51,7 +51,7 @@ npx tsx scripts/sync-roles.ts --file roles.json --apply --by <実行者メール
 
 ## 3. 制約・残り
 
-1. **UI（Cloudflare Access）経路はこのロール集合をまだ参照していない**。UI の認可は名簿（DX 推進部）ベースのまま（`authenticateUi` + `requireHelpdeskActor`）。UI 側の職務分離は、Access グループの作成後に「グループ → `user_roles` 同期」と「UI 経路のロール参照」をセットで実装する（Phase B 残り）。
+1. **UI 経路もロール集合を参照する（2026-10-27 追記）**: `authenticateUi` が `request.uiRoles` を設定し、`auditor` の UI 書込みは 403（API 経路と同じ）。ただし **UI の各操作をロールで出し分ける**（例: 承認は `approver` のみ）のは未実装で、Access グループ作成後に Phase B 残りとして行う。それまでは名簿（DX 推進部）ベースの判定も併存する。
 2. Access グループは未作成のため、同期の入力（マッピング）はまだ運用に乗っていない。
 3. Phase C（`ALLOW_SELF_APPROVAL=false`）は承認者 2 名以上の確認後（[docs/48](48-phase-c-cutover.md)）。
 4. `users.role` は主ロールとして残る。`user_roles` を持つユーザーでは `users.role` は表示・互換用で、認可は集合で行う。

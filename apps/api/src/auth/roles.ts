@@ -22,3 +22,18 @@ export async function loadUserRoles(userId: string, primaryRole: Role): Promise<
 export function rolesInclude(roles: readonly Role[], allowed: readonly Role[]): boolean {
   return roles.some((role) => allowed.includes(role));
 }
+
+/**
+ * メールアドレスからロール集合を引く（UI 経路用）。
+ * `users` に居ない（＝シード外・デモ用）場合は null を返す（呼び出し側は従来動作を維持する）。
+ */
+export async function loadRolesByEmail(email: string): Promise<Role[] | null> {
+  const rows = await sql<{ id: string; role: Role }[]>`
+    SELECT id, role FROM users
+    WHERE lower(email) = lower(${email}) AND is_active = true
+    LIMIT 1
+  `;
+  const row = rows[0];
+  if (!row) return null;
+  return loadUserRoles(row.id, row.role);
+}

@@ -23,6 +23,8 @@ declare module 'fastify' {
     authUser?: AuthUser;
     sessionTokenHash?: string;
     uiEmail?: string;
+    // UI 経路のロール集合（users に居ない場合は未設定）。docs/49
+    uiRoles?: Role[];
     // ログインに使われた生のメール（別名の正規化前）。表示用。
     loginEmail?: string;
     // RSP のサーバ間連携で認証されたリクエスト（[docs/36-rsp-integration.md]）。

@@ -4,6 +4,31 @@ import { forbidden, unauthorized } from '../errors.js';
 import { AccessJwtError, verifyAccessJwt } from './access-jwt.js';
 import { getAllowlist, isEmailAllowed } from './allowlist.js';
 import { canonicalEmail } from './email-alias.js';
+import { loadRolesByEmail } from './roles.js';
+import { assertNotAuditorWrite } from './session.js';
+import type { AuthUser, Role } from './types.js';
+
+/**
+ * UI 経路のロール集合キャッシュ（docs/49 §3）。
+ * UI は多数の API を呼ぶため、毎回 users/user_roles を引かないよう 30 秒だけ保持する。
+ * ロール変更（sync-roles）の反映は最大 30 秒遅れるが、付与・剥奪とも業務を止めない。
+ */
+const ROLE_CACHE_TTL_MS = 30_000;
+const roleCache = new Map<string, { roles: Role[] | null; expiresAt: number }>();
+
+async function rolesForUi(email: string): Promise<Role[] | null> {
+  const now = Date.now();
+  const cached = roleCache.get(email);
+  if (cached && cached.expiresAt > now) return cached.roles;
+  const roles = await loadRolesByEmail(email);
+  roleCache.set(email, { roles, expiresAt: now + ROLE_CACHE_TTL_MS });
+  return roles;
+}
+
+/** テスト用: キャッシュを空にする。 */
+export function clearUiRoleCache(): void {
+  roleCache.clear();
+}
 
 let reportedJwtSuccess = false;
 
@@ -78,8 +103,26 @@ export async function authenticateUi(request: FastifyRequest): Promise<void> {
     // 同一人物の複数メールを 1 つの状態・権限に正規化する（表示用に元のメールも残す）。
     request.loginEmail = request.uiEmail;
     request.uiEmail = canonicalEmail(request.uiEmail);
-    return;
+  } else {
+    request.loginEmail = config.DEV_AUTH_EMAIL.toLowerCase();
+    request.uiEmail = canonicalEmail(request.loginEmail);
   }
-  request.loginEmail = config.DEV_AUTH_EMAIL.toLowerCase();
-  request.uiEmail = canonicalEmail(request.loginEmail);
+  await applyUiRoles(request);
+}
+
+/**
+ * UI 経路にもロール集合を適用する（docs/49 §3）。
+ * - `request.uiRoles` に集合を載せる（今後の UI 側の権限分けの土台）。
+ * - `auditor` は API 経路と同じく読み取り専用にする（書込みは 403）。
+ * users に居ないアカウント（シード外・デモ）は従来どおり（ロール無し）。
+ */
+async function applyUiRoles(request: FastifyRequest): Promise<void> {
+  const email = request.uiEmail;
+  if (!email) return;
+  const roles = await rolesForUi(email);
+  if (!roles) return;
+  request.uiRoles = roles;
+  if (roles.includes('auditor')) {
+    assertNotAuditorWrite({ role: 'auditor', roles } as AuthUser, request);
+  }
 }
