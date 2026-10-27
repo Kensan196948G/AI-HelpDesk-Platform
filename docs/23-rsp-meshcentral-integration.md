@@ -130,7 +130,12 @@ AI HelpDesk サーバー側で、AI に渡すツールを限定します。
 2. B さんの操作は RSP の Entra ID/RBAC で認可する。AI HelpDesk の Cloudflare Access とは別。
 3. AI の提案、B さんの承認、RSP の `session_id` / `command_log_id`、結果を最終報告書に載せる。
 4. 危険コマンドは RSP の `hold_dangerous_for_approval` に従う（AI 提案でも迂回しない）。
-5. MeshCentral の画面録画・セッション記録の保持期間を決める。
+5. **画面録画は行わない（2026-10-27 決定）**。MeshCentral の録画はデスクトップのみで
+   PowerShell 操作は録れず、PII・容量・法務のコストが見合わないため。代わりに端末操作の
+   ログを RSP の `command_logs` に残し、日次で不変ファイルへエクスポートする
+   （RSP `docs/command-audit.md`）。
+6. **対話ターミナル（MeshCentral）は I/O を保存しないため監査に残らない**。
+   RSP の端末詳細・AI支援にその旨を表示し、監査対象は「コマンド実行（RSP 経由）」に一本化する。
 
 ## 4. 認証方式の選択肢
 
