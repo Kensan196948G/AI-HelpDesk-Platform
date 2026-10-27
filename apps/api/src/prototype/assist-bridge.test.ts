@@ -36,6 +36,10 @@ interface AssistBridge {
   rspDeepLink: (c: unknown) => string;
   applyHandoverStatus: (c: SyncedCase, handover: HandoverInfo) => boolean;
   linkWithHandover: (c: SyncedCase, L: LinkResult) => LinkResult;
+  buildServerDraftBody: (input: Record<string, unknown>) => Record<string, unknown>;
+  serverDraftSectionHtml: (items: Array<Record<string, unknown>>, errorCode?: string) => string;
+  shouldFallbackToLocal: (status?: number) => boolean;
+  serverDraftErrorLabel: (error: unknown) => string;
 }
 
 interface SandboxWindow {
@@ -192,5 +196,101 @@ describe('assist-bridge: 依頼者側の引継ぎ状態反映 (F-13)', () => {
     const b = bridge();
     const L: LinkResult = { chat: null, tkt: { id: 'TKT-1' }, inc: null, dr: null, kb: null };
     expect(b.linkWithHandover({ id: 'CASE-8' }, L)).toBe(L);
+  });
+});
+
+describe('assist-bridge: F-06 サーバ下書き（作成・承認者ビュー・却下）', () => {
+  const bridge = () => loadBridge({}, () => true);
+
+  it('POST /api/knowledge/drafts の body を契約どおり組み立てる（空の任意項目は送らない）', () => {
+    const b = bridge();
+    const body = b.buildServerDraftBody({
+      caseId: 'INC-1008',
+      title: '共有フォルダが開けないときの対処',
+      symptom: 'アクセスできない',
+      cause: '権限なし',
+      steps: ['権限を確認する', '追加する'],
+      keywords: ['共有', ''],
+      handoverId: '',
+    });
+    expect(body).toEqual({
+      caseId: 'INC-1008',
+      title: '共有フォルダが開けないときの対処',
+      symptom: 'アクセスできない',
+      cause: '権限なし',
+      steps: ['権限を確認する', '追加する'],
+      keywords: ['共有'],
+    });
+    const withHandover = b.buildServerDraftBody({
+      caseId: 'INC-1',
+      title: 't',
+      symptom: 's',
+      cause: 'c',
+      steps: [],
+      handoverId: 'handover-1',
+    });
+    expect(withHandover.handoverId).toBe('handover-1');
+    expect('keywords' in withHandover).toBe(false);
+  });
+
+  it('サーバ未設定・一時障害（0/404/405/501/5xx）だけローカル動作へフォールバックする', () => {
+    const b = bridge();
+    for (const status of [undefined, 0, 404, 405, 501, 500, 503]) {
+      expect(b.shouldFallbackToLocal(status), String(status)).toBe(true);
+    }
+    for (const status of [400, 403, 409, 422]) {
+      expect(b.shouldFallbackToLocal(status), String(status)).toBe(false);
+    }
+  });
+
+  it('サーバのエラーコードをトースト用ラベルとして優先する', () => {
+    const b = bridge();
+    expect(b.serverDraftErrorLabel({ code: 'SELF_APPROVAL_FORBIDDEN', status: 403 })).toBe(
+      'SELF_APPROVAL_FORBIDDEN',
+    );
+    expect(b.serverDraftErrorLabel({ status: 500 })).toBe('HTTP 500');
+    expect(b.serverDraftErrorLabel(new Error('network'))).toBe('network');
+  });
+
+  it('承認者ビュー: サーバ下書きと分かる表示・HTMLエスケープ・チェック4件・承認/却下', () => {
+    const b = bridge();
+    const html = b.serverDraftSectionHtml(
+      [
+        {
+          id: 'draft-1',
+          kbNo: 'KB-2026-0001',
+          caseId: 'CASE-1',
+          title: '<script>alert(1)</script>',
+          status: 'review',
+          authorEmail: 'author@example.com',
+          handoverId: 'handover-1',
+          createdAt: '2026-10-27T00:00:00.000Z',
+        },
+      ],
+      '',
+    );
+    expect(html).toContain('サーバ下書き');
+    expect(html).toContain('KB-2026-0001');
+    expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
+    expect(html).not.toContain('<script>alert(1)</script>');
+    expect(html).toContain('data-ahd="sd-approve"');
+    expect(html).toContain('data-ahd="sd-reject"');
+    expect((html.match(/data-sd-check=/g) ?? []).length).toBe(4);
+  });
+
+  it('承認済みは操作を出さずKB番号を表示、空一覧/取得失敗は案内を表示する', () => {
+    const b = bridge();
+    const approved = b.serverDraftSectionHtml(
+      [{ id: 'draft-2', kbNo: 'KB-2026-0009', title: 't', status: 'approved' }],
+      '',
+    );
+    expect(approved).toContain('承認済み');
+    expect(approved).toContain('KB-2026-0009');
+    expect(approved).not.toContain('data-sd-check=');
+    expect(approved).not.toContain('data-ahd="sd-approve"');
+
+    const empty = b.serverDraftSectionHtml([], 'HTTP 404');
+    expect(empty).toContain('サーバの承認待ちはありません');
+    expect(empty).toContain('取得できませんでした');
   });
 });

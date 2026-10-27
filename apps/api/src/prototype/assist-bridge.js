@@ -19,9 +19,13 @@
     version: 2,
     at: new Date().toISOString(),
     rspDeepLink: (c) => ahRspDeepLink(c),
-    // F-13 の単体テスト用（DOM に依存しない純粋関数）。
+    // F-13 / F-06 の単体テスト用（DOM に依存しない純粋関数）。
     applyHandoverStatus: (c, handover) => ahApplyHandoverStatus(c, handover),
     linkWithHandover: (c, L) => ahLinkWithHandover(c, L),
+    buildServerDraftBody: (input) => ahBuildServerDraftBody(input),
+    serverDraftSectionHtml: (items, errorCode) => ahServerDraftSectionHtml(items, errorCode),
+    shouldFallbackToLocal: (status) => ahShouldFallbackToLocal(status),
+    serverDraftErrorLabel: (error) => ahServerDraftErrorLabel(error),
   };
 
   const AH = {
@@ -41,6 +45,15 @@
     caseAiBusy: false,
     handoverStatusSyncing: false,
     handoverStatusSyncedAt: 0,
+    // F-06: サーバ下書きの承認者ビュー・作成/承認/却下の状態
+    serverPending: [],
+    serverPendingAt: 0,
+    serverPendingLoaded: false,
+    serverPendingError: '',
+    serverPendingBusy: false,
+    serverApproving: false,
+    serverRejecting: false,
+    resolveCapture: null,
   };
   window.__AIHD_ASSIST__ = AH;
 
@@ -1525,6 +1538,461 @@
     }
   }
 
+  // ---------------------------------------------------------------------
+  // F-06: ナレッジ下書きのサーバ記録（作成・承認者ビュー・承認・却下）
+  //
+  // - 「解決を記録」でローカル下書き（DR-*）が作られた後、同じ内容を
+  //   POST /api/knowledge/drafts でサーバにも保存する（失敗時はローカルのみ）。
+  // - ⑥ 承認者の確認では GET /api/knowledge/pending を取得し、ローカル下書きとは
+  //   別の「サーバ下書き」セクションとして表示する。
+  // - 承認はチェックリスト4件ONのとき POST /api/knowledge/drafts/{id}/approve。
+  //   成功後、既存の POST /api/case-handovers/{handoverId}/approve で完了処理する。
+  // - 却下は理由必須で POST /api/knowledge/drafts/{id}/reject。
+  // - サーバ未設定/一時障害時は従来のローカル動作にフォールバックする。
+  // ---------------------------------------------------------------------
+  const AH_SERVER_DRAFT_KEY = 'aihd.serverDrafts.v1';
+  const AH_SERVER_CHECKS = [
+    '技術的に正確で、第三者が再現できる手順になっている',
+    '個人情報・認証情報・IPアドレス等の機密情報が含まれていない',
+    '特定の個人を評価・非難する記述がない（事実と手順のみ）',
+    '適用範囲（対象拠点・端末・バージョン）が明確である',
+  ];
+
+  function ahServerDraftMap() {
+    try {
+      const raw = localStorage.getItem(AH_SERVER_DRAFT_KEY);
+      const parsed = raw ? JSON.parse(raw) : {};
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch (error) {
+      return {};
+    }
+  }
+
+  function ahSaveServerDraftMap(map) {
+    try {
+      localStorage.setItem(AH_SERVER_DRAFT_KEY, JSON.stringify(map));
+    } catch (error) {
+      // 保存できなくても画面の動作は継続する。
+    }
+  }
+
+  function ahSetServerDraft(localDraftId, info) {
+    const map = ahServerDraftMap();
+    map[String(localDraftId)] = {
+      id: String((info && info.id) || ''),
+      kbNo: String((info && info.kbNo) || ''),
+      status: String((info && info.status) || ''),
+      savedAt: new Date().toISOString(),
+    };
+    ahSaveServerDraftMap(map);
+  }
+
+  function ahServerDraftFor(localDraftId) {
+    const map = ahServerDraftMap();
+    return map[String(localDraftId)] || null;
+  }
+
+  /** POST /api/knowledge/drafts の body（契約どおり。空の任意項目は送らない）。 */
+  function ahBuildServerDraftBody(input) {
+    const source = input || {};
+    const body = {
+      caseId: String(source.caseId || ''),
+      title: String(source.title || ''),
+      symptom: String(source.symptom || ''),
+      cause: String(source.cause || ''),
+      steps: Array.isArray(source.steps) ? source.steps.map((step) => String(step)) : [],
+    };
+    const keywords = Array.isArray(source.keywords)
+      ? source.keywords.map((keyword) => String(keyword)).filter(Boolean)
+      : [];
+    if (keywords.length > 0) body.keywords = keywords;
+    if (source.handoverId) body.handoverId = String(source.handoverId);
+    return body;
+  }
+
+  function ahShouldFallbackToLocal(status) {
+    const code = Number(status || 0);
+    return code === 0 || code === 404 || code === 405 || code === 501 || code >= 500;
+  }
+
+  function ahServerDraftErrorLabel(error) {
+    if (!error) return '不明なエラー';
+    if (error.code) return String(error.code);
+    if (error.status) return 'HTTP ' + String(error.status);
+    return String(error.message || error).slice(0, 120);
+  }
+
+  /** ローカル下書きに紐づく引継ぎIDを、共有案件の状態から探す（見つからなければ空）。 */
+  function ahHandoverIdForTicket(ticketId) {
+    try {
+      if (typeof S === 'undefined' || !S || !Array.isArray(S.cases)) return '';
+      const target = String(ticketId || '');
+      if (!target) return '';
+      for (const c of S.cases) {
+        const handoverId = c && (c.handoverId || c._handoverId);
+        if (!handoverId) continue;
+        try {
+          const L = typeof link === 'function' ? link(c) : null;
+          if (
+            L &&
+            ((L.inc && String(L.inc.id) === target) ||
+              (L.tkt && String(L.tkt.incId || '') === target))
+          ) {
+            return String(handoverId);
+          }
+        } catch (error) {
+          // 壊れた案件は無視して次を見る。
+        }
+      }
+    } catch (error) {
+      // 状態が無い画面では handoverId なしで作成する。
+    }
+    return '';
+  }
+
+  function ahApproveChecklistValues() {
+    if (typeof document === 'undefined' || typeof document.getElementById !== 'function')
+      return null;
+    const values = [];
+    for (let index = 0; index < 4; index += 1) {
+      const input = document.getElementById('ck' + index);
+      if (!input) return null;
+      values.push(Boolean(input.checked));
+    }
+    return values;
+  }
+
+  /** 承認者ビューに差し込む「サーバ下書き」セクションの HTML（純粋関数・テスト対象）。 */
+  function ahServerDraftSectionHtml(items, errorCode) {
+    const list = Array.isArray(items) ? items : [];
+    const head =
+      '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px">' +
+      '<b>サーバ下書き（承認待ち）</b>' +
+      '<button class="btn ghost sm" data-ahd="sd-refresh">再読込</button>' +
+      '</div><div class="hint">ローカルの下書きとは別に、サーバに保存された下書きです。承認するとサーバ側のナレッジになります。</div>';
+    const errorNote = errorCode
+      ? '<div class="note n-warn" style="margin-top:6px">サーバ下書きを取得できませんでした（' +
+        ahEsc(errorCode) +
+        '）。ローカルの下書きのみ表示しています。</div>'
+      : '';
+    if (list.length === 0) {
+      return (
+        head +
+        errorNote +
+        '<div class="empty" style="margin-top:6px">サーバの承認待ちはありません</div>'
+      );
+    }
+    const rows = list
+      .map((item) => {
+        const id = String(item.id || '');
+        const status = String(item.status || '');
+        const localState = String(item._localState || '');
+        const approved = status === 'approved' || localState === 'approved';
+        const rejected = status === 'rejected' || localState === 'rejected';
+        const kbNo = String(item.kbNo || '');
+        const checks =
+          approved || rejected
+            ? ''
+            : AH_SERVER_CHECKS.map(
+                (label, index) =>
+                  '<label class="chk"><input type="checkbox" data-sd-check="' +
+                  ahEsc(id) +
+                  '" data-sd-index="' +
+                  index +
+                  '">' +
+                  ahEsc(label) +
+                  '</label>',
+              ).join('');
+        const actions = approved
+          ? '<span class="badge b-ok">承認済み' +
+            (kbNo ? '（' + ahEsc(kbNo) + '）' : '') +
+            '</span>'
+          : rejected
+            ? '<span class="badge b-bad">却下済み</span>'
+            : '<div class="btns"><button class="btn ok sm" data-ahd="sd-approve" data-id="' +
+              ahEsc(id) +
+              '" disabled>承認</button><button class="btn bad sm" data-ahd="sd-reject" data-id="' +
+              ahEsc(id) +
+              '">却下</button></div>';
+        return (
+          '<li style="border-top:1px solid var(--u-line,#d9e2ec);padding:8px 0" data-sd-item="' +
+          ahEsc(id) +
+          '">' +
+          '<div><span class="mono">' +
+          ahEsc(kbNo || id) +
+          '</span> <b>' +
+          ahEsc(item.title || '(件名なし)') +
+          '</b></div>' +
+          '<div class="hint">案件 ' +
+          ahEsc(item.caseId || '-') +
+          '／申請 ' +
+          ahEsc(item.authorEmail || '-') +
+          '／状態 ' +
+          ahEsc(status || '-') +
+          (item.createdAt ? '／作成 ' + ahEsc(String(item.createdAt)) : '') +
+          '</div>' +
+          checks +
+          actions +
+          '</li>'
+        );
+      })
+      .join('');
+    return (
+      head + errorNote + '<ul style="list-style:none;margin:8px 0 0;padding:0">' + rows + '</ul>'
+    );
+  }
+
+  function ahIsApproveView() {
+    try {
+      const hd = document.getElementById('hd');
+      if (hd && hd.classList.contains('hide')) return false;
+      const main = document.getElementById('hdMain');
+      if (!main) return false;
+      const heading = main.querySelector('h1');
+      return Boolean(heading && /承認者の確認/.test(heading.textContent || ''));
+    } catch (error) {
+      return false;
+    }
+  }
+
+  function ahServerPendingSignature() {
+    const items = Array.isArray(AH.serverPending) ? AH.serverPending : [];
+    return (
+      (AH.serverPendingError || '') +
+      '|' +
+      items.map((item) => [item.id, item.status, item.kbNo, item._localState].join(':')).join(',')
+    );
+  }
+
+  function ahSyncServerDraftSection() {
+    try {
+      const main = document.getElementById('hdMain');
+      if (!main) return;
+      const existing = document.getElementById('ahServerDrafts');
+      if (!ahIsApproveView()) {
+        if (existing) existing.remove();
+        return;
+      }
+      if (!AH.serverPendingLoaded) {
+        void ahRefreshServerPending(false);
+        return;
+      }
+      const signature = ahServerPendingSignature();
+      if (existing && existing.getAttribute('data-sig') === signature) return;
+      if (existing) existing.remove();
+      const box = document.createElement('div');
+      box.id = 'ahServerDrafts';
+      box.setAttribute('data-sig', signature);
+      box.className = 'card';
+      box.style.marginTop = '12px';
+      box.innerHTML = ahServerDraftSectionHtml(AH.serverPending, AH.serverPendingError);
+      main.appendChild(box);
+    } catch (error) {
+      console.warn('[assist] server draft section failed', error);
+    }
+  }
+
+  async function ahRefreshServerPending(force) {
+    const now = Date.now();
+    if (!force && AH.serverPendingLoaded && now - AH.serverPendingAt < 10_000) {
+      ahSyncServerDraftSection();
+      return;
+    }
+    try {
+      const data = await ahJsonFetch('/api/knowledge/pending');
+      const items = Array.isArray(data && data.items) ? data.items : [];
+      AH.serverPending = items.map((item) => Object.assign({}, item));
+      AH.serverPendingError = '';
+    } catch (error) {
+      AH.serverPending = Array.isArray(AH.serverPending) ? AH.serverPending : [];
+      AH.serverPendingError = ahServerDraftErrorLabel(error);
+      console.warn('[assist] server pending drafts failed', error);
+    } finally {
+      AH.serverPendingLoaded = true;
+      AH.serverPendingAt = now;
+      ahSyncServerDraftSection();
+    }
+  }
+
+  function ahFindServerPending(id) {
+    const target = String(id || '');
+    return (AH.serverPending || []).find((item) => String(item.id) === target) || null;
+  }
+
+  async function ahApproveServerPending(id) {
+    const item = ahFindServerPending(id);
+    if (!item) return;
+    const boxes = Array.from(document.querySelectorAll('[data-sd-check]')).filter(
+      (box) => box.getAttribute('data-sd-check') === String(id),
+    );
+    const checklist = boxes.map((box) => Boolean(box.checked));
+    if (checklist.length !== 4 || checklist.some((value) => !value)) {
+      if (typeof toast === 'function') toast('チェックリストをすべて確認してください', 'bad');
+      return;
+    }
+    if (AH.serverPendingBusy) return;
+    AH.serverPendingBusy = true;
+    try {
+      const data = await ahJsonFetch(
+        '/api/knowledge/drafts/' + encodeURIComponent(String(item.id)) + '/approve',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ checklist }),
+        },
+      );
+      const info = data && data.draft ? data.draft : data || {};
+      item.status = 'approved';
+      item.kbNo = String(info.kbNo || info.kb_no || item.kbNo || '');
+      if (typeof toast === 'function') {
+        toast('サーバのナレッジを承認しました' + (item.kbNo ? '（' + item.kbNo + '）' : ''), 'ok');
+      }
+      ahSyncServerDraftSection();
+      if (item.handoverId) {
+        try {
+          await ahJsonFetch(
+            '/api/case-handovers/' + encodeURIComponent(String(item.handoverId)) + '/approve',
+            { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' },
+          );
+        } catch (error) {
+          if (typeof toast === 'function') {
+            toast('案件の完了処理に失敗しました：' + ahServerDraftErrorLabel(error), 'bad');
+          }
+        }
+      }
+    } catch (error) {
+      if (typeof toast === 'function') {
+        toast('サーバ承認に失敗しました：' + ahServerDraftErrorLabel(error), 'bad');
+      }
+    } finally {
+      AH.serverPendingBusy = false;
+    }
+  }
+
+  async function ahRejectServerPending(id) {
+    const item = ahFindServerPending(id);
+    if (!item) return;
+    const reason =
+      typeof window.prompt === 'function'
+        ? String(window.prompt('却下の理由を入力してください（必須）') || '').trim()
+        : '';
+    if (!reason) {
+      if (typeof toast === 'function') toast('却下の理由を入力してください', 'bad');
+      return;
+    }
+    if (AH.serverPendingBusy) return;
+    AH.serverPendingBusy = true;
+    try {
+      await ahJsonFetch(
+        '/api/knowledge/drafts/' + encodeURIComponent(String(item.id)) + '/reject',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason }),
+        },
+      );
+      item.status = 'rejected';
+      item._localState = 'rejected';
+      if (typeof toast === 'function') toast('サーバ下書きを却下しました', 'ok');
+    } catch (error) {
+      if (typeof toast === 'function') {
+        toast('サーバ却下に失敗しました：' + ahServerDraftErrorLabel(error), 'bad');
+      }
+    } finally {
+      AH.serverPendingBusy = false;
+      ahSyncServerDraftSection();
+    }
+  }
+
+  function ahHandleServerDraftClick(event) {
+    const target = event && event.target;
+    const trigger = target && target.closest ? target.closest('[data-ahd]') : null;
+    if (!trigger) return;
+    const action = trigger.getAttribute('data-ahd');
+    if (action === 'sd-refresh') {
+      void ahRefreshServerPending(true);
+    } else if (action === 'sd-approve') {
+      void ahApproveServerPending(trigger.getAttribute('data-id'));
+    } else if (action === 'sd-reject') {
+      void ahRejectServerPending(trigger.getAttribute('data-id'));
+    }
+  }
+
+  function ahHandleServerDraftChange(event) {
+    const target = event && event.target;
+    if (!target || !target.getAttribute) return;
+    const id = target.getAttribute('data-sd-check');
+    if (!id) return;
+    const boxes = Array.from(document.querySelectorAll('[data-sd-check]')).filter(
+      (box) => box.getAttribute('data-sd-check') === id,
+    );
+    const button = Array.from(document.querySelectorAll('[data-ahd="sd-approve"]')).find(
+      (candidate) => candidate.getAttribute('data-id') === id,
+    );
+    if (button) {
+      button.disabled = !(boxes.length === 4 && boxes.every((box) => box.checked));
+    }
+  }
+
+  /**
+   * 「解決を記録」でローカル下書きが作られた直後に、同じ内容をサーバへ保存する。
+   * 失敗してもローカルの下書き・画面はそのまま使える（従来表示を維持）。
+   */
+  async function ahCreateServerDraft(captured) {
+    try {
+      const read = (id) => {
+        const element = document.getElementById(id);
+        return element ? String(element.value || '') : '';
+      };
+      const title = read('d_title').trim();
+      const steps = read('d_steps')
+        .split('\n')
+        .map((step) => step.trim())
+        .filter(Boolean);
+      if (!title || steps.length === 0) {
+        // 画面の描画が間に合っていない場合は少し待って1回だけ再試行する。
+        if (captured.attempts < 1) {
+          captured.attempts += 1;
+          setTimeout(() => void ahCreateServerDraft(captured), 250);
+        }
+        return;
+      }
+      const handoverId = ahHandoverIdForTicket(captured.ticketId);
+      const body = ahBuildServerDraftBody({
+        caseId: captured.ticketId,
+        title,
+        symptom: read('d_sym').trim(),
+        cause: read('d_cause').trim(),
+        steps,
+        keywords: read('d_kw')
+          .split(/[,、，]/)
+          .map((keyword) => keyword.trim())
+          .filter(Boolean),
+        handoverId,
+      });
+      const data = await ahJsonFetch('/api/knowledge/drafts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const info = data && data.draft ? data.draft : data || {};
+      if (!info.id) throw new Error('SERVER_DRAFT_ID_MISSING');
+      ahSetServerDraft(captured.draftId, {
+        id: info.id,
+        kbNo: info.kbNo || info.kb_no || '',
+        status: info.status || 'draft',
+      });
+      if (typeof toast === 'function') {
+        toast('サーバにも下書きを記録しました' + (info.kbNo ? '（' + info.kbNo + '）' : ''), 'ok');
+      }
+    } catch (error) {
+      console.warn('[assist] server draft create failed', error);
+      if (typeof toast === 'function') {
+        toast('サーバ下書きの作成に失敗したため、ローカルのみで続行します', 'bad');
+      }
+    }
+  }
+
   async function ahSyncHandoverStatus(status, draftId) {
     const current = ahCurrentCase();
     const candidates = (S.cases || []).filter((item) => item.handoverId);
@@ -2123,7 +2591,162 @@
           return undefined;
         };
       }
+
+      // F-06: ローカル下書きの作成→サーバ保存、承認→サーバ承認→案件完了、却下→サーバ却下。
+      const originalGo = app.go;
+      if (typeof originalGo === 'function') {
+        app.go = function (view, id) {
+          const result = originalGo.apply(this, arguments);
+          try {
+            if (AH.resolveCapture && view === 'draft' && id) {
+              AH.resolveCapture.draftId = String(id);
+            }
+          } catch (error) {
+            // 画面遷移の捕捉に失敗しても本来の動作を優先する。
+          }
+          setTimeout(ahSyncServerDraftSection, 30);
+          return result;
+        };
+      }
+      const previousResolve = app.resolve;
+      if (typeof previousResolve === 'function') {
+        app.resolve = function (id) {
+          AH.resolveCapture = { ticketId: String(id || ''), draftId: null, attempts: 0 };
+          try {
+            return previousResolve.apply(this, arguments);
+          } finally {
+            const captured = AH.resolveCapture;
+            AH.resolveCapture = null;
+            if (captured && captured.draftId) {
+              setTimeout(() => void ahCreateServerDraft(captured), 50);
+            }
+          }
+        };
+      }
+      const previousApprove = app.approve;
+      if (typeof previousApprove === 'function') {
+        app.approve = function (id) {
+          const mapping = ahServerDraftFor(id);
+          if (!mapping || !mapping.id) return previousApprove.apply(this, arguments);
+          const draftInfo = ahDraftInfo(id);
+          const actor = ahActorName();
+          if (draftInfo && draftInfo.applicant && actor && actor === draftInfo.applicant) {
+            // 申請者本人の承認は元の画面がブロックする（サーバへは送らない）。
+            return previousApprove.apply(this, arguments);
+          }
+          const checklist = ahApproveChecklistValues();
+          if (!checklist || checklist.length !== 4 || checklist.some((value) => !value)) {
+            // チェックリスト未確認は元の画面の検証に任せる（サーバへは送らない）。
+            return previousApprove.apply(this, arguments);
+          }
+          if (AH.serverApproving) {
+            if (typeof toast === 'function') toast('承認を確認しています…');
+            return undefined;
+          }
+          const args = arguments;
+          AH.serverApproving = true;
+          ahJsonFetch(
+            '/api/knowledge/drafts/' + encodeURIComponent(String(mapping.id)) + '/approve',
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ checklist }),
+            },
+          )
+            .then((data) => {
+              const info = data && data.draft ? data.draft : data || {};
+              const kbNo = String(info.kbNo || info.kb_no || mapping.kbNo || '');
+              if (kbNo) {
+                const map = ahServerDraftMap();
+                if (map[String(id)]) {
+                  map[String(id)].kbNo = kbNo;
+                  map[String(id)].status = 'approved';
+                  ahSaveServerDraftMap(map);
+                }
+              }
+              if (typeof toast === 'function') {
+                toast('サーバのナレッジを承認しました' + (kbNo ? '（' + kbNo + '）' : ''), 'ok');
+              }
+              // サーバ承認の後、既存の承認（案件の完了処理＋ローカル反映）へ進む。
+              return previousApprove.apply(this, args);
+            })
+            .catch((error) => {
+              if (ahShouldFallbackToLocal(error && error.status)) {
+                if (typeof toast === 'function') {
+                  toast('サーバ承認を確認できないため、ローカル承認で続行します', 'bad');
+                }
+                return previousApprove.apply(this, args);
+              }
+              if (typeof toast === 'function') {
+                toast('サーバ承認に失敗しました：' + ahServerDraftErrorLabel(error), 'bad');
+              }
+              return undefined;
+            })
+            .finally(() => {
+              AH.serverApproving = false;
+            });
+          return undefined;
+        };
+      }
+      const previousReturn = app.returnDraft;
+      if (typeof previousReturn === 'function') {
+        app.returnDraft = function (id) {
+          const mapping = ahServerDraftFor(id);
+          const reasonElement = document.getElementById('ap_c');
+          const reason = reasonElement ? String(reasonElement.value || '').trim() : '';
+          if (!mapping || !mapping.id || !reason) return previousReturn.apply(this, arguments);
+          if (AH.serverRejecting) return undefined;
+          const args = arguments;
+          AH.serverRejecting = true;
+          ahJsonFetch(
+            '/api/knowledge/drafts/' + encodeURIComponent(String(mapping.id)) + '/reject',
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ reason }),
+            },
+          )
+            .then(() => {
+              if (typeof toast === 'function') toast('サーバ下書きを却下しました', 'ok');
+              return previousReturn.apply(this, args);
+            })
+            .catch((error) => {
+              if (ahShouldFallbackToLocal(error && error.status)) {
+                if (typeof toast === 'function') {
+                  toast('サーバ却下を確認できないため、ローカルの差戻しで続行します', 'bad');
+                }
+                return previousReturn.apply(this, args);
+              }
+              if (typeof toast === 'function') {
+                toast('サーバ却下に失敗しました：' + ahServerDraftErrorLabel(error), 'bad');
+              }
+              return undefined;
+            })
+            .finally(() => {
+              AH.serverRejecting = false;
+            });
+          return undefined;
+        };
+      }
     }
+
+    // F-06: 承認者ビューへの「サーバ下書き」セクションの差し込みと操作。
+    document.addEventListener('click', ahHandleServerDraftClick, true);
+    document.addEventListener('change', ahHandleServerDraftChange, true);
+    const hdMainElement = document.getElementById('hdMain');
+    if (hdMainElement && typeof MutationObserver === 'function') {
+      let serverDraftScheduled = false;
+      const serverDraftObserver = new MutationObserver(() => {
+        if (serverDraftScheduled) return;
+        serverDraftScheduled = true;
+        setTimeout(() => {
+          serverDraftScheduled = false;
+          ahSyncServerDraftSection();
+        }, 60);
+      });
+      serverDraftObserver.observe(hdMainElement, { childList: true });
+    }
+    setTimeout(ahSyncServerDraftSection, 800);
 
     const page = document.getElementById('uxPage');
     if (page && typeof MutationObserver === 'function') {
