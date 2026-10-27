@@ -310,7 +310,10 @@ try {
   if (masked.length === 2 && leaked.length === 0) {
     ok('共有スナップショット: PC 情報は伏せ字化して保持される（F-04）');
   } else {
-    ng('共有スナップショットの伏せ字化が想定と違う', `masked=${masked.join(',')} leaked=${leaked.join(',')}`);
+    ng(
+      '共有スナップショットの伏せ字化が想定と違う',
+      `masked=${masked.join(',')} leaked=${leaked.join(',')}`,
+    );
   }
 
   // 6) 承認なしの completed は拒否される
