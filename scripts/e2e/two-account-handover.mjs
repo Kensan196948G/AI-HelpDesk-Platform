@@ -302,11 +302,16 @@ try {
   }
   const afterAnswer = await app`SELECT snapshot FROM case_handovers WHERE id = ${handoverId}`;
   const snapText = JSON.stringify(afterAnswer[0]?.snapshot || {});
-  // スナップショットは A が共有した元データを保持する（B が参照するため）。
-  // AI へ渡す文脈でのマスクは単体テスト（buildPcContext）で検証する。
-  const shared = ['192.168.10.34', 'SN-E2E-0001'].filter((v) => snapText.includes(v));
-  if (shared.length === 2) ok('共有スナップショット: A が共有した PC 情報を保持（B が参照可能）');
-  else ng('共有スナップショットに共有 PC 情報が無い', shared.join(','));
+  // スナップショットは F-04 で保存時に伏せ字化される（`[IPアドレス]` / `[シリアル番号]`）。
+  // 生値が残っていないことと、項目名に応じた伏せ字が入っていることを確認する。
+  // （B が参照するのは伏せ字後の値。AI へ渡す文脈のマスクは buildPcContext の単体テストで検証）
+  const masked = ['[IPアドレス]', '[シリアル番号]'].filter((v) => snapText.includes(v));
+  const leaked = ['192.168.10.34', 'SN-E2E-0001'].filter((v) => snapText.includes(v));
+  if (masked.length === 2 && leaked.length === 0) {
+    ok('共有スナップショット: PC 情報は伏せ字化して保持される（F-04）');
+  } else {
+    ng('共有スナップショットの伏せ字化が想定と違う', `masked=${masked.join(',')} leaked=${leaked.join(',')}`);
+  }
 
   // 6) 承認なしの completed は拒否される
   r = await call(B.email, 'PATCH', `/api/case-handovers/${handoverId}`, { status: 'completed' });
