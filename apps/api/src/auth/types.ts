@@ -6,7 +6,10 @@ export interface AuthUser {
   id: string;
   email: string;
   name: string;
+  /** 主ロール（users.role）。後方互換のため残す。 */
   role: Role;
+  /** 実際のロール集合（user_roles。空なら [role]）。docs/49 */
+  roles?: Role[];
 }
 
 export interface AuthSession {

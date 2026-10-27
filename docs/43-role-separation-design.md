@@ -107,6 +107,6 @@ Phase C の前提が満たせない間は、`ALLOW_SELF_APPROVAL=true` を維持
 
 1. `auditor` を `GET /api/audit` の**唯一**の閲覧者にするか、`approver` にも残すか
 2. `itops` を端末の**破壊的**操作（コマンド実行・展開）に限定するか、閲覧も含めるか
-3. Phase B で `users.role` を単一値から**複数ロール**へ変えるか（現状は単一値）
-4. Access グループと名簿の**どちらを優先**するか（不一致時の扱い）
+3. ~~Phase B で `users.role` を単一値から**複数ロール**へ変えるか~~ → **決定済み（2026-10-27・[docs/49](49-role-model-decision.md)）**: 複数ロールを採用（`user_roles` が正本・`users.role` は主ロール）
+4. ~~Access グループと名簿の**どちらを優先**するか~~ → **決定済み（[docs/49](49-role-model-decision.md)）**: Access の明示マッピングを優先し、未設定時は名簿/主ロールへフォールバック
 5. 自己承認禁止を、ナレッジだけでなく引継ぎ承認にも同時適用するか
