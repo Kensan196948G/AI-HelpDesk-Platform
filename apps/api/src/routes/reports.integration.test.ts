@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { config } from '../config.js';
 import { sql } from '../db.js';
 import { pdfAvailable } from '../domain/final-report.js';
 import { resetRateLimits } from '../lib/rate-limit.js';
@@ -152,5 +153,83 @@ describe('最終報告書 API', () => {
     });
     expect(response.statusCode).toBe(400);
     expect(response.json().error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('報告書作成の監査を1行だけ記録する（F-15）', async () => {
+    resetRateLimits();
+    const caseId = `CASE-AUD${Date.now().toString(36)}`;
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/reports/final',
+      payload: { report: reportPayload(caseId, 'helpdesk_resolved') },
+    });
+    expect(created.statusCode, created.body).toBe(200);
+    const body = created.json();
+    const reportId = body.report.id as string;
+
+    const audits = await sql<
+      { action: string; detail: Record<string, unknown>; created_at: Date }[]
+    >`
+      SELECT action, detail, created_at FROM audit_log
+      WHERE target_type = 'final_report'
+        AND target_id = ${reportId}
+        AND action = 'report.final.build'
+      ORDER BY id ASC
+    `;
+    expect(audits, '作成1回につき監査1行').toHaveLength(1);
+    expect(audits[0]?.detail.actorEmail).toBe(config.DEV_AUTH_EMAIL);
+    expect(audits[0]?.detail.caseId).toBe(caseId);
+    expect(audits[0]?.detail.kind).toBe('helpdesk_resolved');
+    expect(audits[0]?.detail.sha256).toBe(body.report.sha256);
+    expect(audits[0]?.created_at).toBeInstanceOf(Date);
+
+    // 失敗（400）では監査を増やさない。
+    const countBefore = await sql<{ n: number }[]>`
+      SELECT count(*)::int AS n FROM audit_log WHERE action = 'report.final.build'
+    `;
+    const invalid = await app.inject({
+      method: 'POST',
+      url: '/api/reports/final',
+      payload: { report: { kind: 'unknown' } },
+    });
+    expect(invalid.statusCode).toBe(400);
+    const countAfter = await sql<{ n: number }[]>`
+      SELECT count(*)::int AS n FROM audit_log WHERE action = 'report.final.build'
+    `;
+    expect(countAfter[0]?.n).toBe(countBefore[0]?.n);
+  });
+
+  it('同一内容の報告書は二重作成せず既存行を返す（F-10）', async () => {
+    resetRateLimits();
+    const caseId = `CASE-DUP${Date.now().toString(36)}`;
+    const payload = { report: reportPayload(caseId, 'helpdesk_resolved') };
+
+    const first = await app.inject({ method: 'POST', url: '/api/reports/final', payload });
+    expect(first.statusCode, first.body).toBe(200);
+    const firstBody = first.json();
+    expect(firstBody.reused).toBe(false);
+
+    const second = await app.inject({ method: 'POST', url: '/api/reports/final', payload });
+    expect(second.statusCode, second.body).toBe(200);
+    const secondBody = second.json();
+    expect(secondBody.reused).toBe(true);
+    expect(secondBody.report.id).toBe(firstBody.report.id);
+    expect(secondBody.report.sha256).toBe(firstBody.report.sha256);
+
+    // DB 上も1行だけ（migration 021 の部分一意 index と既存行返却の両方を確認）。
+    const rows = await sql<{ n: number }[]>`
+      SELECT count(*)::int AS n FROM final_reports
+      WHERE user_email = ${config.DEV_AUTH_EMAIL} AND sha256 = ${firstBody.report.sha256}
+    `;
+    expect(rows[0]?.n).toBe(1);
+
+    // 再利用では監査行を増やさない（作成時の1行だけ）。
+    const audits = await sql<{ n: number }[]>`
+      SELECT count(*)::int AS n FROM audit_log
+      WHERE target_type = 'final_report'
+        AND target_id = ${firstBody.report.id}
+        AND action = 'report.final.build'
+    `;
+    expect(audits[0]?.n).toBe(1);
   });
 });

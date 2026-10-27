@@ -421,6 +421,16 @@ function statusColor(report: FinalReport): string {
   return report.kind === 'ai_resolved' ? '#1d7a4d' : '#245b9c';
 }
 
+/**
+ * 表紙バッジの「STEP n 完了」（F-14）。
+ * 実際に完了した STEP（case.step）を表示する。古いクライアントが step を
+ * 送らない場合だけ、完了経路から補う（AI解決=7 / 担当者解決=5）。
+ */
+function completionStepLabel(report: FinalReport): string {
+  const fallback = report.kind === 'ai_resolved' ? 7 : 5;
+  return `STEP ${report.case.step ?? fallback} 完了`;
+}
+
 function personLine(person: {
   name: string;
   role?: string;
@@ -619,6 +629,14 @@ function renderKnowledge(report: FinalReport): string {
     ['版', escapeHtml(knowledge.version ?? '')],
     ['承認者', escapeHtml(knowledge.approvedBy ?? '')],
   ].filter((row) => row[1]);
+  // F-16: 報告書からアプリの知識画面（下書き）へ戻れる相対リンク。
+  // 報告書は default-src 'none' の単体 HTML なので、相対 URL と rel=noopener にする。
+  if (knowledge.draftId) {
+    rows.push([
+      '下書きを開く',
+      `<a href="/?draft=${encodeURIComponent(knowledge.draftId)}" target="_blank" rel="noopener">アプリで開く</a>`,
+    ]);
+  }
   return rows.length ? table(['項目', '内容'], rows) : '';
 }
 
@@ -748,6 +766,7 @@ const REPORT_CSS = `
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; background: #fff; color: #1f2933; }
 body { font-family: "IPAGothic", "IPAPGothic", "Noto Sans JP", "Yu Gothic", "Hiragino Kaku Gothic ProN", sans-serif; font-size: 10.5pt; line-height: 1.65; }
+a { color: #245b9c; text-decoration: underline; }
 .page { max-width: 186mm; margin: 0 auto; padding: 12mm 10mm 16mm; }
 .cover { border-bottom: 3px solid #1f2933; padding-bottom: 8mm; margin-bottom: 7mm; }
 .cover .eyebrow { font-size: 9pt; letter-spacing: .14em; color: #52606d; }
@@ -841,7 +860,7 @@ export function renderFinalReportHtml(report: FinalReport, meta: ReportRenderMet
     <h1>${escapeHtml(kindLabel)}</h1>
     <div class="sub">
       <span class="case">${escapeHtml(report.case.id)}</span>
-      ${badge(report.kind === 'ai_resolved' ? 'STEP 3 完了' : 'STEP 5 完了', color)}
+      ${badge(completionStepLabel(report), color)}
       <span class="muted">${escapeHtml(report.case.subject)}</span>
     </div>
   </div>

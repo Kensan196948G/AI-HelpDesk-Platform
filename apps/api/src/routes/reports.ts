@@ -16,6 +16,7 @@ import {
   reportPdfFilename,
 } from '../domain/final-report.js';
 import { ApiError, badRequest } from '../errors.js';
+import { appendAudit } from '../lib/audit-log.js';
 import { jsonbValue } from '../lib/jsonb-value.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
 
@@ -34,6 +35,10 @@ interface StoredReportRow {
   created_at: Date;
 }
 
+interface StoredReportMetaRow extends StoredReportRow {
+  id: string;
+}
+
 async function loadOwnedReport(id: string, email: string): Promise<StoredReportRow | undefined> {
   const rows = await sql<StoredReportRow[]>`
     SELECT html, html_filename, case_id, kind, sha256, created_at
@@ -42,6 +47,25 @@ async function loadOwnedReport(id: string, email: string): Promise<StoredReportR
     LIMIT 1
   `;
   return rows[0];
+}
+
+/** 作成/再利用のどちらでも同じ形を返す（余計なフィールドを増やさない）。 */
+function finalReportResponse(row: StoredReportMetaRow) {
+  const base = `/api/reports/final/${row.id}`;
+  return {
+    ok: true,
+    report: {
+      id: row.id,
+      sha256: row.sha256,
+      kind: row.kind,
+      caseId: row.case_id,
+      createdAt: row.created_at.toISOString(),
+      files: {
+        html: { url: `${base}/html`, filename: row.html_filename },
+        pdf: { url: `${base}/pdf`, filename: reportPdfFilename(row.html_filename) },
+      },
+    },
+  };
 }
 
 /**
@@ -58,7 +82,8 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
     { preHandler: authenticateUi, bodyLimit: 512 * 1024 },
     async (request) => {
       if (!request.uiEmail) throw badRequest('UI の認証情報がありません。');
-      if (!checkRateLimit(`final-report:${request.uiEmail}`, 10, 60_000)) {
+      const email = request.uiEmail;
+      if (!checkRateLimit(`final-report:${email}`, 10, 60_000)) {
         throw new ApiError(
           429,
           'RATE_LIMITED',
@@ -69,10 +94,23 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
       const { report } = BodySchema.parse(request.body);
       // 保存・出力・ハッシュを同じ内容に揃えるため、先に伏せ字化する。
       const masked = maskFinalReport(report);
+      const sha256 = createHash('sha256').update(JSON.stringify(masked)).digest('hex');
+
+      // F-10: 同一利用者・同一内容は既存行を返す（二重作成しない）。
+      const existing = await sql<StoredReportMetaRow[]>`
+        SELECT id, html, html_filename, case_id, kind, sha256, created_at
+        FROM final_reports
+        WHERE user_email = ${email} AND sha256 = ${sha256}
+        LIMIT 1
+      `;
+      if (existing[0]) {
+        return { ...finalReportResponse(existing[0]), reused: true };
+      }
+
       const recent = await sql<{ count: string }[]>`
         SELECT count(*)::text AS count
         FROM final_reports
-        WHERE user_email = ${request.uiEmail}
+        WHERE user_email = ${email}
           AND created_at > now() - interval '24 hours'
       `;
       if (Number(recent[0]?.count ?? '0') >= REPORT_DAILY_LIMIT) {
@@ -83,38 +121,69 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
         );
       }
       const id = randomUUID();
-      const sha256 = createHash('sha256').update(JSON.stringify(masked)).digest('hex');
+      const createdAt = new Date();
       const rendered = renderFinalReportHtml(masked, { id, sha256 });
-
-      await sql`
-        INSERT INTO final_reports (id, user_email, case_id, kind, payload, html, html_filename, sha256)
-        VALUES (
-          ${id},
-          ${request.uiEmail},
-          ${masked.case.id},
-          ${masked.kind},
-          ${jsonbValue(masked)},
-          ${rendered.html},
-          ${rendered.filename},
-          ${sha256}
-        )
-      `;
-
-      const base = `/api/reports/final/${id}`;
-      return {
-        ok: true,
-        report: {
-          id,
-          sha256,
-          kind: masked.kind,
-          caseId: masked.case.id,
-          createdAt: new Date().toISOString(),
-          files: {
-            html: { url: `${base}/html`, filename: rendered.filename },
-            pdf: { url: `${base}/pdf`, filename: reportPdfFilename(rendered.filename) },
-          },
-        },
+      const newRow: StoredReportMetaRow = {
+        id,
+        html: rendered.html,
+        html_filename: rendered.filename,
+        case_id: masked.case.id,
+        kind: masked.kind,
+        sha256,
+        created_at: createdAt,
       };
+
+      const outcome = await sql.begin(async (tx) => {
+        // 同時リクエストでも二重作成しない（021 の部分一意 index が最終防衛線）。
+        const inserted = await tx<{ id: string }[]>`
+          INSERT INTO final_reports (id, user_email, case_id, kind, payload, html, html_filename, sha256)
+          VALUES (
+            ${id},
+            ${email},
+            ${masked.case.id},
+            ${masked.kind},
+            ${jsonbValue(masked)},
+            ${rendered.html},
+            ${rendered.filename},
+            ${sha256}
+          )
+          ON CONFLICT DO NOTHING
+          RETURNING id
+        `;
+        if (inserted.length === 0) {
+          const rows = await tx<StoredReportMetaRow[]>`
+            SELECT id, html, html_filename, case_id, kind, sha256, created_at
+            FROM final_reports
+            WHERE user_email = ${email} AND sha256 = ${sha256}
+            LIMIT 1
+          `;
+          if (!rows[0]) {
+            throw new ApiError(
+              409,
+              'REPORT_CONFLICT',
+              '同一内容の報告書を取得できませんでした。もう一度お試しください。',
+            );
+          }
+          return { reused: true as const, row: rows[0] };
+        }
+
+        // F-15: 作成に成功したときだけ監査を1行残す（失敗・再利用では増やさない）。
+        await appendAudit(tx, {
+          actorId: null,
+          action: 'report.final.build',
+          targetType: 'final_report',
+          targetId: id,
+          detail: {
+            actorEmail: email,
+            caseId: masked.case.id,
+            kind: masked.kind,
+            sha256,
+          },
+        });
+        return { reused: false as const, row: newRow };
+      });
+
+      return { ...finalReportResponse(outcome.row), reused: outcome.reused };
     },
   );
 
