@@ -1,0 +1,183 @@
+{
+  "base": "http://127.0.0.1:18962",
+  "db": "ai_helpdesk_verify",
+  "ranAt": "2026-10-27T23:46:40.224Z",
+  "people": {
+    "deskB": "k***@mirai-const.co.jp",
+    "deskC": "n***@mirai-const.co.jp",
+    "auditor": "s***@mirai-const.co.jp",
+    "multi": "s***@mirai-const.co.jp",
+    "outside": "a***@mirai-const.co.jp"
+  },
+  "results": [
+    {
+      "id": "V-01",
+      "name": "/auth/me が複数ロールを返す",
+      "expected": "roles[] に担当/承認等",
+      "actual": "HTTP 404（NOT_FOUND）＝ パスワードログインは cloudflare-access モードで無効",
+      "verdict": "FAIL",
+      "note": "user_roles に複数ロールは保持されるが、userDto は role のみを返し UI がロール集合を取得する経路が無い"
+    },
+    {
+      "id": "V-02",
+      "name": "auditor の併存拒否（role set 検証）",
+      "expected": "400/拒否",
+      "actual": "auditor+helpdesk=\"auditor は他のロールと併存できません（読み取り専用の境界を保つため）。\" / helpdesk+itops=\"null\"",
+      "verdict": "PASS",
+      "note": "CLI/ユニット（validateRoleSet）での検証。API のロール書込みエンドポイントは無い"
+    },
+    {
+      "id": "V-03",
+      "name": "auditor の UI 書込み",
+      "expected": "403",
+      "actual": "書込み HTTP 403（FORBIDDEN）/ 読取り HTTP 200",
+      "verdict": "PASS",
+      "note": ""
+    },
+    {
+      "id": "V-04",
+      "name": "一般社員の inbox / claim",
+      "expected": "403",
+      "actual": "inbox 403（FORBIDDEN）/ claim 403（FORBIDDEN）",
+      "verdict": "PASS",
+      "note": ""
+    },
+    {
+      "id": "V-05",
+      "name": "指名外 DX の claim",
+      "expected": "403 RECIPIENT_MISMATCH",
+      "actual": "claim 403（RECIPIENT_MISMATCH）/ C の inbox に表示=なし",
+      "verdict": "PASS",
+      "note": ""
+    },
+    {
+      "id": "V-06",
+      "name": "指名 DX の claim / inbox 分離",
+      "expected": "200・他担当に出ない",
+      "actual": "claim 200 / B の inbox=あり / C の inbox=なし",
+      "verdict": "PASS",
+      "note": ""
+    },
+    {
+      "id": "V-07",
+      "name": "自己承認（ALLOW_SELF_APPROVAL=true）",
+      "expected": "200・self_approved=true",
+      "actual": "HTTP 200 / selfApproved=true",
+      "verdict": "PASS",
+      "note": ""
+    },
+    {
+      "id": "V-08",
+      "name": "承認なし完了",
+      "expected": "409 APPROVAL_REQUIRED",
+      "actual": "claim 200 / complete 409（APPROVAL_REQUIRED）",
+      "verdict": "PASS",
+      "note": ""
+    },
+    {
+      "id": "V-09",
+      "name": "承認チェックリスト未確認（F-12 回帰）",
+      "expected": "承認が先に成立しない",
+      "actual": "チェックなし承認 400（BAD_REQUEST）/ チェックあり 200",
+      "verdict": "PASS",
+      "note": "サーバ側の検証を実測。ブラウザでの F-12 回帰（承認→完了の詰み）は未実施"
+    },
+    {
+      "id": "V-10",
+      "name": "GET /knowledge/pending",
+      "expected": "承認待ち一覧",
+      "actual": "HTTP 200 / items=0",
+      "verdict": "PASS",
+      "note": ""
+    },
+    {
+      "id": "V-11",
+      "name": "下書き→申請→承認→knowledge 永続化",
+      "expected": "draft→pending→approved",
+      "actual": "draft 200 / pending 200 / approved 200 / db=approved（KB-2026-0107）",
+      "verdict": "PASS",
+      "note": "セッション認証の submit/review は cloudflare-access モードでは未登録（UI は ui-sync を使用）"
+    },
+    {
+      "id": "V-13",
+      "name": "別ID承認（claimant 以外）",
+      "expected": "self_approved=false",
+      "actual": "HTTP 200 / api=false / db=false",
+      "verdict": "PASS",
+      "note": ""
+    },
+    {
+      "id": "V-14",
+      "name": "final_reports 一意制約（021）",
+      "expected": "二重作成されない",
+      "actual": "部分一意 index=あり / 同一 (user,sha256) の2回目=23505",
+      "verdict": "PASS",
+      "note": "API の再利用（reused=true）は既存ユニットテストで担保"
+    },
+    {
+      "id": "V-17",
+      "name": "引継ぎ概要（SM-03）が件名と一致",
+      "expected": "最後の発言で上書きされない",
+      "actual": "subject=\"差分検証: 件名が正（SM-03）\" / 一致=true",
+      "verdict": "PASS",
+      "note": ""
+    },
+    {
+      "id": "V-19",
+      "name": "STEP7 の承認者・承認日時（F-13）",
+      "expected": "表示される（API が返す）",
+      "actual": "approve 200 / approvedBy=k***@mirai-const.co.jp / approvedAt=2026-10-27T23:46:36.068Z",
+      "verdict": "PASS",
+      "note": "UI 表示（常設表示）のクリック確認は未実施（API 実測）"
+    },
+    {
+      "id": "V-12",
+      "name": "承認済み KB の AI 出典反映",
+      "expected": "KB-… が出典",
+      "actual": "HTTP 200 / sources=2 / 当該 KB(KB-2026-0107) の引用=あり",
+      "verdict": "PASS",
+      "note": ""
+    },
+    {
+      "id": "V-15",
+      "name": "中止セッションの報告書（023）",
+      "expected": "「終了（未解決）」種別",
+      "actual": "session 200 / step あり / close 200 / report 200 / kind=helpdesk_stopped",
+      "verdict": "PASS",
+      "note": ""
+    },
+    {
+      "id": "V-16",
+      "name": "報告書の STEP 整合・表紙バッジ",
+      "expected": "解決/停止で正しい",
+      "actual": "HTML 8686B / 「終了（未解決）」=あり",
+      "verdict": "PASS",
+      "note": "HTML（サーバ生成物）での確認。画面のクリック確認は未実施"
+    },
+    {
+      "id": "V-18",
+      "name": "完了案件の GET /terminal/sessions（SM-04）",
+      "expected": "404 でなく 200/空",
+      "actual": "HTTP 200 / session=あり",
+      "verdict": "PASS",
+      "note": ""
+    },
+    {
+      "id": "V-20",
+      "name": "RSP 相関（020/022・SM-09）",
+      "expected": "rsp_session_id 保存",
+      "actual": "rsp_session_id=RSP-DELTA-SESSION-1",
+      "verdict": "PASS",
+      "note": "rspCommandLogId（RSP 実コマンド相関）は実ログが必要なため未実施"
+    },
+    {
+      "id": "V-21",
+      "name": "端末エージェントの NUL/サロゲート除去（#91）",
+      "expected": "500 にならない",
+      "actual": "HTTP 200 / ok=true / 保存 hostname=DELTAPC�",
+      "verdict": "PASS",
+      "note": "NUL と単独サロゲートを含む payload を送信（実機の再現）"
+    }
+  ],
+  "notes": []
+}
