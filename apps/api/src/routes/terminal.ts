@@ -112,6 +112,18 @@ async function loadSteps(sessionId: string): Promise<TerminalStepRow[]> {
   `;
 }
 
+/**
+ * セッション終了時の警告（SM-07）。
+ * 実行記録が無いと報告書が 409 NO_RECORDED_STEPS で作れないため、
+ * 終了は許可したまま「このままでは報告書を作れない」ことを返す。
+ */
+function closeWarnings(steps: TerminalStepRow[]): string[] {
+  if (steps.some((step) => step.recorded_at)) return [];
+  return [
+    '実行記録がありません。このままでは報告書を作成できません（少なくとも1ステップのコマンドと結果を記録してください）。',
+  ];
+}
+
 async function loadHandoverForSession(
   session: TerminalSessionRow,
 ): Promise<HandoverRow | undefined> {
@@ -510,9 +522,9 @@ export async function terminalRoutes(app: FastifyInstance): Promise<void> {
       const lastOutput =
         body.lastOutput ?? (lastRecorded?.output ? lastRecorded.output.slice(0, 4_000) : undefined);
 
-      let proposal: Awaited<ReturnType<typeof proposePowerShell>>;
+      let outcome: Awaited<ReturnType<typeof proposePowerShell>>;
       try {
-        proposal = await proposePowerShell({ context, intent: body.intent, lastOutput });
+        outcome = await proposePowerShell({ context, intent: body.intent, lastOutput });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         request.log.warn({ err: error }, 'terminal proposal failed');
@@ -522,6 +534,21 @@ export async function terminalRoutes(app: FastifyInstance): Promise<void> {
           `AIの提案を取得できませんでした（${message}）。手順を確認して手動で実行してください。`,
         );
       }
+
+      // SM-06: AI の「情報不足で安全なコマンドを特定できない」という辞退は
+      // 障害（502）ではなく、提案なし＋理由として 200 で返す。
+      if (outcome.declined) {
+        return {
+          ok: true,
+          declined: true,
+          step: null,
+          proposal: null,
+          reason: outcome.reason,
+          model: outcome.model,
+          session: sessionWithSteps(session, steps.length),
+        };
+      }
+      const proposal = outcome.proposal;
 
       const command = maskText(proposal.command, 8_000).text;
       const inserted = await sql
@@ -718,9 +745,11 @@ export async function terminalRoutes(app: FastifyInstance): Promise<void> {
       }
       const session = await expireIfNeeded(found, email);
       if (session.status === 'closed') {
+        const existingSteps = await loadSteps(session.id);
         return {
           ok: true,
-          session: sessionWithSteps(session, (await loadSteps(session.id)).length),
+          session: sessionWithSteps(session, existingSteps.length),
+          warnings: closeWarnings(existingSteps),
         };
       }
       const closed = await sql.begin(async (tx) => {
@@ -752,6 +781,7 @@ export async function terminalRoutes(app: FastifyInstance): Promise<void> {
       return {
         ok: true,
         session: sessionWithSteps(next, steps.length, await knowledgeSummaryOf(next)),
+        warnings: closeWarnings(steps),
       };
     },
   );

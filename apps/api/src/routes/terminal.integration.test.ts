@@ -296,6 +296,8 @@ describe('RSP実行セッション API', () => {
     expect(closed.statusCode, closed.body).toBe(200);
     expect(closed.json().session.status).toBe('closed');
     expect(closed.json().session.closeReason).toBe('resolved');
+    // 実行記録があるセッションの終了には警告を出さない（SM-07）。
+    expect(closed.json().warnings).toEqual([]);
 
     const afterClose = await app.inject({
       method: 'POST',
@@ -709,5 +711,131 @@ describe('RSP実行セッション API', () => {
       config.REQUIRE_PROXY_SECRET = originalRequireProxy;
       config.PROXY_SECRET = originalProxySecret;
     }
+  });
+
+  it('SM-06: AIが情報不足で辞退した場合は502ではなく200＋理由を返す', async () => {
+    await setupClaimedHandover(CASE_A);
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/terminal/sessions',
+      payload: { caseId: CASE_A, consent: { screenShare: true, remoteControl: true } },
+    });
+    expect(created.statusCode, created.body).toBe(200);
+    const sessionId = created.json().session.id as string;
+
+    fetchMock.mockImplementationOnce(async () => {
+      const content = JSON.stringify({
+        command: '',
+        purpose: '対象の端末とエラー内容が不足しているため、安全なコマンドを特定できません。',
+        risk: 'medium',
+        verify: '',
+        rollback: '',
+        warnings: [],
+      });
+      return new Response(JSON.stringify({ choices: [{ message: { content } }] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    });
+
+    const declined = await app.inject({
+      method: 'POST',
+      url: `/api/terminal/sessions/${sessionId}/steps`,
+      payload: { intent: '状況を確認したい' },
+    });
+    expect(declined.statusCode, declined.body).toBe(200);
+    const body = declined.json();
+    expect(body.error).toBeUndefined();
+    expect(body.declined).toBe(true);
+    expect(body.step).toBeNull();
+    expect(body.proposal).toBeNull();
+    expect(String(body.reason)).toContain('安全なコマンドを特定できません');
+
+    // 辞退はステップとして保存しない（ステップ上限・報告書の記録を汚さない）。
+    const after = await app.inject({ method: 'GET', url: `/api/terminal/sessions/${sessionId}` });
+    expect(after.statusCode, after.body).toBe(200);
+    expect(after.json().steps).toEqual([]);
+  });
+
+  it('SM-06: AI呼び出しの失敗・パース不能は従来どおり502 AI_UNAVAILABLE', async () => {
+    await setupClaimedHandover(CASE_A);
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/terminal/sessions',
+      payload: { caseId: CASE_A, consent: { screenShare: true, remoteControl: true } },
+    });
+    expect(created.statusCode, created.body).toBe(200);
+    const sessionId = created.json().session.id as string;
+
+    // API エラー
+    fetchMock.mockImplementationOnce(
+      async () =>
+        new Response(JSON.stringify({ error: { message: 'upstream unavailable' } }), {
+          status: 503,
+          headers: { 'content-type': 'application/json' },
+        }),
+    );
+    const failed = await app.inject({
+      method: 'POST',
+      url: `/api/terminal/sessions/${sessionId}/steps`,
+      payload: { intent: '状況を確認したい' },
+    });
+    expect(failed.statusCode, failed.body).toBe(502);
+    expect(failed.json().error.code).toBe('AI_UNAVAILABLE');
+
+    // JSON として解釈できない応答
+    fetchMock.mockImplementationOnce(
+      async () =>
+        new Response(
+          JSON.stringify({ choices: [{ message: { content: 'これはJSONではありません' } }] }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+    );
+    const unparsable = await app.inject({
+      method: 'POST',
+      url: `/api/terminal/sessions/${sessionId}/steps`,
+      payload: { intent: '状況を確認したい' },
+    });
+    expect(unparsable.statusCode, unparsable.body).toBe(502);
+    expect(unparsable.json().error.code).toBe('AI_UNAVAILABLE');
+  });
+
+  it('SM-07: 実行記録なしで終了すると warnings を返し、report の409は維持する', async () => {
+    await setupClaimedHandover(CASE_B);
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/terminal/sessions',
+      payload: { caseId: CASE_B, consent: { screenShare: true, remoteControl: true } },
+    });
+    expect(created.statusCode, created.body).toBe(200);
+    const sessionId = created.json().session.id as string;
+
+    const closed = await app.inject({
+      method: 'POST',
+      url: `/api/terminal/sessions/${sessionId}/close`,
+      payload: { reason: 'stopped' },
+    });
+    expect(closed.statusCode, closed.body).toBe(200);
+    expect(closed.json().session.status).toBe('closed');
+    expect(closed.json().warnings).toHaveLength(1);
+    expect(closed.json().warnings[0]).toContain('実行記録がありません');
+
+    // 記録なしで close できる挙動は維持しつつ、report は従来どおり 409。
+    const report = await app.inject({
+      method: 'POST',
+      url: `/api/terminal/sessions/${sessionId}/report`,
+      payload: {},
+    });
+    expect(report.statusCode, report.body).toBe(409);
+    expect(report.json().error.code).toBe('NO_RECORDED_STEPS');
+
+    // 終了済みセッションへの close 再送でも同じ警告を返す（UI の再送に耐える）。
+    const again = await app.inject({
+      method: 'POST',
+      url: `/api/terminal/sessions/${sessionId}/close`,
+      payload: { reason: 'stopped' },
+    });
+    expect(again.statusCode, again.body).toBe(200);
+    expect(again.json().warnings).toHaveLength(1);
   });
 });

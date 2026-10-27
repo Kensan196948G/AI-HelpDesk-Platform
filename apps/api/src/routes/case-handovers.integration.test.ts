@@ -79,6 +79,8 @@ const GENERAL_EMAIL = 'general@example.com';
 const AUTHZ_CASE_PREFIX = 'CASE-H-AUTHZ';
 const originalDevEmail = config.DEV_AUTH_EMAIL;
 const originalNotifyEmail = config.HANDOVER_NOTIFY_EMAIL;
+const originalAllowSelfApproval = config.ALLOW_SELF_APPROVAL;
+const originalAuthMode = config.AUTH_MODE;
 
 let app: FastifyInstance;
 
@@ -194,12 +196,16 @@ beforeEach(() => {
   resetRateLimits();
   config.DEV_AUTH_EMAIL = originalDevEmail;
   config.HANDOVER_NOTIFY_EMAIL = originalNotifyEmail;
+  config.ALLOW_SELF_APPROVAL = originalAllowSelfApproval;
+  config.AUTH_MODE = originalAuthMode;
   mailState.transport = { name: 'disabled', send: async () => {} };
 });
 
 afterAll(async () => {
   config.DEV_AUTH_EMAIL = originalDevEmail;
   config.HANDOVER_NOTIFY_EMAIL = originalNotifyEmail;
+  config.ALLOW_SELF_APPROVAL = originalAllowSelfApproval;
+  config.AUTH_MODE = originalAuthMode;
   await sql`DELETE FROM case_handovers WHERE case_id = ${CASE_ID}`;
   await sql`DELETE FROM case_handovers WHERE case_id LIKE ${`${AUTHZ_CASE_PREFIX}%`}`;
   await sql`DELETE FROM prototype_states WHERE user_email = ${config.DEV_AUTH_EMAIL}`;
@@ -751,6 +757,96 @@ describe('案件引継ぎ API', () => {
         (row) => row.action === 'case_handover.create' && row.targetId === handoverId,
       );
       expect(entry, '/api/audit に case_handover.create が出る').toBeDefined();
+    });
+
+    it('inbox は自分の案件も返し、指名外は返さない（SM-01）', async () => {
+      // cloudflare-access（本番相当）でも「依頼者＝自分」の案件が受信箱に出ることを確認する。
+      const selfEmail = 'dx1@mirai-const.co.jp'; // allowlist 対象ドメイン
+      directory.byEmail.set(selfEmail, DX1);
+      try {
+        const own = await insertHandover({ ownerEmail: selfEmail });
+        const designatedToOther = await insertHandover({
+          ownerEmail: selfEmail,
+          recipientNo: DX2.employeeNo,
+          recipientName: DX2.name,
+        });
+
+        config.AUTH_MODE = 'cloudflare-access';
+        const inbox = await app.inject({
+          method: 'GET',
+          url: '/api/case-handovers/inbox',
+          headers: { 'cf-access-authenticated-user-email': selfEmail },
+        });
+        expect(inbox.statusCode, inbox.body).toBe(200);
+        const ids = (inbox.json().items as Array<{ id: string }>).map((item) => item.id);
+        expect(ids, '自分の案件も受信箱に出る').toContain(own.id);
+        expect(ids, '指名外の案件は受信箱に出ない').not.toContain(designatedToOther.id);
+      } finally {
+        config.AUTH_MODE = originalAuthMode;
+        directory.byEmail.delete(selfEmail);
+      }
+    });
+
+    it('ALLOW_SELF_APPROVAL=false は自己承認を 403、true は self_approved=true で許可する（SM-02）', async () => {
+      config.DEV_AUTH_EMAIL = DX1_EMAIL;
+      const selfRow = await insertHandover({
+        ownerEmail: GENERAL_EMAIL,
+        status: 'claimed',
+        claimedBy: DX1_EMAIL,
+      });
+      const otherRow = await insertHandover({
+        ownerEmail: GENERAL_EMAIL,
+        status: 'claimed',
+        claimedBy: DX2_EMAIL,
+      });
+
+      try {
+        config.ALLOW_SELF_APPROVAL = false;
+
+        // 自分が引き受けた案件は承認できない（職務分離）。
+        const denied = await app.inject({
+          method: 'POST',
+          url: `/api/case-handovers/${selfRow.id}/approve`,
+          payload: {},
+        });
+        expect(denied.statusCode, denied.body).toBe(403);
+        expect(denied.json().error.code).toBe('SELF_APPROVAL_FORBIDDEN');
+        const stillClaimed = await sql<{ status: string }[]>`
+          SELECT status FROM case_handovers WHERE id = ${selfRow.id}
+        `;
+        expect(stillClaimed[0]?.status).toBe('claimed');
+        expect(await auditRows(selfRow.id, 'case_handover.approve')).toHaveLength(0);
+
+        // 他者が引き受けた案件は false でも承認できる（過剰ブロックしない）。
+        const allowedOther = await app.inject({
+          method: 'POST',
+          url: `/api/case-handovers/${otherRow.id}/approve`,
+          payload: {},
+        });
+        expect(allowedOther.statusCode, allowedOther.body).toBe(200);
+        expect(allowedOther.json().handover.selfApproved).toBe(false);
+
+        // true（既定）では自己承認を許可し、self_approved=true を記録する。
+        config.ALLOW_SELF_APPROVAL = true;
+        const allowedSelf = await app.inject({
+          method: 'POST',
+          url: `/api/case-handovers/${selfRow.id}/approve`,
+          payload: {},
+        });
+        expect(allowedSelf.statusCode, allowedSelf.body).toBe(200);
+        expect(allowedSelf.json().handover.selfApproved).toBe(true);
+
+        const stored = await sql<
+          { status: string; self_approved: boolean; approved_by: string | null }[]
+        >`
+          SELECT status, self_approved, approved_by FROM case_handovers WHERE id = ${selfRow.id}
+        `;
+        expect(stored[0]?.status).toBe('completed');
+        expect(stored[0]?.self_approved).toBe(true);
+        expect(stored[0]?.approved_by).toBe(DX1_EMAIL);
+      } finally {
+        config.ALLOW_SELF_APPROVAL = originalAllowSelfApproval;
+      }
     });
   });
 
