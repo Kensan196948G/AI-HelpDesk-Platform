@@ -181,3 +181,11 @@ PR #79 の実装だけでは、**承認者（別ID）の画面に他人の下書
 F-06 の残りは「4 ロール（担当／承認／監査／IT 端末管理）のサーバ分離」であり、
 `ALLOW_SELF_APPROVAL=true` を維持している間は職務分離が設定依存である。
 設計案と移行計画（Phase A〜C・受入条件・未決事項）は **`docs/43-role-separation-design.md`** に提案として起案した（実装は未着手）。
+
+## 10. SM-11 の修正とテストデータの整理（2026-10-27 14:52）
+
+- `POST /api/knowledge/ui-sync` の監査 detail に **`actorEmail`** を追加した（`knowledge.create` / `submit` / `approve` / `reject`。PR #84）。`actor_id`（users FK）に加え、Access の実行者メールを1行で追える。
+- 本番実測: 新しい `knowledge.approve` の detail が
+  `{"via":"ui","comment":"SM-11 検証","clientRef":"…","actorEmail":"k…@gmail.com","selfApproved":true}` となり、`actorEmail` が記録されることを確認（修正前の行には無い）。
+- テストデータの整理: 検証で作成した `client_ref LIKE 'ui-f06%' / 'ui-sm11%'` の knowledge 4行と knowledge_reviews 4行を削除。**knowledge はシード9行に復帰**（監査ログは append-only のため削除せず履歴として残置）。
+- 以上により §6-3 の残課題（SM-11・残置データ）は解消。
