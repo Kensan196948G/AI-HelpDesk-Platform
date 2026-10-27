@@ -257,6 +257,49 @@ describe('renderFinalReportHtml', () => {
     expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;');
     expect(html).not.toContain('<img src=x onerror=alert(1)>');
   });
+
+  it('表紙バッジは case.step に応じた「STEP n 完了」になる（F-14）', () => {
+    const cases = [
+      { kind: 'helpdesk_resolved', step: 5, label: 'STEP 5 完了' },
+      { kind: 'helpdesk_resolved', step: 6, label: 'STEP 6 完了' },
+      { kind: 'helpdesk_resolved', step: 7, label: 'STEP 7 完了' },
+      { kind: 'ai_resolved', step: 7, label: 'STEP 7 完了' },
+    ] as const;
+    for (const item of cases) {
+      const parsed = FinalReportSchema.parse({
+        ...sampleReport(),
+        kind: item.kind,
+        case: { ...sampleReport().case, step: item.step },
+      });
+      const { html } = renderFinalReportHtml(parsed, { id: 'x', sha256: 'a'.repeat(64) });
+      expect(html, `${item.kind} step=${item.step}`).toContain(item.label);
+      // AI解決は旧実装の「STEP 3 完了」を出さない。
+      if (item.kind === 'ai_resolved') expect(html).not.toContain('STEP 3 完了');
+    }
+
+    // step を送らない旧クライアント: AI解決=7、担当者解決=5 に補う。
+    const legacyAi = FinalReportSchema.parse({ ...sampleReport(), kind: 'ai_resolved' });
+    const legacyHelpdesk = FinalReportSchema.parse({
+      ...sampleReport(),
+      kind: 'helpdesk_resolved',
+    });
+    expect(renderFinalReportHtml(legacyAi, { id: 'x', sha256: 'a'.repeat(64) }).html).toContain(
+      'STEP 7 完了',
+    );
+    expect(
+      renderFinalReportHtml(legacyHelpdesk, { id: 'x', sha256: 'a'.repeat(64) }).html,
+    ).toContain('STEP 5 完了');
+  });
+
+  it('ナレッジ下書きへの相対リンクを rel=noopener 付きで含む（F-16）', () => {
+    const { html } = renderFinalReportHtml(maskFinalReport(sampleReport()), {
+      id: 'x',
+      sha256: 'a'.repeat(64),
+    });
+    expect(html).toContain('href="/?draft=DR-001"');
+    expect(html).toContain('rel="noopener"');
+    expect(html).toContain('下書きを開く');
+  });
 });
 
 describe('filenames', () => {
