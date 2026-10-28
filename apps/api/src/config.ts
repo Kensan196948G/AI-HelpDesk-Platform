@@ -83,6 +83,9 @@ const EnvSchema = z.object({
   PERSONA_SWITCH_ALLOWLIST: z.string().default(''),
   // 同一人物のメール別名（カンマ区切り `alias=primary`）。状態・権限は primary に正規化する。
   EMAIL_ALIASES: z.string().default(''),
+  // 別アカウントだが同一人物の組（`a@x|b@y;c@z|d@w`）。正規化はせず、監査・応答に
+  // 「同一人物である」事実を残すためだけに使う（自己承認の誤読を防ぐ）。
+  SHARED_IDENTITY_GROUPS: z.string().default(''),
 
   // 解決ループ（Phase C）: 端末オフライン判定の閾値（秒）。設計 §4-3 の「2 分応答なし」。
   RESOLVE_DEVICE_OFFLINE_SEC: z.coerce.number().int().positive().default(120),

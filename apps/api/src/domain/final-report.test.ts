@@ -291,6 +291,32 @@ describe('renderFinalReportHtml', () => {
     ).toContain('STEP 5 完了');
   });
 
+  it('承認の性質（自己承認／別アカウント・同一人物）を報告書に記録する', () => {
+    const base = maskFinalReport(sampleReport());
+    const shared = {
+      ...base,
+      handover: {
+        reason: '引継ぎ',
+        shared: [],
+        at: '2026-10-23T10:10:00.000Z',
+        approvedBy: 'DX 担当A',
+        approvedAt: '2026-10-23T10:20:00.000Z',
+        selfApproved: false,
+        sharedIdentity: true,
+      },
+    };
+    const sharedHtml = renderFinalReportHtml(shared, { id: 'x', sha256: 'a'.repeat(64) }).html;
+    expect(sharedHtml).toContain('別アカウント（同一人物）');
+    expect(sharedHtml).toContain('DX 担当A');
+
+    const selfHtml = renderFinalReportHtml(
+      { ...base, handover: { ...shared.handover, selfApproved: true, sharedIdentity: false } },
+      { id: 'x', sha256: 'a'.repeat(64) },
+    ).html;
+    expect(selfHtml).toContain('自己承認');
+    expect(selfHtml).not.toContain('別アカウント（同一人物）');
+  });
+
   it('ナレッジ下書きへの相対リンクを rel=noopener 付きで含む（F-16）', () => {
     const { html } = renderFinalReportHtml(maskFinalReport(sampleReport()), {
       id: 'x',

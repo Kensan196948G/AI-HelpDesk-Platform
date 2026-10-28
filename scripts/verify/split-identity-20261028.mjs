@@ -181,19 +181,85 @@ if (approve.status === 200 && selfApproved === false && row[0]?.self_approved ==
   );
 }
 
+// ---- 3-2. 同一人物フラグ（sharedIdentity） ---------------------------
+if (approve.status === 200) {
+  if (approve.json?.handover?.sharedIdentity === true) {
+    ok('応答に sharedIdentity=true（別アカウント・同一人物）', 'handover.sharedIdentity=true');
+  } else {
+    ng(
+      '応答の sharedIdentity',
+      `handover.sharedIdentity=${approve.json?.handover?.sharedIdentity}`,
+    );
+  }
+}
+
 // ---- 4. 監査に両アカウントが残る ------------------------------------
 if (handoverId) {
   const audits = await db`
-    SELECT action, detail->>'actorEmail' AS actor
+    SELECT action, detail->>'actorEmail' AS actor,
+           detail->>'sharedIdentity' AS shared_identity
     FROM audit_log WHERE target_id = ${handoverId}
     ORDER BY id
   `;
   const actors = [...new Set(audits.map((a) => a.actor).filter(Boolean))];
+  const approveAudit = audits.find((a) => a.action === 'case_handover.approve');
+  if (approveAudit?.shared_identity === 'true') {
+    ok('監査の承認行に sharedIdentity=true', `action=${approveAudit.action}`);
+  } else {
+    ng('監査の sharedIdentity', `value=${approveAudit?.shared_identity}`);
+  }
   if (actors.includes(OPERATOR) && actors.includes(APPROVER)) {
     ok('監査に運用者と承認者が別々に残る', `actors=${actors.join(' / ')}`);
   } else {
     ng('監査の actor', `actors=${actors.join(' / ') || 'なし'}`);
   }
+}
+
+// ---- 4-2. ナレッジ承認でも sharedIdentity を記録 --------------------
+const kbClientRef = `split-kb-${Date.now()}`;
+const kbBody = {
+  clientRef: kbClientRef,
+  title: '分離検証ナレッジ',
+  symptom: '症状',
+  cause: '原因',
+  steps: '手順',
+  keywords: ['検証'],
+};
+await call(OPERATOR, 'POST', '/api/knowledge/ui-sync', { ...kbBody, status: 'draft' });
+await call(OPERATOR, 'POST', '/api/knowledge/ui-sync', { ...kbBody, status: 'pending' });
+const kbApprove = await call(APPROVER, 'POST', '/api/knowledge/ui-sync', {
+  ...kbBody,
+  status: 'approved',
+  comment: '分離検証',
+  checklist: { reproducible: true, noSecrets: true, noBlame: true, scopeClear: true },
+});
+const kbRow = await db`SELECT id FROM knowledge WHERE client_ref = ${kbClientRef} LIMIT 1`;
+const kbAudit = kbRow[0]
+  ? await db`
+      SELECT detail->>'selfApproved' AS self_approved, detail->>'sharedIdentity' AS shared_identity
+      FROM audit_log WHERE target_id = ${kbRow[0].id} AND action = 'knowledge.approve'
+    `
+  : [];
+if (
+  kbApprove.status === 200 &&
+  kbApprove.json?.sharedIdentity === true &&
+  kbAudit[0]?.shared_identity === 'true' &&
+  kbAudit[0]?.self_approved === 'false'
+) {
+  ok(
+    'ナレッジ承認でも sharedIdentity=true',
+    'selfApproved=false / sharedIdentity=true（応答・監査）',
+  );
+} else {
+  ng(
+    'ナレッジ承認の sharedIdentity',
+    `HTTP ${kbApprove.status} / 応答=${kbApprove.json?.sharedIdentity} / 監査=${kbAudit[0]?.shared_identity} / ${JSON.stringify(kbApprove.json).slice(0, 160)}`,
+  );
+}
+if (kbRow[0]) {
+  await db`DELETE FROM knowledge_reviews WHERE knowledge_id = ${kbRow[0].id}`;
+  await db`DELETE FROM audit_log WHERE target_id = ${kbRow[0].id}`;
+  await db`DELETE FROM knowledge WHERE id = ${kbRow[0].id}`;
 }
 
 // ---- 5. 後始末（検証 DB のみ） --------------------------------------

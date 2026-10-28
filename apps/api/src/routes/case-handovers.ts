@@ -6,6 +6,7 @@ import {
   recipientDecision,
   requireHelpdeskActor,
 } from '../auth/helpdesk-scope.js';
+import { sameHuman } from '../auth/shared-identity.js';
 import { authenticateUi } from '../auth/ui.js';
 import { config } from '../config.js';
 import { sql } from '../db.js';
@@ -202,6 +203,8 @@ function snapshotSummary(row: HandoverRow, email: string): Record<string, unknow
     approvedBy: row.approved_by,
     approvedAt: row.approved_at ? row.approved_at.toISOString() : null,
     selfApproved: row.self_approved,
+    // 別アカウントだが同一人物か（監査・画面の誤読防止）。
+    sharedIdentity: row.approved_by ? sameHuman(row.approved_by, row.claimed_by) : false,
     createdAt: row.created_at.toISOString(),
   };
 }
@@ -610,6 +613,8 @@ export async function caseHandoverRoutes(app: FastifyInstance): Promise<void> {
 
       const approverName = actor.name ?? email;
       const selfApproved = row.claimed_by === email;
+      // 別アカウントだが同一人物による承認か（selfApproved=false の誤読を防ぐ）。
+      const sharedIdentity = sameHuman(email, row.claimed_by);
 
       // 職務分離を強制する設定（SM-02）。単一 Access ID 運用の間は既定 true。
       if (selfApproved && !config.ALLOW_SELF_APPROVAL) {
@@ -639,6 +644,7 @@ export async function caseHandoverRoutes(app: FastifyInstance): Promise<void> {
           detail: {
             status: 'completed',
             selfApproved,
+            sharedIdentity,
             ...(body.note ? { note: body.note } : {}),
           },
         });
@@ -654,6 +660,7 @@ export async function caseHandoverRoutes(app: FastifyInstance): Promise<void> {
           approvedByName: approverName,
           approvedAt: new Date().toISOString(),
           selfApproved,
+          sharedIdentity,
           ...(body.note ? { note: body.note } : {}),
         },
       };
