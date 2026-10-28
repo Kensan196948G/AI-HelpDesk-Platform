@@ -63,3 +63,22 @@
   （HTML・ブリッジは起動時にキャッシュされるため、**再起動が必要**）。
 - 反映後: `/api/health` が `ok`・`db ok`、公開URL 302、5xx 0 を確認。
 - ロールバック: 変更を revert して再起動（CSP と UI の分岐のみ。DB 変更なし）。
+
+## 6. 本番反映記録（2026-10-28 10:37 JST）
+
+| 項目 | 実測 |
+|---|---|
+| PR / main | [#110](https://github.com/Kensan196948G/AI-HelpDesk-Platform/pull/110) を squash マージ → main **daea45a** |
+| main CI | run `40616115168`（push）**success** |
+| ビルド | main の `daea45a` から `npm run build` PASS |
+| 配備 | `COMMIT_SHA=daea45ab1c2adfc108e83bdaed2e2174050f9326`（`api.conf` 0600 維持）→ 10:37:36 再起動 |
+| 稼働確認 | service **active** / `NRestarts=0` / `/api/health` = `ok`・`db ok`・commit 一致 |
+| ログ | 再起動後 5xx **0** / `level:50` **0** |
+| 公開経路 | `https://ai-helpdesk.mirai-dx-platform.com/` = **302**（Access。未認証のため従来どおり） |
+| 検証インスタンス | `:18963` は確認後に停止（リスナ 0 を確認） |
+
+- 補足1: 本番は `ACCESS_JWT_MODE=enforce` のため、**本番 UI のブラウザ実測は Access ログインが必要**。
+  CSP の通過と API 200 は同一ビルドの隔離インスタンス（`k-aritoh`・`AUTH_MODE=cloudflare-access`）で実測済み。
+- 補足2: 復旧の経過 — 10:15 の #109 配備で API が全ブロック → 原本 HTML を戻して 10:23 に再起動（復旧）
+  → #110 を main へマージし 10:37 に配備（A-12 の是正完了）。
+- マージ済みブランチ `fix/csp-serve-time-20261028` は残存（ポリシーにより CLI からのリモート削除は不可）。
