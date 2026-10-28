@@ -1,7 +1,9 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { runInNewContext } from 'node:vm';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { config } from '../config.js';
+import { config, repoRoot } from '../config.js';
 import { sql } from '../db.js';
 import { resetRateLimits } from '../lib/rate-limit.js';
 import { buildServer } from '../server.js';
@@ -28,8 +30,16 @@ describe('prototype UI integration', () => {
     const response = await app.inject({ method: 'GET', url: '/' });
     expect(response.statusCode).toBe(200);
     expect(response.headers['content-type']).toContain('text/html');
-    expect(response.headers['content-security-policy']).toContain("connect-src 'self'");
+    // ヘッダ CSP は同一オリジン API と Cloudflare beacon の両方を許可する。
+    // meta CSP と積集合で評価されるため、片方だけでは A-12 の CSP 違反は消えない。
+    const headerCsp = String(response.headers['content-security-policy']);
+    expect(headerCsp).toContain("connect-src 'self' https://cloudflareinsights.com");
+    expect(headerCsp).toContain("script-src 'unsafe-inline' https://static.cloudflareinsights.com");
     const html = response.body;
+    const metaCsp = html.match(/<meta http-equiv="Content-Security-Policy" content="([^"]*)"/)?.[1];
+    expect(metaCsp).toBeTruthy();
+    expect(metaCsp).toContain("connect-src 'self' https://cloudflareinsights.com");
+    expect(metaCsp).toContain("script-src 'unsafe-inline' https://static.cloudflareinsights.com");
     expect(html).toContain('<title>みらいAI窓口 × ヘルプデスク ステップ受付 V3.1');
     expect(html).toContain('window.__AIHD_BOOT__');
     expect(html).toContain('DeepSeek API');
@@ -72,6 +82,19 @@ describe('prototype UI integration', () => {
     expect(html).toContain('function personLabel(v)');
     expect(html).toContain('esc(personLabel(t.requester))');
     expect(html).toContain('${personLabel(t.requester)}（受付：');
+  });
+
+  it('原本 HTML の CSP は厳格なまま（配信時の置換マーカーを壊さない）', () => {
+    // 2026-10-28 のインシデント: 原本の `connect-src 'none'` を書き換えたため、
+    // 配信時の replace が一致せず同一オリジンの API が全ブロックされた。
+    // 許可は「配信時」だけ行い、原本はオフライン用の厳格な CSP を保つ。
+    const original = readFileSync(
+      path.join(repoRoot, 'Mirai_AIHelpdesk_Cowork_StepWizard_V3.1_PCinfo_Offline.html'),
+      'utf8',
+    );
+    expect(original).toContain("connect-src 'none'");
+    expect(original).toContain("script-src 'unsafe-inline'");
+    expect(original).not.toContain('cloudflareinsights');
   });
 
   it('UI 状態を PostgreSQL に保存・取得できる', async () => {

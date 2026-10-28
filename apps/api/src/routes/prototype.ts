@@ -120,12 +120,19 @@ const AiBodySchema = z.object({
   deviceId: z.string().trim().max(120).optional(),
 });
 
+/**
+ * レスポンスヘッダの CSP。ブラウザはヘッダと meta の両方を評価し、
+ * **それぞれが許可しない限り**リソースは読み込めない（積集合）。
+ * そのため、配信時に meta 側で許可している Cloudflare Web Analytics の beacon を
+ * ここでも許可する（片方だけ緩めても A-12 の CSP 違反は消えない）。
+ * 参照: docs/60-csp-and-resolve-admin-20261028.md §4 インシデント。
+ */
 const CSP = [
   "default-src 'none'",
   "style-src 'unsafe-inline'",
-  "script-src 'unsafe-inline'",
+  "script-src 'unsafe-inline' https://static.cloudflareinsights.com",
   'img-src data: blob:',
-  "connect-src 'self'",
+  "connect-src 'self' https://cloudflareinsights.com",
   "font-src 'none'",
   "frame-src 'none'",
   "object-src 'none'",
