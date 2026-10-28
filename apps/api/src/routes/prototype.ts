@@ -202,7 +202,13 @@ function renderPrototype(boot: {
 
   let html = readSource();
   // 元の CSP は外部通信を禁止しているため、同一オリジンの API だけ許可する。
-  html = html.replace("connect-src 'none'", "connect-src 'self'");
+  // 併せて Cloudflare がエッジで注入する Web Analytics の beacon（script/connect）だけを許可する。
+  // オフライン原本の CSP は変更しない（配信時だけ緩める）。
+  html = html.replace("connect-src 'none'", "connect-src 'self' https://cloudflareinsights.com");
+  html = html.replace(
+    "script-src 'unsafe-inline'",
+    "script-src 'unsafe-inline' https://static.cloudflareinsights.com",
+  );
   // オフライン試作の表示のうち、検証環境で事実と異なる主要ラベルだけを更新する。
   // レイアウト・CSS・画面構成は変更しない。
   html = html.replace('<span>完全オフライン</span>', '<span>Cloudflare Access</span>');

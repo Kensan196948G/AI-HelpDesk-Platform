@@ -16,7 +16,7 @@
 
 | # | 変更 | 内容 |
 |---|---|---|
-| 1 | `Mirai_AIHelpdesk_Cowork_StepWizard_V3.1_PCinfo_Offline.html` の meta CSP | `script-src 'unsafe-inline' https://static.cloudflareinsights.com` / `connect-src https://cloudflareinsights.com`。**アプリ側で完結**（他アプリ・ゾーン設定は変更しない） |
+| 1 | **配信時の CSP 書き換え**（`apps/api/src/routes/prototype.ts`） | オフライン原本の `connect-src 'none'` を配信時だけ `'self'` に緩めている既存処理へ、`https://cloudflareinsights.com` を追加。併せて `script-src 'unsafe-inline'` に `https://static.cloudflareinsights.com` を追加。**原本 HTML の CSP は変更しない** |
 | 2 | `isResolveAdmin` を `apps/api/src/resolve/admin.ts` へ抽出 | `routes.ts` と `me.ts` で共用（ロジック不変） |
 | 3 | `GET /api/me` | `resolveAdmin: boolean` を追加（IT 管理者か） |
 | 4 | 画面（`resolve-bridge.js`） | `/api/me` の `resolveAdmin` が true のときだけ承認待ちを取得。**false なら呼ばない**（403 のコンソールノイズ解消） |
@@ -36,7 +36,18 @@
 - 非管理者では `/api/resolve/admin/pending` を呼ばないため、通常のログインでは **403 が出ない**。
 - 管理者（許可リスト該当者）は従来どおり 200 で承認待ちを取得できる。
 
-## 4. 本番反映
+## 4. インシデント（同日・復旧済み）
+
+- 最初の実装では **原本 HTML の meta CSP を直接変更**した。しかし配信時に行われる
+  `html.replace("connect-src 'none'", "connect-src 'self'")` が**置換対象を見失い**、
+  配信 CSP が `connect-src https://cloudflareinsights.com` だけになった。
+- 結果、画面から同一オリジンの API 呼び出し（`/api/me`・`/api/state`・`/api/case-handovers` 等）が
+  **すべて CSP でブロック**された（ユーザーのコンソールで確認）。同時に beacon も従来どおりブロック。
+- 対応: 原本 HTML を変更前に戻して再起動（**API 呼び出しは復旧**）。その後、**配信時の書き換え**を
+  正しく修正する方式に変更した（本稿 §2-1）。
+- 教訓: CSP は「原本」と「配信時の書き換え」の2箇所に存在する。**配信時の置換マーカーを壊さない**。
+
+## 5. 本番反映
 
 - ビルド → `COMMIT_SHA` 更新 → `systemctl --user restart ai-helpdesk-api.service`
   （HTML・ブリッジは起動時にキャッシュされるため、**再起動が必要**）。
