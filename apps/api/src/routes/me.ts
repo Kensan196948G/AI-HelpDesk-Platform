@@ -28,6 +28,9 @@ export async function meRoutes(app: FastifyInstance): Promise<void> {
     return {
       ok: true,
       employee,
+      // V-01: UI がロール集合（複数ロール）を取得できるようにする。users に居ない
+      // アカウントは空配列（従来どおり「ロール無し」）。判定はサーバ側が正本。
+      roles: request.uiRoles ?? [],
       source: 'mirai-info.employee_directory',
     };
   });
