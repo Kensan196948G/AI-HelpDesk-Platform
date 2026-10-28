@@ -1,3 +1,4 @@
+import { sameHuman } from '../auth/shared-identity.js';
 import { type FinalReport, FinalReportSchema } from '../domain/final-report.js';
 import { redactPII } from '../domain/pii.js';
 import { type CaseSnapshot, normalizeState } from '../lib/case-handover.js';
@@ -244,6 +245,12 @@ export function buildTerminalReport(input: TerminalReportInput): TerminalReportR
       shared: [],
       memo: memo || undefined,
       at: new Date(session.started_at).toISOString(),
+      approvedBy: handover.approved_by ?? undefined,
+      approvedAt: handover.approved_at ? new Date(handover.approved_at).toISOString() : undefined,
+      selfApproved: handover.self_approved,
+      sharedIdentity: handover.approved_by
+        ? sameHuman(handover.approved_by, handover.claimed_by)
+        : false,
     },
     resolution: {
       cause,

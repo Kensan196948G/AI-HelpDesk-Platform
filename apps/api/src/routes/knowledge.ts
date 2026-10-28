@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { requireHelpdeskActor } from '../auth/helpdesk-scope.js';
 import { authenticate, requireRole } from '../auth/session.js';
+import { sameHuman } from '../auth/shared-identity.js';
 import { authenticateUi } from '../auth/ui.js';
 import { config } from '../config.js';
 import { sql } from '../db.js';
@@ -385,6 +386,13 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
       const existing = existingRows[0];
       const recordAuthorId = existing ? String(existing.author_id) : authorId;
       const selfApproved = recordAuthorId === authorId;
+      // 別アカウントだが同一人物による承認か（selfApproved=false の誤読を防ぐ）。
+      const authorEmailRow = existing
+        ? await sql<{ email: string }[]>`
+            SELECT lower(email) AS email FROM users WHERE id = ${existing.author_id} LIMIT 1
+          `
+        : [];
+      const sharedIdentity = !selfApproved && sameHuman(email, authorEmailRow[0]?.email ?? null);
 
       if (existing && existing.status === 'approved' && input.status !== 'approved') {
         throw conflict('公開済みのナレッジは更新できません。');
@@ -483,6 +491,7 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
             detail: {
               clientRef: input.clientRef,
               selfApproved,
+              sharedIdentity,
               via: 'ui',
               actorEmail: email,
               comment: input.comment ?? '',
@@ -513,7 +522,7 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
       });
 
       const updated = await loadKnowledge(savedId);
-      return { knowledge: knowledgeDto(updated), selfApproved };
+      return { knowledge: knowledgeDto(updated), selfApproved, sharedIdentity };
     },
   );
 }

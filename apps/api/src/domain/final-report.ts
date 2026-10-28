@@ -91,6 +91,11 @@ const HandoverSchema = z.object({
   shared: z.array(z.string().max(120)).max(50).default([]),
   memo: z.string().max(20000).optional(),
   at: Iso.optional(),
+  // 承認の記録（別アカウント承認・同一人物の明示）。docs/56・57。
+  approvedBy: z.string().max(200).optional(),
+  approvedAt: Iso.optional(),
+  selfApproved: z.boolean().optional(),
+  sharedIdentity: z.boolean().optional(),
 });
 
 const ResolutionSchema = z.object({
@@ -597,6 +602,17 @@ function renderHandover(report: FinalReport): string {
     ['担当', escapeHtml(handover.assignee ?? '')],
     ['共有した情報', handover.shared.map(escapeHtml).join('、')],
     ['引継ぎ日時', escapeHtml(handover.at ?? '')],
+    ['承認者', escapeHtml(handover.approvedBy ?? '')],
+    ['承認日時', escapeHtml(handover.approvedAt ?? '')],
+    // 自己承認か・別アカウント（同一人物）かを明示する（誤読防止）。
+    [
+      '承認の性質',
+      handover.sharedIdentity
+        ? '別アカウント（同一人物）'
+        : handover.selfApproved
+          ? '自己承認'
+          : '別の担当者',
+    ],
   ].filter((row) => row[1]);
   const memo = handover.memo
     ? `<h3>AIがまとめた引継ぎメモ</h3><pre class="memo">${safeText(handover.memo, 20000)}</pre>`

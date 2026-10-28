@@ -38,3 +38,22 @@ OK  監査に運用者と承認者が別々に残る :: actors=split-owner… / 
   このため「別アカウント承認が成立する」ことは、**同一コード・同一設定の検証インスタンス**で実測しています。
 - 同日 09:25 に検証インスタンス停止時の `pkill` が本番 API にも一致し、約 20 秒停止しました（復旧済み・
   詳細と再発防止は `docs/56 §4`）。
+
+## 追記: sharedIdentity（同一人物の記録）の実測 — 2026-10-28
+
+`SHARED_IDENTITY_GROUPS=kensan1969@gmail.com|k-aritoh@mirai-const.co.jp` を設定した検証インスタンスで
+`scripts/verify/split-identity-20261028.mjs` を実行 → **8/8 PASS**。
+
+```
+OK  状態キーが分離される
+OK  名簿解決が分離される（operator=MK0623 / approver=null）
+OK  運用者（k-aritoh）が指名引継ぎを claim :: HTTP 200
+OK  別アカウント承認が成立（self_approved=false） :: HTTP 200
+OK  応答に sharedIdentity=true（別アカウント・同一人物）
+OK  監査の承認行に sharedIdentity=true :: action=case_handover.approve
+OK  監査に運用者と承認者が別々に残る
+OK  ナレッジ承認でも sharedIdentity=true（応答・監査）
+```
+
+- 回帰: `shared-identity` 5件 / `final-report` 14件 / `case-handovers`・`knowledge-ui` 統合 23件 PASS。
+- 限界: 報告書は作成時点で承認情報がある場合のみ「承認の性質」を表示（docs/57 §3）。
