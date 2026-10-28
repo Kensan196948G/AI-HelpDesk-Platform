@@ -23,6 +23,8 @@ describe('GET /api/me', () => {
     expect(body.ok).toBe(true);
     expect(body.source).toContain('mirai-info');
     expect(body).toHaveProperty('employee');
+    // V-01: 複数ロールを UI が取得できる（users に居なければ空配列）。
+    expect(Array.isArray(body.roles)).toBe(true);
     if (body.employee) {
       expect(typeof body.employee.employeeNo).toBe('string');
       expect(typeof body.employee.name).toBe('string');
