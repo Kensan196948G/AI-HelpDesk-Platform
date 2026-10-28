@@ -10,6 +10,7 @@ import { ApiError, badRequest, notFound } from '../errors.js';
 import { appendAudit } from '../lib/audit-log.js';
 import { jsonbValue } from '../lib/jsonb-value.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
+import { isResolveAdmin } from './admin.js';
 import {
   type AdminApprovalPayload,
   type ApprovalChallenge,
@@ -291,20 +292,6 @@ function adminApprovalPayloadFor(
     nonce: row.admin_nonce,
     expiresAt: row.admin_expires_at,
   });
-}
-
-/** IT 管理者の許可リスト（呼び出し時にパースする。テストが config を差し替えるため）。 */
-function resolveAdminAllowlist(): Set<string> {
-  return new Set(
-    String(config.RESOLVE_ADMIN_ALLOWLIST ?? '')
-      .split(',')
-      .map((value) => canonicalEmail(value))
-      .filter(Boolean),
-  );
-}
-
-function isResolveAdmin(email: string): boolean {
-  return resolveAdminAllowlist().has(canonicalEmail(email));
 }
 
 /** 端末エージェントの最終応答時刻（device_tokens.last_used_at の最大）。 */

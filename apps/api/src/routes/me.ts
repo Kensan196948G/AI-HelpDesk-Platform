@@ -4,6 +4,7 @@ import { authenticateUi } from '../auth/ui.js';
 import { badRequest } from '../errors.js';
 import { findEmployeeByEmail } from '../lib/mirai-info.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
+import { isResolveAdmin } from '../resolve/admin.js';
 
 /**
  * ログインした本人の社員情報。
@@ -31,6 +32,8 @@ export async function meRoutes(app: FastifyInstance): Promise<void> {
       // V-01: UI がロール集合（複数ロール）を取得できるようにする。users に居ない
       // アカウントは空配列（従来どおり「ロール無し」）。判定はサーバ側が正本。
       roles: request.uiRoles ?? [],
+      // IT 管理者（リスク4以上の承認者）か。UI が承認待ちを呼ぶかの判断に使う。
+      resolveAdmin: isResolveAdmin(request.uiEmail ?? ''),
       source: 'mirai-info.employee_directory',
     };
   });
