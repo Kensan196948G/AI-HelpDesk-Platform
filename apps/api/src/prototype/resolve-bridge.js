@@ -24,6 +24,7 @@
     lastKey: '',
     adminItems: null,
     adminLoaded: false,
+    resolveAdmin: undefined,
     // 確認待ちカードの説明文に使う「最後に実行した Skill」の表示名（取得できたときだけ入る）。
     awaitingTitle: '',
     // 修復ステップ done 後の script 形態 verify 追撃待ち（session だけ executing の中間状態）。
@@ -488,6 +489,20 @@
 
   async function loadAdminPending() {
     if (STATE.adminLoaded) return;
+    // 管理者でなければ呼ばない（403 のコンソールノイズを避ける）。
+    // 判定はサーバが返す /api/me の resolveAdmin（UI の自己申告は信用しない）。
+    if (STATE.resolveAdmin === undefined) {
+      try {
+        const me = await api('/api/me');
+        STATE.resolveAdmin = me?.resolveAdmin === true;
+      } catch (error) {
+        STATE.resolveAdmin = false;
+      }
+    }
+    if (!STATE.resolveAdmin) {
+      STATE.adminLoaded = true;
+      return;
+    }
     STATE.adminLoaded = true;
     try {
       const data = await api('/api/resolve/admin/pending');
