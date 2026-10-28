@@ -16,7 +16,8 @@
 
 | # | 変更 | 内容 |
 |---|---|---|
-| 1 | `Mirai_AIHelpdesk_Cowork_StepWizard_V3.1_PCinfo_Offline.html` の meta CSP | `script-src 'unsafe-inline' https://static.cloudflareinsights.com` / `connect-src https://cloudflareinsights.com`。**アプリ側で完結**（他アプリ・ゾーン設定は変更しない） |
+| 1 | **配信時の CSP 書き換え**（`apps/api/src/routes/prototype.ts`） | オフライン原本の `connect-src 'none'` を配信時だけ `'self'` に緩めている既存処理へ、`https://cloudflareinsights.com` を追加。併せて `script-src 'unsafe-inline'` に `https://static.cloudflareinsights.com` を追加。**原本 HTML の CSP は変更しない** |
+| 1-2 | **レスポンスヘッダの CSP**（同ファイルの `CSP` 定数） | `script-src` に `https://static.cloudflareinsights.com`、`connect-src` に `https://cloudflareinsights.com` を追加。**ヘッダと meta は積集合で評価**されるため、片方だけ緩めても beacon は通らない（2026-10-28 10:32 実測） |
 | 2 | `isResolveAdmin` を `apps/api/src/resolve/admin.ts` へ抽出 | `routes.ts` と `me.ts` で共用（ロジック不変） |
 | 3 | `GET /api/me` | `resolveAdmin: boolean` を追加（IT 管理者か） |
 | 4 | 画面（`resolve-bridge.js`） | `/api/me` の `resolveAdmin` が true のときだけ承認待ちを取得。**false なら呼ばない**（403 のコンソールノイズ解消） |
@@ -30,13 +31,33 @@
 |---|---|
 | `/api/me`（非管理者） | `k-aritoh` → `resolveAdmin=false` |
 | `/api/me`（管理者） | `gmail`（`RESOLVE_ADMIN_ALLOWLIST` に設定） → `resolveAdmin=true` |
-| 配信 HTML の CSP | `script-src 'unsafe-inline' https://static.cloudflareinsights.com` を含む |
-| 回帰 | typecheck / build PASS、`me` + `resolve` テスト **167 passed**、lint error 0 |
+| 配信ヘッダの CSP | `script-src 'unsafe-inline' https://static.cloudflareinsights.com` / `connect-src 'self' https://cloudflareinsights.com` を含む |
+| 配信 HTML の meta CSP | 同上（両方が許可しないとブラウザは遮断する） |
+| 実ブラウザ（隔離インスタンス・`k-aritoh`） | `/api/me`・`/api/employees`・`/api/state/*`・`/api/case-handovers/inbox`・`/api/device/browser` すべて **200**。beacon スクリプトの注入と RUM への fetch で **CSP 違反 0**。負の対照 `https://example.com/x.js` は `script-src-elem` で遮断（＝計測が効いている） |
+| 回帰 | typecheck / build PASS、**515 passed**、lint error 0（新規1件: 原本マーカーと両 CSP の許可を固定） |
 
 - 非管理者では `/api/resolve/admin/pending` を呼ばないため、通常のログインでは **403 が出ない**。
 - 管理者（許可リスト該当者）は従来どおり 200 で承認待ちを取得できる。
+- 補足: 隔離ブラウザではブラウザ自身の `/favicon.ico` 要求が `img-src` で遮断される（本件とは無関係の既存ノイズ）。
 
-## 4. 本番反映
+## 4. インシデント（同日・復旧済み）
+
+- 最初の実装では **原本 HTML の meta CSP を直接変更**した。しかし配信時に行われる
+  `html.replace("connect-src 'none'", "connect-src 'self'")` が**置換対象を見失い**、
+  配信 CSP が `connect-src https://cloudflareinsights.com` だけになった。
+- 結果、画面から同一オリジンの API 呼び出し（`/api/me`・`/api/state`・`/api/case-handovers` 等）が
+  **すべて CSP でブロック**された（ユーザーのコンソールで確認）。同時に beacon も従来どおりブロック。
+- 対応: 原本 HTML を変更前に戻して再起動（**API 呼び出しは復旧**）。その後、**配信時の書き換え**を
+  正しく修正する方式に変更した（本稿 §2-1）。
+- **追記（10:32 実測）**: §2-1 だけでは A-12 の CSP 違反は解消しない。レスポンスヘッダの CSP が
+  `script-src 'unsafe-inline'` のままだったため、ブラウザはヘッダと meta の積集合で評価し、
+  beacon は依然ブロックされる。§2-1-2 のとおりヘッダ側にも同じ2オリジンを許可して完了した。
+- 教訓1: CSP は「原本」「配信時の書き換え」「レスポンスヘッダ」の**3箇所**に存在する。
+  1つでも厳しいままだと遮断される。**置換マーカーを壊さない**。
+- 教訓2: 検証は「配信 HTML の文字列」だけでなく、**実ブラウザで両ポリシーを通過すること**まで見る。
+  `prototype.test.ts` にヘッダ・meta 双方の許可と原本マーカーを固定するテストを追加した。
+
+## 5. 本番反映
 
 - ビルド → `COMMIT_SHA` 更新 → `systemctl --user restart ai-helpdesk-api.service`
   （HTML・ブリッジは起動時にキャッシュされるため、**再起動が必要**）。
