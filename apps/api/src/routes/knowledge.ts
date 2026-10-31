@@ -418,6 +418,26 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
       if (isDecision && !existing) await requireHelpdeskActor(email);
       // 他人のナレッジを判定するときは本文を変更しない（作成者名義の改ざんを防ぐ）。
       const lockContent = isDecision && Boolean(existing) && !selfApproved;
+      // DX 推進部以外の承認者が判定できるのは申請済みだけ（下書き・差戻し中は見えないため）。
+      if (
+        isDecision &&
+        existing &&
+        existing.status !== 'pending' &&
+        !(await isHelpdeskActor(email))
+      ) {
+        throw conflict('承認待ちのナレッジではありません。');
+      }
+      // 承認者が確認した本文と保存済みの本文が違えば公開しない（確認後の更新を見逃さない）。
+      if (
+        input.status === 'approved' &&
+        lockContent &&
+        (existing.title !== title.text ||
+          existing.symptom !== symptom.text ||
+          existing.cause !== cause.text ||
+          existing.steps !== steps.text)
+      ) {
+        throw conflict('確認後に本文が更新されています。一覧を更新して確認し直してください。');
+      }
 
       if (input.status === 'approved') {
         if (existing && !['draft', 'pending', 'rejected'].includes(existing.status)) {
