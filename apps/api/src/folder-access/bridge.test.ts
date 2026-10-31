@@ -188,7 +188,7 @@ describe('フォルダ一覧ブリッジ（Mock DOM）', () => {
   it('担当者でなければ（403）担当者パネルを出さない', async () => {
     const h = harness((url) =>
       url.includes('/mine')
-        ? { status: 200, body: { request: null } }
+        ? { status: 200, body: { requests: [] } }
         : { status: 403, body: { error: { code: 'FORBIDDEN', message: 'x' } } },
     );
     h.load[0]?.();
@@ -205,7 +205,7 @@ describe('フォルダ一覧ブリッジ（Mock DOM）', () => {
   it('担当者パネル: 結果を textContent で描画し、ファイル名を HTML として解釈しない', async () => {
     const xss = '<img src=x onerror=alert(1)>.txt';
     const h = harness((url) => {
-      if (url.includes('/mine')) return { status: 200, body: { request: null } };
+      if (url.includes('/mine')) return { status: 200, body: { requests: [] } };
       if (url.includes('/result')) {
         return {
           status: 200,
@@ -253,14 +253,16 @@ describe('フォルダ一覧ブリッジ（Mock DOM）', () => {
   it('相談者パネル: コード入力 → 同意の順に表示し、対象と取消を出す', async () => {
     let dto = requestDto('helper_pending', { paired: false });
     const h = harness((url) => {
-      if (url.includes('/mine')) return { status: 200, body: { request: dto } };
+      if (url.includes('/mine')) return { status: 200, body: { requests: [dto] } };
       return notFound;
     });
     h.load[0]?.();
     await h.settle();
     const mine = panel(h, 'aihdFolderAccessMinePanel');
     expect(mine?.text).toContain('8 桁のコード');
-    expect(mine?.findAll((element) => element.id === 'aihdFolderAccessCode')).toHaveLength(1);
+    expect(mine?.findAll((element) => element.attrs.placeholder === '8 桁のコード')).toHaveLength(
+      1,
+    );
 
     dto = requestDto('consent_pending');
     for (const timer of h.timers) timer();
@@ -305,7 +307,7 @@ describe('フォルダ一覧ブリッジ（Mock DOM）', () => {
         return { status: 200, body: { ok: true } };
       }
       if (url.includes('/mine')) {
-        return { status: 200, body: { request: requestDto('consent_pending') } };
+        return { status: 200, body: { requests: [requestDto('consent_pending')] } };
       }
       return notFound;
     });
@@ -327,10 +329,46 @@ describe('フォルダ一覧ブリッジ（Mock DOM）', () => {
     ]);
   });
 
+  it('相談者パネル: 進行中の依頼を全件表示し、それぞれを取り消せる', async () => {
+    const older = {
+      ...requestDto('active', {
+        scope: { root: 'Desktop', segments: [], expiresAt: '2026-10-31T01:00:00Z' },
+      }),
+      id: '33333333-3333-4333-8333-333333333333',
+      caseId: 'CASE-OLD',
+    };
+    const newer = { ...requestDto('consent_pending'), caseId: 'CASE-NEW' };
+    const posts: string[] = [];
+    const h = harness((url, init) => {
+      if (init?.method === 'POST') {
+        posts.push(url);
+        return { status: 200, body: { ok: true } };
+      }
+      if (url.includes('/mine')) return { status: 200, body: { requests: [newer, older] } };
+      return notFound;
+    });
+    h.load[0]?.();
+    await h.settle();
+    const mine = panel(h, 'aihdFolderAccessMinePanel');
+    expect(mine?.text).toContain('2 件');
+    expect(mine?.text).toContain('CASE-OLD');
+    expect(mine?.text).toContain('CASE-NEW');
+    mine
+      ?.findAll((element) => element.tag === 'button' && element.text === '今すぐ取り消す')[0]
+      ?.listeners.click?.[0]?.({});
+    await h.settle();
+    expect(posts).toEqual([`/api/folder-access/requests/${older.id}/revoke`]);
+    mine
+      ?.findAll((element) => element.tag === 'button' && element.text === '拒否する')[0]
+      ?.listeners.click?.[0]?.({});
+    await h.settle();
+    expect(posts[1]).toBe(`/api/folder-access/requests/${newer.id}/revoke`);
+  });
+
   it('担当者パネル: 終了すると結果をメモリからも破棄する', async () => {
     let status = 'active';
     const h = harness((url, init) => {
-      if (url.includes('/mine')) return { status: 200, body: { request: null } };
+      if (url.includes('/mine')) return { status: 200, body: { requests: [] } };
       if (url.includes('/result')) {
         return {
           status: 200,

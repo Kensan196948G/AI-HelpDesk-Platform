@@ -442,27 +442,36 @@
   // ── 相談者パネル ───────────────────────────────────────────────
 
   const MINE = {
-    request: null,
+    requests: [],
     disabled: false,
     busy: false,
     error: null,
-    code: '',
-    root: 'Documents',
-    subfolder: '',
-    ttl: 30,
+    // 依頼ごとの入力。別の依頼の入力と混ざらないように分ける。
+    forms: new Map(),
     lastKey: '',
   };
+
+  function formFor(id) {
+    if (!MINE.forms.has(id)) {
+      MINE.forms.set(id, { code: '', root: 'Documents', subfolder: '', ttl: 30 });
+    }
+    return MINE.forms.get(id);
+  }
 
   async function loadMine() {
     if (MINE.disabled) return;
     try {
       const data = await api('/api/folder-access/mine');
-      MINE.request = data.request;
+      MINE.requests = data.requests ?? [];
+      const ids = new Set(MINE.requests.map((request) => request.id));
+      for (const id of MINE.forms.keys()) {
+        if (!ids.has(id)) MINE.forms.delete(id);
+      }
     } catch (error) {
       if (error.status === 404) {
         // 機能が無効。以後は問い合わせず、何も描画しない。
         MINE.disabled = true;
-        MINE.request = null;
+        MINE.requests = [];
       } else if (error.status !== 401 && error.status !== 403) {
         MINE.error = String(error.message || error);
       }
@@ -485,35 +494,42 @@
     }
   }
 
-  function minePath(suffix) {
-    return `/api/folder-access/requests/${encodeURIComponent(MINE.request.id)}/${suffix}`;
+  function minePath(request, suffix) {
+    return `/api/folder-access/requests/${encodeURIComponent(request.id)}/${suffix}`;
   }
 
-  function submitCode() {
+  function submitCode(request) {
+    const form = formFor(request.id);
     return mineAction(async () => {
-      await api(minePath('pair'), { code: MINE.code.trim() });
-      MINE.code = '';
+      await api(minePath(request, 'pair'), { code: form.code.trim() });
+      form.code = '';
     });
   }
 
-  function submitConsent() {
+  function submitConsent(request) {
+    const form = formFor(request.id);
     return mineAction(async () => {
-      const segments = MINE.subfolder
+      const segments = form.subfolder
         .split(/[\\/]/)
         .map((part) => part.trim())
         .filter(Boolean);
-      await api(minePath('consent'), { root: MINE.root, segments, ttlMinutes: Number(MINE.ttl) });
+      await api(minePath(request, 'consent'), {
+        root: form.root,
+        segments,
+        ttlMinutes: Number(form.ttl),
+      });
     });
   }
 
-  function submitRevoke() {
+  function submitRevoke(request) {
     return mineAction(async () => {
-      await api(minePath('revoke'), {});
+      await api(minePath(request, 'revoke'), {});
     });
   }
 
   function mineBody(request) {
     if (isClosed(request)) return [small(reasonText(request) ?? '')];
+    const form = formFor(request.id);
     const nodes = [];
     const reason = reasonText(request);
     if (reason) nodes.push(small(reason));
@@ -529,17 +545,16 @@
             { style: 'margin-top:6px;display:flex;gap:6px;flex-wrap:wrap' },
             h('input', {
               class: 'u-input',
-              id: 'aihdFolderAccessCode',
               inputmode: 'numeric',
               autocomplete: 'off',
               maxlength: '8',
               placeholder: '8 桁のコード',
-              value: MINE.code,
+              value: form.code,
               oninput: (event) => {
-                MINE.code = event.target.value;
+                form.code = event.target.value;
               },
             }),
-            h('button', { class: 'u-btn pri', onclick: submitCode }, '確認'),
+            h('button', { class: 'u-btn pri', onclick: () => submitCode(request) }, '確認'),
           ),
         );
         if (request.pairingLocked) {
@@ -562,19 +577,19 @@
             {
               class: 'u-input',
               onchange: (event) => {
-                MINE.root = event.target.value;
+                form.root = event.target.value;
               },
             },
             ROOTS.map(([value, label]) =>
-              h('option', { value, selected: value === MINE.root }, label),
+              h('option', { value, selected: value === form.root }, label),
             ),
           ),
           h('input', {
             class: 'u-input',
             placeholder: 'サブフォルダ（任意）',
-            value: MINE.subfolder,
+            value: form.subfolder,
             oninput: (event) => {
-              MINE.subfolder = event.target.value;
+              form.subfolder = event.target.value;
             },
           }),
           h(
@@ -582,11 +597,11 @@
             {
               class: 'u-input',
               onchange: (event) => {
-                MINE.ttl = Number(event.target.value);
+                form.ttl = Number(event.target.value);
               },
             },
             TTLS.map((value) =>
-              h('option', { value: String(value), selected: value === MINE.ttl }, `${value} 分`),
+              h('option', { value: String(value), selected: value === form.ttl }, `${value} 分`),
             ),
           ),
         ),
@@ -601,8 +616,8 @@
         h(
           'div',
           { style: 'margin-top:8px;display:flex;gap:8px;flex-wrap:wrap' },
-          h('button', { class: 'u-btn pri', onclick: submitConsent }, '同意する'),
-          h('button', { class: 'u-btn', onclick: submitRevoke }, '拒否する'),
+          h('button', { class: 'u-btn pri', onclick: () => submitConsent(request) }, '同意する'),
+          h('button', { class: 'u-btn', onclick: () => submitRevoke(request) }, '拒否する'),
         ),
       );
       return nodes;
@@ -614,7 +629,11 @@
         h(
           'div',
           { style: 'margin-top:8px' },
-          h('button', { class: 'u-btn pri', onclick: submitRevoke }, '今すぐ取り消す'),
+          h(
+            'button',
+            { class: 'u-btn pri', onclick: () => submitRevoke(request) },
+            '今すぐ取り消す',
+          ),
         ),
       );
       return nodes;
@@ -623,19 +642,33 @@
       h(
         'div',
         { style: 'margin-top:8px' },
-        h('button', { class: 'u-btn', onclick: submitRevoke }, '拒否する'),
+        h('button', { class: 'u-btn', onclick: () => submitRevoke(request) }, '拒否する'),
       ),
     );
     return nodes;
   }
 
+  function mineSection(request) {
+    return h(
+      'div',
+      { style: 'margin-top:10px;padding-top:8px;border-top:1px solid #98a2b3' },
+      h(
+        'div',
+        { class: 'u-small' },
+        h('b', null, `案件 ${request.caseId ?? ''}`),
+        ` / ${STATUS_LABEL[request.status] ?? ''}`,
+      ),
+      ...mineBody(request).filter(Boolean),
+    );
+  }
+
   function renderMine() {
-    const request = MINE.request;
-    const key = JSON.stringify([request, MINE.error, MINE.busy, MINE.disabled]);
+    const requests = MINE.requests;
+    const key = JSON.stringify([requests, MINE.error, MINE.busy, MINE.disabled]);
     if (key === MINE.lastKey) return;
     MINE.lastKey = key;
     let panel = document.getElementById('aihdFolderAccessMinePanel');
-    if (!request || MINE.disabled) {
+    if (requests.length === 0 || MINE.disabled) {
       panel?.remove();
       return;
     }
@@ -651,11 +684,11 @@
       document.body.append(panel);
     }
     panel.replaceChildren(
-      heading('📁 フォルダ一覧の確認依頼', STATUS_LABEL[request.status] ?? ''),
+      heading('📁 フォルダ一覧の確認依頼', `${requests.length} 件`),
       small(
         '担当者があなたの PC のフォルダ一覧の確認を依頼しています。読み取り専用です。いつでも取り消せます。',
       ),
-      ...mineBody(request).filter(Boolean),
+      ...requests.map(mineSection),
       errorLine(MINE.error) ?? document.createTextNode(''),
       MINE.busy ? small('処理中…') : document.createTextNode(''),
     );

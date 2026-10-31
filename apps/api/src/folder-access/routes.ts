@@ -50,16 +50,34 @@ async function requireAssignee(request: FastifyRequest): Promise<string> {
   return email;
 }
 
-function assertAssignee(ctx: RequestContext, email: string): void {
+function assertAssignee(ctx: Pick<RequestContext, 'assignee_email'>, email: string): void {
   if (ctx.assignee_email !== email) {
     throw new ApiError(403, 'NOT_ASSIGNEE', 'この依頼を開始した担当者本人のみ操作できます。');
   }
 }
 
-function assertRequester(ctx: RequestContext, email: string): void {
+function assertRequester(
+  ctx: Pick<RequestContext, 'owner_email' | 'requester_email'>,
+  email: string,
+): void {
   if (ctx.owner_email !== email || ctx.requester_email !== email) {
     throw new ApiError(403, 'NOT_REQUESTER', '相談者本人のみ操作できます。');
   }
+}
+
+type Ownership = Pick<RequestContext, 'assignee_email' | 'requester_email' | 'owner_email'>;
+
+/** 権限確認用の読み取り。状態を更新する処理（refresh）より前に呼ぶ。 */
+async function loadOwnership(id: string): Promise<Ownership> {
+  const rows = await sql<Ownership[]>`
+    SELECT r.assignee_email, r.requester_email, h.owner_email
+    FROM folder_access_requests r
+    JOIN case_handovers h ON h.id = r.handover_id
+    WHERE r.id = ${id}
+  `;
+  const row = rows[0];
+  if (!row) throw notFound('依頼が見つかりません。');
+  return row;
 }
 
 function dto(ctx: RequestContext, view: 'assignee' | 'requester') {
@@ -209,16 +227,16 @@ async function assignRoutes(app: FastifyInstance): Promise<void> {
     }
     const id = await latestForHandover(handoverId);
     if (!id) return { ok: true, request: null };
+    // 前任の担当者の依頼は返さない（権限確認を状態更新より先に行う）。
+    if ((await loadOwnership(id)).assignee_email !== email) return { ok: true, request: null };
     const ctx = await refreshWithProbe(id, email);
-    if (ctx.assignee_email !== email) return { ok: true, request: null };
     return { ok: true, request: dto(ctx, 'assignee') };
   });
 
   app.get('/folder-access/requests/:id', { preHandler: authenticateUi }, async (request) => {
     const email = await requireAssignee(request);
     const { id } = IdParams.parse(request.params);
-    const ctx = await refresh(id, 'system:check');
-    assertAssignee(ctx, email);
+    assertAssignee(await loadOwnership(id), email);
     const fresh = await refreshWithProbe(id, email);
     return { ok: true, request: dto(fresh, 'assignee') };
   });
@@ -283,8 +301,8 @@ async function assignRoutes(app: FastifyInstance): Promise<void> {
   app.get('/folder-access/requests/:id/result', { preHandler: authenticateUi }, async (request) => {
     const email = await requireAssignee(request);
     const { id } = IdParams.parse(request.params);
-    const ctx = await refresh(id, 'system:check');
-    assertAssignee(ctx, email);
+    assertAssignee(await loadOwnership(id), email);
+    const ctx = await refresh(id, email);
     if (ctx.status !== 'active') throw notActive(ctx);
     const rows = await sql<
       {
@@ -411,30 +429,38 @@ async function pairTx(
 }
 
 async function requesterRoutes(app: FastifyInstance): Promise<void> {
-  // 相談者の状態確認。handoverId を省くと自分の進行中（または直近に終了）の依頼を返す。
+  // 相談者の状態確認。handoverId を省くと、進行中の依頼すべてと直近に終了した依頼を返す。
+  // 古い同意も確認・取消できるように 1 件に絞らない。
   app.get('/folder-access/mine', { preHandler: authenticateUi }, async (request) => {
     const email = requireEmail(request);
     const { handoverId } = MineQuery.parse(request.query);
-    let id: string | null = null;
+    let ids: string[];
     if (handoverId) {
       const handover = await loadHandover(handoverId);
       if (handover.owner_email !== email) {
         throw new ApiError(403, 'NOT_REQUESTER', '相談者本人のみ参照できます。');
       }
-      id = await latestForHandover(handoverId);
+      const latest = await latestForHandover(handoverId);
+      ids = latest ? [latest] : [];
     } else {
-      const rows = await sql<{ id: string }[]>`
+      const open = await sql<{ id: string }[]>`
         SELECT id FROM folder_access_requests
-        WHERE requester_email = ${email}
-          AND (ended_at IS NULL OR ended_at > now() - interval '10 minutes')
+        WHERE requester_email = ${email} AND ended_at IS NULL
         ORDER BY created_at DESC
-        LIMIT 1
       `;
-      id = rows[0]?.id ?? null;
+      const recent = await sql<{ id: string }[]>`
+        SELECT id FROM folder_access_requests
+        WHERE requester_email = ${email} AND ended_at > now() - interval '10 minutes'
+        ORDER BY ended_at DESC
+        LIMIT ${LIMITS.maxRecentEnded}
+      `;
+      ids = [...open, ...recent].map((row) => row.id);
     }
-    if (!id) return { ok: true, request: null };
-    const ctx = await refreshWithProbe(id, email);
-    return { ok: true, request: dto(ctx, 'requester') };
+    const requests = [];
+    for (const id of ids) {
+      requests.push(dto(await refreshWithProbe(id, email), 'requester'));
+    }
+    return { ok: true, requests, request: requests[0] ?? null };
   });
 
   app.post(
@@ -487,8 +513,8 @@ async function requesterRoutes(app: FastifyInstance): Promise<void> {
       const email = requireEmail(request);
       const { id } = IdParams.parse(request.params);
       const body = ConsentBodySchema.parse(request.body);
+      assertRequester(await loadOwnership(id), email);
       const before = await refreshWithProbe(id, email);
-      assertRequester(before, email);
       if (before.status !== 'consent_pending') {
         throw new ApiError(409, 'INVALID_STATE', '現在の状態では同意できません。', {
           status: before.status,

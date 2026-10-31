@@ -59,11 +59,13 @@ export const LIMITS = {
   requestMinutes: 30,
   /** 操作 1 件の配信期限。 */
   opSeconds: 120,
-  /** この秒数 heartbeat が無ければログオフ扱いにする（ヘルパーのポーリングは 60 秒以内）。 */
+  /** この秒数 heartbeat が無ければログオフ扱いにする（ヘルパーのポーリングは 120 秒以内）。 */
   helperStaleSeconds: 180,
   /** 状態確認のついでに RSP へ結果を問い合わせる最短間隔。 */
   probeCheckSeconds: 5,
   maxProbeAttempts: 3,
+  /** 相談者の状態確認で返す、直近に終了した依頼の上限（進行中は全件返す）。 */
+  maxRecentEnded: 10,
 } as const;
 
 const TRANSITIONS: Record<RequestStatus, readonly RequestStatus[]> = {

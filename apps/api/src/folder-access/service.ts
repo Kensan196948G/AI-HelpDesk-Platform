@@ -1,3 +1,4 @@
+import { emailVariants } from '../auth/email-alias.js';
 import { config } from '../config.js';
 import { sql } from '../db.js';
 import { ApiError } from '../errors.js';
@@ -232,6 +233,15 @@ export async function applyExpiryAndBinding(
 
 // ── 端末の確定（device_pending → helper_pending） ────────────────
 
+/** 別名でも同じ社員に解決する（helpdesk-scope と同じ方針）。 */
+async function findRequesterEmployee(email: string) {
+  for (const candidate of emailVariants(email)) {
+    const employee = await findEmployeeByEmail(candidate);
+    if (employee) return employee;
+  }
+  return null;
+}
+
 export interface DeviceInput {
   rspDeviceId?: string;
   hostname?: string;
@@ -271,12 +281,12 @@ async function determineDevice(
 ): Promise<DeviceOutcome> {
   let hostname: string;
   let lease: Extract<LeaseResult, { kind: 'verified' }> | null = null;
-  if (deps.allowUnverified && input.rspDeviceId) {
+  if (deps.allowUnverified && (input.rspDeviceId || input.hostname)) {
     const target = await unverifiedHostname(input);
     if (!target) return { kind: 'pending', code: 'DEVICE_NOT_LINKED' };
     hostname = target;
   } else {
-    const employee = await findEmployeeByEmail(ctx.requester_email);
+    const employee = await findRequesterEmployee(ctx.requester_email);
     if (!employee?.employeeNo) return { kind: 'pending', code: 'EMPLOYEE_UNRESOLVED' };
     const result = await fetchLease(employee.employeeNo);
     if (result.kind !== 'verified') return { kind: 'pending', code: result.code };
@@ -381,7 +391,7 @@ export async function resolveDevice(
  */
 export async function revalidateLease(ctx: RequestContext): Promise<string | 'conflict' | null> {
   if (ctx.lease_status !== 'verified') return null;
-  const employee = await findEmployeeByEmail(ctx.requester_email);
+  const employee = await findRequesterEmployee(ctx.requester_email);
   if (!employee?.employeeNo) return 'EMPLOYEE_UNRESOLVED';
   const lease = await fetchLease(employee.employeeNo);
   if (lease.kind !== 'verified') {
@@ -569,7 +579,46 @@ export async function sweepFolderAccess(): Promise<number> {
     DELETE FROM folder_access_helpers
     WHERE request_id IS NULL AND pairing_expires_at <= now() - interval '1 day'
   `;
+  await scrubExpiredIdentifiers();
   return ended;
+}
+
+/**
+ * 終了から保持期間を過ぎた行の識別子を消す（docs/62 §7-1）。
+ * 状態・終了理由・時刻は残す。監査ログには触れない（SID はハッシュしか入っていない）。
+ */
+async function scrubExpiredIdentifiers(): Promise<void> {
+  const days = config.FOLDER_ACCESS_RETENTION_DAYS;
+  await sql`
+    UPDATE folder_access_ops o
+    SET sid = NULL, root = NULL
+    FROM folder_access_requests r
+    WHERE o.request_id = r.id
+      AND r.ended_at <= now() - (${days}::int * interval '1 day')
+      AND (o.sid IS NOT NULL OR o.root IS NOT NULL)
+  `;
+  await sql`
+    UPDATE folder_access_helpers hp
+    SET sid = NULL, machine_guid = NULL, hostname = NULL, user_name = NULL,
+        pairing_code_hash = NULL, revoked_at = COALESCE(hp.revoked_at, now())
+    FROM folder_access_requests r
+    WHERE hp.request_id = r.id
+      AND r.ended_at <= now() - (${days}::int * interval '1 day')
+      AND (hp.sid IS NOT NULL OR hp.machine_guid IS NOT NULL OR hp.hostname IS NOT NULL)
+  `;
+  await sql`
+    UPDATE folder_access_requests
+    SET sid = NULL, session_id = NULL, machine_guid = NULL, consent_root = NULL,
+        rsp_hostname = NULL, rsp_device_id = NULL, mesh_node_id = NULL, rsp_machine_guid = NULL,
+        rsp_probe_log_id = NULL, lease_asset_tag = NULL, windows_user = NULL,
+        helper_hostname = NULL
+    WHERE ended_at <= now() - (${days}::int * interval '1 day')
+      AND (sid IS NOT NULL OR session_id IS NOT NULL OR machine_guid IS NOT NULL
+           OR consent_root IS NOT NULL OR rsp_hostname IS NOT NULL OR rsp_device_id IS NOT NULL
+           OR mesh_node_id IS NOT NULL OR rsp_machine_guid IS NOT NULL
+           OR rsp_probe_log_id IS NOT NULL OR lease_asset_tag IS NOT NULL
+           OR windows_user IS NOT NULL OR helper_hostname IS NOT NULL)
+  `;
 }
 
 export function startFolderAccessSweeper(log: {

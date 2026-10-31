@@ -117,6 +117,8 @@ const EnvSchema = z.object({
   LEASE_API_TOKEN_ID: optionalText,
   LEASE_API_TOKEN_SECRET: optionalText,
   LEASE_MAX_AGE_HOURS: z.coerce.number().int().positive().default(72),
+  // 同意の終了からこの日数を過ぎた行の識別子（SID・端末など）を定期処理で消す。
+  FOLDER_ACCESS_RETENTION_DAYS: z.coerce.number().int().positive().default(30),
 
   // Mirai-Info の社員名簿を読むための接続先（未設定なら Unix ソケット + OS ユーザー）。
   MIRAI_INFO_DATABASE_URL: optionalText,

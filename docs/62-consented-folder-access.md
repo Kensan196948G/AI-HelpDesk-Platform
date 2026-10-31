@@ -102,7 +102,7 @@ device_pending → helper_pending → consent_pending → active → ended
 ## 5. API（`/api`）
 
 **相談者（Access、案件の `owner_email` 本人のみ）**
-- `GET /folder-access/mine?handoverId=` 状態（`handoverId` は省略可。省略時は自分の進行中または直近 10 分以内に終了した依頼）
+- `GET /folder-access/mine?handoverId=` 状態 → `{ok, requests:[...], request}`。`handoverId` を省くと、自分の進行中の依頼すべてと直近 10 分以内に終了した依頼を返す（古い同意も確認・取消できるように 1 件に絞らない）。指定すると、その引継ぎの最新 1 件。`request` は `requests` の先頭
 - `POST /folder-access/requests/:id/pair` `{code}` ペアリング
 - `POST /folder-access/requests/:id/consent` `{root, segments, ttlMinutes}`
 - `POST /folder-access/requests/:id/revoke`
@@ -139,7 +139,7 @@ DB にはトークンの SHA-256 しか無いので、サーバは `poll` のヘ
 **サーバ（毎操作）**: フラグ有効、同意が `active`、期限内、claim 者が同一担当者、本人が相談者、
 ヘルパー未失効、heartbeat の SID・セッション一致。不一致なら終了させる。
 `sessionState` は `active` と `disconnected` だけ同意を保つ（`disconnected` の間は操作を配らず、投入も拒否する）。それ以外は `user_logged_off`。
-heartbeat が 180 秒途絶えても `user_logged_off`。ヘルパーのポーリングは 60 秒以内にする（上限 60 回/分）。
+heartbeat が 180 秒途絶えても `user_logged_off`。ヘルパーのポーリングは 120 秒以内にする（上限 60 回/分）。
 期限切れは定期処理（60 秒間隔。DB のみ）でも終了させ、結果を消す。終了時はサブフォルダ名と Windows ユーザー名も消す。
 **遅れて届いた結果は保存しない**（同意が `active` でなければ破棄し、監査に `result_discarded`）。
 結果の `actorSid` が同意の SID と違えば `sid_mismatch` で終了する。これは端末の自己申告であり、
@@ -160,6 +160,18 @@ ACL 拒否は `ACCESS_DENIED` を返し、昇格で回避しない。
 `folder_access.request / pair / consent / list_requested / list_result / result_discarded / end / revoke / expire / deny`。
 `detail` には案件、担当者、端末、SID のハッシュ、セッション、同意 ID、操作種別、開始・終了、結果、件数を入れる。
 パス、ファイル名、トークンは入れない（ルートの種別とサブフォルダも入れない）。SID はハッシュのみ。
+
+### 7-1. 保持
+
+| データ | 保持 |
+|---|---|
+| 一覧の結果、サブフォルダ名、Windows ユーザー名 | 同意の終了時に削除 |
+| 未ペアのヘルパー登録 | ペアリング期限切れで登録情報を消して失効。1 日後に行を削除 |
+| 依頼の SID・セッション・MachineGuid・ルート・端末（hostname、RSP 端末 ID、Mesh ノード ID、資産番号）、操作の SID・ルート、ペア済みヘルパーの SID・MachineGuid・hostname | 終了から `FOLDER_ACCESS_RETENTION_DAYS`（既定 30 日）で定期処理が消す |
+| 依頼の状態・終了理由・時刻・案件・相談者と担当者のメール | 残す（履歴の確認用） |
+| 監査ログ | 変更しない（§7 のとおり機微情報を含まない） |
+
+機能フラグが無効でも定期処理は動く。
 
 ## 8. 残存リスク（基盤側。本機能では防げない）
 
@@ -235,8 +247,8 @@ pwsh -NoProfile -File scripts/windows/tests/folder-helper.tests.ps1
 | 結果の `reason` | `BAD_OP, BAD_SIGNATURE, ELEVATED, SID_MISMATCH, SESSION_MISMATCH, SESSION_NOT_ACTIVE, EXPIRED, INVALID_ROOT, INVALID_SEGMENT, OUT_OF_SCOPE, REPARSE_REJECTED, ACCESS_DENIED, NOT_FOUND, NOT_A_DIRECTORY, PATH_CHANGED, IO_ERROR, INTERNAL_ERROR`。cancel された op は結果を送らない |
 | `entries[].type` | `file` / `directory` / `link`。`link` は名前サロゲートのタグ（symlink・junction など）。クラウドのプレースホルダーは `file` / `directory` に `attrs.reparse` |
 | `entries[].size` | `file` のみ数値。`directory` と `link` は `null` |
-| **未実装（提案）** `POST /revoke` | ヘッダ `x-folder-helper-token`、ボディ `{}`。uninstall が通知先に使う。現時点のサーバには無く 404 になるが、端末側の削除は続行する。サーバ側では放置された行が残る |
-| **未実装（提案）** poll の `paired` | ペア完了を知らせる値が無いため、最初の op の受信で代用している |
+| `POST /revoke` | 実装済み（§5）。ヘッダ `x-folder-helper-token`、ボディ `{}`。uninstall が通知先に使う。通知に失敗しても端末側の削除は続行し、サーバ側は heartbeat の途絶で終了させる |
+| poll の `paired` | サーバは実装済み（§5）。ヘルパーは参照せず、最初の op の受信でペア完了とみなしている |
 
 ### 9.4 判断: OneDrive と「全祖先の reparse 拒否」
 
@@ -269,6 +281,11 @@ pwsh -NoProfile -File scripts/windows/tests/folder-helper.tests.ps1
 
 ### 9.6 残る制約
 
+- **機能フラグの無効化ではヘルパーは停止しない。** 無効化すると API は 404 を返すが、ヘルパーは失敗として poll を続ける。
+  rollback では端末ごとに `uninstall-folder-helper.ps1` の実行が必須（タスク・トークン・状態フォルダを消す）。
+
 - 署名の鍵は端末に復号できる形であり、本人権限のマルウェアはトークンを読める。§8 の 4 と同じく、改ざんされた端末は防げない。
 - 同じユーザーの複数セッションでは `MultipleInstances IgnoreNew` により 1 つしか動かない。
 - op の期限判定は端末の時計に依存する。
+
+## 10. 実機検証の手順

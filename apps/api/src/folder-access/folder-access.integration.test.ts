@@ -803,6 +803,38 @@ describe('貸与情報と端末の照合（Mock: PII API / RSP）', () => {
     expect(world.probeReads).toBe(1);
   });
 
+  it('検証用フラグがあれば hostname だけでも担当者の指定端末で進む', async () => {
+    config.LEASE_API_TOKEN_ID = undefined;
+    config.FOLDER_ACCESS_ALLOW_UNVERIFIED_LEASE = true;
+    const request = await createRequest(await makeHandover(), { hostname: HOST });
+    expect(request.status).toBe('helper_pending');
+    expect(request.leaseStatus).toBe('unverified');
+    expect(request.device.rspDeviceId).toBe(RSP_DEVICE);
+    expect(world.leaseCalls).toBe(0);
+  });
+
+  it('検証用フラグが無ければ hostname の指定は無視して貸与情報で判定する', async () => {
+    const request = await createRequest(await makeHandover(), { hostname: 'SYNTH-OTHER' });
+    expect(request.leaseStatus).toBe('verified');
+    expect(world.commands[0]?.hostname).toBe(HOST);
+  });
+
+  it('社員名簿は別名のメールでも解決する', async () => {
+    const primary = 'fa-alias-primary@example.com';
+    const alias = 'fa-alias-other@example.com';
+    directory.byEmail.set(alias, { employeeNo: 'E100', name: '別名', section: '営業部' });
+    const original = config.EMAIL_ALIASES;
+    config.EMAIL_ALIASES = `${alias}=${primary}`;
+    try {
+      const request = await createRequest(await makeHandover(ASSIGNEE, primary));
+      expect(request.status).toBe('helper_pending');
+      expect(request.leaseStatus).toBe('verified');
+    } finally {
+      config.EMAIL_ALIASES = original;
+      directory.byEmail.delete(alias);
+    }
+  });
+
   it('同意の直前に貸与先が変わっていれば lease_conflict で拒否', async () => {
     const { id } = await pairedRequest();
     world.lease = leaseBody([{ ...LEASE_ROW, hostname: 'SYNTH-PC-NEW' }]);
@@ -1503,6 +1535,197 @@ describe('機微情報の分離（Mock: RSP）', () => {
     ]) {
       expect(response.body).not.toContain(CANARY_NAME);
     }
+  });
+});
+
+describe('保持期間（docs/62 §7-1）', () => {
+  async function identifiers(id: string, helperId: string) {
+    const requests = await sql<Record<string, unknown>[]>`
+      SELECT status, end_reason, ended_at, created_at, sid, session_id, machine_guid, consent_root,
+             rsp_hostname, rsp_device_id, mesh_node_id, rsp_machine_guid, rsp_probe_log_id,
+             lease_asset_tag
+      FROM folder_access_requests WHERE id = ${id}
+    `;
+    const ops = await sql<{ sid: string | null; root: string | null }[]>`
+      SELECT sid, root FROM folder_access_ops WHERE request_id = ${id}
+    `;
+    const helpers = await sql<Record<string, unknown>[]>`
+      SELECT sid, machine_guid, hostname FROM folder_access_helpers WHERE id = ${helperId}
+    `;
+    return { request: requests[0] ?? {}, ops, helper: helpers[0] ?? {} };
+  }
+
+  const backdate = (id: string, days: number) => sql`
+    UPDATE folder_access_requests
+    SET ended_at = now() - (${days}::int * interval '1 day') WHERE id = ${id}
+  `;
+
+  it('期限を過ぎた行の識別子を消し、状態・終了理由・時刻・監査は残す', async () => {
+    const { id, helper, op } = await deliveredOp();
+    await call(ASSIGNEE, 'POST', base(id, '/end'), {});
+    const auditBefore = await auditRows(id);
+    await backdate(id, 31);
+    const before = await identifiers(id, helper.helperId);
+    expect(before.request.sid).toBe(SID);
+    expect(before.helper.machine_guid).toBe(MACHINE);
+    expect(before.ops[0]?.root).toBe('Documents');
+
+    await sweepFolderAccess();
+
+    const after = await identifiers(id, helper.helperId);
+    for (const column of [
+      'sid',
+      'session_id',
+      'machine_guid',
+      'consent_root',
+      'rsp_hostname',
+      'rsp_device_id',
+      'mesh_node_id',
+      'rsp_machine_guid',
+      'rsp_probe_log_id',
+      'lease_asset_tag',
+    ]) {
+      expect(after.request[column], column).toBeNull();
+    }
+    expect(after.ops).toEqual([{ sid: null, root: null }]);
+    expect(after.helper).toEqual({ sid: null, machine_guid: null, hostname: null });
+    expect(after.request.status).toBe('ended');
+    expect(after.request.end_reason).toBe('operator_end');
+    expect(after.request.ended_at).toEqual(before.request.ended_at);
+    expect(after.request.created_at).toEqual(before.request.created_at);
+    expect(await auditRows(id)).toEqual(auditBefore);
+
+    // 識別子を消した後も、古いヘルパーは失効扱いで止まり、遅延結果は保存されない。
+    expect((await poll(helper.helperToken)).json().revoked).toBe(true);
+    const late = await postResult(helper.helperToken, op.opId, resultBody());
+    expect(late.json().discarded).toBe(true);
+    // 状態確認も壊れない。
+    expect((await call(ASSIGNEE, 'GET', base(id))).json().request.device.hostname).toBeNull();
+  });
+
+  it('期限内の行と進行中の行は消さない', async () => {
+    const ended = await activeRequest();
+    await call(ASSIGNEE, 'POST', base(ended.id, '/end'), {});
+    await backdate(ended.id, 29);
+    const running = await activeRequest();
+    await sweepFolderAccess();
+    expect((await identifiers(ended.id, ended.helper.helperId)).request.sid).toBe(SID);
+    expect((await identifiers(running.id, running.helper.helperId)).request.sid).toBe(SID);
+    expect((await requestRow(running.id))?.status).toBe('active');
+  });
+
+  it('FOLDER_ACCESS_RETENTION_DAYS で日数を変えられる', async () => {
+    const { id, helper } = await activeRequest();
+    await call(ASSIGNEE, 'POST', base(id, '/end'), {});
+    await backdate(id, 6);
+    const original = config.FOLDER_ACCESS_RETENTION_DAYS;
+    config.FOLDER_ACCESS_RETENTION_DAYS = 5;
+    try {
+      await sweepFolderAccess();
+    } finally {
+      config.FOLDER_ACCESS_RETENTION_DAYS = original;
+    }
+    expect((await identifiers(id, helper.helperId)).request.sid).toBeNull();
+  });
+});
+
+describe('相談者の依頼一覧（Mock: RSP）', () => {
+  // 他のテストが残した同じ相談者の依頼を一覧から外す。
+  beforeEach(async () => {
+    await sql`
+      UPDATE folder_access_requests
+      SET status = 'ended', end_reason = 'operator_end', ended_at = now() - interval '1 hour'
+      WHERE requester_email = ${OWNER}
+        AND (ended_at IS NULL OR ended_at > now() - interval '1 hour')
+    `;
+  });
+
+  it('進行中の依頼をすべて返し、古い同意も確認・取消できる', async () => {
+    const older = await activeRequest();
+    const newer = await pairedRequest();
+    const response = await call(OWNER, 'GET', '/api/folder-access/mine');
+    expect(response.statusCode, response.body).toBe(200);
+    const ids = response.json().requests.map((item: { id: string }) => item.id);
+    expect(ids).toContain(older.id);
+    expect(ids).toContain(newer.id);
+    const oldItem = response.json().requests.find((item: { id: string }) => item.id === older.id);
+    expect(oldItem.status).toBe('active');
+    expect(oldItem.scope.segments).toEqual([CANARY_SEGMENT]);
+
+    expect((await call(OWNER, 'POST', base(older.id, '/revoke'), {})).statusCode).toBe(200);
+    expect((await requestRow(older.id))?.status).toBe('revoked');
+    expect((await requestRow(newer.id))?.status).toBe('consent_pending');
+    await call(OWNER, 'POST', base(newer.id, '/revoke'), {});
+  });
+
+  it('他人の依頼は含めず、handoverId 指定は従来どおり 1 件', async () => {
+    const mine = await pairedRequest();
+    const others = await call(OTHER_OWNER, 'GET', '/api/folder-access/mine');
+    expect(others.json().requests.map((item: { id: string }) => item.id)).not.toContain(mine.id);
+    const single = await call(
+      OWNER,
+      'GET',
+      `/api/folder-access/mine?handoverId=${mine.handoverId}`,
+    );
+    expect(single.json().requests).toHaveLength(1);
+    expect(single.json().request.id).toBe(mine.id);
+    await call(OWNER, 'POST', base(mine.id, '/revoke'), {});
+  });
+
+  it('終了から 10 分より前の依頼は返さない', async () => {
+    const { id } = await pairedRequest();
+    await call(OWNER, 'POST', base(id, '/revoke'), {});
+    const recent = await call(OWNER, 'GET', '/api/folder-access/mine');
+    expect(recent.json().requests.map((item: { id: string }) => item.id)).toContain(id);
+    await sql`
+      UPDATE folder_access_requests SET ended_at = now() - interval '11 minutes' WHERE id = ${id}
+    `;
+    const later = await call(OWNER, 'GET', '/api/folder-access/mine');
+    expect(later.json().requests.map((item: { id: string }) => item.id)).not.toContain(id);
+  });
+});
+
+describe('権限確認を状態更新より先に行う（Mock: RSP）', () => {
+  const expire = (id: string) => sql`
+    UPDATE folder_access_requests
+    SET consent_expires_at = now() - interval '1 second',
+        request_expires_at = now() - interval '1 second'
+    WHERE id = ${id}
+  `;
+
+  it.each([
+    ['GET /requests/:id', OTHER_ASSIGNEE, 'GET', ''],
+    ['GET /result', OTHER_ASSIGNEE, 'GET', '/result'],
+  ] as const)(
+    '権限のない %s は期限切れの依頼を終了させない',
+    async (_name, email, method, path) => {
+      const { id } = await activeRequest();
+      await expire(id);
+      const response = await call(email, method, base(id, path));
+      expect(response.statusCode).toBe(403);
+      expect((await requestRow(id))?.status).toBe('active');
+      await call(ASSIGNEE, 'POST', base(id, '/end'), {});
+    },
+  );
+
+  it('権限のない POST /consent は状態を更新せず、RSP にも問い合わせない', async () => {
+    world.probe = { status: 'running', output: null, error_code: null };
+    const { id } = await pairedRequest();
+    await sql`UPDATE folder_access_requests SET rsp_probe_checked_at = NULL WHERE id = ${id}`;
+    const reads = world.probeReads;
+    const response = await call(OTHER_OWNER, 'POST', base(id, '/consent'), CONSENT);
+    expect(response.statusCode).toBe(403);
+    expect(world.probeReads).toBe(reads);
+    await expire(id);
+    expect((await call(OTHER_OWNER, 'POST', base(id, '/consent'), CONSENT)).statusCode).toBe(403);
+    expect((await requestRow(id))?.status).toBe('helper_pending');
+    await call(OWNER, 'POST', base(id, '/revoke'), {});
+  });
+
+  it('存在しない依頼は 404', async () => {
+    const missing = '77777777-7777-4777-8777-777777777777';
+    expect((await call(ASSIGNEE, 'GET', base(missing))).statusCode).toBe(404);
+    expect((await call(OWNER, 'POST', base(missing, '/consent'), CONSENT)).statusCode).toBe(404);
   });
 });
 
