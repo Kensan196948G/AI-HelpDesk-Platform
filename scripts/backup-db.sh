@@ -47,30 +47,41 @@ fi
 PARSED="$(DATABASE_URL_RAW="$DATABASE_URL_RAW" /usr/bin/python3 -I -c '
 import os, re, sys
 from urllib.parse import parse_qs, unquote, urlsplit
-raw = os.environ["DATABASE_URL_RAW"].strip()
-if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in "\"\x27":
-    raw = raw[1:-1]
-u = urlsplit(raw)
-if u.scheme not in ("postgres", "postgresql"):
-    sys.exit("DATABASE_URL is not a postgres URL")
-db = unquote(u.path.lstrip("/"))
-if not re.fullmatch(r"[A-Za-z0-9_-]+", db):
-    sys.exit("database name is not usable as a file name")
-q = parse_qs(u.query)
-values = {
-    "PGHOST": u.hostname or (q.get("host") or [""])[0],
-    "PGPORT": str(u.port or "") or (q.get("port") or [""])[0],
-    "PGUSER": unquote(u.username or ""),
-    "PGPASSWORD": unquote(u.password or ""),
-    "PGDATABASE": db,
-    "PGSSLMODE": (q.get("sslmode") or [""])[0],
-}
+# 値をエラーへ出さないよう、失敗はすべて固定の文言で終える。
+try:
+    raw = os.environ["DATABASE_URL_RAW"].strip()
+    if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in "\"\x27":
+        raw = raw[1:-1]
+    u = urlsplit(raw)
+    db = unquote(u.path.lstrip("/"))
+    q = parse_qs(u.query)
+    # 黙って無視すると接続条件が弱まるので、解釈できないパラメータは拒否する。
+    ok = (
+        u.scheme in ("postgres", "postgresql")
+        and re.fullmatch(r"[A-Za-z0-9_-]+", db)
+        and set(q) <= {"sslmode", "host", "port"}
+        and all(len(v) == 1 for v in q.values())
+        and "," not in (u.netloc + "".join(q.get("host", [])))
+    )
+    host = u.hostname or unquote((q.get("host") or [""])[0])
+    port = str(u.port or "") or (q.get("port") or [""])[0]
+    values = {
+        "PGHOST": host,
+        "PGPORT": port,
+        "PGUSER": unquote(u.username or ""),
+        "PGPASSWORD": unquote(u.password or ""),
+        "PGDATABASE": db,
+        "PGSSLMODE": (q.get("sslmode") or [""])[0],
+    }
+    ok = ok and not any("\n" in v or "\r" in v for v in values.values())
+except Exception:
+    ok = False
+if not ok:
+    sys.exit(1)
 for key, value in values.items():
-    if "\n" in value or "\r" in value:
-        sys.exit("connection value contains a newline")
     if value:
         print(key + "=" + value)
-')" || {
+' 2>/dev/null)" || {
   echo "DATABASE_URL could not be parsed" >&2
   exit 2
 }
@@ -128,6 +139,8 @@ TMP_OUT=""
 STAGE="retention"
 # 保持期間を超えた dump だけを削除する（他ファイルには触れない）。
 find "$BACKUP_DIR" -maxdepth 1 -type f -name "${DB_NAME}-*.dump" -mtime +"$KEEP_DAYS" -delete
+# 強制終了で残った一時ファイルも、1 日を過ぎたら消す（実行中のものを消さない）。
+find "$BACKUP_DIR" -maxdepth 1 -type f -name ".${DB_NAME}-*.dump.tmp" -mtime +1 -delete
 
 STAGE="done"
 printf '%s OK db=%s file=%s bytes=%s sha256=%s keep=%sd\n' \

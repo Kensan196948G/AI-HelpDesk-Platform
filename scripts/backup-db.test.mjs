@@ -114,6 +114,43 @@ describe('backup-db.sh（合成の pg_dump / pg_restore）', () => {
     expect(log()).toMatch(/FAIL stage=config exit=2/);
   });
 
+  it('誤記された URL の値をエラーへ出さない', () => {
+    const result = run(`DATABASE_URL=postgresql://user:${PASSWORD}/synth_db\n`);
+    expect(result.status).toBe(2);
+    expect(result.stdout + result.stderr).not.toContain(PASSWORD);
+    expect(log()).not.toContain(PASSWORD);
+  });
+
+  it.each([
+    ['channel_binding', '?channel_binding=require'],
+    ['options', '?options=-c%20a%3Db'],
+    ['重複', '?sslmode=require&sslmode=disable'],
+  ])('解釈できない接続パラメータ（%s）は黙って無視せず拒否する', (_name, query) => {
+    expect(run(`${URL_LINE}${query}\n`).status).toBe(2);
+    expect(dumps()).toEqual([]);
+  });
+
+  it('マルチホストは拒否する', () => {
+    expect(run('DATABASE_URL=postgresql://u:p@h1:1,h2:2/synth_db\n').status).toBe(2);
+  });
+
+  it('host パラメータのソケットパスをデコードし sslmode を渡す', () => {
+    const result = run(
+      'DATABASE_URL=postgresql://u:p@/synth_db?host=%2Fvar%2Frun%2Fpostgresql&sslmode=disable\n',
+    );
+    expect(result.status, result.stderr).toBe(0);
+    expect(readFileSync(argvLog, 'utf8')).toContain('env:/var/run/postgresql::u:synth_db:1');
+  });
+
+  it('強制終了で残った古い一時ファイルを消す', () => {
+    mkdirSync(backupDir, { recursive: true });
+    const stale = path.join(backupDir, '.synth_db-20200101-000000.dump.tmp');
+    writeFileSync(stale, 'partial');
+    utimesSync(stale, new Date('2020-01-01'), new Date('2020-01-01'));
+    expect(run(`${URL_LINE}\n`).status).toBe(0);
+    expect(dumps().filter((name) => name.endsWith('.tmp'))).toEqual([]);
+  });
+
   it('pg_dump の失敗では dump を残さず、古い dump も消さない', () => {
     const old = path.join(backupDir, 'synth_db-20200101-000000.dump');
     mkdirSync(backupDir, { recursive: true });
