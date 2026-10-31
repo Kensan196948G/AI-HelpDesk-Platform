@@ -645,6 +645,24 @@ $installMove = $installSource.IndexOf('Move-RevokedTokenToReportStore')
 $installFlag = $installSource.IndexOf("Remove-StateFile -Name 'revoked.flag'")
 $installRegister = $installSource.IndexOf('Invoke-HelperRegistration')
 Assert-True 'install: 失効済みの旧トークンを移してから登録する' ($installMove -ge 0 -and $installMove -lt $installFlag -and $installFlag -lt $installRegister)
+# 導入コードの静的な境界
+foreach ($case in @(@{ s = 403; b = '{"error":{"code":"ENROLL_CODE_INVALID"}}'; e = $true }, @{ s = 403; b = '{"error":{"code":"FORBIDDEN"}}'; e = $false }, @{ s = 403; b = ''; e = $false }, @{ s = 400; b = 'ENROLL_CODE_INVALID'; e = $false }, @{ s = 0; b = ''; e = $false })) {
+  Assert-Equal ('enroll: 判定 ' + $case.s + ' ' + $case.b) $case.e (Test-EnrollCodeRejected -Status $case.s -Body $case.b)
+}
+$mainText = $helperAst.Find({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -ceq 'Invoke-HelperMain' }, $true).Extent.Text
+Assert-False 'enroll: 本体は登録を呼ばない' ($mainText.Contains('Invoke-HelperRegistration'))
+$registrationCallers = @($helperAst.FindAll({ param($n) $n -is [Management.Automation.Language.CommandAst] -and $n.GetCommandName() -ceq 'Invoke-HelperRegistration' }, $true))
+Assert-Equal 'enroll: ヘルパー内に登録の呼び出しがない' 0 $registrationCallers.Count
+Assert-True 'enroll: コードは必須' ((Get-Command Invoke-HelperRegistration).Parameters['EnrollCode'].Attributes.Where({ $_ -is [Parameter] }).Mandatory -contains $true)
+Assert-False 'enroll: 本体はコードを受け取らない' ($helperAst.ParamBlock.Parameters.Name.VariablePath.UserPath -contains 'EnrollCode')
+$codeVarUses = @($helperAst.FindAll({ param($n) $n -is [Management.Automation.Language.VariableExpressionAst] -and $n.VariablePath.UserPath -ieq 'EnrollCode' }, $true))
+Assert-Equal 'enroll: 本体で使うのは引数と本文だけ' 2 $codeVarUses.Count
+$installAst = [Management.Automation.Language.Parser]::ParseFile((Join-Path $windowsDir 'install-folder-helper.ps1'), [ref]$null, [ref]$null)
+$installCodeUses = @($installAst.FindAll({ param($n) $n -is [Management.Automation.Language.VariableExpressionAst] -and $n.VariablePath.UserPath -ieq 'EnrollCode' }, $true))
+Assert-Equal 'enroll: install で使うのは引数と登録だけ' 2 $installCodeUses.Count
+Assert-True 'enroll: install の引数は必須' ($installSource.Contains('[Parameter(Mandatory)][string]$EnrollCode'))
+Assert-True 'enroll: 無効なコードは固定の文言で終了' ($installSource.Contains("throw '導入コードが無効です。"))
+
 $uninstallSource = [IO.File]::ReadAllText((Join-Path $windowsDir 'uninstall-folder-helper.ps1'), [Text.Encoding]::UTF8)
 Assert-True 'uninstall: 状態フォルダごと消す（両方のトークンと報告専用の記録）' ($uninstallSource.Contains('Remove-Item -LiteralPath $stateDir -Recurse -Force'))
 
@@ -876,6 +894,10 @@ $script:WireLog = New-Object System.Collections.Generic.List[string]
 function Write-HelperLog { param($EventName, $Fields) $script:WireLog.Add([string]$EventName) }
 
 $script:WireHttp = New-Object System.Collections.Generic.List[object]
+$script:WireRegisterStatus = 200
+$script:WireRegisterFailBody = ''
+function Initialize-NativeInterop { $null = 0 }
+function Initialize-StateDirectory { param($Sid) return $wireRoot }
 $script:WireStartStatus = 200
 $script:WirePollBody = '{"ops":[],"cancel":[],"revoked":false}'
 $script:WireResultStatus = 200
@@ -888,7 +910,10 @@ function Invoke-HelperHttp {
     if ($script:WireStartStatus -eq 0) { return @{ Status = 0; Body = ''; RetryAfter = 0; ErrorType = 'WebException' } }
     return @{ Status = $script:WireStartStatus; Body = '{"ok":true,"started":true}'; RetryAfter = 0; ErrorType = $null }
   }
-  if ($action -ceq 'register') { return @{ Status = 200; Body = $script:WireRegisterBody; RetryAfter = 0; ErrorType = $null } }
+  if ($action -ceq 'register') {
+    if ($script:WireRegisterStatus -ne 200) { return @{ Status = $script:WireRegisterStatus; Body = $script:WireRegisterFailBody; RetryAfter = 0; ErrorType = $null } }
+    return @{ Status = 200; Body = $script:WireRegisterBody; RetryAfter = 0; ErrorType = $null }
+  }
   if ($action -ceq 'poll') { return @{ Status = 200; Body = $script:WirePollBody; RetryAfter = 0; ErrorType = $null } }
   return @{ Status = $script:WireResultStatus; Body = '{"ok":true,"accepted":true}'; RetryAfter = 0; ErrorType = $null }
 }
@@ -1075,7 +1100,7 @@ if ($IsLinux -and (Test-Path -LiteralPath '/bin/sleep')) {
     $script:WireHttp.Clear()
     $script:WireRegisterBody = '{"helperId":"h2","helperToken":"NEW-TOKEN","pairingCode":"12345678","pairingExpiresAt":"2099-01-01T00:00:00.000Z"}'
     Assert-Equal 'install: token.dat が無いので登録へ進む' $null (Read-HelperToken)
-    Assert-True 'install: 新規登録できる' (Invoke-HelperRegistration -ServerBase $wireServer -Identity $wireIdentity -InBackground $true).Ok
+    Assert-True 'install: 新規登録できる' (Invoke-HelperRegistration -ServerBase $wireServer -Identity $wireIdentity -EnrollCode 'SYNTHETIC-ENROLL-CODE' -InBackground $true).Ok
     Remove-StateFile -Name 'pairing-code.txt'
     Assert-Equal 'install: 新しいトークン' 'NEW-TOKEN' (Read-HelperToken).helperToken
     Assert-Equal 'install: 旧トークンは報告専用のまま' 'OLD-TOKEN' (Read-HelperToken -Name 'report-token.dat').helperToken
@@ -1165,7 +1190,7 @@ if ($IsLinux -and (Test-Path -LiteralPath '/bin/sleep')) {
     Reset-WireStore
     Add-WireRun -Id 'orphan-1'
     $script:WireHttp.Clear()
-    $null = Invoke-HelperRegistration -ServerBase $wireServer -Identity $wireIdentity -InBackground $true
+    $null = Invoke-HelperRegistration -ServerBase $wireServer -Identity $wireIdentity -EnrollCode 'SYNTHETIC-ENROLL-CODE' -InBackground $true
     Remove-StateFile -Name 'pairing-code.txt'
     Assert-True 'orphan: 登録時に諦めて記録' (Test-RunFile 'orphan-1' 'abandoned')
     Invoke-PendingSkillReports -ServerBase $wireServer -Token 'NEW-TOKEN' -Identity $wireIdentity
@@ -1185,6 +1210,55 @@ if ($IsLinux -and (Test-Path -LiteralPath '/bin/sleep')) {
     Assert-True 'handoff: 枠が埋まっていれば前回分を諦めて記録' (Test-RunFile 'retry-1' 'abandoned' 'report-runs')
     Assert-Equal 'handoff: 枠は新しい失効' 'SECOND-TOKEN' (Read-HelperToken -Name 'report-token.dat').helperToken
     Assert-False 'handoff: 新しい記録は生きている' (Test-RunFile 'retry-2' 'abandoned' 'report-runs')
+
+    # 導入コード: 本文にだけ入れる
+    Reset-WireStore
+    $script:WireRegisterBody = '{"helperId":"h2","helperToken":"NEW-TOKEN","pairingCode":"12345678","pairingExpiresAt":"2099-01-01T00:00:00.000Z"}'
+    $reg = Invoke-HelperRegistration -ServerBase $wireServer -Identity $wireIdentity -EnrollCode 'SYNTHETIC-ENROLL-CODE' -InBackground $true
+    Assert-True 'enroll: 登録できる' $reg.Ok
+    Assert-Equal 'enroll: 本文に入れる' 'SYNTHETIC-ENROLL-CODE' (ConvertFrom-HelperJson -Json $script:WireHttp[0].Body).enrollCode
+    Write-HelperConfig -ServerBase $wireServer -AllowInsecure $false
+    $leaked = @(Get-ChildItem -LiteralPath $wireRoot -Recurse -File | Where-Object { [IO.File]::ReadAllText($_.FullName).Contains('SYNTHETIC-ENROLL-CODE') })
+    Assert-Equal 'enroll: 状態ファイルに残さない' 0 $leaked.Count
+    Remove-StateFile -Name 'pairing-code.txt'
+
+    # 無効なコード: 1 回で止め、トークンも記録も変えない
+    Reset-WireStore
+    Add-WireRun -Id 'enroll-keep'
+    $script:WireRegisterStatus = 403
+    $script:WireRegisterFailBody = '{"ok":false,"error":{"code":"ENROLL_CODE_INVALID"}}'
+    $reg = Invoke-HelperRegistration -ServerBase $wireServer -Identity $wireIdentity -EnrollCode 'SYNTHETIC-ENROLL-CODE' -InBackground $true
+    Assert-False 'enroll: 無効なコードは失敗' $reg.Ok
+    Assert-True 'enroll: 無効なコードを判別' $reg.EnrollRejected
+    Assert-Equal 'enroll: 再試行しない' 'register' (Get-WireActions)
+    Assert-False 'enroll: トークンを作らない' (Test-StateFile 'token.dat')
+    Assert-False 'enroll: 記録を閉じない' (Test-RunFile 'enroll-keep' 'abandoned')
+    $script:WireRegisterFailBody = '{"ok":false,"error":{"code":"FORBIDDEN"}}'
+    Assert-False 'enroll: 別の 403 は無効なコードにしない' (Invoke-HelperRegistration -ServerBase $wireServer -Identity $wireIdentity -EnrollCode 'SYNTHETIC-ENROLL-CODE' -InBackground $true).EnrollRejected
+    $script:WireRegisterStatus = 200
+
+    # 本体はコードなしで登録しない。報告専用の再送は動く。
+    $ServerUrl = $wireServer
+    $AllowInsecureHttp = $false
+    $RegisterOnly = $false
+    foreach ($mode in $true, $false) {
+      $Background = $mode
+      Reset-WireStore
+      [IO.File]::WriteAllText((Get-StatePath -Name 'report-token.dat'), 'OLD-TOKEN')
+      $null = New-Item -ItemType Directory -Path (Get-ReportRunsDirectory)
+      [IO.File]::WriteAllText((Get-RunFilePath -OpId 'main-1' -Kind 'run' -Store 'report-runs'), (New-RunRecordJson -Op (New-WireOp -OpId 'main-1') -Effect 'read' -StartedAt 's'))
+      $mainExit = Invoke-HelperMain 6>$null
+      Assert-Equal ('main: トークンなしは終了 ' + $mode) 0 $mainExit
+      Assert-Equal ('main: 登録せず報告だけ ' + $mode) 'skill-result' (Get-WireActions)
+      Assert-Equal ('main: 報告は旧トークン ' + $mode) 'OLD-TOKEN' $script:WireHttp[0].Token
+      Assert-False ('main: 報告後にトークンを消す ' + $mode) (Test-StateFile 'report-token.dat')
+    }
+    Reset-WireStore
+    $Background = $true
+    $RegisterOnly = $true
+    Assert-Equal 'main: RegisterOnly でも登録しない' 3 (Invoke-HelperMain 6>$null)
+    Assert-Equal 'main: RegisterOnly の通信なし' '' (Get-WireActions)
+    $RegisterOnly = $false
 
     Reset-WireStore
     $script:SkillPollEveryMs = 0

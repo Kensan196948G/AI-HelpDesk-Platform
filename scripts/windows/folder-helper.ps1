@@ -18,7 +18,7 @@
 .PARAMETER Background
   タスクからの非対話起動。ペアリングコードは状態フォルダの pairing-code.txt に書く。
 .PARAMETER RegisterOnly
-  前面で登録だけを行い、コードを本人の画面に表示して終了する。
+  トークンの有無だけを確かめて終了する（無ければ終了コード 3）。登録は導入コードを持つ install-folder-helper.ps1 だけが行う。
 .PARAMETER NoMain
   ドットソース時にメインループを実行しない（テスト・install / uninstall 用）。
 #>
@@ -723,6 +723,13 @@ function Update-PollState {
       if ($State.Seen.Add($id)) { $State.Queue.Enqueue($op); $State.OpSeen = $true }
     }
   }
+}
+
+function Test-EnrollCodeRejected {
+  # POST /register の 403 ENROLL_CODE_INVALID。再試行しない。
+  param([int]$Status, [AllowNull()][string]$Body)
+  if ($Status -ne 403 -or [string]::IsNullOrEmpty($Body)) { return $false }
+  return $Body.Contains('ENROLL_CODE_INVALID')
 }
 
 function Test-StartResponse {
@@ -2283,9 +2290,11 @@ function Clear-PairingCodeIfDone {
 }
 
 function Invoke-HelperRegistration {
+  # 導入コードはこのリクエストの本文にだけ入れる。ログ・状態ファイル・タスクの引数へ残さない。
   param(
     [Parameter(Mandatory)][string]$ServerBase,
     [Parameter(Mandatory)][hashtable]$Identity,
+    [Parameter(Mandatory)][string]$EnrollCode,
     [bool]$InBackground
   )
   $session = Get-SessionInfo
@@ -2299,11 +2308,12 @@ function Invoke-HelperRegistration {
       sessionState  = $session.SessionState
       hostname      = [Environment]::MachineName
       helperVersion = $script:HelperVersion
+      enrollCode    = $EnrollCode
     })
   $response = Invoke-HelperHttp -Url (Get-HelperApiUrl -ServerBase $ServerBase -Action 'register') -Token $null -BodyJson $body
   if ($response.Status -lt 200 -or $response.Status -ge 300) {
     Write-HelperLog -EventName 'register_failed' -Fields @{ httpStatus = $response.Status; errorType = $response.ErrorType }
-    return @{ Ok = $false; RetryAfter = $response.RetryAfter }
+    return @{ Ok = $false; RetryAfter = $response.RetryAfter; EnrollRejected = (Test-EnrollCodeRejected -Status $response.Status -Body $response.Body) }
   }
   $parsed = ConvertFrom-HelperJson -Json $response.Body
   $helperId = [string](Get-OpField -Op $parsed -Name 'helperId')
@@ -2311,14 +2321,14 @@ function Invoke-HelperRegistration {
   $pairingCode = Get-OpField -Op $parsed -Name 'pairingCode'
   if ($helperToken -isnot [string] -or $helperToken.Length -eq 0 -or $pairingCode -isnot [string] -or $pairingCode.Length -eq 0) {
     Write-HelperLog -EventName 'register_bad_response'
-    return @{ Ok = $false; RetryAfter = 0 }
+    return @{ Ok = $false; RetryAfter = 0; EnrollRejected = $false }
   }
   # runs に残った記録は旧トークンの実行。新しいトークンで報告しない。
   Set-UnsentRunsAbandoned
   Save-HelperToken -HelperId $helperId -HelperToken $helperToken
   Show-PairingCode -Code $pairingCode -ExpiresAt ([string](Get-OpField -Op $parsed -Name 'pairingExpiresAt')) -InBackground $InBackground
   Write-HelperLog -EventName 'registered'
-  return @{ Ok = $true; RetryAfter = 0 }
+  return @{ Ok = $true; RetryAfter = 0; EnrollRejected = $false }
 }
 
 function Invoke-HelperPoll {
@@ -2957,16 +2967,14 @@ function Invoke-HelperMain {
   $failures = 0
   $retryAfter = 0
   $tokenInfo = Read-HelperToken
-  while ($null -eq $tokenInfo) {
+  if ($null -eq $tokenInfo) {
+    # 導入コードが無いので登録しない。登録は install-folder-helper.ps1 -EnrollCode だけが行う。
+    # 報告専用トークンの再送は上で済ませた。
     Remove-StateFile -Name 'token.dat'
-    $registered = Invoke-HelperRegistration -ServerBase $serverBase -Identity $identity -InBackground ([bool]$Background)
-    if ($registered.Ok) { $tokenInfo = Read-HelperToken; if ($null -ne $tokenInfo) { break } }
-    if ($RegisterOnly) {
-      Write-Host '登録に失敗しました。'
-      return 3
-    }
-    $failures++
-    Start-Sleep -Seconds (Get-NextPollDelay -Failures $failures -RetryAfterSeconds $registered.RetryAfter -BaseSeconds $script:PollBaseSeconds -MaxSeconds $script:PollMaxSeconds)
+    Write-HelperLog -EventName 'no_token_exit'
+    if (-not $Background) { Write-Host 'トークンがありません。install-folder-helper.ps1 -EnrollCode で登録してください。' }
+    if ($RegisterOnly) { return 3 }
+    return 0
   }
   if ($RegisterOnly) { return 0 }
 
@@ -2980,7 +2988,7 @@ function Invoke-HelperMain {
     if ($poll.Ok) {
       $failures = 0
     } elseif ($poll.Status -eq 401) {
-      # トークンが無効。次回ログオン時に再登録する（ペアリングには本人の操作が必要）。
+      # トークンが無効。再登録には導入コードが必要なので install を待つ。
       Write-HelperLog -EventName 'token_rejected' -Fields @{ httpStatus = $poll.Status }
       Remove-StateFile -Name 'token.dat'
       Remove-StateFile -Name 'pairing-code.txt'
