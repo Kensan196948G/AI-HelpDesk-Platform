@@ -153,7 +153,7 @@ heartbeat が 180 秒途絶えても `user_logged_off`。ヘルパーのポー�
 全祖先の reparse point を拒否し、`GetFinalPathNameByHandle` の最終パスが起点内にあることを確認する。
 文字列の前方一致だけで判定しない。OneDrive 等へのリダイレクトは最終パスで範囲を確認する。
 ACL 拒否は `ACCESS_DENIED` を返し、昇格で回避しない。
-子のリンクは辿らず種別だけ返す。オンデマンドファイルを開かない（`FindFirstFileExW` + `FindExInfoBasic`）。
+子のリンクは辿らず種別だけ返す。オンデマンドファイルを開かない。**検査した対象を `FILE_SHARE_DELETE` なしで開いたハンドルで列挙し（`GetFileInformationByHandleEx`）、列挙の後にも検査する**（検査後の差し替えで範囲外の名前を返さないため。2026-11-01、外部レビューで再現された不具合の修正）。
 上限: 500 件 / 15 秒 / 32KB、超過は `truncated=true`。
 
 ## 7. 監査（`appendAudit`）

@@ -19,7 +19,7 @@ import {
   revalidateLease,
   type Tx,
 } from './service.js';
-import { hashPairingCode } from './sign.js';
+import { generateEnrollCode, hashEnrollCode, hashPairingCode } from './sign.js';
 import { ConsentBodySchema, isTerminal, LIMITS } from './state.js';
 
 const IdParams = z.object({ id: z.string().uuid() });
@@ -32,6 +32,7 @@ const CreateBody = z.object({
 const HandoverQuery = z.object({ handoverId: z.string().uuid() });
 const MineQuery = z.object({ handoverId: z.string().uuid().optional() });
 const PairBody = z.object({ code: z.string().regex(/^\d{8}$/) });
+const LookupQuery = z.object({ ref: z.string().trim().min(1).max(200) });
 
 export function requireFolderAccessEnabled(): void {
   // 無効時は存在しないルートと同じ応答にする（機能の有無を漏らさない）。
@@ -227,6 +228,26 @@ async function assignRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
+  // 画面の案件（caseId / INC / チケット番号）から、自分が引き受けた引継ぎの ID だけを引く。
+  // 受信箱は pending / claimed の最新 50 件なので、resolved や古い案件を引けない。
+  app.get('/folder-access/handovers/lookup', { preHandler: authenticateUi }, async (request) => {
+    const email = await requireAssignee(request);
+    const { ref } = LookupQuery.parse(request.query);
+    const rows = await sql<{ id: string }[]>`
+      SELECT id FROM case_handovers
+      WHERE claimed_by = ${email}
+        AND status IN ('claimed', 'resolved')
+        AND (
+          case_id = ${ref}
+          OR snapshot #>> '{inc,id}' = ${ref}
+          OR snapshot #>> '{ticket,id}' = ${ref}
+        )
+      ORDER BY created_at DESC
+      LIMIT 1
+    `;
+    return { ok: true, handoverId: rows[0]?.id ?? null };
+  });
+
   // 画面の再読込時に既存の依頼を引くための読み取り（docs/62 §5 への追加）。
   app.get('/folder-access/requests', { preHandler: authenticateUi }, async (request) => {
     const email = await requireAssignee(request);
@@ -385,7 +406,13 @@ async function pairTx(
   assertRequester(ctx, email);
   await applyExpiryAndBinding(tx, ctx, email);
   if (ctx.status !== 'helper_pending' || ctx.helper_id) return { kind: 'state', ctx };
-  if (ctx.pair_attempts >= LIMITS.maxPairAttempts) return { kind: 'locked' };
+  // 失敗も監査する（誤コード・ロックアウト・セッション不一致）。コードは残さない。
+  const auditFailure = (result: 'invalid' | 'locked' | 'session', extra = {}) =>
+    appendFolderAudit(tx, 'folder_access.pair_failed', ctx, email, { result, ...extra });
+  if (ctx.pair_attempts >= LIMITS.maxPairAttempts) {
+    await auditFailure('locked');
+    return { kind: 'locked' };
+  }
 
   const helpers = await tx<
     {
@@ -404,6 +431,8 @@ async function pairTx(
       AND pairing_used_at IS NULL
       AND revoked_at IS NULL
       AND request_id IS NULL
+      -- 導入コードでこの依頼に紐付いたヘルパーだけ（別の依頼のコードで登録したものは不可）。
+      AND enrolled_request_id = ${id}
       AND pairing_expires_at > now()
       AND last_seen_at > now() - (${LIMITS.helperStaleSeconds}::int * interval '1 second')
     RETURNING id, machine_guid, sid, session_id, session_state, user_name, hostname
@@ -415,15 +444,19 @@ async function pairTx(
       SET pair_attempts = pair_attempts + 1, updated_at = now()
       WHERE id = ${id}
     `;
-    return { kind: 'invalid', remaining: LIMITS.maxPairAttempts - ctx.pair_attempts - 1 };
+    const remaining = LIMITS.maxPairAttempts - ctx.pair_attempts - 1;
+    await auditFailure('invalid', { remaining });
+    return { kind: 'invalid', remaining };
   }
   if (helper.session_state !== 'active') {
     await tx`UPDATE folder_access_helpers SET revoked_at = now() WHERE id = ${helper.id}`;
+    await auditFailure('session');
     return { kind: 'session' };
   }
   await tx`
     UPDATE folder_access_requests
-    SET helper_id = ${helper.id}, machine_guid = ${helper.machine_guid}, sid = ${helper.sid},
+    SET enroll_code_hash = NULL, enroll_code_expires_at = NULL,
+        helper_id = ${helper.id}, machine_guid = ${helper.machine_guid}, sid = ${helper.sid},
         session_id = ${helper.session_id}, windows_user = ${helper.user_name},
         helper_hostname = ${helper.hostname}, updated_at = now()
     WHERE id = ${id}
@@ -472,6 +505,63 @@ async function requesterRoutes(app: FastifyInstance): Promise<void> {
     }
     return { ok: true, requests, request: requests[0] ?? null };
   });
+
+  // ヘルパーの導入コード。一回限り、10 分。再発行で旧コードは無効になる。平文は応答にだけ出す。
+  app.post(
+    '/folder-access/requests/:id/enroll-code',
+    { preHandler: authenticateUi, bodyLimit: 1024 },
+    async (request) => {
+      const email = requireEmail(request);
+      if (!checkRateLimit(`folder-access-enroll:${email}`, 10, 60_000)) {
+        throw new ApiError(429, 'RATE_LIMITED', '発行が多すぎます。少し待ってください。');
+      }
+      const { id } = IdParams.parse(request.params);
+      assertRequester(await loadOwnership(id), email);
+      const enrollCode = generateEnrollCode();
+      const outcome = await sql.begin(async (tx) => {
+        const ctx = await loadContext(tx, id);
+        if (!ctx) throw notFound('依頼が見つかりません。');
+        assertRequester(ctx, email);
+        await applyExpiryAndBinding(tx, ctx, email);
+        if (ctx.status !== 'helper_pending' || ctx.helper_id) {
+          return { kind: 'state' as const, ctx };
+        }
+        const rows = await tx<{ enroll_code_expires_at: Date; enroll_code_issues: number }[]>`
+          UPDATE folder_access_requests
+          SET enroll_code_hash = ${hashEnrollCode(enrollCode)},
+              enroll_code_expires_at = LEAST(
+                now() + (${LIMITS.enrollCodeMinutes}::int * interval '1 minute'),
+                request_expires_at
+              ),
+              enroll_code_issues = enroll_code_issues + 1,
+              updated_at = now()
+          WHERE id = ${id} AND enroll_code_issues < ${LIMITS.maxEnrollCodeIssues}
+          RETURNING enroll_code_expires_at, enroll_code_issues
+        `;
+        const row = rows[0];
+        if (!row) return { kind: 'limit' as const };
+        await appendFolderAudit(tx, 'folder_access.enroll_code', ctx, email, {
+          expiresAt: row.enroll_code_expires_at.toISOString(),
+          issues: row.enroll_code_issues,
+        });
+        return { kind: 'ok' as const, expiresAt: row.enroll_code_expires_at };
+      });
+      if (outcome.kind === 'state') {
+        throw new ApiError(409, 'INVALID_STATE', '現在の状態では発行できません。', {
+          status: outcome.ctx.status,
+          endReason: outcome.ctx.end_reason,
+        });
+      }
+      if (outcome.kind === 'limit') {
+        throw new ApiError(
+          429,
+          'ENROLL_CODE_LIMIT',
+          '発行の上限に達しました。担当者に依頼のやり直しを伝えてください。',
+        );
+      }
+      return { ok: true, enrollCode, expiresAt: outcome.expiresAt.toISOString() };
+    },
+  );
 
   app.post(
     '/folder-access/requests/:id/pair',

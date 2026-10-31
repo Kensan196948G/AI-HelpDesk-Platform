@@ -47,6 +47,8 @@
     RSP_PROBE_UNAVAILABLE: 'RSP から端末の確認結果を取得できません。再確認します。',
     RSP_PROBE_INVALID: '端末の確認結果を解釈できません。',
     RSP_PROBE_STALE: '端末の最新の確認結果を取得できません。再確認してください。',
+    RSP_PROBE_UNKNOWN_STATUS: '端末の確認が想定外の状態で止まりました。再確認してください。',
+    RSP_PROBE_TIMEOUT: '端末の確認が時間内に終わりませんでした。再確認してください。',
     RSP_AGENT_BUSY: '端末が別の処理中です。再確認してください。',
     RSP_AGENT_NO_REPLY: '端末から応答がありません。',
     RSP_AGENT_NOT_CONNECTED: '端末がオフラインです。',
@@ -165,7 +167,9 @@
     // 案件を切り替えるたびに増やす。古い応答で別の案件の状態を上書きしないために使う。
     epoch: 0,
     busy: false,
+    // 状態確認の失敗（確認が成功すれば消える）と、操作の失敗（次の操作まで残す）を分ける。
     error: null,
+    actionError: null,
     rspDeviceId: '',
     hostname: '',
     lastKey: '',
@@ -181,9 +185,11 @@
 
   async function findHandoverId(target) {
     if (target.handoverId) return target.handoverId;
-    const inbox = await api('/api/case-handovers/inbox');
-    const item = (inbox.items ?? []).find((row) => row.caseId === target.id && row.claimedByMe);
-    return item?.id ?? null;
+    // 受信箱（pending / claimed の最新 50 件）に頼らず、自分が引き受けた引継ぎを直接引く。
+    const found = await api(
+      `/api/folder-access/handovers/lookup?ref=${encodeURIComponent(target.id)}`,
+    );
+    return found.handoverId ?? null;
   }
 
   /** 呼び出し時点の案件がまだ表示中かを返す関数を作る。await の後で照合する。 */
@@ -201,7 +207,11 @@
     STAFF.available = false;
     STAFF.retryAt = 0;
     STAFF.error = null;
+    STAFF.actionError = null;
     STAFF.lastKey = '';
+    // 前の案件の入力を次の案件へ送らない。
+    STAFF.rspDeviceId = '';
+    STAFF.hostname = '';
   }
 
   async function loadStaff() {
@@ -232,15 +242,22 @@
       STAFF.available = true;
       STAFF.request = data.request;
       STAFF.result = result;
+      STAFF.error = null;
     } catch (error) {
       // 切り替え前の案件の失敗は、表示中の案件へ反映しない。
       if (!isCurrent()) return;
-      // 担当者本人以外・機能無効は何も出さない。
-      STAFF.available = false;
-      STAFF.retryAt = Date.now() + 60_000;
-      STAFF.request = null;
-      STAFF.result = null;
-      if (![403, 404].includes(error.status)) STAFF.error = String(error.message || error);
+      if ([403, 404].includes(error.status)) {
+        // 担当者本人以外・機能無効は何も出さない。
+        STAFF.available = false;
+        STAFF.retryAt = Date.now() + 60_000;
+        STAFF.request = null;
+        STAFF.result = null;
+        STAFF.error = null;
+      } else {
+        // 一時的な失敗ではパネルを隠さない。状態を保ち、エラーを見せて終了できるようにする。
+        STAFF.available = true;
+        STAFF.error = String(error.message || error);
+      }
     }
     renderStaff();
   }
@@ -249,12 +266,12 @@
     if (STAFF.busy) return;
     const isCurrent = staffScope();
     STAFF.busy = true;
-    STAFF.error = null;
+    STAFF.actionError = null;
     renderStaff();
     try {
       await run(isCurrent);
     } catch (error) {
-      if (isCurrent()) STAFF.error = String(error.message || error);
+      if (isCurrent()) STAFF.actionError = String(error.message || error);
     } finally {
       STAFF.busy = false;
       await loadStaff();
@@ -336,6 +353,8 @@
 
   function staffBody() {
     const request = STAFF.request;
+    // まだ引継ぎを確認できていない（一時的な失敗）。開始の導線を出さない。
+    if (!request && !STAFF.handoverId) return [];
     if (!request || !STATUS_LABEL[request.status] || isClosed(request)) {
       return [
         request ? small(reasonText(request) ?? '') : null,
@@ -416,6 +435,7 @@
       STAFF.result?.opId,
       STAFF.result?.receivedAt,
       STAFF.error,
+      STAFF.actionError,
       STAFF.busy,
     ]);
     if (key === STAFF.lastKey) return;
@@ -430,6 +450,7 @@
       heading('📁 フォルダ一覧（本人同意）', STATUS_LABEL[STAFF.request?.status] ?? '未開始'),
       small('担当者本人のみ操作できます（本番承認者の権限では操作できません）。読み取り専用です。'),
       ...staffBody().filter(Boolean),
+      errorLine(STAFF.actionError) ?? document.createTextNode(''),
       errorLine(STAFF.error) ?? document.createTextNode(''),
       STAFF.busy ? small('処理中…') : document.createTextNode(''),
     );
@@ -458,9 +479,12 @@
 
   const MINE = {
     requests: [],
+    // 404 の後はしばらく問い合わせない（一度の 404 で止め続けない）。
+    retryAt: 0,
     disabled: false,
     busy: false,
     error: null,
+    actionError: null,
     // 依頼ごとの入力。別の依頼の入力と混ざらないように分ける。
     forms: new Map(),
     lastKey: '',
@@ -468,25 +492,37 @@
 
   function formFor(id) {
     if (!MINE.forms.has(id)) {
-      MINE.forms.set(id, { code: '', root: 'Documents', subfolder: '', ttl: 30 });
+      MINE.forms.set(id, {
+        code: '',
+        root: 'Documents',
+        subfolder: '',
+        ttl: 30,
+        // 導入コードはこの変数の中だけに置く（画面の再読込で消える。再発行すればよい）。
+        enrollCode: null,
+        enrollExpiresAt: null,
+      });
     }
     return MINE.forms.get(id);
   }
 
   async function loadMine() {
-    if (MINE.disabled) return;
+    if (Date.now() < MINE.retryAt) return;
     try {
       const data = await api('/api/folder-access/mine');
       MINE.requests = data.requests ?? [];
+      MINE.disabled = false;
+      MINE.error = null;
       const ids = new Set(MINE.requests.map((request) => request.id));
       for (const id of MINE.forms.keys()) {
         if (!ids.has(id)) MINE.forms.delete(id);
       }
     } catch (error) {
       if (error.status === 404) {
-        // 機能が無効。以後は問い合わせず、何も描画しない。
+        // 機能が無効か、一時的な不整合。何も描画せず、時間を置いて確かめ直す。
         MINE.disabled = true;
+        MINE.retryAt = Date.now() + 60_000;
         MINE.requests = [];
+        MINE.error = null;
       } else if (error.status !== 401 && error.status !== 403) {
         MINE.error = String(error.message || error);
       }
@@ -497,12 +533,12 @@
   async function mineAction(run) {
     if (MINE.busy) return;
     MINE.busy = true;
-    MINE.error = null;
+    MINE.actionError = null;
     renderMine();
     try {
       await run();
     } catch (error) {
-      MINE.error = String(error.message || error);
+      MINE.actionError = String(error.message || error);
     } finally {
       MINE.busy = false;
       await loadMine();
@@ -511,6 +547,57 @@
 
   function minePath(request, suffix) {
     return `/api/folder-access/requests/${encodeURIComponent(request.id)}/${suffix}`;
+  }
+
+  function issueEnrollCode(request) {
+    const form = formFor(request.id);
+    return mineAction(async () => {
+      const issued = await api(minePath(request, 'enroll-code'), {});
+      form.enrollCode = issued.enrollCode;
+      form.enrollExpiresAt = issued.expiresAt;
+    });
+  }
+
+  function liveEnrollCode(form) {
+    if (!form.enrollCode) return null;
+    if (Date.now() >= new Date(form.enrollExpiresAt).getTime()) {
+      form.enrollCode = null;
+      form.enrollExpiresAt = null;
+      return null;
+    }
+    return form.enrollCode;
+  }
+
+  /** 導入コードの発行と install の実行例。 */
+  function enrollSection(request) {
+    const form = formFor(request.id);
+    const code = liveEnrollCode(form);
+    const origin = window.location?.origin ?? '';
+    return [
+      small(
+        'はじめに PC へヘルパーを導入します。導入コードを発行し、ご本人の PC で実行してください。',
+      ),
+      h(
+        'div',
+        { style: 'margin-top:6px' },
+        h(
+          'button',
+          { class: code ? 'u-btn' : 'u-btn pri', onclick: () => issueEnrollCode(request) },
+          code ? '導入コードを再発行' : '導入コードを発行',
+        ),
+      ),
+      code ? small(`導入コード: ${code}`) : null,
+      code
+        ? small(`有効期限: ${new Date(form.enrollExpiresAt).toLocaleString('ja-JP')}（一回限り）`)
+        : null,
+      code
+        ? h(
+            'div',
+            { class: 'u-small', style: 'margin-top:6px;word-break:break-all' },
+            `powershell -ExecutionPolicy Bypass -File .\\install-folder-helper.ps1 -ServerUrl ${origin} -EnrollCode ${code}`,
+          )
+        : null,
+    ];
   }
 
   function submitCode(request) {
@@ -553,7 +640,8 @@
     }
     if (request.status === 'helper_pending') {
       if (!request.paired) {
-        nodes.push(small('PC に表示された 8 桁のコードを入力してください。'));
+        nodes.push(...enrollSection(request));
+        nodes.push(small('導入後、PC に表示された 8 桁のコードを入力してください。'));
         nodes.push(
           h(
             'div',
@@ -679,7 +767,19 @@
 
   function renderMine() {
     const requests = MINE.requests;
-    const key = JSON.stringify([requests, MINE.error, MINE.busy, MINE.disabled]);
+    // 入力中の再描画を避けるため、form 全体ではなく導入コードの表示だけをキーに含める。
+    const enrollKey = requests.map((request) => {
+      const form = MINE.forms.get(request.id);
+      return form ? liveEnrollCode(form) : null;
+    });
+    const key = JSON.stringify([
+      requests,
+      MINE.error,
+      MINE.actionError,
+      MINE.busy,
+      MINE.disabled,
+      enrollKey,
+    ]);
     if (key === MINE.lastKey) return;
     MINE.lastKey = key;
     let panel = document.getElementById('aihdFolderAccessMinePanel');
@@ -704,6 +804,7 @@
         '担当者があなたの PC のフォルダ一覧の確認を依頼しています。読み取り専用です。いつでも取り消せます。',
       ),
       ...requests.map(mineSection),
+      errorLine(MINE.actionError) ?? document.createTextNode(''),
       errorLine(MINE.error) ?? document.createTextNode(''),
       MINE.busy ? small('処理中…') : document.createTextNode(''),
     );
