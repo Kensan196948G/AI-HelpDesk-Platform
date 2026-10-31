@@ -3,7 +3,9 @@ import { z } from 'zod';
 import { answerWithDeepSeek } from '../ai/deepseek.js';
 import {
   type HelpdeskActor,
+  isInternalIdentity,
   recipientDecision,
+  requireApproverActor,
   requireHelpdeskActor,
 } from '../auth/helpdesk-scope.js';
 import { sameHuman } from '../auth/shared-identity.js';
@@ -395,7 +397,11 @@ export async function caseHandoverRoutes(app: FastifyInstance): Promise<void> {
    * 宛先の選択肢（DX 推進部グループのメンバー）。
    * 個人情報は氏名・組織・社員番号に限定する（メールは返さない）。
    */
-  app.get('/case-handovers/recipients', { preHandler: authenticateUi }, async () => {
+  app.get('/case-handovers/recipients', { preHandler: authenticateUi }, async (request) => {
+    // 社外の承認者には社員情報を返さない。
+    if (!(await isInternalIdentity(request.uiEmail))) {
+      return { ok: true, group: 'DX推進部', members: [] };
+    }
     const roster = await listEmployees('staff');
     return {
       ok: true,
@@ -576,8 +582,8 @@ export async function caseHandoverRoutes(app: FastifyInstance): Promise<void> {
   });
 
   /**
-   * ナレッジの承認（承認者は DX 推進部グループの誰か）。
-   * - 承認できるのは DX 推進部のメンバーだけ（本番は名簿で判定・fail-closed）。
+   * ナレッジの承認（承認者は approver ロールの保持者）。
+   * - 承認できるのは approver ロールの保持者だけ（所属は問わない・fail-closed）。
    * - 却下ではなく「承認」だけをこのエンドポイントで扱う。差戻しはブラウザ側の操作。
    * - 対応した本人が承認した場合は self_approved=true で記録する（黙って通さない）。
    */
@@ -587,7 +593,7 @@ export async function caseHandoverRoutes(app: FastifyInstance): Promise<void> {
     async (request) => {
       if (!request.uiEmail) throw badRequest('UI の認証情報がありません。');
       const email = request.uiEmail;
-      const actor = await requireHelpdeskActor(email);
+      const actor = await requireApproverActor(email, request.uiRoles);
       const { id } = ClaimParamsSchema.parse(request.params);
       const body = ApproveBodySchema.parse(request.body ?? {});
 
@@ -621,7 +627,7 @@ export async function caseHandoverRoutes(app: FastifyInstance): Promise<void> {
         throw new ApiError(
           403,
           'SELF_APPROVAL_FORBIDDEN',
-          '自分が引き受けた案件は承認できません（職務分離）。別の DX 推進部メンバーに承認を依頼してください。',
+          '自分が引き受けた案件は承認できません（職務分離）。別の本番承認者に承認を依頼してください。',
         );
       }
 

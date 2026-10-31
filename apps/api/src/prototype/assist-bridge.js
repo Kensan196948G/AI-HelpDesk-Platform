@@ -2477,8 +2477,8 @@
           return result;
         };
       }
-      // ナレッジ承認は DX 推進部グループの誰か。共有案件の承認はサーバーで
-      // 権限（DX 推進部）と状態（引き受け済み）を確認してから実行する。
+      // ナレッジ承認は approver ロールの保持者。共有案件の承認はサーバーで
+      // 権限（approver）と状態（引き受け済み）を確認してから実行する。
       const originalApprove = app.approve;
       if (typeof originalApprove === 'function') {
         app.approve = function (id) {

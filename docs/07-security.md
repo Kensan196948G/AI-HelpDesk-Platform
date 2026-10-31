@@ -88,6 +88,7 @@
 - 本番/Preview の認証は **Cloudflare Access のみ**。アプリ内ログインは `AUTH_MODE=cloudflare-access` で無効（`/api/auth/login` 404）。
 - Access アプリ: `Mirai AI HelpDesk MVP` / `ai-helpdesk.mirai-dx-platform.com` / session 12h / One-time PIN。
 - Access の allow ポリシー（2026-10-23 適用）: `kensan1969@gmail.com`（完全一致）と `@mirai-const.co.jp`（メールドメイン）。
+  社外の本番承認者 1 名（完全一致）の追加と、承認権限をロールで判定する変更は [docs/61](61-approvers-and-owners-20261031.md)。適用後の本番の許可リストはリポジトリ外のファイルが正本になる。
 - OTP 実ログインを 2026-10-23 15:32 JST に確認（Cloudflare Access ログ: `Mirai AI HelpDesk MVP` / `onetimepin` / `allowed=true`）。
 - **許可リストの正本は `docs/MailAddress.txt`**。Node API は `ACCESS_ALLOWLIST_FILE`（既定 `docs/MailAddress.txt`）を読み、完全一致メールと `@domain` を照合する。
   - ヘッダーなし 401、許可外 403。

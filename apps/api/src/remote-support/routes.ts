@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { isHelpdeskActor } from '../auth/helpdesk-scope.js';
 import { authenticateUi } from '../auth/ui.js';
 import { config } from '../config.js';
 import { sql } from '../db.js';
@@ -62,7 +63,8 @@ async function requireHelpdesk(email: string): Promise<{ email: string; role: st
     SELECT role FROM users WHERE lower(email) = lower(${email}) LIMIT 1
   `;
   const role = rows[0]?.role;
-  if (role !== 'helpdesk' && role !== 'approver') {
+  // 承認ロールだけでは遠隔対応を許可しない（技術部・社外の承認者を含むため。docs/61）。
+  if ((role !== 'helpdesk' && role !== 'approver') || !(await isHelpdeskActor(email))) {
     throw new ApiError(403, 'FORBIDDEN', '遠隔対応は担当者のみ操作できます。');
   }
   return { email, role };

@@ -325,6 +325,18 @@ try {
   }
 
   // 7) 別の DX 担当者 C が承認
+  // 承認は approver ロールが必要（docs/61）。C に付与する（未登録なら users も作る）。
+  await app`
+    WITH u AS (
+      INSERT INTO users (email, name, role, password_hash)
+      VALUES (${C_KEY}, ${C_KEY}, 'helpdesk', 'access-only$no-login')
+      ON CONFLICT (lower(email)) DO UPDATE SET updated_at = now()
+      RETURNING id
+    )
+    INSERT INTO user_roles (user_id, role, source, granted_by)
+    SELECT id, 'approver', 'manual', 'e2e' FROM u
+    ON CONFLICT DO NOTHING
+  `;
   r = await call(C.email, 'POST', `/api/case-handovers/${handoverId}/approve`, {
     note: 'E2E 実測',
   });
@@ -357,6 +369,8 @@ try {
     const outcome = await app.begin(async (tx) => {
       if (handoverId) await tx`DELETE FROM case_handovers WHERE id = ${handoverId}`;
       await tx`DELETE FROM case_handovers WHERE case_id = ${CASE_ID}`;
+      // E2E で付与した approver を残さない（除外対象の DX 担当者に権限を残さないため）。
+      await tx`DELETE FROM user_roles WHERE granted_by = 'e2e' AND role = 'approver'`;
       // A/B/C の状態を一度消し、退避した内容だけを戻す（検証用フィクスチャを残さない）。
       await tx`DELETE FROM prototype_states WHERE user_email IN (${A_KEY}, ${B_KEY}, ${C_KEY})`;
       for (const [key, data] of backup) {
