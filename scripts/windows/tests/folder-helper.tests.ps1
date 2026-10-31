@@ -553,6 +553,11 @@ Assert-Equal 'session: active' 'active' (ConvertTo-SessionStateName -State 0)
 Assert-Equal 'session: disconnected' 'disconnected' (ConvertTo-SessionStateName -State 4)
 Assert-Equal 'session: 失敗' 'unknown' (ConvertTo-SessionStateName -State -1)
 Assert-Equal 'session: 範囲外' 'unknown' (ConvertTo-SessionStateName -State 10)
+Assert-True 'heartbeat: active は送る' (Test-SessionStateReportable -State 'active')
+Assert-True 'heartbeat: disconnected は送る' (Test-SessionStateReportable -State 'disconnected')
+foreach ($s in 'unknown', 'connected', 'connectquery', 'init', 'down', '', $null) {
+  Assert-False ('heartbeat: 送らない [' + [string]$s + ']') (Test-SessionStateReportable -State $s)
+}
 
 Assert-Equal 'log: 許可キーのみ' 'event=e opId=a-1 count=3' (Format-HelperLogLine -EventName 'e' -Fields @{ opId = 'a-1'; count = 3; path = 'C:\secret'; name = 'x.txt'; token = 'abc'; pairingCode = '12345678' })
 Assert-Equal 'log: パスの形は伏せる' 'event=e reason=[redacted]' (Format-HelperLogLine -EventName 'e' -Fields @{ reason = 'C:\Users\a\secret.txt' })
@@ -596,6 +601,7 @@ Assert-True 'install: ウィンドウ非表示' ($installText.Contains('-WindowS
 Assert-True 'install: 本人のトリガ' ($installText.Contains('-AtLogOn -User $identity.Name'))
 Assert-False 'install: パスワードを扱わない' ($installText.IndexOf('-Password', [StringComparison]::OrdinalIgnoreCase) -ge 0)
 Assert-False 'install: Highest にしない' ($installText.Contains('Highest'))
+Assert-False 'install: タスクを本人の一覧から隠さない' ($installText -cmatch '(?m)\s-Hidden(\s|$)')
 $uninstallText = [IO.File]::ReadAllText($uninstallPath)
 Assert-True 'uninstall: タスク削除' ($uninstallText.Contains('Unregister-ScheduledTask'))
 Assert-True 'uninstall: 失効通知' ($uninstallText.Contains("-Action 'revoke'"))
@@ -614,17 +620,15 @@ if ($roslyn) {
 } else {
   Write-Output 'SKIP native: Roslyn がない環境（Windows PowerShell 5.1 など）なので C# 5 構文検査を省略'
 }
-if ($PSVersionTable.PSEdition -eq 'Core') {
-  # 型の整合（宣言漏れなど）はコンパイルで確認する。実行はしない。
-  $compiled = $false
-  try {
-    if ($null -eq ('AIHelpDesk.FolderHelper.Native' -as [type])) { Add-Type -TypeDefinition $script:NativeSource -Language CSharp -ErrorAction Stop }
-    $compiled = ($null -ne ('AIHelpDesk.FolderHelper.Native' -as [type]))
-  } catch {
-    Write-Output ('compile error: ' + $_.Exception.Message)
-  }
-  Assert-True 'native: コンパイルできる' $compiled
+# コンパイルのみで DllImport は呼ばない。Windows PowerShell 5.1 では実際の C# 5 コンパイラでの検査になる。
+$compiled = $false
+try {
+  if ($null -eq ('AIHelpDesk.FolderHelper.Native' -as [type])) { Add-Type -TypeDefinition $script:NativeSource -Language CSharp -ErrorAction Stop }
+  $compiled = ($null -ne ('AIHelpDesk.FolderHelper.Native' -as [type]))
+} catch {
+  Write-Output ('compile error: ' + $_.Exception.Message)
 }
+Assert-True ('native: コンパイルできる（' + $PSVersionTable.PSEdition + '）') $compiled
 
 Write-Output ('passed={0} failed={1}' -f $script:Passed, $script:Failed)
 if ($script:Failed -gt 0) { exit 1 }

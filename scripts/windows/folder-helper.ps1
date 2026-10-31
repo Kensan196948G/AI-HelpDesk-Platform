@@ -728,6 +728,13 @@ function Get-HelperTaskName {
   return 'AIHelpDesk-FolderHelper-' + $parts[$parts.Length - 1]
 }
 
+function Test-SessionStateReportable {
+  # サーバは active / disconnected 以外をログオフとして同意を終了させる。API の失敗や遷移中の値は
+  # ログオフの根拠にならないので、heartbeat として送らない。
+  param([AllowNull()][string]$State)
+  return ($State -ceq 'active' -or $State -ceq 'disconnected')
+}
+
 function ConvertTo-SessionStateName {
   # WTS_CONNECTSTATE_CLASS
   param([int]$State)
@@ -1292,11 +1299,15 @@ function Invoke-HelperPoll {
     [Parameter(Mandatory)][string]$ServerBase,
     [Parameter(Mandatory)][string]$Token,
     [Parameter(Mandatory)][hashtable]$Identity,
-    [Parameter(Mandatory)][hashtable]$State
+    [Parameter(Mandatory)][hashtable]$State,
+    [int]$TimeoutSec = 30
   )
   $session = Get-SessionInfo
+  if (-not (Test-SessionStateReportable -State $session.SessionState)) {
+    return @{ Ok = $false; Status = 0; RetryAfter = 0; ErrorType = 'SessionStateNotReportable' }
+  }
   $body = ConvertTo-HelperJson -Value ([ordered]@{ sid = $Identity.Sid; sessionId = [int]$session.SessionId; sessionState = $session.SessionState })
-  $response = Invoke-HelperHttp -Url (Get-HelperApiUrl -ServerBase $ServerBase -Action 'poll') -Token $Token -BodyJson $body
+  $response = Invoke-HelperHttp -Url (Get-HelperApiUrl -ServerBase $ServerBase -Action 'poll') -Token $Token -BodyJson $body -TimeoutSec $TimeoutSec
   if ($response.Status -ge 200 -and $response.Status -lt 300) {
     try {
       Update-PollState -State $State -Response (ConvertFrom-HelperJson -Json $response.Body)
@@ -1366,7 +1377,7 @@ function Invoke-HelperOperation {
     ExpiresAt  = (ConvertFrom-IsoUtc -Value $Op.expiresAt)
   }
   $checkCancel = {
-    $null = Invoke-HelperPoll -ServerBase $helperOpRuntime.ServerBase -Token $helperOpRuntime.Token -Identity $helperOpRuntime.Identity -State $helperOpRuntime.State
+    $null = Invoke-HelperPoll -ServerBase $helperOpRuntime.ServerBase -Token $helperOpRuntime.Token -Identity $helperOpRuntime.Identity -State $helperOpRuntime.State -TimeoutSec 5
     return ($helperOpRuntime.State.Revoked -or $helperOpRuntime.State.Cancelled.Contains($helperOpRuntime.OpId))
   }
   $deps = @{

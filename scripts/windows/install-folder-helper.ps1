@@ -59,7 +59,7 @@ try {
   $trigger = New-ScheduledTaskTrigger -AtLogOn -User $identity.Name
   $principal = New-ScheduledTaskPrincipal -UserId $identity.Name -LogonType Interactive -RunLevel Limited
   $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
-    -StartWhenAvailable -Hidden -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew
+    -StartWhenAvailable -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew
   Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal `
     -Settings $settings -Description 'AI HelpDesk 本人同意付きフォルダ一覧ヘルパー（本人権限・読み取り専用）' -Force | Out-Null
 

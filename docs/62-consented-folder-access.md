@@ -188,7 +188,7 @@ pwsh -NoProfile -File scripts/windows/tests/folder-helper.tests.ps1
 
 | 項目 | 内容 |
 |---|---|
-| `sessionState` | WTS の接続状態を小文字で送る（`active`, `connected`, `connectquery`, `shadow`, `disconnected`, `idle`, `listen`, `reset`, `down`, `init`、取得失敗は `unknown`）。一覧を実行するのは `active` のときだけ |
+| `sessionState` | WTS の接続状態を小文字で送る（`active`, `connected`, `connectquery`, `shadow`, `disconnected`, `idle`, `listen`, `reset`, `down`, `init`、取得失敗は `unknown`）。一覧を実行するのは `active` のときだけ。サーバは `active` / `disconnected` 以外をログオフとして扱うので、それ以外の状態では poll を送らない |
 | 結果の `status` | ヘルパーが送るのは `ok` / `error`。切り詰めは `ok` + `truncated:true`（サーバ側で `partial` に変換） |
 | 結果の `reason` | `BAD_OP, BAD_SIGNATURE, ELEVATED, SID_MISMATCH, SESSION_MISMATCH, SESSION_NOT_ACTIVE, EXPIRED, INVALID_ROOT, INVALID_SEGMENT, OUT_OF_SCOPE, REPARSE_REJECTED, ACCESS_DENIED, NOT_FOUND, NOT_A_DIRECTORY, PATH_CHANGED, IO_ERROR, INTERNAL_ERROR`。cancel された op は結果を送らない |
 | `entries[].type` | `file` / `directory` / `link`。`link` は名前サロゲートのタグ（symlink・junction など）。クラウドのプレースホルダーは `file` / `directory` に `attrs.reparse` |
@@ -209,7 +209,7 @@ pwsh -NoProfile -File scripts/windows/tests/folder-helper.tests.ps1
 
 ### 9.5 実機の確認項目（責任者が実施）
 
-- [ ] Windows PowerShell 5.1 の C# 5 コンパイラで `Add-Type` が通る。`FullLanguage` でなければ（AppLocker / WDAC 環境など）終了する
+- [ ] Windows PowerShell 5.1 の C# 5 コンパイラで `Add-Type` が通る（5.1 で `folder-helper.tests.ps1` を実行すれば確認できる）。`FullLanguage` でなければ（AppLocker / WDAC 環境など）終了する
 - [ ] 標準ユーザーでタスクを登録できる（`-AtLogOn -User` と `-LogonType Interactive`）。ログオンで起動し、別ユーザーでは起動しない
 - [ ] `-WindowStyle Hidden` でコンソールが一瞬出ないか
 - [ ] 管理者のフィルタ済みトークンで `IsInRole(Administrator)` が偽、昇格で真。SYSTEM / LOCAL SERVICE / NETWORK SERVICE で終了する
@@ -221,7 +221,7 @@ pwsh -NoProfile -File scripts/windows/tests/folder-helper.tests.ps1
 - [ ] OneDrive: 既知フォルダのリダイレクトで範囲内と判定され、Files On-Demand のタグと属性が想定どおり（プレースホルダーの互換モードで属性が隠れないか）。オンライン専用ファイルが **ハイドレートされない**、列挙でディレクトリのダウンロードが起きない
 - [ ] GPO のフォルダリダイレクト（UNC）が `OUT_OF_SCOPE` になる
 - [ ] 500 件 / 32KB / 15 秒の切り詰め。低速な場所で `FindNextFileW` が止まると 15 秒を超え得る（判定は件の間だけ）
-- [ ] 高速ユーザー切替・RDP 切断 / 再接続での `sessionState`。遷移中の値でサーバが `user_logged_off` にしないか。ロック中は `active` のまま（ロックは判定していない）
+- [ ] 高速ユーザー切替・RDP 切断 / 再接続での `sessionState`。遷移中は poll を止めるので、その間の heartbeat 欠落でサーバが誤判定しないか。ロック中は `active` のまま（ロックは判定していない）
 - [ ] `HttpWebRequest` のプロキシ・TLS 1.2 と Cloudflare Access bypass の疎通。リダイレクトを辿らない
 - [ ] イベントログ: スクリプトブロック / モジュールログが有効な環境でトークン・名前が記録されないか
 
