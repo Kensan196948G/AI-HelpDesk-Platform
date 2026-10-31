@@ -50,6 +50,12 @@ device_pending → helper_pending → consent_pending → active → ended
 `end_reason`: `operator_end`, `requester_revoked`, `expired`, `assignee_changed`, `session_changed`,
 `user_logged_off`, `helper_revoked`, `lease_conflict`, `device_mismatch`, `sid_mismatch`。
 
+終端状態の対応: `requester_revoked` / `helper_revoked` → `revoked`、`expired` → `expired`、
+`lease_conflict` / `device_mismatch` → `denied`、それ以外 → `ended`。
+`assignee_changed` は claim 者の変更に加え、引継ぎが `claimed` / `resolved` でなくなった場合も含む。
+同意前の依頼は 30 分で `expired` になる。留まっている理由は `reason_code` で画面に出す
+（`LEASE_*`, `RSP_*`, `EMPLOYEE_UNRESOLVED`, `DEVICE_NOT_LINKED`, `NOT_LOGGED_ON`, `SESSION_UNRESOLVED`）。
+
 ## 4. 本人・PC・Windows ユーザーの照合
 
 1. **本人**: Access のメール → Mirai-Info の有効社員。案件の `owner_email` と一致すること。
@@ -58,27 +64,38 @@ device_pending → helper_pending → consent_pending → active → ended
    **`device_staff` ビューを SQL で直接読まない**（PII API の Access 制御の迂回になる）。
    - 候補 0 件・複数・照合競合・古い情報は確定しない。`device_pending` に留め、理由を画面に出す。
    - トークン未設定なら `LEASE_UNAVAILABLE` で留まる。
+   - **想定する応答（現行 `/api/device-staff` + `generatedAt`）**: `{ok:true, source, generatedAt, records:[{asset_tag, hostname, employee_no, staff_matched, active?}]}`。
+     認証は Cloudflare Access サービストークン（`LEASE_API_TOKEN_ID` / `LEASE_API_TOKEN_SECRET` の 2 値）。
+     `?employee_no=` は付けるが、絞り込まれなくても応答側で照合する。現行の API は `generatedAt` を返さないため、**追加されるまで `LEASE_STALE` で留まる**。
+     HTML（Access のログイン画面）や形式不正は `LEASE_UNAVAILABLE`。同じ端末が別の社員にも貸与されていれば `LEASE_CONFLICT`。
+   - 同意の直前に取り直す。端末が変わった・確定できなくなった場合は `lease_conflict`、取得できない場合は同意を進めない。
    - `FOLDER_ACCESS_ALLOW_UNVERIFIED_LEASE=true`（`NODE_ENV=production` では起動拒否）のときだけ、
      検証用に `lease_status='unverified'` として担当者の指定端末で進める。
 3. **端末**: RSP `deviceId` と `mesh_node_id` を保存する。hostname だけを許可の根拠にしない。
    RSP の固定テンプレートで MachineGuid を取得し、ヘルパーの申告と一致しなければ `device_mismatch`。
+   テンプレートは引数を挿入しない定数で、キュー投入は依頼の確定時、結果の取得はペアリング後（`pair` / 状態確認 / `poll` の延長。5 秒間隔）に行う。
+   出力は解釈して捨てる（ユーザー名を含むため保存しない）。`AGENT_BUSY` だけ最大 3 回まで再投入する。
+   `mesh_node_id` は RSP 応答にあれば保存し、無ければ `null`。
 4. **Windows ユーザー**: ペアリングで結び付ける。
    - ヘルパーは本人セッション内で `WindowsIdentity.GetCurrent()` の SID を取得し、登録して 8 桁のコードを本人の画面に表示する。
    - 本人が Access 認証済みの画面でコードを入力し、表示された端末名・Windows ユーザーを確認する。
    - これで Access 上の本人と `(device, SID, sessionId)` が結び付く。
      **貸与者とログオンユーザーを同一視せず、メールや表示名からフォルダ名を推測しない。**
-   - `S-1-5-18/19/20` と昇格プロセスは拒否する。
+   - `S-1-5-18/19/20` と昇格プロセスは拒否する（サーバは `S-1-5-21-*` と `S-1-12-1-*` だけを受ける。昇格の判定は端末側）。
+   - ログオン無しは `NOT_LOGGED_ON`。quser で同じユーザーのセッションが複数ある、またはヘルパーのセッションと一致しない場合は
+     どの画面でコードを見たか確定できないので `SESSION_UNRESOLVED` で留まる。担当者の再確認で固定テンプレートを投入し直す。
 
 ## 5. API（`/api`）
 
 **相談者（Access、案件の `owner_email` 本人のみ）**
-- `GET /folder-access/mine?handoverId=` 状態
+- `GET /folder-access/mine?handoverId=` 状態（`handoverId` は省略可。省略時は自分の進行中または直近 10 分以内に終了した依頼）
 - `POST /folder-access/requests/:id/pair` `{code}` ペアリング
 - `POST /folder-access/requests/:id/consent` `{root, segments, ttlMinutes}`
 - `POST /folder-access/requests/:id/revoke`
 
 **担当者（Access、`requireHelpdeskActor` かつ引継ぎを claim した本人のみ。approver だけでは不可）**
-- `POST /folder-access/requests` `{handoverId, rspDeviceId?}`
+- `POST /folder-access/requests` `{handoverId, rspDeviceId?, hostname?}`（`hostname` は検証専用モードの指定端末。留まっている依頼へ再送すると照合をやり直す）
+- `GET /folder-access/requests?handoverId=` 既存の依頼を引く（画面の再読込用）
 - `GET /folder-access/requests/:id` 状態・許可範囲
 - `POST /folder-access/requests/:id/list` 一覧の取得を投入
 - `GET /folder-access/requests/:id/result` 結果（`active` の間のみ）
@@ -88,17 +105,26 @@ device_pending → helper_pending → consent_pending → active → ended
 - `POST /register` `{machineGuid, sid, userName, sessionId, sessionState, hostname, helperVersion}`
   → `{helperId, helperToken, pairingCode, pairingExpiresAt}`（レート制限あり。未ペアのトークンは poll 以外に使えない）
 - `POST /poll` ヘッダ `x-folder-helper-token`。ボディは heartbeat（`sid, sessionId, sessionState`）。
-  応答 `{ops:[{opId, requestId, sid, sessionId, root, segments, operation:'list_metadata', expiresAt, maxEntries, maxBytes, maxSeconds, sig}], cancel:[opId...], revoked:bool}`
+  応答 `{ops:[{opId, requestId, sid, sessionId, root, segments, operation:'list_metadata', expiresAt, maxEntries, maxBytes, maxSeconds, sig}], cancel:[opId...], revoked:bool, paired:bool}`
 - `POST /ops/:id/result`
   `{actorSid, sessionId, root, status, reason?, truncated, elapsedMs, entries:[{name,type,size,modifiedAt,attrs:{reparse?,cloudOnly?,hidden?}}]}`
+  → `{ok:true, discarded:false, truncated, count}` または `{ok:true, discarded:true, reason}`（破棄しても 200。再送しない）。
+  `status` は `ok` / `partial` / `error`、`reason` は `^[A-Z0-9_]{1,64}$` の固定コードのみ（パスを入れない）、
+  `type` は `file` / `directory` / `link` / `other`。本文 64KB 超は 413。500 件 / 32KB 超はサーバが切り詰めて `truncated=true`。
+- `POST /revoke` ヘッダ `x-folder-helper-token`、ボディ `{}` → `{ok:true}`。ヘルパーを失効させ、紐づく同意を `helper_revoked` で終了する。
 
-`sig` は `HMAC-SHA256(helperToken, canonicalJson(opId,requestId,sid,sessionId,root,segments,operation,expiresAt))`。
+`sig` は `HMAC-SHA256(helperToken, canonicalJson(opId,requestId,sid,sessionId,root,segments,operation,expiresAt))`（小文字 16 進）。
+`canonicalJson` はこのキー順・空白なしの JSON（`JSON.stringify` と同じバイト列）。`sessionId` は数値、`expiresAt` は受信した文字列のまま。
+DB にはトークンの SHA-256 しか無いので、サーバは `poll` のヘッダで受け取った平文を鍵に配信時に計算する。
 ヘルパーは実行前に署名・SID・セッション・期限を検証する。
 
 ## 6. 検証ルール
 
 **サーバ（毎操作）**: フラグ有効、同意が `active`、期限内、claim 者が同一担当者、本人が相談者、
 ヘルパー未失効、heartbeat の SID・セッション一致。不一致なら終了させる。
+`sessionState` は `active` と `disconnected` だけ同意を保つ（`disconnected` の間は操作を配らず、投入も拒否する）。それ以外は `user_logged_off`。
+heartbeat が 180 秒途絶えても `user_logged_off`。ヘルパーのポーリングは 60 秒以内にする（上限 60 回/分）。
+期限切れは定期処理（60 秒間隔。DB のみ）でも終了させ、結果を消す。終了時はサブフォルダ名と Windows ユーザー名も消す。
 **遅れて届いた結果は保存しない**（同意が `active` でなければ破棄し、監査に `result_discarded`）。
 結果の `actorSid` が同意の SID と違えば `sid_mismatch` で終了する。これは端末の自己申告であり、
 **成功ログだけを実アクセス成功として扱わない**（OS 境界の根拠は本人トークンと ACL）。
@@ -117,7 +143,7 @@ ACL 拒否は `ACCESS_DENIED` を返し、昇格で回避しない。
 
 `folder_access.request / pair / consent / list_requested / list_result / result_discarded / end / revoke / expire / deny`。
 `detail` には案件、担当者、端末、SID のハッシュ、セッション、同意 ID、操作種別、開始・終了、結果、件数を入れる。
-パス、ファイル名、トークンは入れない。
+パス、ファイル名、トークンは入れない（ルートの種別とサブフォルダも入れない）。SID はハッシュのみ。
 
 ## 8. 残存リスク（基盤側。本機能では防げない）
 

@@ -389,6 +389,15 @@ export async function revalidateLease(ctx: RequestContext): Promise<string | 'co
 
 // ── RSP の固定テンプレート結果の照合（helper_pending → consent_pending） ──
 
+function isProbeOutstanding(ctx: RequestContext): boolean {
+  return (
+    ctx.status === 'helper_pending' &&
+    Boolean(ctx.helper_id && ctx.machine_guid && ctx.rsp_probe_log_id) &&
+    ctx.session_id !== null &&
+    ctx.rsp_probe_status === 'pending'
+  );
+}
+
 /**
  * ペアリング後に RSP の結果を取りに行く。完了していなければ次の機会に再確認する。
  * 出力はここで解釈して捨てる（ユーザー名を含むため保存・ログ出力しない）。
@@ -399,19 +408,9 @@ export async function reconcileProbe(
   options: { force?: boolean } = {},
 ): Promise<void> {
   const snapshot = await sql.begin((tx) => loadContext(tx, id));
-  if (
-    !snapshot ||
-    snapshot.status !== 'helper_pending' ||
-    !snapshot.helper_id ||
-    !snapshot.machine_guid ||
-    snapshot.session_id === null ||
-    snapshot.rsp_probe_status !== 'pending' ||
-    !snapshot.rsp_probe_log_id ||
-    !snapshot.rsp_hostname ||
-    (!options.force && !snapshot.probe_check_due)
-  ) {
-    return;
-  }
+  if (!snapshot || !isProbeOutstanding(snapshot) || !snapshot.rsp_hostname) return;
+  if (!options.force && !snapshot.probe_check_due) return;
+  if (!snapshot.rsp_probe_log_id) return;
   const logId = snapshot.rsp_probe_log_id;
 
   let probe: Awaited<ReturnType<typeof fetchDeviceIdentityProbe>> | null = null;
@@ -432,16 +431,8 @@ export async function reconcileProbe(
 
   await sql.begin(async (tx) => {
     const ctx = await loadContext(tx, id);
-    if (
-      !ctx ||
-      ctx.status !== 'helper_pending' ||
-      ctx.rsp_probe_log_id !== logId ||
-      ctx.rsp_probe_status !== 'pending' ||
-      !ctx.machine_guid ||
-      ctx.session_id === null
-    ) {
-      return;
-    }
+    if (!ctx || !isProbeOutstanding(ctx) || ctx.rsp_probe_log_id !== logId) return;
+    if (!ctx.machine_guid || ctx.session_id === null) return;
     if (!probe) {
       await tx`
         UPDATE folder_access_requests

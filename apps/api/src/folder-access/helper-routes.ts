@@ -277,7 +277,31 @@ export async function folderHelperRoutes(app: FastifyInstance): Promise<void> {
       }),
       cancel: outcome.cancel,
       revoked: outcome.revoked,
+      paired: !outcome.revoked && Boolean(helper.request_id),
     };
+  });
+
+  // アンインストール時の失効通知。紐づく同意があれば helper_revoked で終了する。
+  app.post('/device/agent/folder-helper/revoke', { bodyLimit: 1024 }, async (request) => {
+    const token = helperToken(request);
+    if (!checkRateLimit(`folder-helper-poll-ip:${clientAddress(request)}`, 600, 60_000)) {
+      throw new ApiError(429, 'RATE_LIMITED', 'リクエストが多すぎます。');
+    }
+    const helper = await findHelper(token);
+    await sql.begin(async (tx) => {
+      if (helper.request_id) {
+        const ctx = await loadContext(tx, helper.request_id);
+        if (ctx && ctx.helper_id === helper.id) {
+          await endRequestTx(tx, ctx, 'helper_revoked', HELPER_ACTOR);
+        }
+      }
+      await tx`
+        UPDATE folder_access_helpers
+        SET revoked_at = COALESCE(revoked_at, now()), user_name = NULL, pairing_code_hash = NULL
+        WHERE id = ${helper.id}
+      `;
+    });
+    return { ok: true };
   });
 
   // 上限（64KB）を超える本文は Fastify が 413 で拒否する。

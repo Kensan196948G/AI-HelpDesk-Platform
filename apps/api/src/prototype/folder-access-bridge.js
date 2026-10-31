@@ -138,7 +138,7 @@
     let json = null;
     try {
       json = await response.json();
-    } catch (error) {
+    } catch {
       json = null;
     }
     if (!response.ok) {
@@ -169,7 +169,7 @@
   function currentCase() {
     try {
       return typeof curCase === 'function' ? curCase() : null;
-    } catch (error) {
+    } catch {
       return null;
     }
   }
