@@ -222,23 +222,43 @@ describe('引継ぎの承認と担当者権限の分離', () => {
 });
 
 describe('承認者の権限を承認だけに限る', () => {
-  it('他人のナレッジを判定しても本文は変わらない', async () => {
+  it('確認後に本文が変わったナレッジは承認できず、本文も変わらない', async () => {
     as(DX_APPROVER);
     const payload = draft();
     expect((await sync(payload)).statusCode).toBe(200);
 
     as(TECH_APPROVER);
-    const approve = await sync({
+    const stale = await sync({
       ...payload,
       steps: '書き換えた手順',
       status: 'approved',
       checklist: CHECKLIST,
     });
-    expect(approve.statusCode, approve.body).toBe(200);
+    expect(stale.statusCode, stale.body).toBe(409);
+    const rejected = await sync({
+      ...payload,
+      steps: '書き換えた手順',
+      status: 'rejected',
+      comment: '理由',
+    });
+    expect(rejected.statusCode, rejected.body).toBe(200);
     const rows = await sql<{ steps: string }[]>`
       SELECT steps FROM knowledge WHERE client_ref = ${String(payload.clientRef)}
     `;
     expect(rows[0]?.steps).toBe(payload.steps);
+  });
+
+  it.each([
+    ['DX 以外', TECH_APPROVER],
+    ['名簿外', OUTSIDE_APPROVER],
+  ])('%s の approver は申請前の下書きを判定できない', async (_label, email) => {
+    as(DX_APPROVER);
+    const hidden = draft({ status: 'draft' });
+    expect((await sync(hidden)).statusCode).toBe(200);
+
+    as(email);
+    const approve = await sync({ ...hidden, status: 'approved', checklist: CHECKLIST });
+    expect(approve.statusCode, approve.body).toBe(409);
   });
 
   it.each([

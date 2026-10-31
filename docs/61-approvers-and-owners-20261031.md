@@ -11,7 +11,7 @@
 |---|---|---|---|
 | `k-a***@mirai-const.co.jp` | DX推進部（MK0623） | 可 | A |
 | `k***@gmail.com` | 名簿外（デモ扱い） | 可 | A（同一人物。`SHARED_IDENTITY_GROUPS` 設定済み） |
-| `r-k***@mirai-const.co.jp` | 技術部（MK0613） | 可 | B |
+| `r-k***@mirai-const.co.jp` | 技術部 | 可 | B |
 | `h***@（社外ドメイン）` | 名簿外（社外） | **不可** | C |
 
 アカウントは 4、人物は 3。A の 2 アカウント間の承認は従来どおり `sharedIdentity=true` で記録する。
@@ -38,7 +38,7 @@
 | `POST /api/case-handovers/:id/approve` | `approver` ロールのみ（所属不問） |
 | `POST /api/knowledge/ui-sync` の `approved` / `rejected` | `approver` ロールのみ（所属不問）。`draft` / `pending` は従来どおり DX 推進部 |
 | `GET /api/knowledge/pending` | DX 推進部は `draft` + `pending`。DX 推進部以外の `approver` は `pending` のみ |
-| ナレッジの判定時の本文 | 他人のナレッジの承認/差戻しでは本文を更新しない。未知の `clientRef` からの行作成には DX 推進部の権限が必要 |
+| ナレッジの判定時の本文 | 他人のナレッジの判定では本文を更新しない。確認後に本文が変わっていれば承認は 409。DX 推進部以外の `approver` が判定できるのは `pending` のみ。未知の `clientRef` からの行作成には DX 推進部の権限が必要 |
 | 遠隔対応（`/api/remote-support/*`） | `users.role` に加えて DX 推進部の確認を必須にする（承認者に担当者権限を与えない） |
 | `GET /api/employees`・`GET /api/case-handovers/recipients` | 名簿で解決できない利用者（社外）には空を返す |
 | `docs/MailAddress.txt` | **変更しない**。公開リポジトリのため、社外の実メールはリポジトリ外の許可リスト（§5）に置く |
@@ -69,14 +69,19 @@
    技術部・社外の承認者は、API の権限はあっても**画面から引継ぎ承認へ到達できない**。ナレッジ承認
    （`GET /api/knowledge/pending` の一覧）は画面から操作できる。引継ぎ承認は当面 DX 推進部の承認者
    2 アカウントで運用する。
-2. **社外アカウントが閲覧できる情報**: 申請済みナレッジの本文（伏せ字後）と作成者メール、自分の相談画面。責任者としてリスク 4 以上の Skill の承認待ち（`/api/resolve/admin/pending`）も閲覧・承認できる。
-5. **名簿障害時**: 名簿を参照できないと社内利用者にも社員一覧が空で返る（`source=restricted`。fail-closed）。
+2. **社外アカウントの権限**: 申請済みナレッジの本文（伏せ字後）と作成者メールの閲覧・判定に加え、責任者として
+   リスク 4 以上の Skill の**管理者承認を実行できる**（`/api/resolve/steps/:id/admin-approve`）。承認待ち一覧
+   （`/api/resolve/admin/pending`）では**依頼者メールと deviceId も閲覧できる**。この機能は現在の本番では未設定で、
+   本変更で初めて有効になる。
 3. **同一人物**: A の 2 アカウント間の承認は職務分離が人物単位で成立しない（監査に記録）。
 4. **除外の範囲**: 除外した DX 推進部 4 名は担当者業務（受信箱・claim・解決記録）を続けられる。
+6. **許可リストの正本**: 適用後の本番は `~/.config/ai-helpdesk/access-allowlist.txt` を読む。`docs/MailAddress.txt` を
+   更新しても本番には反映されない。
 
 ## 8. ロールバック
 
-1. Access ポリシーから社外の 1 件を削除し、`access-allowlist.txt` を削除する。
-2. `api.conf` をバックアップへ戻し、前の commit を build して再起動する。
+1. Access ポリシーから社外の 1 件を削除する。
+2. `api.conf` をバックアップへ戻し、前の commit を build して再起動する。再起動の成功後に
+   `access-allowlist.txt` を削除する（先に消すと fail-closed で全利用者が 403 になる）。
 3. `sync-roles.ts` を変更前の内容で再適用する（監査は追記のみ）。
    追加した `users` 行は `is_active=false` にする（履歴の参照のため削除しない）。
