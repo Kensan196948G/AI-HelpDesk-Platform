@@ -1208,30 +1208,41 @@ function Get-RunReportJson {
   return (New-SkillResultJson -ActorSid $ActorSid -SessionId $SessionId -SkillId $skillId -SkillVersion $skillVersion -ScriptHash $scriptHash -Status 'interrupted' -ResultCode 'INTERRUPTED' -ExitCode $null -StartedAt $startedAt -FinishedAt $NowIso -ElapsedMs 0 -OutputJson $null -StopOutcome $null -PartialEffect $codes)
 }
 
+function Get-ReportDisposition {
+  # 報告の応答の扱い。sent: 受理。expired: 410（期限切れ。報告済みと区別する）。rejected: 恒久的な拒否。retry: 再送。
+  # 報告専用トークンの 401 は、サーバがトークンを知らないので再送しても届かない。
+  param([int]$Status, [bool]$ReportOnly = $false)
+  if ($Status -ge 200 -and $Status -lt 300) { return 'sent' }
+  if ($Status -eq 410) { return 'expired' }
+  if ($Status -eq 401) { if ($ReportOnly) { return 'rejected' } else { return 'retry' } }
+  if ($Status -eq 408 -or $Status -eq 429) { return 'retry' }
+  if ($Status -ge 400 -and $Status -lt 500) { return 'rejected' }
+  return 'retry'
+}
+
 function Test-ReportFinal {
-  # もう再送しない応答か。2xx と恒久的な 4xx は確定。接続失敗・401・408・429・5xx は再送する。
+  # もう再送しない応答か。接続失敗・401・408・429・5xx は再送する。
   param([int]$Status)
-  if ($Status -ge 200 -and $Status -lt 300) { return $true }
-  if ($Status -eq 401 -or $Status -eq 408 -or $Status -eq 429) { return $false }
-  return ($Status -ge 400 -and $Status -lt 500)
+  return ((Get-ReportDisposition -Status $Status) -cne 'retry')
 }
 
 function Invoke-RunReportFlush {
-  # 未報告の実行記録を報告する。$Deps: ListUnsent, ReadReport, SendReport, MarkSent
-  param([Parameter(Mandatory)][hashtable]$Deps)
+  # 未報告の実行記録を報告する。$Deps: ListUnsent, ReadReport, SendReport, MarkSent（$id, $disposition）
+  param([Parameter(Mandatory)][hashtable]$Deps, [bool]$ReportOnly = $false)
   foreach ($opId in @(& $Deps.ListUnsent)) {
     if (-not (Test-SafeOpId -OpId $opId)) { continue }
     $json = & $Deps.ReadReport $opId
     if ([string]::IsNullOrEmpty($json)) { continue }
     $sent = & $Deps.SendReport $opId $json
-    if (Test-ReportFinal -Status $sent.Status) { & $Deps.MarkSent $opId }
+    $disposition = Get-ReportDisposition -Status $sent.Status -ReportOnly $ReportOnly
+    if ($disposition -cne 'retry') { & $Deps.MarkSent $opId $disposition }
   }
 }
 
 function Complete-HelperRevocation {
   # 順序を固定する: 実行中の子は呼び出し前に kill 済み → 報告 → トークン削除。
-  # 未報告が残る間はトークンを消さない（消すと停止結果を再送できなくなる）。
-  # 戻り値: すべて報告してトークンを消したら $true、未報告が残れば $false。
+  # 未報告が残れば token.dat と未報告の記録を報告専用の場所へ移す（install が新規登録できるように）。
+  # 戻り値: すべて報告してトークンを消したら $true、報告専用へ移したら $false。
   param([Parameter(Mandatory)][hashtable]$Deps, [int]$MaxAttempts = 5)
   for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
     try { & $Deps.Flush } catch { & $Deps.OnFlushError $_ }
@@ -1241,6 +1252,7 @@ function Complete-HelperRevocation {
     }
     if ($attempt -lt $MaxAttempts) { & $Deps.Wait $attempt }
   }
+  & $Deps.HandOff
   return $false
 }
 
@@ -2059,8 +2071,8 @@ function Initialize-StateDirectory {
 }
 
 function Get-StatePath {
-  param([Parameter(Mandatory)][ValidateSet('token.dat', 'config.json', 'pairing-code.txt', 'helper.log', 'revoked.flag')][string]$Name)
-  return ((Get-StateDirectory) + '\' + $Name)
+  param([Parameter(Mandatory)][ValidateSet('token.dat', 'report-token.dat', 'config.json', 'pairing-code.txt', 'helper.log', 'revoked.flag')][string]$Name)
+  return [IO.Path]::Combine((Get-StateDirectory), $Name)
 }
 
 function Save-HelperToken {
@@ -2072,8 +2084,9 @@ function Save-HelperToken {
 }
 
 function Read-HelperToken {
-  # 無い・復号できない場合は $null。
-  $path = Get-StatePath -Name 'token.dat'
+  # 無い・復号できない場合は $null。report-token.dat は Invoke-ReportOnlyFlush だけが読む（poll / start に使わない）。
+  param([ValidateSet('token.dat', 'report-token.dat')][string]$Name = 'token.dat')
+  $path = Get-StatePath -Name $Name
   if (-not (Test-Path -LiteralPath $path)) { return $null }
   try {
     Add-Type -AssemblyName System.Security
@@ -2241,6 +2254,8 @@ function Invoke-HelperRegistration {
     Write-HelperLog -EventName 'register_bad_response'
     return @{ Ok = $false; RetryAfter = 0 }
   }
+  # runs に残った記録は旧トークンの実行。新しいトークンで報告しない。
+  Set-UnsentRunsAbandoned
   Save-HelperToken -HelperId $helperId -HelperToken $helperToken
   Show-PairingCode -Code $pairingCode -ExpiresAt ([string](Get-OpField -Op $parsed -Name 'pairingExpiresAt')) -InBackground $InBackground
   Write-HelperLog -EventName 'registered'
@@ -2375,10 +2390,23 @@ function Invoke-HelperOperation {
 function Get-SkillsDirectory { return ((Get-StateDirectory) + '\skills') }
 function Get-RunsDirectory { return ((Get-StateDirectory) + '\runs') }
 
+function Get-ReportRunsDirectory { return [IO.Path]::Combine((Get-StateDirectory), 'report-runs') }
+
+function Get-RunStoreDirectory {
+  # runs は token.dat の実行、report-runs は report-token.dat の実行。混ぜない（別トークンで報告するとサーバは 404 を返す）。
+  param([ValidateSet('runs', 'report-runs')][string]$Store = 'runs')
+  if ($Store -ceq 'report-runs') { return (Get-ReportRunsDirectory) }
+  return (Get-RunsDirectory)
+}
+
 function Get-RunFilePath {
-  param([Parameter(Mandatory)][string]$OpId, [Parameter(Mandatory)][ValidateSet('run', 'res', 'sent')][string]$Kind)
+  param(
+    [Parameter(Mandatory)][string]$OpId,
+    [Parameter(Mandatory)][ValidateSet('run', 'res', 'sent', 'expired', 'rejected', 'abandoned')][string]$Kind,
+    [ValidateSet('runs', 'report-runs')][string]$Store = 'runs'
+  )
   if (-not (Test-SafeOpId -OpId $OpId)) { throw 'opId が不正です。' }
-  return [IO.Path]::Combine((Get-RunsDirectory), ($OpId + '.' + $Kind))
+  return [IO.Path]::Combine((Get-RunStoreDirectory -Store $Store), ($OpId + '.' + $Kind))
 }
 
 function Initialize-RunsDirectory {
@@ -2414,28 +2442,122 @@ function Save-RunResult {
   [IO.File]::WriteAllText((Get-RunFilePath -OpId $OpId -Kind 'res'), $Json, (New-Object Text.UTF8Encoding -ArgumentList $false))
 }
 
+function Set-RunState {
+  # 終端の状態ファイルを置く。sent（報告済み）と expired（410）を区別して残す。
+  param(
+    [Parameter(Mandatory)][string]$OpId,
+    [Parameter(Mandatory)][ValidateSet('sent', 'expired', 'rejected', 'abandoned')][string]$Kind,
+    [ValidateSet('runs', 'report-runs')][string]$Store = 'runs'
+  )
+  [IO.File]::WriteAllText((Get-RunFilePath -OpId $OpId -Kind $Kind -Store $Store), $Kind)
+  if ($Kind -cne 'sent') { Write-HelperLog -EventName ('report_' + $Kind) -Fields @{ opId = $OpId } }
+}
+
 function Get-UnsentRunIds {
-  $dir = Get-RunsDirectory
+  param([ValidateSet('runs', 'report-runs')][string]$Store = 'runs')
+  $dir = Get-RunStoreDirectory -Store $Store
   if (-not (Test-Path -LiteralPath $dir)) { return @() }
   $ids = New-Object System.Collections.Generic.List[string]
   foreach ($file in [IO.Directory]::GetFiles($dir, '*.run')) {
     $name = [IO.Path]::GetFileNameWithoutExtension($file)
     if (-not (Test-SafeOpId -OpId $name)) { continue }
-    if (-not (Test-Path -LiteralPath (Get-RunFilePath -OpId $name -Kind 'sent'))) { $ids.Add($name) }
+    $closed = $false
+    foreach ($kind in 'sent', 'expired', 'rejected', 'abandoned') {
+      if (Test-Path -LiteralPath (Get-RunFilePath -OpId $name -Kind $kind -Store $Store)) { $closed = $true }
+    }
+    if (-not $closed) { $ids.Add($name) }
   }
   # 呼び出し側は @() で受ける。配列のまま 1 要素として返さない。
   return $ids.ToArray()
 }
 
 function Read-RunReport {
-  param([Parameter(Mandatory)][string]$OpId, [Parameter(Mandatory)][hashtable]$Identity)
-  $resultPath = Get-RunFilePath -OpId $OpId -Kind 'res'
+  param([Parameter(Mandatory)][string]$OpId, [Parameter(Mandatory)][hashtable]$Identity, [ValidateSet('runs', 'report-runs')][string]$Store = 'runs')
+  $resultPath = Get-RunFilePath -OpId $OpId -Kind 'res' -Store $Store
   $resultJson = $null
   if (Test-Path -LiteralPath $resultPath) { $resultJson = [IO.File]::ReadAllText($resultPath, [Text.Encoding]::UTF8) }
-  $recordJson = [IO.File]::ReadAllText((Get-RunFilePath -OpId $OpId -Kind 'run'), [Text.Encoding]::UTF8)
+  $recordJson = [IO.File]::ReadAllText((Get-RunFilePath -OpId $OpId -Kind 'run' -Store $Store), [Text.Encoding]::UTF8)
   $session = Get-SessionInfo
   $now = [DateTimeOffset]::UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", [Globalization.CultureInfo]::InvariantCulture)
   return (Get-RunReportJson -RecordJson $recordJson -ResultJson $resultJson -ActorSid $Identity.Sid -SessionId ([int]$session.SessionId) -NowIso $now)
+}
+
+function Set-UnsentRunsAbandoned {
+  # 報告に使えるトークンが無い記録。新しいトークンで送らない（サーバは 404 を返し、誤って確定扱いになる）。
+  param([ValidateSet('runs', 'report-runs')][string]$Store = 'runs')
+  foreach ($id in @(Get-UnsentRunIds -Store $Store)) { Set-RunState -OpId $id -Kind 'abandoned' -Store $Store }
+}
+
+function Move-RevokedTokenToReportStore {
+  # 失効後の引き渡し。未報告があれば token.dat を report-token.dat へ、未報告の記録を report-runs へ移して token.dat を消す。
+  # 途中で落ちても token.dat を最後に消すので、次回に同じ手順をやり直せる。
+  $tokenPath = Get-StatePath -Name 'token.dat'
+  $reportPath = Get-StatePath -Name 'report-token.dat'
+  $unsent = @(Get-UnsentRunIds)
+  if ($unsent.Count -eq 0) {
+    Remove-StateFile -Name 'token.dat'
+    return 'none'
+  }
+  if (-not (Test-Path -LiteralPath $tokenPath)) {
+    Set-UnsentRunsAbandoned
+    return 'abandoned'
+  }
+  $tokenBytes = [IO.File]::ReadAllBytes($tokenPath)
+  $sameToken = $false
+  if (Test-Path -LiteralPath $reportPath) {
+    $sameToken = ([Convert]::ToBase64String($tokenBytes) -ceq [Convert]::ToBase64String([IO.File]::ReadAllBytes($reportPath)))
+    if (-not $sameToken) {
+      # 報告専用の枠は 1 つ。前回分が残っていれば諦めて記録する（サーバは結果なしを期限切れとして扱う）。
+      Set-UnsentRunsAbandoned -Store 'report-runs'
+      Remove-StateFile -Name 'report-token.dat'
+    }
+  }
+  if (-not $sameToken) { [IO.File]::WriteAllBytes($reportPath, $tokenBytes) }
+  $reportDir = Get-ReportRunsDirectory
+  if (-not (Test-Path -LiteralPath $reportDir)) { New-Item -ItemType Directory -Path $reportDir | Out-Null }
+  $reportInfo = New-Object IO.DirectoryInfo -ArgumentList $reportDir
+  if (($reportInfo.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw '報告専用フォルダがリンクです。' }
+  foreach ($id in $unsent) {
+    foreach ($kind in 'res', 'run') {
+      $from = Get-RunFilePath -OpId $id -Kind $kind
+      if (-not (Test-Path -LiteralPath $from)) { continue }
+      $to = Get-RunFilePath -OpId $id -Kind $kind -Store 'report-runs'
+      if (Test-Path -LiteralPath $to) { [IO.File]::Delete($from) } else { [IO.File]::Move($from, $to) }
+    }
+  }
+  Remove-StateFile -Name 'token.dat'
+  Write-HelperLog -EventName 'report_token_moved' -Fields @{ count = $unsent.Count }
+  return 'moved'
+}
+
+function Invoke-ReportOnlyFlush {
+  # 報告専用トークンで旧結果の報告だけを試みる。poll も /start もしない。
+  # 再送で期限は延びない。未報告が無くなればトークンを消す。
+  param([Parameter(Mandatory)][string]$ServerBase, [Parameter(Mandatory)][hashtable]$Identity)
+  if (-not (Test-Path -LiteralPath (Get-StatePath -Name 'report-token.dat'))) { return }
+  $reportToken = Read-HelperToken -Name 'report-token.dat'
+  if ($null -eq $reportToken) {
+    Set-UnsentRunsAbandoned -Store 'report-runs'
+    Remove-StateFile -Name 'report-token.dat'
+    Write-HelperLog -EventName 'report_token_removed' -Fields @{ reason = 'UNREADABLE' }
+    return
+  }
+  $helperReportRuntime = @{ ServerBase = $ServerBase; Token = [string]$reportToken.helperToken; Identity = $Identity }
+  Invoke-RunReportFlush -ReportOnly $true -Deps @{
+    ListUnsent = { Get-UnsentRunIds -Store 'report-runs' }
+    ReadReport = { param($id) Read-RunReport -OpId $id -Identity $helperReportRuntime.Identity -Store 'report-runs' }
+    SendReport = {
+      param($id, $json)
+      $sent = Send-SkillResultJson -ServerBase $helperReportRuntime.ServerBase -Token $helperReportRuntime.Token -OpId $id -Json $json
+      Write-HelperLog -EventName 'report_only_send' -Fields @{ opId = $id; httpStatus = $sent.Status; errorType = $sent.ErrorType }
+      $sent
+    }
+    MarkSent   = { param($id, $disposition) Set-RunState -OpId $id -Kind $disposition -Store 'report-runs' }
+  }
+  if (@(Get-UnsentRunIds -Store 'report-runs').Count -eq 0) {
+    Remove-StateFile -Name 'report-token.dat'
+    Write-HelperLog -EventName 'report_token_removed'
+  }
 }
 
 function Send-SkillResultJson {
@@ -2457,7 +2579,7 @@ function Invoke-PendingSkillReports {
       Write-HelperLog -EventName 'skill_report' -Fields @{ opId = $id; httpStatus = $sent.Status; errorType = $sent.ErrorType }
       $sent
     }
-    MarkSent   = { param($id) [IO.File]::WriteAllText((Get-RunFilePath -OpId $id -Kind 'sent'), 'sent') }
+    MarkSent   = { param($id, $disposition) Set-RunState -OpId $id -Kind $disposition }
   }
 }
 
@@ -2702,8 +2824,8 @@ function Write-HelperConfig {
 }
 
 function Invoke-HelperRevocationFlush {
-  # 失効後の報告とトークン削除。未報告が残れば $false（次回の起動で再送する）。
-  param([Parameter(Mandatory)][string]$ServerBase, [Parameter(Mandatory)][string]$Token, [Parameter(Mandatory)][hashtable]$Identity)
+  # 失効後の報告とトークン削除。未報告が残れば報告専用へ移して $false（次回の起動で報告専用トークンで再送する）。
+  param([Parameter(Mandatory)][string]$ServerBase, [Parameter(Mandatory)][string]$Token, [Parameter(Mandatory)][hashtable]$Identity, [int]$MaxAttempts = 5)
   $helperRevokeRuntime = @{ ServerBase = $ServerBase; Token = $Token; Identity = $Identity }
   return (Complete-HelperRevocation -Deps @{
       Flush        = { Invoke-PendingSkillReports -ServerBase $helperRevokeRuntime.ServerBase -Token $helperRevokeRuntime.Token -Identity $helperRevokeRuntime.Identity }
@@ -2711,7 +2833,18 @@ function Invoke-HelperRevocationFlush {
       ListUnsent   = { Get-UnsentRunIds }
       RemoveToken  = { Remove-StateFile -Name 'token.dat' }
       Wait         = { param($attempt) Start-Sleep -Seconds ([Math]::Min(30, 5 * $attempt)) }
-    })
+      HandOff      = { $null = Move-RevokedTokenToReportStore }
+    } -MaxAttempts $MaxAttempts)
+}
+
+function Invoke-ReportOnlyFlushSafe {
+  # 報告の失敗で常駐を止めない。
+  param([Parameter(Mandatory)][string]$ServerBase, [Parameter(Mandatory)][hashtable]$Identity)
+  try {
+    Invoke-ReportOnlyFlush -ServerBase $ServerBase -Identity $Identity
+  } catch {
+    Write-HelperLog -EventName 'report_failed' -Fields @{ errorType = (Get-ExceptionTypeName -ErrorRecord $_) }
+  }
 }
 
 function Invoke-HelperMain {
@@ -2747,14 +2880,21 @@ function Invoke-HelperMain {
   if (Test-Path -LiteralPath (Get-StatePath -Name 'revoked.flag')) {
     Write-HelperLog -EventName 'revoked_flag_present'
     # 前回の失効で報告できなかった結果を再送する。ヘルパーとしての動作は再開しない。
-    $pendingToken = Read-HelperToken
-    if ($null -ne $pendingToken -and -not [string]::IsNullOrEmpty($serverBase)) {
-      $null = Invoke-HelperRevocationFlush -ServerBase $serverBase -Token ([string]$pendingToken.helperToken) -Identity $identity
+    if (Test-Path -LiteralPath (Get-StatePath -Name 'token.dat')) {
+      # 引き渡しの途中で落ちた場合。
+      $pendingToken = Read-HelperToken
+      if ($null -ne $pendingToken) {
+        $null = Invoke-HelperRevocationFlush -ServerBase $serverBase -Token ([string]$pendingToken.helperToken) -Identity $identity
+      } else {
+        $null = Move-RevokedTokenToReportStore
+      }
     }
+    Invoke-ReportOnlyFlushSafe -ServerBase $serverBase -Identity $identity
     if (-not $Background) { Write-Host 'このヘルパーは失効済みです。install-folder-helper.ps1 で再登録してください。' }
     return 0
   }
 
+  Invoke-ReportOnlyFlushSafe -ServerBase $serverBase -Identity $identity
   $failures = 0
   $retryAfter = 0
   $tokenInfo = Read-HelperToken
@@ -2809,6 +2949,7 @@ function Invoke-HelperMain {
     } catch {
       Write-HelperLog -EventName 'report_failed' -Fields @{ errorType = (Get-ExceptionTypeName -ErrorRecord $_) }
     }
+    Invoke-ReportOnlyFlushSafe -ServerBase $serverBase -Identity $identity
     while ($state.Queue.Count -gt 0) {
       $op = $state.Queue.Dequeue()
       try {

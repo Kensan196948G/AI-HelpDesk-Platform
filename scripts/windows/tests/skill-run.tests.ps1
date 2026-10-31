@@ -565,7 +565,12 @@ Assert-False 'interrupted: read は部分変更なし' (Test-HasField (ConvertFr
 Assert-Equal 'interrupted: 壊れた記録は部分変更あり得る' 'PARTIAL_EFFECT_POSSIBLE' (@((ConvertFrom-HelperJson -Json (Get-RunReportJson -RecordJson 'broken' -ResultJson $null -ActorSid $vSid -SessionId 2 -NowIso 'n')).partialEffect) -join ',')
 Assert-Equal 'report: 保存済みの結果を優先' '{"saved":1}' (Get-RunReportJson -RecordJson $recordJson -ResultJson '{"saved":1}' -ActorSid $vSid -SessionId 2 -NowIso 'n')
 
-foreach ($s in 200, 204, 400, 403, 404, 409, 413) { Assert-True ('report: 確定 ' + $s) (Test-ReportFinal -Status $s) }
+foreach ($s in 200, 204, 400, 403, 404, 409, 410, 413) { Assert-True ('report: 確定 ' + $s) (Test-ReportFinal -Status $s) }
+foreach ($case in @(@{ s = 200; e = 'sent' }, @{ s = 410; e = 'expired' }, @{ s = 404; e = 'rejected' }, @{ s = 403; e = 'rejected' }, @{ s = 401; e = 'retry' }, @{ s = 429; e = 'retry' }, @{ s = 503; e = 'retry' }, @{ s = 0; e = 'retry' })) {
+  Assert-Equal ('report: 扱い ' + $case.s) $case.e (Get-ReportDisposition -Status $case.s)
+}
+Assert-Equal 'report: 報告専用の 401 は再送しない' 'rejected' (Get-ReportDisposition -Status 401 -ReportOnly $true)
+Assert-Equal 'report: 報告専用の 410' 'expired' (Get-ReportDisposition -Status 410 -ReportOnly $true)
 foreach ($s in 0, 401, 408, 429, 500, 503) { Assert-False ('report: 再送 ' + $s) (Test-ReportFinal -Status $s) }
 
 $script:Sent = New-Object System.Collections.Generic.List[string]
@@ -593,6 +598,7 @@ $revDeps = @{
   ListUnsent = { $script:Unsent }
   RemoveToken = { $script:Order.Add('token') }
   Wait = { param($n) $script:Order.Add('wait') }
+  HandOff = { $script:Order.Add('handoff') }
 }
 $revDone = Complete-HelperRevocation -Deps $revDeps
 Assert-Equal 'revoke: 報告してからトークン削除' 'report,token' ($script:Order -join ',')
@@ -600,12 +606,12 @@ Assert-Equal 'revoke: 全件報告なら完了' 'True' ([string]$revDone)
 $script:Order.Clear()
 $script:Unsent = @('op-a')
 $revDone = Complete-HelperRevocation -Deps $revDeps -MaxAttempts 3
-Assert-Equal 'revoke: 未報告が残る間はトークンを消さず再試行する' 'report,wait,report,wait,report' ($script:Order -join ',')
+Assert-Equal 'revoke: 再試行しても残れば報告専用へ移す' 'report,wait,report,wait,report,handoff' ($script:Order -join ',')
 Assert-Equal 'revoke: 未報告が残れば未完了' 'False' ([string]$revDone)
 $script:Order.Clear()
 $failing = $revDeps.Clone(); $failing.Flush = { throw 'x' }
 $revDone = Complete-HelperRevocation -Deps $failing -MaxAttempts 1
-Assert-Equal 'revoke: 送信の例外でもトークンを消さない' 'error' ($script:Order -join ',')
+Assert-Equal 'revoke: 送信の例外でも報告専用へ移す' 'error,handoff' ($script:Order -join ',')
 $script:Order.Clear()
 $script:Attempts = 0
 $recover = $revDeps.Clone()
@@ -625,6 +631,22 @@ $flagStart = $helperSource.IndexOf("'revoked_flag_present'", $mainStart)
 Assert-True 'main: 再起動時に未報告を再送する' ($helperSource.IndexOf('Invoke-HelperRevocationFlush', $flagStart) -gt $flagStart -and $helperSource.IndexOf('Invoke-HelperRevocationFlush', $flagStart) -lt $revokedAt)
 $flagAt = $helperSource.IndexOf("'revoked.flag'", $revokedAt)
 Assert-True 'main: 失効フラグも報告の後' ($flagAt -gt $flushAt)
+
+# 報告専用トークンの静的な境界
+$helperAst = [Management.Automation.Language.Parser]::ParseFile($helperPath, [ref]$null, [ref]$null)
+$reportTokenReaders = @($helperAst.FindAll({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -cne 'Read-HelperToken' -and $n.Extent.Text.Contains("Read-HelperToken -Name 'report-token.dat'") }, $true) | ForEach-Object { $_.Name })
+Assert-Equal 'report-only: 報告専用トークンを読むのは 1 関数だけ' 'Invoke-ReportOnlyFlush' ($reportTokenReaders -join ',')
+$reportFlushText = $helperAst.Find({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -ceq 'Invoke-ReportOnlyFlush' }, $true).Extent.Text
+foreach ($word in 'Invoke-HelperPoll', 'Invoke-SkillStartRequest', "'poll'", "/start'", 'Invoke-HelperOperation') {
+  Assert-False ('report-only: 使わない ' + $word) ($reportFlushText.Contains($word))
+}
+$installSource = [IO.File]::ReadAllText((Join-Path $windowsDir 'install-folder-helper.ps1'), [Text.Encoding]::UTF8)
+$installMove = $installSource.IndexOf('Move-RevokedTokenToReportStore')
+$installFlag = $installSource.IndexOf("Remove-StateFile -Name 'revoked.flag'")
+$installRegister = $installSource.IndexOf('Invoke-HelperRegistration')
+Assert-True 'install: 失効済みの旧トークンを移してから登録する' ($installMove -ge 0 -and $installMove -lt $installFlag -and $installFlag -lt $installRegister)
+$uninstallSource = [IO.File]::ReadAllText((Join-Path $windowsDir 'uninstall-folder-helper.ps1'), [Text.Encoding]::UTF8)
+Assert-True 'uninstall: 状態フォルダごと消す（両方のトークンと報告専用の記録）' ($uninstallSource.Contains('Remove-Item -LiteralPath $stateDir -Recurse -Force'))
 
 # ---------------------------------------------------------------------------
 # folder-summary
@@ -833,7 +855,8 @@ function Get-CurrentIdentityInfo { return @{ Sid = $vSid; Name = 'synthetic'; Is
 function Get-MachineGuidValue { return $vGuid }
 function Get-CurrentIntegrityRid { return 0x2000 }
 function Invoke-NativeProbe { param($Path, $OpenReparsePoint) return @{ Error = 0; Attributes = [uint32]32; ReparseTag = [uint32]0; FinalPath = $Path } }
-function Write-HelperLog { param($EventName, $Fields) $null = $EventName }
+$script:WireLog = New-Object System.Collections.Generic.List[string]
+function Write-HelperLog { param($EventName, $Fields) $script:WireLog.Add([string]$EventName) }
 
 $script:WireHttp = New-Object System.Collections.Generic.List[object]
 $script:WireStartStatus = 200
@@ -848,6 +871,7 @@ function Invoke-HelperHttp {
     if ($script:WireStartStatus -eq 0) { return @{ Status = 0; Body = ''; RetryAfter = 0; ErrorType = 'WebException' } }
     return @{ Status = $script:WireStartStatus; Body = '{"ok":true,"started":true}'; RetryAfter = 0; ErrorType = $null }
   }
+  if ($action -ceq 'register') { return @{ Status = 200; Body = $script:WireRegisterBody; RetryAfter = 0; ErrorType = $null } }
   if ($action -ceq 'poll') { return @{ Status = 200; Body = $script:WirePollBody; RetryAfter = 0; ErrorType = $null } }
   return @{ Status = $script:WireResultStatus; Body = '{"ok":true,"accepted":true}'; RetryAfter = 0; ErrorType = $null }
 }
@@ -873,6 +897,17 @@ function Complete-SkillChild {
   param($Runner)
   $null = $Runner.Process.WaitForExit(5000)
   return @{ ExitCode = $Runner.Process.ExitCode; Stdout = '{"volumes":[{"freeGB":1.50}]}'; StdoutTruncated = $false; StderrBytes = 0; LeftoverStopFailed = $false }
+}
+
+# DPAPI は Linux に無いので、トークン本体だけ平文のスタブにする（引き渡しはファイルのバイト列で行う）。
+function Save-HelperToken { param($HelperId, $HelperToken) [IO.File]::WriteAllText((Get-StatePath -Name 'token.dat'), $HelperToken) }
+function Read-HelperToken {
+  param([string]$Name = 'token.dat')
+  $path = Get-StatePath -Name $Name
+  if (-not (Test-Path -LiteralPath $path)) { return $null }
+  $text = [IO.File]::ReadAllText($path)
+  if ($text -ceq 'UNREADABLE') { return $null }
+  return [pscustomobject]@{ helperId = 'h'; helperToken = $text }
 }
 
 function Get-WireActions { return (@($script:WireHttp | ForEach-Object { $_.Action }) -join ',') }
@@ -980,6 +1015,164 @@ if ($IsLinux -and (Test-Path -LiteralPath '/bin/sleep')) {
     Assert-True 'wire: 失効を状態へ反映' $wireState.Revoked
     Assert-Equal 'wire: 失効の報告にもトークンを使う' $vectorToken $script:WireHttp[2].Token
     $script:SkillPollEveryMs = $savedEvery
+
+    # ---- 報告用資格情報の分離 ----
+    function Reset-WireStore {
+      foreach ($d in (Get-RunsDirectory), (Get-ReportRunsDirectory)) { if (Test-Path -LiteralPath $d) { Remove-Item -LiteralPath $d -Recurse -Force } }
+      foreach ($n in 'token.dat', 'report-token.dat', 'revoked.flag') { Remove-StateFile -Name $n }
+      $script:WireHttp.Clear()
+      $script:WireResultStatus = 200
+      $script:WirePollBody = '{"ops":[],"cancel":[],"revoked":false}'
+    }
+    function Add-WireRun { param([string]$Id) $null = Write-RunRecord -Op (New-WireOp -OpId $Id) -Effect 'read' -StartedAt '2026-10-31T00:00:00.000Z' }
+    function Test-StateFile { param([string]$Name) return (Test-Path -LiteralPath (Get-StatePath -Name $Name)) }
+    function Test-RunFile { param([string]$Id, [string]$Kind, [string]$Store = 'runs') return (Test-Path -LiteralPath (Get-RunFilePath -OpId $Id -Kind $Kind -Store $Store)) }
+    $wireServer = 'https://x.example.com'
+
+    # 全件報告できれば移さない
+    Reset-WireStore
+    Save-HelperToken -HelperToken 'OLD-TOKEN'
+    Add-WireRun -Id 'sep-1'
+    Assert-True 'sep: 全件報告で完了' (Invoke-HelperRevocationFlush -ServerBase $wireServer -Token 'OLD-TOKEN' -Identity $wireIdentity -MaxAttempts 1)
+    Assert-False 'sep: token.dat を消す' (Test-StateFile 'token.dat')
+    Assert-False 'sep: 報告専用トークンを作らない' (Test-StateFile 'report-token.dat')
+
+    # 未報告が残れば token.dat と記録を移す
+    Reset-WireStore
+    Save-HelperToken -HelperToken 'OLD-TOKEN'
+    Add-WireRun -Id 'sep-2'
+    Save-RunResult -OpId 'sep-2' -Json '{"saved":"old"}'
+    Add-WireRun -Id 'sep-done'
+    Set-RunState -OpId 'sep-done' -Kind 'sent'
+    $script:WireResultStatus = 503
+    Assert-False 'sep: 未報告が残れば未完了' (Invoke-HelperRevocationFlush -ServerBase $wireServer -Token 'OLD-TOKEN' -Identity $wireIdentity -MaxAttempts 1)
+    Assert-False 'sep: token.dat を消す（install が新規登録できる）' (Test-StateFile 'token.dat')
+    Assert-Equal 'sep: 報告専用トークンは旧トークン' 'OLD-TOKEN' (Read-HelperToken -Name 'report-token.dat').helperToken
+    Assert-Equal 'sep: 既定の読取は無し' $null (Read-HelperToken)
+    Assert-True 'sep: 記録を移す' (Test-RunFile 'sep-2' 'run' 'report-runs')
+    Assert-True 'sep: 結果も移す' (Test-RunFile 'sep-2' 'res' 'report-runs')
+    Assert-False 'sep: runs に残さない' (Test-RunFile 'sep-2' 'run')
+    Assert-True 'sep: 報告済みは移さない' (Test-RunFile 'sep-done' 'run')
+
+    # install の再登録: 新しいトークンを得る。旧実行は新トークンで報告しない。
+    $script:WireHttp.Clear()
+    $script:WireRegisterBody = '{"helperId":"h2","helperToken":"NEW-TOKEN","pairingCode":"12345678","pairingExpiresAt":"2099-01-01T00:00:00.000Z"}'
+    Assert-Equal 'install: token.dat が無いので登録へ進む' $null (Read-HelperToken)
+    Assert-True 'install: 新規登録できる' (Invoke-HelperRegistration -ServerBase $wireServer -Identity $wireIdentity -InBackground $true).Ok
+    Remove-StateFile -Name 'pairing-code.txt'
+    Assert-Equal 'install: 新しいトークン' 'NEW-TOKEN' (Read-HelperToken).helperToken
+    Assert-Equal 'install: 旧トークンは報告専用のまま' 'OLD-TOKEN' (Read-HelperToken -Name 'report-token.dat').helperToken
+    Assert-False 'install: 移した記録を諦めない' (Test-RunFile 'sep-2' 'abandoned' 'report-runs')
+
+    # 新旧の分離
+    $script:WireHttp.Clear()
+    $script:WireResultStatus = 200
+    Invoke-PendingSkillReports -ServerBase $wireServer -Token 'NEW-TOKEN' -Identity $wireIdentity
+    Assert-Equal 'sep: 新トークンで旧実行を報告しない' '' (Get-WireActions)
+    $script:WireResultStatus = 503
+    Invoke-ReportOnlyFlush -ServerBase $wireServer -Identity $wireIdentity
+    Assert-Equal 'sep: 旧実行は報告専用トークンで' 'OLD-TOKEN' $script:WireHttp[0].Token
+    Assert-Equal 'sep: 報告だけ' 'skill-result' (Get-WireActions)
+    Assert-Equal 'sep: 保存した結果を送る' '{"saved":"old"}' $script:WireHttp[0].Body
+    Assert-True 'sep: 再送のあいだトークンを残す' (Test-StateFile 'report-token.dat')
+    # 新トークンの実行と poll / start は新トークンだけを使う
+    $script:WireResultStatus = 503
+    $script:WireHttp.Clear()
+    $script:WireChildSeconds = 0
+    $sepOp = New-WireOp -OpId 'sep-new'
+    $sepOp.sig = Get-HmacSha256Hex -Key 'NEW-TOKEN' -Message (Get-SkillRunCanonicalJson -Op $sepOp)
+    Invoke-HelperOperation -Op $sepOp -ServerBase $wireServer -Token 'NEW-TOKEN' -Identity $wireIdentity -State (New-PollState)
+    $null = Invoke-HelperPoll -ServerBase $wireServer -Token 'NEW-TOKEN' -Identity $wireIdentity -State (New-PollState)
+    Invoke-ReportOnlyFlush -ServerBase $wireServer -Identity $wireIdentity
+    foreach ($call in $script:WireHttp) {
+      if ($call.Action -ceq 'poll' -or $call.Action -ceq 'start') { Assert-Equal ('sep: ' + $call.Action + ' は新トークン') 'NEW-TOKEN' $call.Token }
+      if ($call.Url.Contains('/ops/sep-new/')) { Assert-Equal 'sep: 新しい実行は新トークン' 'NEW-TOKEN' $call.Token }
+      if ($call.Url.Contains('/ops/sep-2/')) { Assert-Equal 'sep: 旧実行は旧トークン' 'OLD-TOKEN' $call.Token }
+    }
+    Assert-True 'sep: poll と start を通った' ((Get-WireActions).Contains('start') -and (Get-WireActions).Contains('poll'))
+
+    # 報告成功で記録を閉じてトークンを消す
+    $script:WireResultStatus = 200
+    $script:WireHttp.Clear()
+    Invoke-ReportOnlyFlush -ServerBase $wireServer -Identity $wireIdentity
+    Assert-True 'report-only: 報告済み' (Test-RunFile 'sep-2' 'sent' 'report-runs')
+    Assert-False 'report-only: 成功後にトークンを消す' (Test-StateFile 'report-token.dat')
+    Assert-True 'report-only: 新トークンは残す' (Test-StateFile 'token.dat')
+    $script:WireHttp.Clear()
+    Invoke-ReportOnlyFlush -ServerBase $wireServer -Identity $wireIdentity
+    Assert-Equal 'report-only: トークンが無ければ何もしない' '' (Get-WireActions)
+
+    # 410 は報告済みと区別する
+    Reset-WireStore
+    [IO.File]::WriteAllText((Get-StatePath -Name 'report-token.dat'), 'OLD-TOKEN')
+    $null = New-Item -ItemType Directory -Path (Get-ReportRunsDirectory)
+    [IO.File]::WriteAllText((Get-RunFilePath -OpId 'exp-1' -Kind 'run' -Store 'report-runs'), (New-RunRecordJson -Op (New-WireOp -OpId 'exp-1') -Effect 'read' -StartedAt 's'))
+    $script:WireResultStatus = 410
+    $script:WireLog.Clear()
+    Invoke-ReportOnlyFlush -ServerBase $wireServer -Identity $wireIdentity
+    Assert-True 'expired: 別の状態ファイル' (Test-RunFile 'exp-1' 'expired' 'report-runs')
+    Assert-False 'expired: 報告済みにしない' (Test-RunFile 'exp-1' 'sent' 'report-runs')
+    Assert-False 'expired: トークンを消す' (Test-StateFile 'report-token.dat')
+    Assert-True 'expired: ログに残す' ($script:WireLog.Contains('report_expired'))
+    $script:WireHttp.Clear()
+    Invoke-ReportOnlyFlush -ServerBase $wireServer -Identity $wireIdentity
+    Assert-Equal 'expired: 再送しない' '' (Get-WireActions)
+
+    # 通常経路の 410 も区別する
+    Reset-WireStore
+    Add-WireRun -Id 'exp-2'
+    $script:WireResultStatus = 410
+    Invoke-PendingSkillReports -ServerBase $wireServer -Token 'T' -Identity $wireIdentity
+    Assert-True 'expired: 通常経路でも別の状態ファイル' (Test-RunFile 'exp-2' 'expired')
+    Assert-False 'expired: 通常経路でも報告済みにしない' (Test-RunFile 'exp-2' 'sent')
+
+    # 報告専用の 401 と復号不能
+    Reset-WireStore
+    [IO.File]::WriteAllText((Get-StatePath -Name 'report-token.dat'), 'OLD-TOKEN')
+    $null = New-Item -ItemType Directory -Path (Get-ReportRunsDirectory)
+    [IO.File]::WriteAllText((Get-RunFilePath -OpId 'rej-1' -Kind 'run' -Store 'report-runs'), (New-RunRecordJson -Op (New-WireOp -OpId 'rej-1') -Effect 'read' -StartedAt 's'))
+    $script:WireResultStatus = 401
+    Invoke-ReportOnlyFlush -ServerBase $wireServer -Identity $wireIdentity
+    Assert-True 'report-only: 401 は拒否として閉じる' (Test-RunFile 'rej-1' 'rejected' 'report-runs')
+    Assert-False 'report-only: 401 でトークンを消す' (Test-StateFile 'report-token.dat')
+    Reset-WireStore
+    [IO.File]::WriteAllText((Get-StatePath -Name 'report-token.dat'), 'UNREADABLE')
+    $null = New-Item -ItemType Directory -Path (Get-ReportRunsDirectory)
+    [IO.File]::WriteAllText((Get-RunFilePath -OpId 'bad-1' -Kind 'run' -Store 'report-runs'), (New-RunRecordJson -Op (New-WireOp -OpId 'bad-1') -Effect 'read' -StartedAt 's'))
+    Invoke-ReportOnlyFlush -ServerBase $wireServer -Identity $wireIdentity
+    Assert-True 'report-only: 復号できなければ諦めて記録' (Test-RunFile 'bad-1' 'abandoned' 'report-runs')
+    Assert-Equal 'report-only: 復号できなければ送らない' '' (Get-WireActions)
+    Assert-False 'report-only: 復号できないトークンを消す' (Test-StateFile 'report-token.dat')
+
+    # 報告先の無い記録は新しいトークンで送らない
+    Reset-WireStore
+    Add-WireRun -Id 'orphan-1'
+    $script:WireHttp.Clear()
+    $null = Invoke-HelperRegistration -ServerBase $wireServer -Identity $wireIdentity -InBackground $true
+    Remove-StateFile -Name 'pairing-code.txt'
+    Assert-True 'orphan: 登録時に諦めて記録' (Test-RunFile 'orphan-1' 'abandoned')
+    Invoke-PendingSkillReports -ServerBase $wireServer -Token 'NEW-TOKEN' -Identity $wireIdentity
+    Assert-Equal 'orphan: 新トークンで送らない' 'register' (Get-WireActions)
+
+    # 引き渡しの途中で落ちてもやり直せる。枠が埋まっていれば前回分を諦めて記録する。
+    Reset-WireStore
+    Save-HelperToken -HelperToken 'OLD-TOKEN'
+    [IO.File]::WriteAllBytes((Get-StatePath -Name 'report-token.dat'), [IO.File]::ReadAllBytes((Get-StatePath -Name 'token.dat')))
+    Add-WireRun -Id 'retry-1'
+    Assert-Equal 'handoff: 同じトークンならやり直し' 'moved' (Move-RevokedTokenToReportStore)
+    Assert-Equal 'handoff: やり直しでも旧トークン' 'OLD-TOKEN' (Read-HelperToken -Name 'report-token.dat').helperToken
+    Assert-False 'handoff: 前回分を諦めない' (Test-RunFile 'retry-1' 'abandoned' 'report-runs')
+    Save-HelperToken -HelperToken 'SECOND-TOKEN'
+    Add-WireRun -Id 'retry-2'
+    Assert-Equal 'handoff: 別のトークン' 'moved' (Move-RevokedTokenToReportStore)
+    Assert-True 'handoff: 枠が埋まっていれば前回分を諦めて記録' (Test-RunFile 'retry-1' 'abandoned' 'report-runs')
+    Assert-Equal 'handoff: 枠は新しい失効' 'SECOND-TOKEN' (Read-HelperToken -Name 'report-token.dat').helperToken
+    Assert-False 'handoff: 新しい記録は生きている' (Test-RunFile 'retry-2' 'abandoned' 'report-runs')
+
+    Reset-WireStore
+    $script:SkillPollEveryMs = 0
+    $script:WireChildSeconds = 30
+    $script:WirePollBody = '{"ops":[],"cancel":[],"revoked":false}'
 
     # 実行前の拒否（署名不正）は start しない
     $script:WireHttp.Clear()
