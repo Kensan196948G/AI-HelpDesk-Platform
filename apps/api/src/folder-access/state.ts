@@ -27,6 +27,13 @@ export const REQUEST_STATUSES = [
 ] as const;
 export type RequestStatus = (typeof REQUEST_STATUSES)[number];
 
+/** RSP のコマンドで「まだ終わっていない」と分かっている状態。これ以外は待たない。 */
+export const PROBE_RUNNING_STATUSES = ['queued', 'pending', 'sent', 'running'] as const;
+
+export function isProbeRunning(status: string): boolean {
+  return (PROBE_RUNNING_STATUSES as readonly string[]).includes(status);
+}
+
 export const OPEN_STATUSES = [
   'device_pending',
   'helper_pending',
@@ -64,6 +71,20 @@ export const LIMITS = {
   /** 状態確認のついでに RSP へ結果を問い合わせる最短間隔。 */
   probeCheckSeconds: 5,
   maxProbeAttempts: 3,
+  /** 1 回の確認で RSP へ問い合わせる回数の上限（5 秒間隔で 5 分）。担当者の再確認で数え直す。 */
+  maxProbeReads: 60,
+  /** 未ペアのヘルパー行の全体の上限（未認証の経路で増やせるため）。 */
+  maxUnpairedHelpers: 500,
+  /** ペアリング期限が切れた未ペア行を残す時間。 */
+  unpairedRetentionMinutes: 60,
+  /** 導入コードの有効期限。 */
+  enrollCodeMinutes: 10,
+  /** 1 つの依頼で発行できる回数（再発行を含む）。 */
+  maxEnrollCodeIssues: 5,
+  /** 接続元ごとの誤った導入コードの試行回数（10 分あたり）。 */
+  enrollFailuresPerAddress: 10,
+  registerPerAddressPerMinute: 20,
+  registerGlobalPerMinute: 120,
   /** 相談者の状態確認で返す、直近に終了した依頼の上限（進行中は全件返す）。 */
   maxRecentEnded: 10,
 } as const;
@@ -280,6 +301,8 @@ export interface ProbeSession {
   user: string;
   sessionId: number;
   state: 'active' | 'disconnected' | 'other';
+  /** 確定して解釈できなかった行。1 行でもあれば照合を確定しない（fail-closed）。 */
+  ambiguous?: true;
 }
 
 export interface ProbeResult {
@@ -293,22 +316,79 @@ export function isMachineGuid(value: string): boolean {
   return GUID.test(value);
 }
 
-function sessionStateFrom(raw: string): ProbeSession['state'] {
-  const state = raw.toLowerCase();
-  if (state === 'active' || state === 'アクティブ' || state === '運用中') return 'active';
-  if (state === 'disc' || state === 'disconnected' || state === '切断') return 'disconnected';
-  return 'other';
+const QUSER_STATES: Record<string, ProbeSession['state']> = {
+  active: 'active',
+  アクティブ: 'active',
+  運用中: 'active',
+  disc: 'disconnected',
+  disconnected: 'disconnected',
+  切断: 'disconnected',
+  conn: 'other',
+  connq: 'other',
+  shadow: 'other',
+  listen: 'other',
+  idle: 'other',
+  down: 'other',
+  init: 'other',
+  接続: 'other',
+  待機: 'other',
+  アイドル: 'other',
+};
+const QUSER_SESSION_NAME = /^(console|services|rdp-tcp(#\d+)?)$/i;
+const QUSER_AMBIGUOUS: ProbeSession = { user: '', sessionId: -1, state: 'other', ambiguous: true };
+
+/** 「ID + 状態」の左側からユーザー名を取り出す。セッション名と区別できなければ null。 */
+function quserUserName(left: string, state: ProbeSession['state']): string | null {
+  const parts = left.split(/\s{2,}/).filter(Boolean);
+  if (parts.length === 2) {
+    return QUSER_SESSION_NAME.test(parts[1] ?? '') ? (parts[0] ?? null) : null;
+  }
+  if (parts.length !== 1) return null;
+  const only = parts[0] ?? '';
+  // 長い名前はセッション名との間が 1 文字になる。稼働中の行には必ずセッション名がある。
+  // 切断の行にはセッション名が無いので、全体を名前とする（「my console」を「my」にしない）。
+  if (state === 'active') {
+    const lastSpace = only.search(/\s\S+$/);
+    if (lastSpace > 0 && QUSER_SESSION_NAME.test(only.slice(lastSpace + 1))) {
+      return only.slice(0, lastSpace);
+    }
+  }
+  return only;
 }
 
-/** quser の出力行を解釈する。見出し行（ID が数字でない）は無視する。 */
+/**
+ * quser の出力行を解釈する。名前に空白があり得るので、行末側の「ID + 既知の状態」を基準にする。
+ * 誤解釈で別のユーザーと一致させないことを優先し、基準が 1 つに定まらない行は曖昧として返す。
+ */
 export function parseQuserLines(lines: readonly string[]): ProbeSession[] {
   const sessions: ProbeSession[] = [];
   for (const line of lines) {
-    const match = /^[>\s]*(\S+)\s+(?:\S+\s+)?(\d+)\s+(\S+)(?:\s|$)/.exec(line);
-    if (!match) continue;
-    const [, user, id, state] = match;
-    if (!user || !id || !state) continue;
-    sessions.push({ user, sessionId: Number(id), state: sessionStateFrom(state) });
+    if (!line.trim()) continue;
+    if (/\bID\b/.test(line) && /USERNAME|ユーザー名/i.test(line)) continue;
+    const tokens = [...line.matchAll(/\S+/gu)];
+    const anchors: { index: number; id: number; state: ProbeSession['state'] }[] = [];
+    for (let i = 0; i + 1 < tokens.length; i += 1) {
+      const id = tokens[i]?.[0] ?? '';
+      const state = QUSER_STATES[(tokens[i + 1]?.[0] ?? '').toLowerCase()];
+      if (/^\d{1,5}$/.test(id) && state) {
+        anchors.push({ index: tokens[i]?.index ?? 0, id: Number(id), state });
+      }
+    }
+    const anchor = anchors[0];
+    if (anchors.length !== 1 || !anchor) {
+      sessions.push(QUSER_AMBIGUOUS);
+      continue;
+    }
+    const left = line
+      .slice(0, anchor.index)
+      .replace(/^[>\s]+/, '')
+      .trimEnd();
+    const user = quserUserName(left, anchor.state);
+    if (!user) {
+      sessions.push(QUSER_AMBIGUOUS);
+      continue;
+    }
+    sessions.push({ user, sessionId: anchor.id, state: anchor.state });
   }
   return sessions;
 }
@@ -369,6 +449,10 @@ export function evaluateProbe(
     return { kind: 'device_mismatch' };
   }
   if (probe.sessions.length === 0) return { kind: 'pending', code: 'NOT_LOGGED_ON' };
+  // 解釈できない行が別のセッションかもしれない。推測で確定しない。
+  if (probe.sessions.some((session) => session.ambiguous)) {
+    return { kind: 'pending', code: 'SESSION_UNRESOLVED' };
+  }
   const user = comparableUser(helper.userName ?? '');
   const sameUser = probe.sessions.filter((session) => comparableUser(session.user) === user);
   if (sameUser.length !== 1) return { kind: 'pending', code: 'SESSION_UNRESOLVED' };

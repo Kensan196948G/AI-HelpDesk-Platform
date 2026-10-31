@@ -7,6 +7,7 @@
  *     node scripts/verify/folder-access-real.mjs <command> [args]
  *
  * 証跡に残す前提なので、名前は出力せず、件数と種別と結果コードだけを表示する。
+ * enroll-code だけは install-folder-helper.ps1 -EnrollCode に渡す一回限りのコードを表示する（証跡に残さない）。
  */
 import { createHash } from 'node:crypto';
 import postgres from 'postgres';
@@ -84,6 +85,23 @@ switch (command) {
       hostname: HOSTNAME,
     });
     console.log(JSON.stringify({ ...brief(result), id: result.json?.request?.id }));
+    break;
+  }
+  case 'enroll-code': {
+    // 相談者本人が発行する。一回限り、10 分。
+    const result = await call(
+      OWNER,
+      'POST',
+      `/api/folder-access/requests/${args[0]}/enroll-code`,
+      {},
+    );
+    console.log(
+      JSON.stringify({
+        ...brief(result),
+        enrollCode: result.json?.enrollCode,
+        expiresAt: result.json?.expiresAt,
+      }),
+    );
     break;
   }
   case 'status':

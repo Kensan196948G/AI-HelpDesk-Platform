@@ -11,12 +11,13 @@ import {
 } from '../remote-support/rsp.js';
 import { terminateSessionsForFolderRequestTx } from '../support-session/propagate.js';
 import { fetchLease, type LeaseResult } from './lease.js';
-import { hashSid } from './sign.js';
+import { auditRef, hashSid } from './sign.js';
 import {
   bindingViolation,
   type EndReason,
   endAuditAction,
   evaluateProbe,
+  isProbeRunning,
   isTerminal,
   LIMITS,
   parseProbeOutput,
@@ -108,7 +109,10 @@ export async function loadContext(tx: Tx, id: string): Promise<RequestContext | 
   return rows[0] ?? null;
 }
 
-/** 監査の detail。パス・ファイル名・トークン・SID の平文を入れない（docs/62 §7）。 */
+/**
+ * 監査の detail。パス・ファイル名・トークンを入れない。端末の識別子は HMAC の参照だけを書く
+ * （docs/62 §7、§7-1。監査は保持期限の後も残るので、列を消しても識別子が残らないようにする）。
+ */
 export function auditDetail(
   ctx: RequestContext,
   actorEmail: string,
@@ -119,9 +123,9 @@ export function auditDetail(
     handoverId: ctx.handover_id,
     caseId: ctx.case_id,
     assigneeEmail: ctx.assignee_email,
-    rspDeviceId: ctx.rsp_device_id,
-    meshNodeId: ctx.mesh_node_id,
-    hostname: ctx.rsp_hostname,
+    rspDeviceRef: ctx.rsp_device_id ? auditRef('rsp_device', ctx.rsp_device_id) : null,
+    meshNodeRef: ctx.mesh_node_id ? auditRef('mesh_node', ctx.mesh_node_id) : null,
+    hostnameRef: ctx.rsp_hostname ? auditRef('hostname', ctx.rsp_hostname) : null,
     leaseStatus: ctx.lease_status,
     sidHash: ctx.sid ? hashSid(ctx.sid) : null,
     sessionId: ctx.session_id,
@@ -161,7 +165,8 @@ export async function endRequestTx(
   const updated = await tx`
     UPDATE folder_access_requests
     SET status = ${status}, end_reason = ${reason}, ended_at = now(), updated_at = now(),
-        consent_segments = '[]'::jsonb, windows_user = NULL, helper_hostname = NULL
+        consent_segments = '[]'::jsonb, windows_user = NULL, helper_hostname = NULL,
+        enroll_code_hash = NULL, enroll_code_expires_at = NULL
     WHERE id = ${ctx.id}
       AND status IN ('device_pending', 'helper_pending', 'consent_pending', 'active')
     RETURNING id
@@ -374,6 +379,7 @@ export async function resolveDevice(
           rsp_probe_log_id = ${outcome.logId},
           rsp_probe_status = 'pending',
           rsp_probe_attempts = 1,
+          rsp_probe_reads = 0,
           rsp_probe_checked_at = NULL,
           updated_at = now()
       WHERE id = ${id}
@@ -429,30 +435,70 @@ export async function reconcileProbe(
 ): Promise<void> {
   const snapshot = await sql.begin((tx) => loadContext(tx, id));
   if (!snapshot || !isProbeOutstanding(snapshot) || !snapshot.rsp_hostname) return;
-  if (!options.force && !snapshot.probe_check_due) return;
   if (!snapshot.rsp_probe_log_id) return;
   const logId = snapshot.rsp_probe_log_id;
+  const hostname = snapshot.rsp_hostname;
+
+  // 問い合わせの枠を原子的に予約する（同時の確認で間隔と回数を超えない）。
+  const force = options.force === true;
+  const reserved = await sql<{ id: string }[]>`
+    UPDATE folder_access_requests
+    SET rsp_probe_checked_at = now(), rsp_probe_reads = rsp_probe_reads + 1
+    WHERE id = ${id}
+      AND status = 'helper_pending'
+      AND rsp_probe_status = 'pending'
+      AND rsp_probe_log_id = ${logId}
+      AND rsp_probe_reads < ${LIMITS.maxProbeReads}
+      AND (${force} OR rsp_probe_checked_at IS NULL OR rsp_probe_checked_at
+        <= now() - (${LIMITS.probeCheckSeconds}::int * interval '1 second'))
+    RETURNING id
+  `;
+  if (!reserved[0]) {
+    // 上限まで問い合わせても終わらないものは待ち続けない。担当者の再確認で数え直す。
+    await sql`
+      UPDATE folder_access_requests
+      SET rsp_probe_status = 'failed', reason_code = 'RSP_PROBE_TIMEOUT', updated_at = now()
+      WHERE id = ${id}
+        AND status = 'helper_pending'
+        AND rsp_probe_status = 'pending'
+        AND rsp_probe_log_id = ${logId}
+        AND rsp_probe_reads >= ${LIMITS.maxProbeReads}
+    `;
+    return;
+  }
 
   let probe: Awaited<ReturnType<typeof fetchDeviceIdentityProbe>> | null = null;
-  let replacement: string | null = null;
-  let staleExhausted = false;
   try {
     probe = await fetchDeviceIdentityProbe(logId);
-    // AGENT_BUSY は未実行が確定しているので再投入してよい（他の失敗は自動再試行しない）。
-    const busy = probe.status === 'failed' && probe.errorCode === 'AGENT_BUSY';
-    // ヘルパーの登録より前の quser ではセッションを判断できないので取り直す。
-    const stale =
-      probe.status === 'completed' &&
-      snapshot.helper_created_at !== null &&
-      probeCompletedBefore(probe.completedAt, snapshot.helper_created_at);
-    if ((busy || stale) && snapshot.rsp_probe_attempts < LIMITS.maxProbeAttempts) {
-      replacement = (await enqueueDeviceIdentityProbe(snapshot.rsp_hostname, id)).logId;
-    } else if (stale) {
-      // 上限に達しても古い結果では進めない（fail-closed）。担当者の再確認でやり直せる。
-      staleExhausted = true;
-    }
   } catch {
     probe = null;
+  }
+  // AGENT_BUSY は未実行が確定しているので再投入してよい（他の失敗は自動再試行しない）。
+  const busy = probe?.status === 'failed' && probe.errorCode === 'AGENT_BUSY';
+  // ヘルパーの登録より前の quser ではセッションを判断できないので取り直す。
+  const stale =
+    probe?.status === 'completed' &&
+    snapshot.helper_created_at !== null &&
+    probeCompletedBefore(probe.completedAt, snapshot.helper_created_at);
+  let staleExhausted = false;
+  if (busy || stale) {
+    // 再投入の権利を原子的に取る。結果の参照を外すので、投入が終わるまで他は確認に進まない。
+    const claimed = await sql<{ id: string }[]>`
+      UPDATE folder_access_requests
+      SET rsp_probe_attempts = rsp_probe_attempts + 1, rsp_probe_log_id = NULL, updated_at = now()
+      WHERE id = ${id}
+        AND status = 'helper_pending'
+        AND rsp_probe_status = 'pending'
+        AND rsp_probe_log_id = ${logId}
+        AND rsp_probe_attempts < ${LIMITS.maxProbeAttempts}
+      RETURNING id
+    `;
+    if (claimed[0]) {
+      await requeueProbe(id, hostname, logId, actorEmail);
+      return;
+    }
+    // 上限に達しても古い結果では進めない（fail-closed）。担当者の再確認でやり直せる。
+    if (stale) staleExhausted = true;
   }
 
   await sql.begin(async (tx) => {
@@ -463,17 +509,6 @@ export async function reconcileProbe(
       await tx`
         UPDATE folder_access_requests
         SET rsp_probe_checked_at = now(), reason_code = 'RSP_PROBE_UNAVAILABLE', updated_at = now()
-        WHERE id = ${id}
-      `;
-      return;
-    }
-    if (replacement) {
-      await tx`
-        UPDATE folder_access_requests
-        SET rsp_probe_log_id = ${replacement},
-            rsp_probe_attempts = rsp_probe_attempts + 1,
-            rsp_probe_checked_at = now(),
-            updated_at = now()
         WHERE id = ${id}
       `;
       return;
@@ -497,10 +532,20 @@ export async function reconcileProbe(
       `;
       return;
     }
-    if (probe.status !== 'completed') {
+    if (isProbeRunning(probe.status)) {
       await tx`
         UPDATE folder_access_requests
         SET rsp_probe_checked_at = now(), reason_code = NULL, updated_at = now()
+        WHERE id = ${id}
+      `;
+      return;
+    }
+    if (probe.status !== 'completed') {
+      // 実行中と分からない状態を待ち続けない。理由を出して担当者の再確認に任せる。
+      await tx`
+        UPDATE folder_access_requests
+        SET rsp_probe_status = 'failed', reason_code = 'RSP_PROBE_UNKNOWN_STATUS',
+            rsp_probe_checked_at = now(), updated_at = now()
         WHERE id = ${id}
       `;
       return;
@@ -543,6 +588,43 @@ export async function reconcileProbe(
           rsp_probe_checked_at = now(), updated_at = now()
       WHERE id = ${id}
     `;
+  });
+}
+
+/** 予約済みの再投入。投入先の端末が確定した端末と違えば終了する（hostname だけを根拠にしない）。 */
+async function requeueProbe(
+  id: string,
+  hostname: string,
+  previousLogId: string,
+  actorEmail: string,
+): Promise<void> {
+  let enqueued: Awaited<ReturnType<typeof enqueueDeviceIdentityProbe>> | null = null;
+  try {
+    enqueued = await enqueueDeviceIdentityProbe(hostname, id);
+  } catch {
+    enqueued = null;
+  }
+  await sql.begin(async (tx) => {
+    const ctx = await loadContext(tx, id);
+    if (!ctx || ctx.status !== 'helper_pending' || ctx.rsp_probe_log_id !== null) return;
+    if (!enqueued) {
+      await tx`
+        UPDATE folder_access_requests
+        SET rsp_probe_log_id = ${previousLogId}, reason_code = 'RSP_PROBE_UNAVAILABLE',
+            rsp_probe_checked_at = now(), updated_at = now()
+        WHERE id = ${id}
+      `;
+      return;
+    }
+    await tx`
+      UPDATE folder_access_requests
+      SET rsp_probe_log_id = ${enqueued.logId}, reason_code = NULL,
+          rsp_probe_checked_at = now(), updated_at = now()
+      WHERE id = ${id}
+    `;
+    if (enqueued.deviceId !== ctx.rsp_device_id) {
+      await endRequestTx(tx, ctx, 'device_mismatch', actorEmail);
+    }
   });
 }
 
@@ -593,7 +675,8 @@ export async function sweepFolderAccess(): Promise<number> {
   // 登録は未認証で行えるので、残骸を際限なく増やさない。
   await sql`
     DELETE FROM folder_access_helpers
-    WHERE request_id IS NULL AND pairing_expires_at <= now() - interval '1 day'
+    WHERE request_id IS NULL
+      AND pairing_expires_at <= now() - (${LIMITS.unpairedRetentionMinutes}::int * interval '1 minute')
   `;
   await scrubExpiredIdentifiers();
   return ended;

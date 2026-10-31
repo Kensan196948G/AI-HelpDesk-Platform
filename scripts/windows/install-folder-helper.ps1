@@ -9,11 +9,12 @@
   手順と実機での確認項目は docs/62-consented-folder-access.md §9。
 
 .EXAMPLE
-  powershell -ExecutionPolicy Bypass -File .\install-folder-helper.ps1 -ServerUrl https://helpdesk.example.com
+  powershell -ExecutionPolicy Bypass -File .\install-folder-helper.ps1 -ServerUrl https://helpdesk.example.com -EnrollCode <導入コード>
 #>
 [CmdletBinding()]
 param(
   [Parameter(Mandatory)][string]$ServerUrl,
+  [Parameter(Mandatory)][string]$EnrollCode,
   [switch]$AllowInsecureHttp,
   [switch]$NoStart
 )
@@ -50,7 +51,9 @@ try {
   Remove-StateFile -Name 'revoked.flag'
 
   if ($null -eq (Read-HelperToken)) {
-    $registered = Invoke-HelperRegistration -ServerBase $ServerUrl -Identity $identity -InBackground $false
+    # 導入コードは登録の本文にだけ渡す。ログ・状態ファイル・タスクの引数へ残さない。
+    $registered = Invoke-HelperRegistration -ServerBase $ServerUrl -Identity $identity -EnrollCode $EnrollCode -InBackground $false
+    if ($registered.EnrollRejected) { throw '導入コードが無効です。担当者に確認してください。' }
     if (-not $registered.Ok) { throw 'サーバへの登録に失敗しました。接続先を確認してください。' }
   } else {
     Write-Host '登録済みのトークンがあるので再登録しません。やり直す場合は uninstall-folder-helper.ps1 を先に実行してください。'

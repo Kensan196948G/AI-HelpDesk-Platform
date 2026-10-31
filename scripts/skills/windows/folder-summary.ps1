@@ -95,12 +95,15 @@ function Test-SummaryWithin {
 }
 
 function Test-SummaryReparseAllowed {
-  param([Parameter(Mandatory)][string]$Path, [uint32]$Attributes, [uint32]$Tag, [AllowNull()][string]$CloudScope)
+  param([Parameter(Mandatory)][string]$Path, [uint32]$Attributes, [uint32]$Tag, [AllowNull()][AllowEmptyCollection()][string[]]$CloudScope)
   if (($Attributes -band $script:SummaryAttrReparsePoint) -eq 0) { return $true }
   if (($Tag -band $script:SummaryTagNameSurrogateBit) -ne 0) { return $false }
-  if ([string]::IsNullOrEmpty($CloudScope)) { return $false }
   if (($Tag -band $script:SummaryTagCloudMask) -ne $script:SummaryTagCloudBase) { return $false }
-  return (Test-SummaryWithin -Candidate $Path -Root $CloudScope)
+  foreach ($scope in @($CloudScope)) {
+    if ([string]::IsNullOrEmpty($scope)) { continue }
+    if (Test-SummaryWithin -Candidate $Path -Root $scope) { return $true }
+  }
+  return $false
 }
 
 function Get-SummaryChain {
@@ -125,6 +128,34 @@ function ConvertTo-SummaryProbeReason {
   return 'IO_ERROR'
 }
 
+function Get-SummaryCloudScopes {
+  # ヘルパーの Get-CloudScopes と同じ判定。OneDrive の UserFolder の候補のうち、最終パスが本人のプロファイル配下か、
+  # 起点の最終パスを含むものだけを範囲にする。プロファイル自身・その祖先・ドライブ直下は認めない。
+  param(
+    [AllowNull()][AllowEmptyCollection()][string[]]$Candidates,
+    [Parameter(Mandatory)][string]$ProfileFinal,
+    [AllowNull()][string]$RootFinal,
+    [Parameter(Mandatory)][scriptblock]$Probe
+  )
+  $scopes = New-Object System.Collections.Generic.List[string]
+  foreach ($candidate in @($Candidates)) {
+    $norm = ConvertTo-SummaryPath -Path $candidate
+    if ($null -eq $norm -or $norm.Length -le 3) { continue }
+    $info = & $Probe ('\\?\' + $norm) $false
+    if ($info.Error -ne 0) { continue }
+    $final = ConvertTo-SummaryPath -Path $info.FinalPath
+    if ($null -eq $final -or $final.Length -le 3) { continue }
+    if (Test-SummaryWithin -Candidate $ProfileFinal -Root $final) { continue }
+    $underProfile = Test-SummaryWithin -Candidate $final -Root $ProfileFinal
+    $holdsRoot = (-not [string]::IsNullOrEmpty($RootFinal)) -and (Test-SummaryWithin -Candidate $RootFinal -Root $final)
+    if (-not $underProfile -and -not $holdsRoot) { continue }
+    $known = $false
+    foreach ($existing in $scopes) { if ([string]::Equals($existing, $final, [StringComparison]::OrdinalIgnoreCase)) { $known = $true } }
+    if (-not $known) { $scopes.Add($final) }
+  }
+  return $scopes.ToArray()
+}
+
 function Get-SummaryScopeRefusal {
   # Resolve-FolderTarget 相当。問題なければ $null。
   # $Probe: { param($extendedPath, [bool]$openReparsePoint) } -> Error, Attributes, ReparseTag, FinalPath
@@ -132,7 +163,7 @@ function Get-SummaryScopeRefusal {
     [AllowNull()][string]$TargetPath,
     [AllowNull()][string]$RootPath,
     [AllowNull()][string]$ProfilePath,
-    [AllowNull()][string]$OneDrivePath,
+    [AllowNull()][AllowEmptyCollection()][string[]]$OneDrivePath,
     [Parameter(Mandatory)][scriptblock]$Probe
   )
   $target = ConvertTo-SummaryPath -Path $TargetPath
@@ -146,20 +177,12 @@ function Get-SummaryScopeRefusal {
   if ($profileProbe.Error -ne 0) { return 'OUT_OF_SCOPE' }
   $profileFinal = ConvertTo-SummaryPath -Path $profileProbe.FinalPath
   if ($null -eq $profileFinal) { return 'OUT_OF_SCOPE' }
+  $rootForScope = & $Probe ('\\?\' + $root) $false
+  $rootFinalForScope = if ($rootForScope.Error -eq 0) { ConvertTo-SummaryPath -Path $rootForScope.FinalPath } else { $null }
+  $cloudScope = @(Get-SummaryCloudScopes -Candidates $OneDrivePath -ProfileFinal $profileFinal -RootFinal $rootFinalForScope -Probe $Probe)
   $scopes = New-Object System.Collections.Generic.List[string]
   $scopes.Add($profileFinal)
-  $cloudScope = $null
-  $oneDriveNorm = ConvertTo-SummaryPath -Path $OneDrivePath
-  if ($null -ne $oneDriveNorm -and $oneDriveNorm.Length -gt 3) {
-    $oneDriveProbe = & $Probe ('\\?\' + $oneDriveNorm) $false
-    if ($oneDriveProbe.Error -eq 0) {
-      $oneDriveFinal = ConvertTo-SummaryPath -Path $oneDriveProbe.FinalPath
-      if ($null -ne $oneDriveFinal -and $oneDriveFinal.Length -gt 3) {
-        $scopes.Add($oneDriveFinal)
-        $cloudScope = $oneDriveFinal
-      }
-    }
-  }
+  foreach ($scope in $cloudScope) { $scopes.Add($scope) }
 
   foreach ($element in (Get-SummaryChain -Path $target)) {
     $info = & $Probe ('\\?\' + $element) $true
@@ -189,7 +212,7 @@ function Get-SummaryScopeRefusal {
 function Get-SummaryHandleRefusal {
   # 保持したハンドルが検査した対象そのものか。パスではなくハンドルの実体で判定する。
   # $Info: Error, Attributes, ReparseTag, FinalPath（DirectoryHandle.Describe の結果）
-  param([Parameter(Mandatory)][object]$Info, [AllowNull()][string]$TargetPath, [AllowNull()][string]$CloudScope)
+  param([Parameter(Mandatory)][object]$Info, [AllowNull()][string]$TargetPath, [AllowNull()][AllowEmptyCollection()][string[]]$CloudScope)
   if ($Info.Error -ne 0) { return (ConvertTo-SummaryProbeReason -Win32Error $Info.Error) }
   $target = ConvertTo-SummaryPath -Path $TargetPath
   $final = ConvertTo-SummaryPath -Path $Info.FinalPath
@@ -424,6 +447,31 @@ function Get-RegistryNoExpand {
   return $value
 }
 
+function Test-SummaryAccountName {
+  param([AllowNull()][string]$Name)
+  return ($Name -match '^(Business[0-9]{0,3}|Personal)$')
+}
+
+function Get-SummaryOneDriveFolders {
+  # 旧来の値と Accounts\Business*、Accounts\Personal の値。候補を集めるだけで、判定は Get-SummaryCloudScopes が行う。
+  $folders = New-Object System.Collections.Generic.List[string]
+  $legacy = Get-RegistryNoExpand -Key ([Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Microsoft\OneDrive', $false)) -Name 'UserFolder'
+  if ($null -ne $legacy) { $folders.Add($legacy) }
+  $accounts = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Microsoft\OneDrive\Accounts', $false)
+  if ($null -ne $accounts) {
+    try {
+      foreach ($name in $accounts.GetSubKeyNames()) {
+        if (-not (Test-SummaryAccountName -Name $name)) { continue }
+        $value = Get-RegistryNoExpand -Key ($accounts.OpenSubKey($name, $false)) -Name 'UserFolder'
+        if ($null -ne $value) { $folders.Add($value) }
+      }
+    } finally {
+      $accounts.Dispose()
+    }
+  }
+  return $folders.ToArray()
+}
+
 function Invoke-FolderSummaryMain {
   $skillInput = $null
   try { $skillInput = Read-SkillInput } catch { Write-SkillJson -Value (New-SummaryFailure -Code 'BAD_INPUT'); return 1 }
@@ -437,17 +485,15 @@ function Invoke-FolderSummaryMain {
     $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
     $hklm = [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine, [Microsoft.Win32.RegistryView]::Registry64)
     $profilePath = Get-RegistryNoExpand -Key ($hklm.OpenSubKey('SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\' + $sid, $false)) -Name 'ProfileImagePath'
-    $oneDrivePath = Get-RegistryNoExpand -Key ([Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Microsoft\OneDrive', $false)) -Name 'UserFolder'
+    $oneDrivePath = @(Get-SummaryOneDriveFolders)
     $probe = { param($path, $openReparse) [AIHelpDesk.SkillFolderSummary.Native]::Probe($path, [bool]$openReparse) }
     $reason = Get-SummaryScopeRefusal -TargetPath ([string]$target.path) -RootPath ([string]$target.rootPath) -ProfilePath $profilePath -OneDrivePath $oneDrivePath -Probe $probe
     if ($null -ne $reason) { Write-SkillJson -Value (New-SummaryFailure -Code $reason); return 1 }
 
-    $cloudScopeForHandle = $null
-    $oneDriveNorm = ConvertTo-SummaryPath -Path $oneDrivePath
-    if ($null -ne $oneDriveNorm -and $oneDriveNorm.Length -gt 3) {
-      $oneDriveInfo = & $probe ('\\?\' + $oneDriveNorm) $false
-      if ($oneDriveInfo.Error -eq 0) { $cloudScopeForHandle = ConvertTo-SummaryPath -Path $oneDriveInfo.FinalPath }
-    }
+    # Get-SummaryScopeRefusal が通ったので、プロファイルと起点は解決できる。
+    $profileForHandle = ConvertTo-SummaryPath -Path (& $probe ('\\?\' + (ConvertTo-SummaryPath -Path $profilePath)) $false).FinalPath
+    $rootForHandle = ConvertTo-SummaryPath -Path (& $probe ('\\?\' + (ConvertTo-SummaryPath -Path ([string]$target.rootPath))) $false).FinalPath
+    $cloudScopeForHandle = @(Get-SummaryCloudScopes -Candidates $oneDrivePath -ProfileFinal $profileForHandle -RootFinal $rootForHandle -Probe $probe)
 
     $acc = New-SummaryAccumulator
     $watch = [Diagnostics.Stopwatch]::StartNew()
