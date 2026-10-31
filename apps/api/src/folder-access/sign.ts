@@ -6,9 +6,23 @@ export function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
 
-/** 監査に書く SID のハッシュ。SID そのものは監査へ入れない。 */
+/**
+ * 監査に書く参照。監査ログは保持期限の後も残るので、端末の識別子を平文や素のハッシュで残さない
+ * （SID・ホスト名は候補から総当たりで戻せる）。サーバの秘密で HMAC し、種類ごとに分ける。
+ */
+export function auditRef(
+  kind: 'sid' | 'hostname' | 'rsp_device' | 'mesh_node',
+  value: string,
+): string {
+  const normalized = kind === 'hostname' ? value.toLowerCase() : value;
+  return createHmac('sha256', config.SESSION_SECRET)
+    .update(`folder-access-audit:${kind}:${normalized}`)
+    .digest('hex');
+}
+
+/** 監査に書く SID の参照。SID そのものは監査へ入れない。 */
 export function hashSid(sid: string): string {
-  return createHash('sha256').update(sid).digest('hex');
+  return auditRef('sid', sid);
 }
 
 /**

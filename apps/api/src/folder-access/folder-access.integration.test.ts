@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -7,12 +8,15 @@ import { resetAllowlistCache } from '../auth/allowlist.js';
 import { clearUiRoleCache } from '../auth/ui.js';
 import { config } from '../config.js';
 import { sql } from '../db.js';
+import { computeAuditHash } from '../domain/audit.js';
 import { buildCaseContext, buildPcContext, type CaseSnapshot } from '../lib/case-handover.js';
-import { resetRateLimits } from '../lib/rate-limit.js';
+import { checkRateLimit, resetRateLimits } from '../lib/rate-limit.js';
 import { DEVICE_IDENTITY_PROBE_COMMAND } from '../remote-support/rsp.js';
 import { buildServer } from '../server.js';
+import { resetAddressLimits } from './address-limit.js';
 import { sweepFolderAccess } from './service.js';
-import { canonicalOpJson, signOp } from './sign.js';
+import { auditRef, canonicalOpJson, hashSid, signOp } from './sign.js';
+import { LIMITS } from './state.js';
 
 /**
  * 本人同意付きフォルダ一覧の統合テスト（docs/62）。API + 実 PostgreSQL テスト DB。
@@ -72,6 +76,7 @@ interface World {
   leaseStatus: number;
   matches: Record<string, unknown>[];
   enqueueDevice: string;
+  enqueueStatus?: number;
   probe: { status: string; output: unknown; error_code: string | null; completed_at?: string };
   commands: Record<string, unknown>[];
   leaseCalls: number;
@@ -157,6 +162,7 @@ async function fakeFetch(input: unknown, init?: RequestInit) {
     });
   }
   if (url === `${RSP_URL}/api/v1/service/commands` && init?.method === 'POST') {
+    if (world.enqueueStatus) return jsonResponse(world.enqueueStatus, { success: false });
     world.commands.push(JSON.parse(String(init.body)));
     return jsonResponse(201, {
       log_id: `log-${world.commands.length}`,
@@ -376,6 +382,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   resetRateLimits();
+  resetAddressLimits();
   world = freshWorld();
   vi.stubGlobal('fetch', vi.fn(fakeFetch));
   config.FOLDER_ACCESS_ENABLED = true;
@@ -1886,5 +1893,368 @@ describe('機能フラグと経路', () => {
     });
     expect(bad.statusCode).toBe(400);
     expect((await call(ASSIGNEE, 'GET', base('not-a-uuid'))).statusCode).toBe(400);
+  });
+});
+
+describe('コードレビューの指摘（#117。Mock: RSP / PII API / 名簿）', () => {
+  describe('1. 担当者が引き受けた引継ぎの検索', () => {
+    const lookup = (email: string, ref: string) =>
+      call(email, 'GET', `/api/folder-access/handovers/lookup?ref=${encodeURIComponent(ref)}`);
+
+    async function withRefs(status = 'claimed', claimedBy = ASSIGNEE) {
+      const handoverId = await makeHandover(claimedBy);
+      sequence += 1;
+      const inc = `INC-${CASE_PREFIX}${Date.now()}-${sequence}`;
+      const ticket = `TKT-${CASE_PREFIX}${Date.now()}-${sequence}`;
+      const rows = await sql<{ case_id: string }[]>`
+        UPDATE case_handovers
+        SET status = ${status},
+            snapshot = snapshot || ${sql.json({ inc: { id: inc }, ticket: { id: ticket } })}
+        WHERE id = ${handoverId}
+        RETURNING case_id
+      `;
+      return { handoverId, caseId: rows[0]?.case_id ?? '', inc, ticket };
+    }
+
+    it('caseId / INC / チケット番号で引ける（resolved も）', async () => {
+      const refs = await withRefs('resolved');
+      for (const ref of [refs.caseId, refs.inc, refs.ticket]) {
+        const response = await lookup(ASSIGNEE, ref);
+        expect(response.statusCode, response.body).toBe(200);
+        expect(response.json()).toEqual({ ok: true, handoverId: refs.handoverId });
+      }
+    });
+
+    it('他の担当者の引継ぎや未 claim は返さない（ID も内容も漏らさない）', async () => {
+      const refs = await withRefs('claimed', OTHER_ASSIGNEE);
+      const response = await lookup(ASSIGNEE, refs.caseId);
+      expect(response.json()).toEqual({ ok: true, handoverId: null });
+      const completed = await withRefs('completed');
+      expect((await lookup(ASSIGNEE, completed.caseId)).json().handoverId).toBeNull();
+    });
+
+    it('担当者でなければ 403（承認者のみ・相談者）', async () => {
+      const refs = await withRefs();
+      for (const email of [OWNER, APPROVER_ONLY]) {
+        expect((await lookup(email, refs.caseId)).statusCode, email).toBe(403);
+      }
+    });
+
+    it('機能が無効なら 404', async () => {
+      config.FOLDER_ACCESS_ENABLED = false;
+      expect((await lookup(ASSIGNEE, 'CASE-X')).statusCode).toBe(404);
+    });
+  });
+
+  describe('3. RSP の再投入', () => {
+    it('再投入先の端末が確定した端末と違えば device_mismatch で終了する', async () => {
+      world.probe = { status: 'failed', output: '[AGENT_BUSY]', error_code: 'AGENT_BUSY' };
+      const handoverId = await makeHandover();
+      const request = await createRequest(handoverId);
+      const helper = await registerHelper();
+      world.enqueueDevice = '99999999-9999-4999-8999-999999999999';
+      await call(OWNER, 'POST', base(request.id, '/pair'), { code: helper.pairingCode });
+      expect(await requestRow(request.id)).toMatchObject({
+        status: 'denied',
+        end_reason: 'device_mismatch',
+      });
+    });
+
+    it('同時の確認でも再投入は 1 回だけで、回数を原子的に予約する', async () => {
+      world.probe = { status: 'running', output: null, error_code: null };
+      const { id } = await pairedRequest();
+      const commands = world.commands.length;
+      world.probe = { status: 'failed', output: '[AGENT_BUSY]', error_code: 'AGENT_BUSY' };
+      await sql`UPDATE folder_access_requests SET rsp_probe_checked_at = NULL WHERE id = ${id}`;
+      await Promise.all(Array.from({ length: 5 }, () => call(ASSIGNEE, 'GET', base(id))));
+      expect(world.commands.length).toBe(commands + 1);
+      const rows = await sql<{ rsp_probe_attempts: number; rsp_probe_log_id: string | null }[]>`
+        SELECT rsp_probe_attempts, rsp_probe_log_id FROM folder_access_requests WHERE id = ${id}
+      `;
+      expect(rows[0]?.rsp_probe_attempts).toBe(2);
+      expect(rows[0]?.rsp_probe_log_id).not.toBeNull();
+    });
+
+    it('同時の確認でも問い合わせの間隔を守る', async () => {
+      world.probe = { status: 'running', output: null, error_code: null };
+      const { id } = await pairedRequest();
+      await sql`UPDATE folder_access_requests SET rsp_probe_checked_at = NULL WHERE id = ${id}`;
+      const reads = world.probeReads;
+      await Promise.all(Array.from({ length: 5 }, () => call(ASSIGNEE, 'GET', base(id))));
+      expect(world.probeReads).toBe(reads + 1);
+    });
+
+    it('再投入に失敗しても確認を続けられる（結果の参照を失わない）', async () => {
+      world.probe = { status: 'running', output: null, error_code: null };
+      const { id } = await pairedRequest();
+      const before = await sql<{ rsp_probe_log_id: string }[]>`
+        SELECT rsp_probe_log_id FROM folder_access_requests WHERE id = ${id}
+      `;
+      world.probe = { status: 'failed', output: '[AGENT_BUSY]', error_code: 'AGENT_BUSY' };
+      world.enqueueStatus = 500;
+      await sql`UPDATE folder_access_requests SET rsp_probe_checked_at = NULL WHERE id = ${id}`;
+      await call(ASSIGNEE, 'GET', base(id));
+      world.enqueueStatus = undefined;
+      const rows = await sql<{ rsp_probe_log_id: string; reason_code: string }[]>`
+        SELECT rsp_probe_log_id, reason_code FROM folder_access_requests WHERE id = ${id}
+      `;
+      expect(rows[0]?.rsp_probe_log_id).toBe(before[0]?.rsp_probe_log_id);
+      expect(rows[0]?.reason_code).toBe('RSP_PROBE_UNAVAILABLE');
+    });
+  });
+
+  describe('4. 未知の状態と恒久失敗', () => {
+    it.each(['weird', '', 'cancelled', 'timeout'])(
+      '実行中と分からない状態（%s）は待たず、理由を出して再確認できる',
+      async (status) => {
+        world.probe = { status, output: null, error_code: null };
+        const { id, handoverId } = await pairedRequest();
+        const row = await requestRow(id);
+        expect(row?.status).toBe('helper_pending');
+        expect(row?.reason_code).toBe('RSP_PROBE_UNKNOWN_STATUS');
+        const probe = await sql<{ rsp_probe_status: string }[]>`
+          SELECT rsp_probe_status FROM folder_access_requests WHERE id = ${id}
+        `;
+        expect(probe[0]?.rsp_probe_status).toBe('failed');
+
+        world.probe = { status: 'completed', output: probeOutput(), error_code: null };
+        const retried = await createRequest(handoverId);
+        expect(retried.id).toBe(id);
+        expect(world.commands.length).toBeGreaterThan(1);
+      },
+    );
+
+    it.each(['queued', 'pending', 'running'])('既知の実行中（%s）は待つ', async (status) => {
+      world.probe = { status, output: null, error_code: null };
+      const { id } = await pairedRequest();
+      expect((await requestRow(id))?.reason_code).toBeNull();
+      const probe = await sql<{ rsp_probe_status: string }[]>`
+        SELECT rsp_probe_status FROM folder_access_requests WHERE id = ${id}
+      `;
+      expect(probe[0]?.rsp_probe_status).toBe('pending');
+    });
+
+    it('問い合わせの回数に上限があり、超えたら理由を出す。再確認で数え直す', async () => {
+      world.probe = { status: 'running', output: null, error_code: null };
+      const { id, handoverId } = await pairedRequest();
+      await sql`
+        UPDATE folder_access_requests
+        SET rsp_probe_reads = ${LIMITS.maxProbeReads}, rsp_probe_checked_at = NULL
+        WHERE id = ${id}
+      `;
+      const reads = world.probeReads;
+      await call(ASSIGNEE, 'GET', base(id));
+      expect(world.probeReads).toBe(reads);
+      expect((await requestRow(id))?.reason_code).toBe('RSP_PROBE_TIMEOUT');
+
+      world.probe = { status: 'completed', output: probeOutput(), error_code: null };
+      await createRequest(handoverId);
+      const rows = await sql<{ rsp_probe_reads: number; rsp_probe_status: string }[]>`
+        SELECT rsp_probe_reads, rsp_probe_status FROM folder_access_requests WHERE id = ${id}
+      `;
+      expect(rows[0]).toEqual({ rsp_probe_reads: 0, rsp_probe_status: 'pending' });
+    });
+  });
+
+  describe('8. ペアリング失敗の監査', () => {
+    const failures = async (id: string) =>
+      (await auditRows(id)).filter((row) => row.action === 'folder_access.pair_failed');
+
+    it('誤コードを監査し、コードを残さない', async () => {
+      const request = await createRequest(await makeHandover());
+      const helper = await registerHelper();
+      const wrong = helper.pairingCode === '00000000' ? '00000001' : '00000000';
+      await call(OWNER, 'POST', base(request.id, '/pair'), { code: wrong });
+      const rows = await failures(request.id);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.detail).toMatchObject({ result: 'invalid' });
+      const text = JSON.stringify(rows);
+      expect(text).not.toContain(wrong);
+      expect(text).not.toContain(helper.pairingCode);
+    });
+
+    it('ロックアウトを監査する', async () => {
+      const request = await createRequest(await makeHandover());
+      await sql`
+        UPDATE folder_access_requests SET pair_attempts = ${LIMITS.maxPairAttempts}
+        WHERE id = ${request.id}
+      `;
+      await call(OWNER, 'POST', base(request.id, '/pair'), { code: '12345678' });
+      expect((await failures(request.id))[0]?.detail).toMatchObject({ result: 'locked' });
+    });
+
+    it('セッション不一致を監査する', async () => {
+      const request = await createRequest(await makeHandover());
+      const helper = await registerHelper();
+      await poll(helper.helperToken, { ...beat, sessionState: 'disconnected' });
+      const response = await call(OWNER, 'POST', base(request.id, '/pair'), {
+        code: helper.pairingCode,
+      });
+      expect(response.statusCode).toBe(409);
+      expect((await failures(request.id))[0]?.detail).toMatchObject({ result: 'session' });
+    });
+  });
+
+  describe('9. 監査の識別子', () => {
+    it('hostname・RSP 端末 ID・Mesh ノード ID を平文で残さず、HMAC の参照にする', async () => {
+      const { id } = await activeRequest();
+      const rows = await auditRows(id);
+      const text = JSON.stringify(rows);
+      for (const plain of [HOST, RSP_DEVICE, 'node//synth', SID]) {
+        expect(text, plain).not.toContain(plain);
+      }
+      const consent = rows.find((row) => row.action === 'folder_access.consent');
+      expect(consent?.detail).toMatchObject({
+        hostnameRef: auditRef('hostname', HOST),
+        rspDeviceRef: auditRef('rsp_device', RSP_DEVICE),
+        meshNodeRef: auditRef('mesh_node', 'node//synth'),
+        sidHash: hashSid(SID),
+      });
+      expect(consent?.detail).not.toHaveProperty('hostname');
+      expect(consent?.detail).not.toHaveProperty('rspDeviceId');
+      expect(consent?.detail).not.toHaveProperty('meshNodeId');
+    });
+
+    it('SID のハッシュは秘密を持たないと計算できない（素の SHA-256 ではない）', () => {
+      expect(hashSid(SID)).not.toBe(createHash('sha256').update(SID).digest('hex'));
+      expect(hashSid(SID)).toMatch(/^[0-9a-f]{64}$/);
+      // 同じ値でも種類が違えば別の参照になる（突き合わせで種類を超えて追跡できない）。
+      expect(auditRef('hostname', 'x')).not.toBe(auditRef('rsp_device', 'x'));
+      // 大文字小文字の違いで別の端末に見えない。
+      expect(auditRef('hostname', 'SYNTH-PC')).toBe(auditRef('hostname', 'synth-pc'));
+    });
+
+    it('監査のハッシュチェーンを壊さない', async () => {
+      const { id } = await activeRequest();
+      const rows = await sql<
+        {
+          id: string;
+          prev_hash: string;
+          hash: string;
+          detail: Record<string, unknown>;
+          action: string;
+          target_type: string;
+          target_id: string;
+          actor_id: string | null;
+        }[]
+      >`
+        SELECT id, prev_hash, hash, detail, action, target_type, target_id, actor_id
+        FROM audit_log WHERE target_type = 'folder_access_request' AND target_id = ${id}
+        ORDER BY id
+      `;
+      expect(rows.length).toBeGreaterThan(0);
+      for (const row of rows) {
+        expect(
+          computeAuditHash(row.prev_hash, {
+            actorId: row.actor_id,
+            action: row.action,
+            targetType: row.target_type,
+            targetId: row.target_id,
+            detail: row.detail,
+          }),
+        ).toBe(row.hash);
+      }
+    });
+  });
+
+  describe('10. 未認証の登録の上限', () => {
+    async function fillUnpaired(count: number, expired: boolean) {
+      await sql`
+        INSERT INTO folder_access_helpers (
+          token_hash, machine_guid, sid, session_id, session_state, pairing_expires_at
+        )
+        SELECT 'synthetic-fill-' || g, ${OTHER_MACHINE}, ${OTHER_SID}, 2, 'active',
+          ${expired ? sql`now() - interval '1 minute'` : sql`now() + interval '10 minutes'`}
+        FROM generate_series(1, ${count}::int) AS g
+      `;
+    }
+    const clearFill = () => sql`
+      DELETE FROM folder_access_helpers WHERE token_hash LIKE 'synthetic-fill-%'
+    `;
+    const unpairedCount = async () =>
+      Number(
+        (
+          await sql<{ count: string }[]>`
+            SELECT count(*) AS count FROM folder_access_helpers WHERE request_id IS NULL
+          `
+        )[0]?.count,
+      );
+    const registerRaw = (headers: Record<string, string> = {}) =>
+      app.inject({
+        method: 'POST',
+        url: '/api/device/agent/folder-helper/register',
+        headers,
+        payload: registerPayload(),
+      });
+
+    afterEach(async () => {
+      await clearFill();
+    });
+
+    it('有効な未ペアが全体の上限に達したら登録を拒否する', async () => {
+      await clearFill();
+      await sql`
+        DELETE FROM folder_access_helpers
+        WHERE request_id IS NULL AND pairing_expires_at <= now()
+      `;
+      await fillUnpaired(LIMITS.maxUnpairedHelpers - (await unpairedCount()), false);
+      const response = await registerRaw();
+      expect(response.statusCode).toBe(503);
+      expect(response.json().error.code).toBe('REGISTRATION_BUSY');
+      expect(response.body).not.toContain('helperToken');
+      expect(await unpairedCount()).toBe(LIMITS.maxUnpairedHelpers);
+    });
+
+    it('期限切れの未ペアは上限に数えず、上限に達したら先に片付ける', async () => {
+      await clearFill();
+      await fillUnpaired(LIMITS.maxUnpairedHelpers, true);
+      const response = await registerRaw();
+      expect(response.statusCode, response.body).toBe(200);
+      expect(await unpairedCount()).toBeLessThan(LIMITS.maxUnpairedHelpers);
+    });
+
+    it('期限切れの未ペアは短い保持期間で消す', async () => {
+      const helper = await registerHelper();
+      await sql`
+        UPDATE folder_access_helpers
+        SET pairing_expires_at = now() - (${LIMITS.unpairedRetentionMinutes + 1}::int * interval '1 minute')
+        WHERE id = ${helper.helperId}
+      `;
+      const keep = await registerHelper();
+      await sql`
+        UPDATE folder_access_helpers
+        SET pairing_expires_at = now() - (${LIMITS.unpairedRetentionMinutes - 1}::int * interval '1 minute')
+        WHERE id = ${keep.helperId}
+      `;
+      await sweepFolderAccess();
+      const rows = await sql<{ id: string }[]>`
+        SELECT id FROM folder_access_helpers WHERE id IN (${helper.helperId}, ${keep.helperId})
+      `;
+      expect(rows.map((row) => row.id)).toEqual([keep.helperId]);
+    });
+
+    it('未認証の接続元の制限は共通のバケットを使わない（満杯でも互いに影響しない）', async () => {
+      for (let index = 0; index < 10_000; index += 1) {
+        checkRateLimit(`synthetic-fill:${index}`, 1, 60_000);
+      }
+      expect(checkRateLimit('authenticated-route', 1, 60_000)).toBe(false);
+      expect((await registerRaw({ 'cf-connecting-ip': '192.0.2.10' })).statusCode).toBe(200);
+      resetRateLimits();
+
+      // 接続元を変えて登録を繰り返しても、認証済みの経路のバケットは増えない。
+      for (let index = 0; index < 30; index += 1) {
+        await registerRaw({ 'cf-connecting-ip': `198.51.100.${index}` });
+      }
+      expect(checkRateLimit('authenticated-route', 1, 60_000)).toBe(true);
+    });
+
+    it('全体の登録の頻度にも上限がある（接続元を変えても超えられない）', async () => {
+      let limited = false;
+      for (let index = 0; index < LIMITS.registerGlobalPerMinute + 5; index += 1) {
+        const response = await registerRaw({ 'cf-connecting-ip': `203.0.113.${index % 250}` });
+        if (response.statusCode === 429) limited = true;
+      }
+      expect(limited).toBe(true);
+    }, 30_000);
   });
 });

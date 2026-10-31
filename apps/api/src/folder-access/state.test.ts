@@ -188,6 +188,99 @@ describe('結果の正規化', () => {
 });
 
 describe('RSP 固定テンプレートの結果', () => {
+  describe('quser: 空白を含むユーザー名（誤解釈で別ユーザーと一致させない）', () => {
+    const header = ' USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME';
+    const headerJa =
+      ' ユーザー名            セッション名       ID  状態    アイドル時間  ログオン時刻';
+
+    it('空白を含む名前を 1 つのユーザーとして解釈する（英語）', () => {
+      expect(
+        parseQuserLines([
+          header,
+          '>synth user            console             2  Active      none   10/31/2026 9:00 AM',
+          ' other name 3                              4  Disc        none   10/31/2026 8:00 AM',
+        ]),
+      ).toEqual([
+        { user: 'synth user', sessionId: 2, state: 'active' },
+        { user: 'other name 3', sessionId: 4, state: 'disconnected' },
+      ]);
+    });
+
+    it('日本語版のヘッダと、切断行（セッション名なし）を解釈する', () => {
+      expect(
+        parseQuserLines([
+          headerJa,
+          '>合成 太郎             console             3  運用中      なし   2026/10/31 9:00',
+          ' 合成 花子                                 4  切断        なし   2026/10/31 8:00',
+          ' 合成 次郎             rdp-tcp#12          5  アクティブ  なし   2026/10/31 7:00',
+        ]),
+      ).toEqual([
+        { user: '合成 太郎', sessionId: 3, state: 'active' },
+        { user: '合成 花子', sessionId: 4, state: 'disconnected' },
+        { user: '合成 次郎', sessionId: 5, state: 'active' },
+      ]);
+    });
+
+    it('名前の一部を別ユーザーとして読まない（切断行の数字を ID と誤読しない）', () => {
+      const [session] = parseQuserLines([
+        ' synth 2                                   7  Disc  none  x',
+      ]);
+      expect(session).toEqual({ user: 'synth 2', sessionId: 7, state: 'disconnected' });
+    });
+
+    it.each([
+      [
+        'ID と状態に見える並びが 2 つ',
+        '>a 1 Active            console             2  Active  none  x',
+      ],
+      ['未知の状態', '>synth-user            console             2  Weird   none  x'],
+      ['未知のセッション名', '>synth user            weird-session       2  Active  none  x'],
+      ['列が多い', '>a   b   console  2  Active  none  x'],
+      ['解釈できない行', 'garbage line'],
+    ])('曖昧な行は確定しない: %s', (_name, line) => {
+      const sessions = parseQuserLines([line]);
+      expect(sessions).toHaveLength(1);
+      expect(sessions[0]?.ambiguous).toBe(true);
+      expect(
+        evaluateProbe(
+          { machineGuid: GUID, sessions },
+          { machineGuid: GUID, sessionId: 2, userName: 'synth-user' },
+        ),
+      ).toEqual({ kind: 'pending', code: 'SESSION_UNRESOLVED' });
+    });
+
+    it('1 行でも曖昧なら、本人の行が一致していても確定しない', () => {
+      const sessions = parseQuserLines([
+        '>synth-user            console             2  Active  none  x',
+        ' garbage',
+      ]);
+      expect(
+        evaluateProbe(
+          { machineGuid: GUID, sessions },
+          { machineGuid: GUID, sessionId: 2, userName: 'synth-user' },
+        ),
+      ).toEqual({ kind: 'pending', code: 'SESSION_UNRESOLVED' });
+    });
+
+    it('前方が同じ別のユーザーと一致させない', () => {
+      const sessions = parseQuserLines([
+        '>synth user            console             2  Active  none  x',
+      ]);
+      expect(
+        evaluateProbe(
+          { machineGuid: GUID, sessions },
+          { machineGuid: GUID, sessionId: 2, userName: 'synth' },
+        ),
+      ).toEqual({ kind: 'pending', code: 'SESSION_UNRESOLVED' });
+      expect(
+        evaluateProbe(
+          { machineGuid: GUID, sessions },
+          { machineGuid: GUID, sessionId: 2, userName: 'CORP\\synth user' },
+        ),
+      ).toEqual({ kind: 'ok' });
+    });
+  });
+
   it('英語と日本語の quser を解釈する', () => {
     expect(
       parseQuserLines([

@@ -4,6 +4,7 @@ import { sql } from '../db.js';
 import { ApiError, unauthorized } from '../errors.js';
 import { jsonbValue } from '../lib/jsonb-value.js';
 import { checkRateLimit, clientAddress } from '../lib/rate-limit.js';
+import { checkAddressLimit } from './address-limit.js';
 import { requireFolderAccessEnabled } from './routes.js';
 import {
   activeViolation,
@@ -84,6 +85,28 @@ async function findHelper(token: string): Promise<HelperRow> {
   const row = rows[0];
   if (!row) throw unauthorized('ヘルパートークンが無効です。');
   return row;
+}
+
+/**
+ * 未ペア行の全体の上限（多層防御）。上限に達したら期限切れの行を先に片付け、
+ * それでも空かなければ登録を拒否する。行は残さないので、埋められても期限切れで空く。
+ */
+async function reserveUnpairedSlot(tx: Tx): Promise<void> {
+  await tx`SELECT pg_advisory_xact_lock(918273646)`;
+  const rows = await tx<{ count: string }[]>`
+    SELECT count(*) AS count FROM folder_access_helpers WHERE request_id IS NULL
+  `;
+  if (Number(rows[0]?.count) < LIMITS.maxUnpairedHelpers) return;
+  await tx`
+    DELETE FROM folder_access_helpers
+    WHERE request_id IS NULL AND pairing_expires_at <= now()
+  `;
+  const after = await tx<{ count: string }[]>`
+    SELECT count(*) AS count FROM folder_access_helpers WHERE request_id IS NULL
+  `;
+  if (Number(after[0]?.count) >= LIMITS.maxUnpairedHelpers) {
+    throw new ApiError(503, 'REGISTRATION_BUSY', '現在登録できません。少し待ってください。');
+  }
 }
 
 async function drainCancels(tx: Tx, helperId: string): Promise<string[]> {
@@ -197,7 +220,15 @@ export async function folderHelperRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post('/device/agent/folder-helper/register', { bodyLimit: 4 * 1024 }, async (request) => {
-    if (!checkRateLimit(`folder-helper-register:${clientAddress(request)}`, 20, 60_000)) {
+    // 接続元ごとの制限と全体の制限。未認証なので共通のバケットを使わない。
+    if (
+      !checkAddressLimit(
+        `register:${clientAddress(request)}`,
+        LIMITS.registerPerAddressPerMinute,
+        60_000,
+      ) ||
+      !checkAddressLimit('register:global', LIMITS.registerGlobalPerMinute, 60_000)
+    ) {
       throw new ApiError(429, 'RATE_LIMITED', '登録が多すぎます。少し待ってください。');
     }
     const body = RegisterBody.parse(request.body);
@@ -211,20 +242,23 @@ export async function folderHelperRoutes(app: FastifyInstance): Promise<void> {
     for (let attempt = 0; attempt < 5; attempt += 1) {
       const code = generatePairingCode();
       try {
-        const rows = await sql<{ id: string; pairing_expires_at: Date }[]>`
-          INSERT INTO folder_access_helpers (
-            token_hash, machine_guid, sid, user_name, session_id, session_state, hostname,
-            helper_version, pairing_code_hash, pairing_expires_at
-          ) VALUES (
-            ${hashToken(token)}, ${body.machineGuid.toLowerCase()}, ${body.sid},
-            ${sanitizeEntryName(body.userName)}, ${body.sessionId},
-            ${normalizeSessionState(body.sessionState)}, ${sanitizeEntryName(body.hostname)},
-            ${sanitizeEntryName(body.helperVersion)}, ${hashPairingCode(code)},
-            now() + (${LIMITS.pairingMinutes}::int * interval '1 minute')
-          )
-          RETURNING id, pairing_expires_at
-        `;
-        const row = rows[0];
+        const row = await sql.begin(async (tx) => {
+          await reserveUnpairedSlot(tx);
+          const rows = await tx<{ id: string; pairing_expires_at: Date }[]>`
+            INSERT INTO folder_access_helpers (
+              token_hash, machine_guid, sid, user_name, session_id, session_state, hostname,
+              helper_version, pairing_code_hash, pairing_expires_at
+            ) VALUES (
+              ${hashToken(token)}, ${body.machineGuid.toLowerCase()}, ${body.sid},
+              ${sanitizeEntryName(body.userName)}, ${body.sessionId},
+              ${normalizeSessionState(body.sessionState)}, ${sanitizeEntryName(body.hostname)},
+              ${sanitizeEntryName(body.helperVersion)}, ${hashPairingCode(code)},
+              now() + (${LIMITS.pairingMinutes}::int * interval '1 minute')
+            )
+            RETURNING id, pairing_expires_at
+          `;
+          return rows[0];
+        });
         if (!row) throw new Error('ヘルパーの登録に失敗しました。');
         return {
           helperId: row.id,
@@ -242,7 +276,7 @@ export async function folderHelperRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/device/agent/folder-helper/poll', { bodyLimit: 4 * 1024 }, async (request) => {
     const token = helperToken(request);
-    if (!checkRateLimit(`folder-helper-poll-ip:${clientAddress(request)}`, 600, 60_000)) {
+    if (!checkAddressLimit(`poll:${clientAddress(request)}`, 600, 60_000)) {
       throw new ApiError(429, 'RATE_LIMITED', 'リクエストが多すぎます。');
     }
     const helper = await findHelper(token);
@@ -284,7 +318,7 @@ export async function folderHelperRoutes(app: FastifyInstance): Promise<void> {
   // アンインストール時の失効通知。紐づく同意があれば helper_revoked で終了する。
   app.post('/device/agent/folder-helper/revoke', { bodyLimit: 1024 }, async (request) => {
     const token = helperToken(request);
-    if (!checkRateLimit(`folder-helper-poll-ip:${clientAddress(request)}`, 600, 60_000)) {
+    if (!checkAddressLimit(`poll:${clientAddress(request)}`, 600, 60_000)) {
       throw new ApiError(429, 'RATE_LIMITED', 'リクエストが多すぎます。');
     }
     const helper = await findHelper(token);

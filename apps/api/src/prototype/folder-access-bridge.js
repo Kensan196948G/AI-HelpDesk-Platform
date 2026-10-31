@@ -47,6 +47,8 @@
     RSP_PROBE_UNAVAILABLE: 'RSP から端末の確認結果を取得できません。再確認します。',
     RSP_PROBE_INVALID: '端末の確認結果を解釈できません。',
     RSP_PROBE_STALE: '端末の最新の確認結果を取得できません。再確認してください。',
+    RSP_PROBE_UNKNOWN_STATUS: '端末の確認が想定外の状態で止まりました。再確認してください。',
+    RSP_PROBE_TIMEOUT: '端末の確認が時間内に終わりませんでした。再確認してください。',
     RSP_AGENT_BUSY: '端末が別の処理中です。再確認してください。',
     RSP_AGENT_NO_REPLY: '端末から応答がありません。',
     RSP_AGENT_NOT_CONNECTED: '端末がオフラインです。',
@@ -181,9 +183,11 @@
 
   async function findHandoverId(target) {
     if (target.handoverId) return target.handoverId;
-    const inbox = await api('/api/case-handovers/inbox');
-    const item = (inbox.items ?? []).find((row) => row.caseId === target.id && row.claimedByMe);
-    return item?.id ?? null;
+    // 受信箱（pending / claimed の最新 50 件）に頼らず、自分が引き受けた引継ぎを直接引く。
+    const found = await api(
+      `/api/folder-access/handovers/lookup?ref=${encodeURIComponent(target.id)}`,
+    );
+    return found.handoverId ?? null;
   }
 
   /** 呼び出し時点の案件がまだ表示中かを返す関数を作る。await の後で照合する。 */
@@ -202,6 +206,9 @@
     STAFF.retryAt = 0;
     STAFF.error = null;
     STAFF.lastKey = '';
+    // 前の案件の入力を次の案件へ送らない。
+    STAFF.rspDeviceId = '';
+    STAFF.hostname = '';
   }
 
   async function loadStaff() {
@@ -232,15 +239,22 @@
       STAFF.available = true;
       STAFF.request = data.request;
       STAFF.result = result;
+      STAFF.error = null;
     } catch (error) {
       // 切り替え前の案件の失敗は、表示中の案件へ反映しない。
       if (!isCurrent()) return;
-      // 担当者本人以外・機能無効は何も出さない。
-      STAFF.available = false;
-      STAFF.retryAt = Date.now() + 60_000;
-      STAFF.request = null;
-      STAFF.result = null;
-      if (![403, 404].includes(error.status)) STAFF.error = String(error.message || error);
+      if ([403, 404].includes(error.status)) {
+        // 担当者本人以外・機能無効は何も出さない。
+        STAFF.available = false;
+        STAFF.retryAt = Date.now() + 60_000;
+        STAFF.request = null;
+        STAFF.result = null;
+        STAFF.error = null;
+      } else {
+        // 一時的な失敗ではパネルを隠さない。状態を保ち、エラーを見せて終了できるようにする。
+        STAFF.available = true;
+        STAFF.error = String(error.message || error);
+      }
     }
     renderStaff();
   }
@@ -336,6 +350,8 @@
 
   function staffBody() {
     const request = STAFF.request;
+    // まだ引継ぎを確認できていない（一時的な失敗）。開始の導線を出さない。
+    if (!request && !STAFF.handoverId) return [];
     if (!request || !STATUS_LABEL[request.status] || isClosed(request)) {
       return [
         request ? small(reasonText(request) ?? '') : null,
@@ -458,6 +474,8 @@
 
   const MINE = {
     requests: [],
+    // 404 の後はしばらく問い合わせない（一度の 404 で止め続けない）。
+    retryAt: 0,
     disabled: false,
     busy: false,
     error: null,
@@ -474,19 +492,23 @@
   }
 
   async function loadMine() {
-    if (MINE.disabled) return;
+    if (Date.now() < MINE.retryAt) return;
     try {
       const data = await api('/api/folder-access/mine');
       MINE.requests = data.requests ?? [];
+      MINE.disabled = false;
+      MINE.error = null;
       const ids = new Set(MINE.requests.map((request) => request.id));
       for (const id of MINE.forms.keys()) {
         if (!ids.has(id)) MINE.forms.delete(id);
       }
     } catch (error) {
       if (error.status === 404) {
-        // 機能が無効。以後は問い合わせず、何も描画しない。
+        // 機能が無効か、一時的な不整合。何も描画せず、時間を置いて確かめ直す。
         MINE.disabled = true;
+        MINE.retryAt = Date.now() + 60_000;
         MINE.requests = [];
+        MINE.error = null;
       } else if (error.status !== 401 && error.status !== 403) {
         MINE.error = String(error.message || error);
       }

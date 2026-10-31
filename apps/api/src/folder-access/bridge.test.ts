@@ -78,6 +78,7 @@ function harness(
   caseRef: { current: Record<string, unknown> } = {
     current: { id: 'CASE-1', handoverId: '11111111-1111-4111-8111-111111111111' },
   },
+  clock: { offsetMs: number } = { offsetMs: 0 },
 ) {
   const body = new FakeElement('body');
   const wizParent = new FakeElement('div');
@@ -131,6 +132,11 @@ function harness(
     S: forbidden,
     setInterval: (callback: () => void) => timers.push(callback),
     curCase: () => caseRef.current,
+    Date: class extends Date {
+      static now() {
+        return Date.now() + clock.offsetMs;
+      }
+    },
     encodeURIComponent,
     console,
     fetch: async (url: string, init?: RequestInit) => {
@@ -179,8 +185,20 @@ describe('フォルダ一覧ブリッジ（Mock DOM）', () => {
     expect(source).toContain('MVP');
   });
 
-  it('機能が無効（404）なら何も描画せず、以後は問い合わせない', async () => {
-    const h = harness(() => notFound);
+  it('404 なら何も描画せず、しばらく問い合わせないが、時間を置いて再開する', async () => {
+    const clock = { offsetMs: 0 };
+    let enabled = false;
+    const h = harness(
+      (url) => {
+        if (!enabled) return notFound;
+        if (url.includes('/mine')) {
+          return { status: 200, body: { requests: [{ ...requestDto('active'), caseId: 'C' }] } };
+        }
+        return notFound;
+      },
+      undefined,
+      clock,
+    );
     h.load[0]?.();
     await h.settle();
     expect(panel(h, 'aihdFolderAccessMinePanel')).toBeUndefined();
@@ -190,6 +208,114 @@ describe('フォルダ一覧ブリッジ（Mock DOM）', () => {
     for (const timer of h.timers) timer();
     await h.settle();
     expect(h.calls.filter((call) => call.includes('/mine')).length).toBe(before);
+
+    // 一度の 404 で止まらない。
+    enabled = true;
+    clock.offsetMs = 120_000;
+    for (const timer of h.timers) timer();
+    await h.settle();
+    expect(h.calls.filter((call) => call.includes('/mine')).length).toBeGreaterThan(before);
+    expect(panel(h, 'aihdFolderAccessMinePanel')).toBeDefined();
+  });
+
+  it('相談者パネル: 一時的な失敗の後に成功すればエラーを消す', async () => {
+    let failing = true;
+    const h = harness((url) => {
+      if (url.includes('/mine')) {
+        return failing
+          ? { status: 500, body: { error: { message: 'TEMPORARY-FAILURE' } } }
+          : { status: 200, body: { requests: [{ ...requestDto('active'), caseId: 'C' }] } };
+      }
+      return notFound;
+    });
+    h.load[0]?.();
+    await h.settle();
+    failing = false;
+    for (const timer of h.timers) timer();
+    await h.settle();
+    const mine = panel(h, 'aihdFolderAccessMinePanel');
+    expect(mine?.text).toBeDefined();
+    expect(mine?.text).not.toContain('TEMPORARY-FAILURE');
+  });
+
+  it('担当者パネル: 一時的な失敗ではエラーを見せ、終了ボタンを残す', async () => {
+    let failing = false;
+    const h = harness((url) => {
+      if (url.includes('/mine')) return { status: 200, body: { requests: [] } };
+      if (failing) return { status: 503, body: { error: { message: 'TEMPORARY-FAILURE' } } };
+      return { status: 200, body: { request: requestDto('consent_pending') } };
+    });
+    h.load[0]?.();
+    await h.settle();
+    const staff = panel(h, 'aihdFolderAccessPanel') as FakeElement;
+    expect(staff.style.display).toBe('');
+    failing = true;
+    for (const timer of h.timers) timer();
+    await h.settle();
+    expect(staff.style.display).toBe('');
+    expect(staff.text).toContain('TEMPORARY-FAILURE');
+    const buttons = staff.findAll((element) => element.tag === 'button');
+    expect(buttons.some((button) => button.text.includes('終了'))).toBe(true);
+
+    // 回復すればエラーを消す。
+    failing = false;
+    for (const timer of h.timers) timer();
+    await h.settle();
+    expect(staff.text).not.toContain('TEMPORARY-FAILURE');
+  });
+
+  it('担当者パネル: 引継ぎは受信箱ではなく専用の検索で引く（resolved や 51 件目以降でも消えない）', async () => {
+    const handoverId = '11111111-1111-4111-8111-111111111111';
+    const h = harness(
+      (url) => {
+        if (url.includes('/mine')) return { status: 200, body: { requests: [] } };
+        if (url.includes('/folder-access/handovers/lookup')) {
+          return { status: 200, body: { ok: true, handoverId } };
+        }
+        if (url.includes('/case-handovers/inbox')) throw new Error('受信箱へ問い合わせない');
+        return { status: 200, body: { request: requestDto('active') } };
+      },
+      { current: { id: 'INC-0001' } },
+    );
+    h.load[0]?.();
+    await h.settle();
+    expect(h.calls.some((call) => call.includes('lookup?ref=INC-0001'))).toBe(true);
+    expect(panel(h, 'aihdFolderAccessPanel')?.style.display).toBe('');
+  });
+
+  it('担当者パネル: 案件を切り替えると、前の案件の端末 ID とホスト名を送らない', async () => {
+    const handoverA = '11111111-1111-4111-8111-11111111111a';
+    const handoverB = '11111111-1111-4111-8111-11111111111b';
+    const caseRef = {
+      current: { id: 'CASE-A', handoverId: handoverA } as Record<string, unknown>,
+    };
+    const posted: Record<string, unknown>[] = [];
+    const h = harness((url, init) => {
+      if (url.includes('/mine')) return { status: 200, body: { requests: [] } };
+      if (init?.method === 'POST') {
+        posted.push(JSON.parse(String(init.body)));
+        return { status: 200, body: { request: requestDto('device_pending') } };
+      }
+      return { status: 200, body: { request: requestDto('device_pending') } };
+    }, caseRef);
+    h.load[0]?.();
+    await h.settle();
+    const staff = panel(h, 'aihdFolderAccessPanel') as FakeElement;
+    const inputs = staff.findAll((element) => element.tag === 'input');
+    inputs[0]?.listeners.input?.[0]?.({
+      target: { value: '33333333-3333-4333-8333-333333333333' },
+    });
+    inputs[1]?.listeners.input?.[0]?.({ target: { value: 'HOST-OF-CASE-A' } });
+
+    caseRef.current = { id: 'CASE-B', handoverId: handoverB };
+    for (const timer of h.timers) timer();
+    await h.settle();
+    const retry = staff
+      .findAll((element) => element.tag === 'button')
+      .find((button) => button.text.includes('再確認')) as FakeElement;
+    retry.listeners.click?.[0]?.({});
+    await h.settle();
+    expect(posted.at(-1)).toEqual({ handoverId: handoverB });
   });
 
   it('担当者でなければ（403）担当者パネルを出さない', async () => {

@@ -32,6 +32,7 @@ const CreateBody = z.object({
 const HandoverQuery = z.object({ handoverId: z.string().uuid() });
 const MineQuery = z.object({ handoverId: z.string().uuid().optional() });
 const PairBody = z.object({ code: z.string().regex(/^\d{8}$/) });
+const LookupQuery = z.object({ ref: z.string().trim().min(1).max(200) });
 
 export function requireFolderAccessEnabled(): void {
   // 無効時は存在しないルートと同じ応答にする（機能の有無を漏らさない）。
@@ -227,6 +228,26 @@ async function assignRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
+  // 画面の案件（caseId / INC / チケット番号）から、自分が引き受けた引継ぎの ID だけを引く。
+  // 受信箱は pending / claimed の最新 50 件なので、resolved や古い案件を引けない。
+  app.get('/folder-access/handovers/lookup', { preHandler: authenticateUi }, async (request) => {
+    const email = await requireAssignee(request);
+    const { ref } = LookupQuery.parse(request.query);
+    const rows = await sql<{ id: string }[]>`
+      SELECT id FROM case_handovers
+      WHERE claimed_by = ${email}
+        AND status IN ('claimed', 'resolved')
+        AND (
+          case_id = ${ref}
+          OR snapshot #>> '{inc,id}' = ${ref}
+          OR snapshot #>> '{ticket,id}' = ${ref}
+        )
+      ORDER BY created_at DESC
+      LIMIT 1
+    `;
+    return { ok: true, handoverId: rows[0]?.id ?? null };
+  });
+
   // 画面の再読込時に既存の依頼を引くための読み取り（docs/62 §5 への追加）。
   app.get('/folder-access/requests', { preHandler: authenticateUi }, async (request) => {
     const email = await requireAssignee(request);
@@ -385,7 +406,13 @@ async function pairTx(
   assertRequester(ctx, email);
   await applyExpiryAndBinding(tx, ctx, email);
   if (ctx.status !== 'helper_pending' || ctx.helper_id) return { kind: 'state', ctx };
-  if (ctx.pair_attempts >= LIMITS.maxPairAttempts) return { kind: 'locked' };
+  // 失敗も監査する（誤コード・ロックアウト・セッション不一致）。コードは残さない。
+  const auditFailure = (result: 'invalid' | 'locked' | 'session', extra = {}) =>
+    appendFolderAudit(tx, 'folder_access.pair_failed', ctx, email, { result, ...extra });
+  if (ctx.pair_attempts >= LIMITS.maxPairAttempts) {
+    await auditFailure('locked');
+    return { kind: 'locked' };
+  }
 
   const helpers = await tx<
     {
@@ -415,10 +442,13 @@ async function pairTx(
       SET pair_attempts = pair_attempts + 1, updated_at = now()
       WHERE id = ${id}
     `;
-    return { kind: 'invalid', remaining: LIMITS.maxPairAttempts - ctx.pair_attempts - 1 };
+    const remaining = LIMITS.maxPairAttempts - ctx.pair_attempts - 1;
+    await auditFailure('invalid', { remaining });
+    return { kind: 'invalid', remaining };
   }
   if (helper.session_state !== 'active') {
     await tx`UPDATE folder_access_helpers SET revoked_at = now() WHERE id = ${helper.id}`;
+    await auditFailure('session');
     return { kind: 'session' };
   }
   await tx`
