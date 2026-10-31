@@ -199,16 +199,26 @@ async function assignRoutes(app: FastifyInstance): Promise<void> {
         }
       }
       if (!id) {
-        const rows = await sql<{ id: string }[]>`
-          INSERT INTO folder_access_requests (
-            handover_id, case_id, requester_email, assignee_email, request_expires_at
-          ) VALUES (
-            ${handover.id}, ${handover.case_id}, ${handover.owner_email}, ${email},
-            now() + (${LIMITS.requestMinutes}::int * interval '1 minute')
-          )
-          RETURNING id
-        `;
-        id = rows[0]?.id ?? null;
+        try {
+          const rows = await sql<{ id: string }[]>`
+            INSERT INTO folder_access_requests (
+              handover_id, case_id, requester_email, assignee_email, request_expires_at
+            ) VALUES (
+              ${handover.id}, ${handover.case_id}, ${handover.owner_email}, ${email},
+              now() + (${LIMITS.requestMinutes}::int * interval '1 minute')
+            )
+            RETURNING id
+          `;
+          id = rows[0]?.id ?? null;
+        } catch (error) {
+          // 同じ引継ぎへの同時送信（部分一意インデックス違反）は、先に作られた依頼を返す。
+          if ((error as { code?: string }).code !== '23505') throw error;
+          const existing = await latestForHandover(body.handoverId);
+          if (!existing) throw error;
+          const ctx = await refresh(existing, email);
+          assertAssignee(ctx, email);
+          return { ok: true, request: dto(ctx, 'assignee') };
+        }
       }
       if (!id) throw new Error('依頼の作成に失敗しました。');
       await resolveDevice(id, { rspDeviceId: body.rspDeviceId, hostname: body.hostname }, email);

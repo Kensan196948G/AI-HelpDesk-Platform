@@ -432,6 +432,7 @@ export async function reconcileProbe(
 
   let probe: Awaited<ReturnType<typeof fetchDeviceIdentityProbe>> | null = null;
   let replacement: string | null = null;
+  let staleExhausted = false;
   try {
     probe = await fetchDeviceIdentityProbe(logId);
     // AGENT_BUSY は未実行が確定しているので再投入してよい（他の失敗は自動再試行しない）。
@@ -443,6 +444,9 @@ export async function reconcileProbe(
       probeCompletedBefore(probe.completedAt, snapshot.helper_created_at);
     if ((busy || stale) && snapshot.rsp_probe_attempts < LIMITS.maxProbeAttempts) {
       replacement = (await enqueueDeviceIdentityProbe(snapshot.rsp_hostname, id)).logId;
+    } else if (stale) {
+      // 上限に達しても古い結果では進めない（fail-closed）。担当者の再確認でやり直せる。
+      staleExhausted = true;
     }
   } catch {
     probe = null;
@@ -467,6 +471,15 @@ export async function reconcileProbe(
             rsp_probe_attempts = rsp_probe_attempts + 1,
             rsp_probe_checked_at = now(),
             updated_at = now()
+        WHERE id = ${id}
+      `;
+      return;
+    }
+    if (staleExhausted) {
+      await tx`
+        UPDATE folder_access_requests
+        SET rsp_probe_status = 'failed', reason_code = 'RSP_PROBE_STALE',
+            rsp_probe_checked_at = now(), updated_at = now()
         WHERE id = ${id}
       `;
       return;

@@ -46,6 +46,7 @@
     RSP_UNAVAILABLE: 'RSP に接続できません。',
     RSP_PROBE_UNAVAILABLE: 'RSP から端末の確認結果を取得できません。再確認します。',
     RSP_PROBE_INVALID: '端末の確認結果を解釈できません。',
+    RSP_PROBE_STALE: '端末の最新の確認結果を取得できません。再確認してください。',
     RSP_AGENT_BUSY: '端末が別の処理中です。再確認してください。',
     RSP_AGENT_NO_REPLY: '端末から応答がありません。',
     RSP_AGENT_NOT_CONNECTED: '端末がオフラインです。',
@@ -161,6 +162,8 @@
     available: false,
     // 担当者でない間は問い合わせを減らす（相談者の画面から 6 秒ごとに 403 を出さない）。
     retryAt: 0,
+    // 案件を切り替えるたびに増やす。古い応答で別の案件の状態を上書きしないために使う。
+    epoch: 0,
     busy: false,
     error: null,
     rspDeviceId: '',
@@ -183,7 +186,14 @@
     return item?.id ?? null;
   }
 
+  /** 呼び出し時点の案件がまだ表示中かを返す関数を作る。await の後で照合する。 */
+  function staffScope() {
+    const { epoch, caseId } = STAFF;
+    return () => STAFF.epoch === epoch && currentCase()?.id === caseId;
+  }
+
   function resetStaff(caseId) {
+    STAFF.epoch += 1;
     STAFF.caseId = caseId;
     STAFF.handoverId = null;
     STAFF.request = null;
@@ -198,22 +208,33 @@
     const target = currentCase();
     if (!target?.id) return;
     if (STAFF.caseId !== target.id) resetStaff(target.id);
+    const isCurrent = staffScope();
     try {
-      STAFF.handoverId = STAFF.handoverId ?? (await findHandoverId(target));
-      if (!STAFF.handoverId) {
+      const handoverId = STAFF.handoverId ?? (await findHandoverId(target));
+      if (!isCurrent()) return;
+      STAFF.handoverId = handoverId;
+      if (!handoverId) {
         STAFF.available = false;
         STAFF.retryAt = Date.now() + 60_000;
         renderStaff();
         return;
       }
       const data = await api(
-        `/api/folder-access/requests?handoverId=${encodeURIComponent(STAFF.handoverId)}`,
+        `/api/folder-access/requests?handoverId=${encodeURIComponent(handoverId)}`,
       );
+      if (!isCurrent()) return;
+      let result = null;
+      if (data.request?.status === 'active') {
+        const id = encodeURIComponent(data.request.id);
+        result = (await api(`/api/folder-access/requests/${id}/result`)).result;
+        if (!isCurrent()) return;
+      }
       STAFF.available = true;
       STAFF.request = data.request;
-      if (STAFF.request?.status === 'active') await loadResult();
-      else STAFF.result = null;
+      STAFF.result = result;
     } catch (error) {
+      // 切り替え前の案件の失敗は、表示中の案件へ反映しない。
+      if (!isCurrent()) return;
       // 担当者本人以外・機能無効は何も出さない。
       STAFF.available = false;
       STAFF.retryAt = Date.now() + 60_000;
@@ -224,23 +245,16 @@
     renderStaff();
   }
 
-  async function loadResult() {
-    if (!STAFF.request) return;
-    const data = await api(
-      `/api/folder-access/requests/${encodeURIComponent(STAFF.request.id)}/result`,
-    );
-    STAFF.result = data.result;
-  }
-
   async function staffAction(run) {
     if (STAFF.busy) return;
+    const isCurrent = staffScope();
     STAFF.busy = true;
     STAFF.error = null;
     renderStaff();
     try {
-      await run();
+      await run(isCurrent);
     } catch (error) {
-      STAFF.error = String(error.message || error);
+      if (isCurrent()) STAFF.error = String(error.message || error);
     } finally {
       STAFF.busy = false;
       await loadStaff();
@@ -248,12 +262,12 @@
   }
 
   function startRequest() {
-    return staffAction(async () => {
+    return staffAction(async (isCurrent) => {
       const body = { handoverId: STAFF.handoverId };
       if (STAFF.rspDeviceId.trim()) body.rspDeviceId = STAFF.rspDeviceId.trim();
       if (STAFF.hostname.trim()) body.hostname = STAFF.hostname.trim();
       const data = await api('/api/folder-access/requests', body);
-      STAFF.request = data.request;
+      if (isCurrent()) STAFF.request = data.request;
     });
   }
 
@@ -264,9 +278,10 @@
   }
 
   function endRequest() {
-    return staffAction(async () => {
+    return staffAction(async (isCurrent) => {
       const id = encodeURIComponent(STAFF.request.id);
       const data = await api(`/api/folder-access/requests/${id}/end`, {});
+      if (!isCurrent()) return;
       STAFF.request = data.request;
       STAFF.result = null;
     });

@@ -763,6 +763,48 @@ describe('貸与情報と端末の照合（Mock: PII API / RSP）', () => {
     expect(request.endReason).toBe('device_mismatch');
   });
 
+  it('同時送信で一意インデックスに当たっても 500 にせず、先に作られた依頼を返す', async () => {
+    const handoverId = await makeHandover();
+    const rows = await sql<{ case_id: string }[]>`
+      SELECT case_id FROM case_handovers WHERE id = ${handoverId}
+    `;
+    const caseId = rows[0]?.case_id ?? '';
+    let winner = '';
+    let pending: ReturnType<typeof call> | undefined;
+    // 未コミットの行はルートの事前確認から見えず、INSERT はコミットまで待って 23505 になる。
+    await sql.begin(async (tx) => {
+      const inserted = await tx<{ id: string }[]>`
+        INSERT INTO folder_access_requests (
+          handover_id, case_id, requester_email, assignee_email, request_expires_at
+        ) VALUES (
+          ${handoverId}, ${caseId}, ${OWNER}, ${ASSIGNEE}, now() + interval '30 minutes'
+        )
+        RETURNING id
+      `;
+      winner = inserted[0]?.id ?? '';
+      pending = call(ASSIGNEE, 'POST', '/api/folder-access/requests', { handoverId });
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    });
+    const response = await pending;
+    expect(response?.statusCode, response?.body).toBe(200);
+    expect(response?.json().request.id).toBe(winner);
+    const count = await sql`
+      SELECT id FROM folder_access_requests WHERE handover_id = ${handoverId}
+    `;
+    expect(count).toHaveLength(1);
+  });
+
+  it('同じ引継ぎへの並行送信はすべて成功し、依頼は 1 件だけになる', async () => {
+    const handoverId = await makeHandover();
+    const responses = await Promise.all(
+      Array.from({ length: 5 }, () =>
+        call(ASSIGNEE, 'POST', '/api/folder-access/requests', { handoverId }),
+      ),
+    );
+    for (const response of responses) expect(response.statusCode, response.body).toBe(200);
+    expect(new Set(responses.map((response) => response.json().request.id)).size).toBe(1);
+  });
+
   it('留まった依頼は再送で照合をやり直せる', async () => {
     world.lease = leaseBody([]);
     const handoverId = await makeHandover();
@@ -931,6 +973,36 @@ describe('ペアリングと Windows ユーザー（Mock: RSP）', () => {
     await poll(helper.helperToken);
     expect((await requestRow(id))?.status).toBe('consent_pending');
     expect(world.commands).toHaveLength(2);
+  });
+
+  it('取り直しの上限に達しても古い結果では進めず、理由を出して留まる', async () => {
+    const stale = {
+      status: 'completed',
+      output: probeOutput(),
+      error_code: null,
+      completed_at: '2020-01-01T00:00:00+00:00',
+    };
+    world.probe = stale;
+    const { id, handoverId, helper } = await pairedRequest();
+    for (let index = 0; index < 3; index += 1) {
+      await sql`UPDATE folder_access_requests SET rsp_probe_checked_at = NULL WHERE id = ${id}`;
+      await poll(helper.helperToken);
+    }
+    expect(world.commands).toHaveLength(3);
+    expect(await requestRow(id)).toMatchObject({
+      status: 'helper_pending',
+      reason_code: 'RSP_PROBE_STALE',
+    });
+    expect((await call(OWNER, 'POST', base(id, '/consent'), CONSENT)).statusCode).toBe(409);
+
+    // 担当者の再確認で投入し直し、新しい結果なら進める。
+    const retried = await createRequest(handoverId);
+    expect(retried.id).toBe(id);
+    expect(world.commands).toHaveLength(4);
+    world.probe = { ...stale, completed_at: new Date(Date.now() + 60_000).toISOString() };
+    await sql`UPDATE folder_access_requests SET rsp_probe_checked_at = NULL WHERE id = ${id}`;
+    await poll(helper.helperToken);
+    expect((await requestRow(id))?.status).toBe('consent_pending');
   });
 
   it('RSP の出力が解釈できなければ進めない', async () => {

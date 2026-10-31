@@ -89,6 +89,7 @@ device_pending → helper_pending → consent_pending → active → ended
    テンプレートは引数を挿入しない定数で、キュー投入は依頼の確定時、結果の取得はペアリング後（`pair` / 状態確認 / `poll` の延長。5 秒間隔）に行う。
    出力は解釈して捨てる（ユーザー名を含むため HelpDesk には保存しない。RSP の `command_logs` には残る）。
    `AGENT_BUSY` と、ヘルパーの登録より前に完了した結果（古い quser では判断できない）だけ、最大 3 回まで投入し直す。
+   上限に達しても古い結果では進めず、`RSP_PROBE_STALE` で `helper_pending` に留める（担当者の再確認でやり直せる）。
    `mesh_node_id` は RSP 応答にあれば保存し、無ければ `null`。
 4. **Windows ユーザー**: ペアリングで結び付ける。
    - ヘルパーは本人セッション内で `WindowsIdentity.GetCurrent()` の SID を取得し、登録して 8 桁のコードを本人の画面に表示する。
@@ -185,8 +186,8 @@ ACL 拒否は `ACCESS_DENIED` を返し、昇格で回避しない。
 ## 9. Windows ヘルパー（`scripts/windows/`）
 
 実装は `folder-helper.ps1`、`install-folder-helper.ps1`、`uninstall-folder-helper.ps1`。
-**Windows API の挙動はすべて実機未実測である。** 検証したのは Linux の pwsh 上の純粋関数と、
-OS 依存部をスタブにした結合動作だけ。§9.5 の確認が済むまで、動作する前提で扱わない。
+実機での確認結果は §10-2、未確認の項目は §10-3 を参照する。CI で検証するのは Linux の pwsh 上の純粋関数と、
+OS 依存部をスタブにした結合動作だけ。§10-3 の項目は動作する前提で扱わない。
 
 ### 9.1 署名の正準形（ヘルパーと Node で共通）
 
@@ -252,7 +253,7 @@ pwsh -NoProfile -File scripts/windows/tests/folder-helper.tests.ps1
 
 ### 9.4 判断: OneDrive と「全祖先の reparse 拒否」
 
-§6 の全祖先拒否を文字どおり適用すると、Files On-Demand のフォルダがクラウドタグを持つ場合に OneDrive 配下を一切扱えない。次のように限定した（**実機未実測の判断**）:
+§6 の全祖先拒否を文字どおり適用すると、Files On-Demand のフォルダがクラウドタグを持つ場合に OneDrive 配下を一切扱えない。次のように限定した（実機の状況は §10-3。OneDrive は未確認）:
 
 - 名前サロゲートのタグ（symlink・junction 等）は場所を問わず拒否する。
 - クラウドタグ（`(tag & 0xFFFF0FFF) == 0x9000001A`）だけ、`HKCU\Software\Microsoft\OneDrive` の `UserFolder` 配下で許可する。その他のタグは拒否する。

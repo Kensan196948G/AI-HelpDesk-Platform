@@ -71,7 +71,14 @@ class FakeElement {
   }
 }
 
-function harness(routes: (url: string, init?: RequestInit) => { status: number; body: unknown }) {
+type RouteReply = { status: number; body: unknown };
+
+function harness(
+  routes: (url: string, init?: RequestInit) => RouteReply | Promise<RouteReply>,
+  caseRef: { current: Record<string, unknown> } = {
+    current: { id: 'CASE-1', handoverId: '11111111-1111-4111-8111-111111111111' },
+  },
+) {
   const body = new FakeElement('body');
   const wizParent = new FakeElement('div');
   const wiz = new FakeElement('div');
@@ -123,12 +130,12 @@ function harness(routes: (url: string, init?: RequestInit) => { status: number; 
     sessionStorage: forbidden,
     S: forbidden,
     setInterval: (callback: () => void) => timers.push(callback),
-    curCase: () => ({ id: 'CASE-1', handoverId: '11111111-1111-4111-8111-111111111111' }),
+    curCase: () => caseRef.current,
     encodeURIComponent,
     console,
     fetch: async (url: string, init?: RequestInit) => {
       calls.push(`${init?.method ?? 'GET'} ${url}`);
-      const { status, body: json } = routes(url, init);
+      const { status, body: json } = await routes(url, init);
       return { ok: status < 400, status, json: async () => json };
     },
   };
@@ -363,6 +370,120 @@ describe('フォルダ一覧ブリッジ（Mock DOM）', () => {
       ?.listeners.click?.[0]?.({});
     await h.settle();
     expect(posts[1]).toBe(`/api/folder-access/requests/${newer.id}/revoke`);
+  });
+
+  describe('案件の切り替え中に届いた古い応答', () => {
+    const handoverA = 'aaaaaaaa-0000-4000-8000-000000000000';
+    const handoverB = 'bbbbbbbb-0000-4000-8000-000000000000';
+    const dtoFor = (user: string) =>
+      requestDto('consent_pending', {
+        id: user === 'user-a' ? 'req-a' : 'req-b',
+        windowsUser: user,
+      });
+
+    function switching(extra?: (url: string, init?: RequestInit) => RouteReply | null) {
+      const caseRef = {
+        current: { id: 'CASE-A', handoverId: handoverA } as Record<string, unknown>,
+      };
+      let release: (reply: RouteReply) => void = () => {};
+      let hold = false;
+      const h = harness((url, init) => {
+        if (url.includes('/mine')) return { status: 200, body: { requests: [] } };
+        const custom = extra?.(url, init);
+        if (custom) return custom;
+        if (url.includes(handoverB)) return { status: 200, body: { request: dtoFor('user-b') } };
+        if (hold && url.includes(handoverA)) {
+          return new Promise<RouteReply>((resolve) => {
+            release = resolve;
+          });
+        }
+        return { status: 200, body: { request: dtoFor('user-a') } };
+      }, caseRef);
+      return {
+        h,
+        caseRef,
+        holdNext: () => {
+          hold = true;
+        },
+        releaseWith: (reply: RouteReply) => release(reply),
+      };
+    }
+
+    it('案件 A の取得中に B へ切り替えると、A の結果で B を上書きしない', async () => {
+      const t = switching();
+      t.holdNext();
+      t.h.load[0]?.();
+      await t.h.settle();
+      const staff = panel(t.h, 'aihdFolderAccessPanel');
+
+      t.caseRef.current = { id: 'CASE-B', handoverId: handoverB };
+      t.h.timers[0]?.();
+      await t.h.settle();
+      expect(staff?.text).toContain('user-b');
+
+      t.releaseWith({ status: 200, body: { request: dtoFor('user-a') } });
+      await t.h.settle();
+      expect(staff?.text).toContain('user-b');
+      expect(staff?.text).not.toContain('user-a');
+    });
+
+    it('切り替え直後（再読込の前）に届いた A の応答も捨てる', async () => {
+      const t = switching();
+      t.holdNext();
+      t.h.load[0]?.();
+      await t.h.settle();
+      const staff = panel(t.h, 'aihdFolderAccessPanel');
+      t.caseRef.current = { id: 'CASE-B', handoverId: handoverB };
+      t.releaseWith({ status: 200, body: { request: dtoFor('user-a') } });
+      await t.h.settle();
+      expect(staff?.text ?? '').not.toContain('user-a');
+    });
+
+    it('A の失敗（500）を B のエラーとして表示しない', async () => {
+      const t = switching();
+      t.holdNext();
+      t.h.load[0]?.();
+      await t.h.settle();
+      const staff = panel(t.h, 'aihdFolderAccessPanel');
+      t.caseRef.current = { id: 'CASE-B', handoverId: handoverB };
+      t.h.timers[0]?.();
+      await t.h.settle();
+      t.releaseWith({ status: 500, body: { error: { message: 'A-FAILED' } } });
+      await t.h.settle();
+      expect(staff?.text).toContain('user-b');
+      expect(staff?.text).not.toContain('A-FAILED');
+    });
+
+    it('A の終了操作の応答で B の依頼を上書きしない', async () => {
+      let releaseEnd: (reply: RouteReply) => void = () => {};
+      const t = switching((_url, init) =>
+        init?.method === 'POST'
+          ? (new Promise<RouteReply>((resolve) => {
+              releaseEnd = resolve;
+            }) as unknown as RouteReply)
+          : null,
+      );
+      t.h.load[0]?.();
+      await t.h.settle();
+      const staff = panel(t.h, 'aihdFolderAccessPanel');
+      staff
+        ?.findAll((element) => element.tag === 'button' && element.text === '終了')[0]
+        ?.listeners.click?.[0]?.({});
+      await t.h.settle();
+
+      t.caseRef.current = { id: 'CASE-B', handoverId: handoverB };
+      t.h.timers[0]?.();
+      await t.h.settle();
+      releaseEnd({
+        status: 200,
+        body: {
+          request: requestDto('ended', { windowsUser: 'user-a', endReason: 'operator_end' }),
+        },
+      });
+      await t.h.settle();
+      expect(staff?.text).toContain('user-b');
+      expect(staff?.text).not.toContain('user-a');
+    });
   });
 
   it('担当者パネル: 終了すると結果をメモリからも破棄する', async () => {
