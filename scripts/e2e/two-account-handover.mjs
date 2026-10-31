@@ -325,6 +325,18 @@ try {
   }
 
   // 7) 別の DX 担当者 C が承認
+  // 承認は approver ロールが必要（docs/61）。C に付与する（未登録なら users も作る）。
+  await app`
+    WITH u AS (
+      INSERT INTO users (email, name, role, password_hash)
+      VALUES (${C_KEY}, ${C_KEY}, 'helpdesk', 'access-only$no-login')
+      ON CONFLICT (lower(email)) DO UPDATE SET updated_at = now()
+      RETURNING id
+    )
+    INSERT INTO user_roles (user_id, role, source, granted_by)
+    SELECT id, 'approver', 'manual', 'e2e' FROM u
+    ON CONFLICT DO NOTHING
+  `;
   r = await call(C.email, 'POST', `/api/case-handovers/${handoverId}/approve`, {
     note: 'E2E 実測',
   });

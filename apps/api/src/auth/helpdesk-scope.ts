@@ -2,6 +2,7 @@ import { config } from '../config.js';
 import { forbidden } from '../errors.js';
 import { type EmployeeRow, findEmployeeByEmail } from '../lib/mirai-info.js';
 import { canonicalEmail, emailVariants } from './email-alias.js';
+import type { Role } from './types.js';
 
 /**
  * 「ヘルプデスク相当」の権限判定（F-01 修正）。
@@ -38,8 +39,8 @@ export interface HelpdeskActor {
   /** 名簿の氏名。名簿で解決できない場合は null。 */
   name: string | null;
   section: string | null;
-  /** dx: 名簿で DX 推進部 / dev: ローカル開発 / demo: デモ用アカウント。 */
-  via: 'dx' | 'dev' | 'demo';
+  /** dx: 名簿で DX 推進部 / dev: ローカル開発 / demo: デモ用アカウント / approver: 承認ロール。 */
+  via: 'dx' | 'dev' | 'demo' | 'approver';
 }
 
 /** 名簿参照の差し替え口（テスト用）。 */
@@ -143,6 +144,64 @@ export async function requireHelpdeskActor(
   options: HelpdeskPolicyOptions = {},
 ): Promise<HelpdeskActor> {
   return resolveHelpdeskActor(email, options);
+}
+
+/**
+ * 承認（引継ぎの完了承認・ナレッジの承認/差戻し）の実行者を解決する。
+ *
+ * 判定の正本は `user_roles` の `approver`（`request.uiRoles`）で、所属は問わない。
+ * DX 推進部でも approver が無ければ承認できず、DX 推進部以外や名簿外でも
+ * approver があれば承認できる。claim・受信箱などの担当者権限は与えない
+ * （それらは引き続き `requireHelpdeskActor`）。
+ * ローカル開発の例外は設けない（ロールは seed / sync-roles で与える）。
+ */
+export async function requireApproverActor(
+  email: string | null | undefined,
+  roles: readonly Role[] | null | undefined,
+  options: Pick<HelpdeskPolicyOptions, 'directory' | 'aliases'> = {},
+): Promise<HelpdeskActor> {
+  const aliases = options.aliases ?? config.EMAIL_ALIASES;
+  const normalized = canonicalEmail(email, aliases);
+  if (!normalized) {
+    throw forbidden('ログイン情報を確認できないため、この操作は許可されません。');
+  }
+  if (!roles?.includes('approver')) {
+    throw forbidden('この操作は本番承認者のみ実行できます。');
+  }
+  const directory = options.directory ?? defaultHelpdeskDirectory;
+  let employee: EmployeeRow | null = null;
+  for (const candidate of emailVariants(normalized, aliases)) {
+    employee = await directory.findByEmail(candidate);
+    if (employee) break;
+  }
+  return {
+    email: normalized,
+    employeeNo: employee?.employeeNo || null,
+    name: employee?.name || null,
+    section: employee?.section ?? null,
+    via: 'approver',
+  };
+}
+
+/**
+ * 社内の識別子か（名簿で解決できる、またはローカル開発/デモ用アカウント）。
+ * 社外の承認者（名簿外）に社員名簿を返さないために使う。名簿障害時も false（fail-closed）。
+ */
+export async function isInternalIdentity(
+  email: string | null | undefined,
+  options: HelpdeskPolicyOptions = {},
+): Promise<boolean> {
+  const aliases = options.aliases ?? config.EMAIL_ALIASES;
+  const normalized = canonicalEmail(email, aliases);
+  if (!normalized) return false;
+  const directory = options.directory ?? defaultHelpdeskDirectory;
+  for (const candidate of emailVariants(normalized, aliases)) {
+    if (await directory.findByEmail(candidate)) return true;
+  }
+  const authMode = options.authMode ?? config.AUTH_MODE;
+  const devEmail = canonicalEmail(options.devEmail ?? config.DEV_AUTH_EMAIL, aliases);
+  if (authMode === 'local' && normalized === devEmail) return true;
+  return isDemoAccount(normalized, options.demoAllowlist ?? config.PERSONA_SWITCH_ALLOWLIST);
 }
 
 export type RecipientDecision = 'open' | 'match' | 'mismatch' | 'unknown';

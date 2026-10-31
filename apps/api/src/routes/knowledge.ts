@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { requireHelpdeskActor } from '../auth/helpdesk-scope.js';
+import { requireApproverActor, requireHelpdeskActor } from '../auth/helpdesk-scope.js';
 import { authenticate, requireRole } from '../auth/session.js';
 import { sameHuman } from '../auth/shared-identity.js';
 import { authenticateUi } from '../auth/ui.js';
@@ -108,7 +108,12 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
    */
   app.get('/knowledge/pending', { preHandler: authenticateUi }, async (request) => {
     if (!request.uiEmail) throw badRequest('UI の認証情報がありません。');
-    await requireHelpdeskActor(request.uiEmail);
+    // 承認者は所属を問わず閲覧できる（承認画面の一覧）。それ以外はヘルプデスク相当のみ。
+    if (request.uiRoles?.includes('approver')) {
+      await requireApproverActor(request.uiEmail, request.uiRoles);
+    } else {
+      await requireHelpdeskActor(request.uiEmail);
+    }
     const rows = await sql<
       {
         id: string;
@@ -370,8 +375,12 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
     async (request) => {
       if (!request.uiEmail) throw badRequest('UI の認証情報がありません。');
       const email = request.uiEmail;
-      const actor = await requireHelpdeskActor(email);
       const input = UiSyncSchema.parse(request.body ?? {});
+      // 承認・差戻しは approver ロールのみ（所属不問）。下書き・申請はヘルプデスク相当のみ。
+      const actor =
+        input.status === 'approved' || input.status === 'rejected'
+          ? await requireApproverActor(email, request.uiRoles)
+          : await requireHelpdeskActor(email);
 
       const title = redactPII(input.title);
       const symptom = redactPII(input.symptom);
@@ -416,7 +425,7 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
           throw new ApiError(
             403,
             'SELF_APPROVAL_FORBIDDEN',
-            '自分が作成したナレッジは承認できません（職務分離）。別の DX 推進部メンバーに承認を依頼してください。',
+            '自分が作成したナレッジは承認できません（職務分離）。別の本番承認者に承認を依頼してください。',
           );
         }
       }

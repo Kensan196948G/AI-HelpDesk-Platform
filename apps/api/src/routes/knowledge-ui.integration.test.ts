@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { clearUiRoleCache } from '../auth/ui.js';
 import { config } from '../config.js';
 import { sql } from '../db.js';
 import { resetRateLimits } from '../lib/rate-limit.js';
@@ -65,6 +66,24 @@ const FULL_CHECKLIST = {
   scopeClear: true,
 };
 
+/** 承認は approver ロールが必要（docs/61）。テストの DX 担当者に付与する。 */
+async function grantApproverToDx(): Promise<void> {
+  for (const email of [DX1_EMAIL, DX2_EMAIL]) {
+    const rows = await sql<{ id: string }[]>`
+      INSERT INTO users (email, name, role, password_hash)
+      VALUES (${email}, ${email}, 'helpdesk', 'access-only$no-login')
+      ON CONFLICT (lower(email)) DO UPDATE SET updated_at = now()
+      RETURNING id
+    `;
+    await sql`
+      INSERT INTO user_roles (user_id, role, source, granted_by)
+      VALUES (${rows[0]?.id ?? ''}, 'approver', 'manual', 'test')
+      ON CONFLICT DO NOTHING
+    `;
+  }
+  clearUiRoleCache();
+}
+
 let app: FastifyInstance;
 
 function draftPayload(overrides: Record<string, unknown> = {}) {
@@ -105,6 +124,7 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
+  await grantApproverToDx();
   resetRateLimits();
   config.DEV_AUTH_EMAIL = DX1_EMAIL;
   config.ALLOW_SELF_APPROVAL = originalAllowSelfApproval;

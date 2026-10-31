@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { clearUiRoleCache } from '../auth/ui.js';
 import { config } from '../config.js';
 import { sql } from '../db.js';
 import { flushHandoverNotifications } from '../lib/handover-notify.js';
@@ -81,6 +82,26 @@ const originalDevEmail = config.DEV_AUTH_EMAIL;
 const originalNotifyEmail = config.HANDOVER_NOTIFY_EMAIL;
 const originalAllowSelfApproval = config.ALLOW_SELF_APPROVAL;
 const originalAuthMode = config.AUTH_MODE;
+
+/** 承認は approver ロールが必要（docs/61）。テストの DX 担当者に付与する。 */
+async function grantApproverToDx(): Promise<void> {
+  for (const email of [DX1_EMAIL, DX2_EMAIL, originalDevEmail]) {
+    const rows = await sql<{ id: string }[]>`
+      INSERT INTO users (email, name, role, password_hash)
+      VALUES (${email}, ${email}, 'helpdesk', 'access-only$no-login')
+      ON CONFLICT (lower(email)) DO UPDATE SET updated_at = now()
+      RETURNING id
+    `;
+    for (const role of ['helpdesk', 'approver']) {
+      await sql`
+        INSERT INTO user_roles (user_id, role, source, granted_by)
+        VALUES (${rows[0]?.id ?? ''}, ${role}, 'manual', 'test')
+        ON CONFLICT DO NOTHING
+      `;
+    }
+  }
+  clearUiRoleCache();
+}
 
 let app: FastifyInstance;
 
@@ -192,7 +213,8 @@ beforeAll(async () => {
   await app.ready();
 });
 
-beforeEach(() => {
+beforeEach(async () => {
+  await grantApproverToDx();
   resetRateLimits();
   config.DEV_AUTH_EMAIL = originalDevEmail;
   config.HANDOVER_NOTIFY_EMAIL = originalNotifyEmail;
