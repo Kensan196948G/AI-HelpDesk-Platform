@@ -1211,9 +1211,18 @@ function Invoke-RunReportFlush {
 
 function Complete-HelperRevocation {
   # 順序を固定する: 実行中の子は呼び出し前に kill 済み → 報告 → トークン削除。
-  param([Parameter(Mandatory)][hashtable]$Deps)
-  try { & $Deps.Flush } catch { & $Deps.OnFlushError $_ }
-  & $Deps.RemoveToken
+  # 未報告が残る間はトークンを消さない（消すと停止結果を再送できなくなる）。
+  # 戻り値: すべて報告してトークンを消したら $true、未報告が残れば $false。
+  param([Parameter(Mandatory)][hashtable]$Deps, [int]$MaxAttempts = 5)
+  for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+    try { & $Deps.Flush } catch { & $Deps.OnFlushError $_ }
+    if (@(& $Deps.ListUnsent).Count -eq 0) {
+      & $Deps.RemoveToken
+      return $true
+    }
+    if ($attempt -lt $MaxAttempts) { & $Deps.Wait $attempt }
+  }
+  return $false
 }
 
 function New-SkillNotRunOutcome {
@@ -2631,6 +2640,19 @@ function Write-HelperConfig {
   [IO.File]::WriteAllText((Get-StatePath -Name 'config.json'), $json, (New-Object Text.UTF8Encoding -ArgumentList $false))
 }
 
+function Invoke-HelperRevocationFlush {
+  # 失効後の報告とトークン削除。未報告が残れば $false（次回の起動で再送する）。
+  param([Parameter(Mandatory)][string]$ServerBase, [Parameter(Mandatory)][string]$Token, [Parameter(Mandatory)][hashtable]$Identity)
+  $helperRevokeRuntime = @{ ServerBase = $ServerBase; Token = $Token; Identity = $Identity }
+  return (Complete-HelperRevocation -Deps @{
+      Flush        = { Invoke-PendingSkillReports -ServerBase $helperRevokeRuntime.ServerBase -Token $helperRevokeRuntime.Token -Identity $helperRevokeRuntime.Identity }
+      OnFlushError = { param($e) Write-HelperLog -EventName 'report_failed' -Fields @{ errorType = (Get-ExceptionTypeName -ErrorRecord $e) } }
+      ListUnsent   = { Get-UnsentRunIds }
+      RemoveToken  = { Remove-StateFile -Name 'token.dat' }
+      Wait         = { param($attempt) Start-Sleep -Seconds ([Math]::Min(30, 5 * $attempt)) }
+    })
+}
+
 function Invoke-HelperMain {
   # 終了コード: 0 = 正常終了（失効など）、2 = 起動条件を満たさない、3 = 設定不備
   $languageMode = [string]$ExecutionContext.SessionState.LanguageMode
@@ -2663,6 +2685,11 @@ function Invoke-HelperMain {
 
   if (Test-Path -LiteralPath (Get-StatePath -Name 'revoked.flag')) {
     Write-HelperLog -EventName 'revoked_flag_present'
+    # 前回の失効で報告できなかった結果を再送する。ヘルパーとしての動作は再開しない。
+    $pendingToken = Read-HelperToken
+    if ($null -ne $pendingToken -and -not [string]::IsNullOrEmpty($serverBase)) {
+      $null = Invoke-HelperRevocationFlush -ServerBase $serverBase -Token ([string]$pendingToken.helperToken) -Identity $identity
+    }
     if (-not $Background) { Write-Host 'このヘルパーは失効済みです。install-folder-helper.ps1 で再登録してください。' }
     return 0
   }
@@ -2707,11 +2734,8 @@ function Invoke-HelperMain {
     if ($state.Revoked) {
       Write-HelperLog -EventName 'revoked'
       # 実行中の子は Invoke-SkillRun が kill 済み。報告してからトークンを消す。
-      Complete-HelperRevocation -Deps @{
-        Flush        = { Invoke-PendingSkillReports -ServerBase $serverBase -Token $token -Identity $identity }
-        OnFlushError = { param($e) Write-HelperLog -EventName 'report_failed' -Fields @{ errorType = (Get-ExceptionTypeName -ErrorRecord $e) } }
-        RemoveToken  = { Remove-StateFile -Name 'token.dat' }
-      }
+      $done = Invoke-HelperRevocationFlush -ServerBase $serverBase -Token $token -Identity $identity
+      if (-not $done) { Write-HelperLog -EventName 'revocation_reports_pending' }
       Remove-StateFile -Name 'pairing-code.txt'
       [IO.File]::WriteAllText((Get-StatePath -Name 'revoked.flag'), 'revoked')
       return 0

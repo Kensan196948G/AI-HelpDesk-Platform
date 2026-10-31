@@ -586,25 +586,70 @@ Assert-Equal 'flush: 接続失敗でも送信は試みる' 'op-a' ($script:Sent 
 Assert-Equal 'flush: 接続失敗は確定しない' '' ($script:Marked -join ',')
 
 $script:Order = New-Object System.Collections.Generic.List[string]
-Complete-HelperRevocation -Deps @{ Flush = { $script:Order.Add('report') }; OnFlushError = { param($e) $script:Order.Add('error') }; RemoveToken = { $script:Order.Add('token') } }
+$script:Unsent = @()
+$revDeps = @{
+  Flush = { $script:Order.Add('report') }
+  OnFlushError = { param($e) $script:Order.Add('error') }
+  ListUnsent = { $script:Unsent }
+  RemoveToken = { $script:Order.Add('token') }
+  Wait = { param($n) $script:Order.Add('wait') }
+}
+$revDone = Complete-HelperRevocation -Deps $revDeps
 Assert-Equal 'revoke: 報告してからトークン削除' 'report,token' ($script:Order -join ',')
+Assert-Equal 'revoke: 全件報告なら完了' 'True' ([string]$revDone)
 $script:Order.Clear()
-Complete-HelperRevocation -Deps @{ Flush = { throw 'x' }; OnFlushError = { param($e) $script:Order.Add('error') }; RemoveToken = { $script:Order.Add('token') } }
-Assert-Equal 'revoke: 報告に失敗してもトークンは消す' 'error,token' ($script:Order -join ',')
+$script:Unsent = @('op-a')
+$revDone = Complete-HelperRevocation -Deps $revDeps -MaxAttempts 3
+Assert-Equal 'revoke: 未報告が残る間はトークンを消さず再試行する' 'report,wait,report,wait,report' ($script:Order -join ',')
+Assert-Equal 'revoke: 未報告が残れば未完了' 'False' ([string]$revDone)
+$script:Order.Clear()
+$failing = $revDeps.Clone(); $failing.Flush = { throw 'x' }
+$revDone = Complete-HelperRevocation -Deps $failing -MaxAttempts 1
+Assert-Equal 'revoke: 送信の例外でもトークンを消さない' 'error' ($script:Order -join ',')
+$script:Order.Clear()
+$script:Attempts = 0
+$recover = $revDeps.Clone()
+$recover.Flush = { $script:Attempts++; if ($script:Attempts -ge 2) { $script:Unsent = @() }; $script:Order.Add('report') }
+$revDone = Complete-HelperRevocation -Deps $recover -MaxAttempts 3
+Assert-Equal 'revoke: 再試行で送れたらトークンを消す' 'report,wait,report,token' ($script:Order -join ',')
 
 # 主ループの順序（静的に確認。kill → 報告 → トークン削除）
 $helperSource = [IO.File]::ReadAllText($helperPath, [Text.Encoding]::UTF8)
 $mainStart = $helperSource.IndexOf('function Invoke-HelperMain')
 $revokedAt = $helperSource.IndexOf('if ($state.Revoked) {', $mainStart)
-$flushAt = $helperSource.IndexOf('Complete-HelperRevocation', $revokedAt)
+$flushAt = $helperSource.IndexOf('Invoke-HelperRevocationFlush -ServerBase', $revokedAt)
+$flagAt = $helperSource.IndexOf("'revoked.flag'), 'revoked')", $revokedAt)
 $tokenAt = $helperSource.IndexOf("Remove-StateFile -Name 'token.dat'", $revokedAt)
-Assert-True 'main: 失効分岐は報告の後にトークン削除' ($flushAt -gt $revokedAt -and $tokenAt -gt $flushAt)
+Assert-True 'main: 失効分岐は報告を先に行い、未報告なら直接トークンを消さない' ($flushAt -gt $revokedAt -and $flagAt -gt $flushAt -and ($tokenAt -lt 0 -or $tokenAt -gt $flagAt))
+$flagStart = $helperSource.IndexOf("'revoked_flag_present'", $mainStart)
+Assert-True 'main: 再起動時に未報告を再送する' ($helperSource.IndexOf('Invoke-HelperRevocationFlush', $flagStart) -gt $flagStart -and $helperSource.IndexOf('Invoke-HelperRevocationFlush', $flagStart) -lt $revokedAt)
 $flagAt = $helperSource.IndexOf("'revoked.flag'", $revokedAt)
 Assert-True 'main: 失効フラグも報告の後' ($flagAt -gt $flushAt)
 
 # ---------------------------------------------------------------------------
 # folder-summary
 # ---------------------------------------------------------------------------
+# 検査後の差し替え（ハンドルの実体で判定する）
+$tagMountHandle = [Convert]::ToUInt32('A0000003', 16)
+$handleDir = [uint32]16
+$handleReparse = [uint32](16 + 1024)
+function New-HandleInfo { param([int]$Err = 0, [uint32]$Attr, [uint32]$Tag = 0, [string]$Final) [pscustomobject]@{ Error = $Err; Attributes = $Attr; ReparseTag = $Tag; FinalPath = $Final } }
+$handleTarget = 'C:\Users\u\Documents\T'
+Assert-True 'handle: 検査した対象そのものなら通す' ($null -eq (Get-SummaryHandleRefusal -Info (New-HandleInfo -Attr $handleDir -Final ('\\?\' + $handleTarget)) -TargetPath $handleTarget -CloudScope $null))
+Assert-Equal 'handle: 別の場所を指していれば PATH_CHANGED' 'PATH_CHANGED' (Get-SummaryHandleRefusal -Info (New-HandleInfo -Attr $handleDir -Final '\\?\C:\Windows') -TargetPath $handleTarget -CloudScope $null)
+Assert-Equal 'handle: ジャンクションへ差し替えられていれば拒否' 'REPARSE_REJECTED' (Get-SummaryHandleRefusal -Info (New-HandleInfo -Attr $handleReparse -Tag $tagMountHandle -Final ('\\?\' + $handleTarget)) -TargetPath $handleTarget -CloudScope $null)
+Assert-Equal 'handle: ファイルなら拒否' 'NOT_A_DIRECTORY' (Get-SummaryHandleRefusal -Info (New-HandleInfo -Attr ([uint32]32) -Final ('\\?\' + $handleTarget)) -TargetPath $handleTarget -CloudScope $null)
+Assert-Equal 'handle: 開けなければ理由を返す' 'ACCESS_DENIED' (Get-SummaryHandleRefusal -Info (New-HandleInfo -Err 5 -Attr 0 -Final '') -TargetPath $handleTarget -CloudScope $null)
+$summarySource = [IO.File]::ReadAllText($summaryPath, [Text.Encoding]::UTF8)
+Assert-False 'handle: パス指定の列挙を使わない' ($summarySource.Contains('FindFirstFile'))
+Assert-True 'handle: 共有に FILE_SHARE_DELETE を含めない' ($summarySource.Contains('CreateFileW(path, 0x81, 0x3,'))
+Assert-True 'handle: リンクを辿らず開く' ($summarySource.Contains('0x02200000'))
+$sumMain = $summarySource.IndexOf('function Invoke-FolderSummaryMain')
+$sumEnum = $summarySource.IndexOf('$directory.Next()', $sumMain)
+$sumCheck = $summarySource.IndexOf('Get-SummaryHandleRefusal', $sumMain)
+$sumAfter = $summarySource.IndexOf('Get-SummaryHandleRefusal', $sumEnum)
+Assert-True 'handle: 列挙の前と後の両方で確かめる' ($sumCheck -ge 0 -and $sumCheck -lt $sumEnum -and $sumAfter -gt $sumEnum)
+
 $tagSymlinkS = [Convert]::ToUInt32('A000000C', 16)
 $tagMountS = [Convert]::ToUInt32('A0000003', 16)
 $tagCloudS = [Convert]::ToUInt32('9000601A', 16)
