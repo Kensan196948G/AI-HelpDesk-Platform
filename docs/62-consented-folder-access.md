@@ -182,6 +182,9 @@ ACL 拒否は `ACCESS_DENIED` を返し、昇格で回避しない。
 2. RSP のサービスキーで任意の PowerShell を SYSTEM 実行できる。
 3. HelpDesk のターミナル経路の AI 提案にパス制限がない。
 4. ヘルパーの SID 申告は自己申告である。防げるのは誤配備と誤接続で、改ざんされた端末は防げない。
+   MachineGuid とセッション情報を知る者は偽ヘルパーを登録でき、本人がコードを入力すれば一覧を捏造できる。
+5. **「本人権限」の保証は、端末の SYSTEM を誰が握っているかに依存する**（実測）。SYSTEM はパスワードなしで本人の対話タスクを起動でき、
+   実機検証でもペアリングコードを SYSTEM 経由で読み取った。Mesh Terminal や RSP サービスキーを持つ者は、同じ手順でコードを取得できる。
 
 ## 9. Windows ヘルパー（`scripts/windows/`）
 
@@ -293,9 +296,11 @@ pwsh -NoProfile -File scripts/windows/tests/folder-helper.tests.ps1
 
 ### 10-1. 検証環境
 
+- **対象コミット**: サーバ `0b85a38`、ヘルパー `72e7265`。その後の変更（インストーラの再試行、ブリッジの競合修正、古いプローブでの fail-closed、同時作成の処理）は自動試験のみで、**端末では動かしていない**。
 - 検証端末 1 台（ドメイン参加、MeshAgent 導入済み）。相談者役はローカルの検証ユーザー。実在社員のプロファイルには触れていない。
 - 検証専用 DB + ループバックの API。ヘルパー用パスだけを通すプロキシ + 一時 Quick Tunnel（DNS 変更なし）。検証後に DB とトンネルを削除した。
-- 相談者役の Access アカウントには依頼者自身のアカウントを検証 DB 内でのみ使い、名簿は読み取り専用で参照した。担当者役はデモ用アカウント。
+- 相談者役の Access アカウントには依頼者自身のアカウントを検証 DB 内でのみ使った。担当者役はデモ用アカウント。検証モードで端末を直接指定したため、**本機能の社員照合と貸与照合の経路は通っていない**。
+- 検証ユーザーはローカル Administrators の一員で、タスクは `RunLevel=Limited` で動く。つまり **UAC で制限されたトークン**での結果であり、純粋な標準ユーザーでの結果ではない。
 - 検証用 UI は Playwright（ヘッドレス）で操作した。
 
 ### 10-2. 実機で確認した結果
@@ -303,10 +308,10 @@ pwsh -NoProfile -File scripts/windows/tests/folder-helper.tests.ps1
 | 観点 | 結果 |
 |---|---|
 | 正常系 | ヘルパー導入 → 登録 → コード入力 → MachineGuid と `quser`（日本語版）の照合 → 同意 → 一覧 7 件 → 終了 / 取消 → 監査 |
-| 実行主体（OS の根拠） | `Win32_Process.GetOwnerSid` のヘルパー所有者 SID のハッシュが同意の SID と一致。SYSTEM ではない。非管理者トークン |
+| 実行主体（OS の根拠） | `Win32_Process.GetOwnerSid` のヘルパー所有者 SID のハッシュが同意の SID と一致。SYSTEM ではない。`IsInRole(Administrators)=false`（UAC で制限されたトークン） |
 | 実行主体（比較） | RSP コマンドと Mesh Terminal は `S-1-5-18`。同じ経路で読まない理由の実測 |
-| SYSTEM 起動 | 終了コード 2 で拒否 |
-| ACL 拒否 | 本人に権限のないフォルダは `ACCESS_DENIED`。昇格せず、`FILE_FLAG_BACKUP_SEMANTICS` でも回避されない |
+| SYSTEM 起動 | 終了コード 2 で拒否（昇格プロセスからの起動拒否は mock のみ） |
+| ACL 拒否 | 本人に権限のないフォルダは `ACCESS_DENIED`。昇格せず、制限トークンでは `FILE_FLAG_BACKUP_SEMANTICS` でも回避されない |
 | リンク | ジャンクション・シンボリックリンクの指定は `REPARSE_REJECTED`。子としては種別 `link` のみ返し、辿らない |
 | 入力拒否 | ADS、`..`、UNC、デバイスパス、絶対パス、ワイルドカード、予約デバイス名、末尾ドットを拒否。存在しない場合は `NOT_FOUND`、ファイル指定は `NOT_A_DIRECTORY` |
 | 上限 | 600 件のフォルダで `partial` / `truncated=true`（349 件で 32KB に到達） |
@@ -324,7 +329,8 @@ pwsh -NoProfile -File scripts/windows/tests/folder-helper.tests.ps1
 
 | 項目 | 理由 |
 |---|---|
-| 貸与端末の実照合 | Mirai-Info のサービストークン未発行。すべて検証モード（`lease_status='unverified'`）で実施。mock のみ |
+| 社員照合・貸与端末の実照合 | Mirai-Info のサービストークン未発行。すべて検証モード（`lease_status='unverified'`）で実施し、この経路は mock のみ |
+| 複数セッションの選択 | 検証時は単一セッションのみ。mock のみ |
 | 実際の別ユーザー（別 SID・ユーザー切替） | 第 2 ユーザーはポリシーでログオン拒否（タスク スケジューラ イベント 104）。mock のみ |
 | 実ログオフ | 検証ユーザーの既存セッションを壊すため未実施。heartbeat 途絶で代替確認 |
 | RDP・複数ログオン | 検証環境なし。mock のみ |
@@ -337,9 +343,10 @@ pwsh -NoProfile -File scripts/windows/tests/folder-helper.tests.ps1
 - **起動の不安定さ**: タスクの起動で、CPU 0 のまま進まない事象が 1 回、`0xC0000142` が 2 回発生した。いずれも再現条件は未解明（後者はセッション再接続の前後）。
   安全側に倒れる（ヘルパーなしでは先へ進まない）が、運用上の課題である。インストーラに再試行（3 回）を追加した。再試行の実機確認は未実施。
 - **端末のオンラインが断続的**: 検証中に 1 回オフラインになり、RSP が `AGENT_NO_REPLY` を返した。
-- **RSP の残留**: 固定テンプレートの出力（MachineGuid、`quser` のユーザー名）は RSP の `command_logs` に残る。
+- **RSP の残留**: 固定テンプレートの出力（MachineGuid、`quser` のユーザー名）は RSP の `command_logs` に残る。検証で実行した診断コマンドの出力も同じ場所に残っている。
+- **画面の露出**: `tscon` で接続した間、検証ユーザーのセッションは物理コンソールにロック解除の状態で表示される。
 - **ペアリングのやり直し**: コードを失った状態で再導入しても、トークンがあると再登録しない。`uninstall-folder-helper.ps1` が先に必要。
-- **RSP の危険判定**: 後片付けの再帰削除は `DANGEROUS_BLOCKED` になる。作成物を正確なパスで 1 件ずつ消す。
+- **RSP の危険判定は書き方の判定である**: 再帰削除は `DANGEROUS_BLOCKED` になったが、`[IO.File]::Delete` を正確なパスで繰り返すと通った。後片付けでは自分の作成物だけをこの方法で消した。同じ効果の操作を別の書き方で通せるので、安全策として過信しない。
 
 ### 10-5. 再現手順
 
