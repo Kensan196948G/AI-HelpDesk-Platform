@@ -255,6 +255,8 @@ function invalidState(session: SessionRow, message: string): ApiError {
 // ── 提案の生成 ───────────────────────────────────────────────────
 
 interface ProposingSnapshot {
+  /** AI へ問い合わせた時点の同意。応答の採用時に一致を確かめる。 */
+  aiConsentId: string | null;
   scope: OperationScope;
   rootKind: string | null;
   useAi: boolean;
@@ -282,6 +284,7 @@ async function snapshotForProposing(
     scope: session.operation_consent_scope as OperationScope,
     rootKind: ctx.consent_root,
     useAi: session.ai_consent_live && aiConfigured(),
+    aiConsentId: session.ai_input_consent_id,
     usedProposals: session.proposal_count,
     history: proposals.map((row) => ({ skillId: row.skill_id, params: row.params })),
     steps: proposals.map((row) => {
@@ -810,9 +813,13 @@ async function sharedRoutes(app: FastifyInstance): Promise<void> {
           return { kind: 'ok' as const };
         }
         // AI の応答を待つ間に同意が取り消されたら、その候補を使わない。
-        if (pick.source === 'deepseek' && !session.ai_consent_live) {
-          await stopSessionTx(tx, ctx, session, 'no_candidate', email);
-          return { kind: 'stopped' as const, reason: 'no_candidate' };
+        // 取り消して再同意した場合も、取消前の同意で得た応答は使わない（同意 ID で照合する）。
+        if (
+          pick.source === 'deepseek' &&
+          (!session.ai_consent_live || session.ai_input_consent_id !== begun.snapshot.aiConsentId)
+        ) {
+          await stopSessionTx(tx, ctx, session, 'ai_consent_changed', email);
+          return { kind: 'stopped' as const, reason: 'ai_consent_changed' };
         }
         // AI の候補も含め、この場で登録・型・範囲を再検証する（§5）。
         const approved = resolveApprovedSkill(pick.skillId);

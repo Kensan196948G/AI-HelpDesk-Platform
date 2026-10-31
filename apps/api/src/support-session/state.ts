@@ -73,6 +73,7 @@ export type SessionEndReason =
   | 'duplicate_proposal'
   | 'no_progress'
   | 'no_candidate'
+  | 'ai_consent_changed'
   | 'execution_failed'
   | 'verify_failed'
   | 'unverifiable'

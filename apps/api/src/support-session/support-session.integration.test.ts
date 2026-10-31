@@ -90,6 +90,7 @@ interface World {
   commands: Record<string, unknown>[];
   aiBodies: string[];
   aiReply: unknown;
+  onAi?: () => Promise<void>;
   unexpected: string[];
 }
 let world: World;
@@ -166,6 +167,7 @@ async function fakeFetch(input: unknown, init?: RequestInit) {
   }
   if (url === `${AI_URL}/chat/completions`) {
     world.aiBodies.push(String(init?.body));
+    if (world.onAi) await world.onAi();
     return jsonResponse(200, {
       choices: [{ message: { content: JSON.stringify(world.aiReply) } }],
     });
@@ -1539,6 +1541,36 @@ describe('共通支援セッション（Mock: ヘルパー / RSP / 名簿 / PII 
       SELECT proposal_source FROM assist_proposals WHERE id = ${proposal.id}
     `;
       expect(rows[0]?.proposal_source).toBe('rule');
+    });
+
+    it('AI の応答待ちに取り消して再同意しても、取消前の応答を採用しない', async () => {
+      const session = await withAi();
+      world.aiReply = { skillId: 'folder.summary', params: { target: 'T1' }, rationale: '確認' };
+      world.onAi = async () => {
+        const revoked = await call(
+          OWNER,
+          'POST',
+          base(session.id, '/consents/ai-input/revoke'),
+          {},
+        );
+        expect(revoked.statusCode, revoked.body).toBe(200);
+        const again = await call(OWNER, 'POST', base(session.id, '/consents/ai-input'), {
+          version: 'ai-input-consent/1',
+          ttlMinutes: 30,
+        });
+        expect(again.statusCode, again.body).toBe(200);
+      };
+      const response = await call(OWNER, 'POST', base(session.id, '/proposals'), {});
+      world.onAi = undefined;
+      expect(world.aiBodies).toHaveLength(1);
+      const proposals = await sql`
+        SELECT id FROM assist_proposals WHERE support_session_id = ${session.id}
+      `;
+      expect(proposals, response.body).toHaveLength(0);
+      const rows = await sql<{ status: string; end_reason: string }[]>`
+        SELECT status, end_reason FROM support_sessions WHERE id = ${session.id}
+      `;
+      expect(rows[0]?.end_reason).toBe('ai_consent_changed');
     });
 
     it('同意を取り消せば AI を呼ばない', async () => {
