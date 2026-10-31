@@ -62,6 +62,26 @@ describe('config（起動時の安全確認）', () => {
     expect(result.status, result.stderr).toBe(0);
   });
 
+  it('NODE_ENV=production で ASSIST_ALLOW_MOCK_EXECUTION=true は起動を拒否する（docs/63 §7）', () => {
+    const result = loadConfig({
+      NODE_ENV: 'production',
+      AUTH_MODE: 'cloudflare-access',
+      ASSIST_ALLOW_MOCK_EXECUTION: 'true',
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('ASSIST_ALLOW_MOCK_EXECUTION');
+  });
+
+  it('本番以外では ASSIST_ALLOW_MOCK_EXECUTION=true で起動できる（検証用）', () => {
+    const result = loadConfig({ NODE_ENV: 'development', ASSIST_ALLOW_MOCK_EXECUTION: 'true' });
+    expect(result.status, result.stderr).toBe(0);
+  });
+
+  it('ASSIST_SESSION_ENABLED は true/false 以外を拒否する', () => {
+    const result = loadConfig({ NODE_ENV: 'development', ASSIST_SESSION_ENABLED: 'yes' });
+    expect(result.status).toBe(1);
+  });
+
   it('FOLDER_ACCESS_ENABLED は true/false 以外を拒否する', () => {
     const result = loadConfig({ NODE_ENV: 'development', FOLDER_ACCESS_ENABLED: 'yes' });
     expect(result.status).toBe(1);

@@ -9,6 +9,7 @@ import { z } from 'zod';
  *
  *   POST /poll             既存。本文に capabilities を足す → 応答に skillOps が増える
  *   POST /ops/:id/start    実行直前の再検証。started:true の応答を受けたときだけ実行する
+ *                          （失効済みのトークンでも呼べて、必ず拒否される。拒否の記録に使う）
  *   POST /ops/:id/skill-result  結果の報告
  *
  * ── poll（list_metadata の正準形と ops / result は変更しない）
@@ -42,6 +43,7 @@ import { z } from 'zod';
  *         （target は targetRoot が null のとき null）。パスはヘルパーが解決し、AI / サーバの文字列を実行しない。
  *   出力: 標準出力に JSON 1 行。任意で resultCode（固定コード）を含められる。無ければヘルパーは 'OK' を報告する。
  *   出力の許可フィールドは ASSIST_SKILL_OUTPUTS。それ以外はサーバが捨てる。
+ *   disk.space は既存のスクリプトのまま（volumes の配列。サーバが件数と最小の空き容量だけを取り出す）。
  *   名前・パス・ユーザー名・ホスト名・自由文を出力しない。
  */
 

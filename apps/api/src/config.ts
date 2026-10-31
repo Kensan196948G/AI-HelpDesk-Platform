@@ -120,6 +120,17 @@ const EnvSchema = z.object({
   // 同意の終了からこの日数を過ぎた行の識別子（SID・端末など）を定期処理で消す。
   FOLDER_ACCESS_RETENTION_DAYS: z.coerce.number().int().positive().default(30),
 
+  // 共通支援セッションと AI 操作ループ（docs/63）。FOLDER_ACCESS_ENABLED に加えて必要。無効時は全 API が 404。
+  ASSIST_SESSION_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
+  // 検証専用: mock / manual の結果報告を記録する（証拠にはしない）。production では起動を拒否する。
+  ASSIST_ALLOW_MOCK_EXECUTION: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
+
   // Mirai-Info の社員名簿を読むための接続先（未設定なら Unix ソケット + OS ユーザー）。
   MIRAI_INFO_DATABASE_URL: optionalText,
   // DeepSeek API（MVP / Staging のみ）
@@ -172,6 +183,13 @@ if (isProduction && parsed.data.AUTH_MODE === 'local') {
 if (isProduction && parsed.data.FOLDER_ACCESS_ALLOW_UNVERIFIED_LEASE) {
   console.error(
     '[config] NODE_ENV=production では FOLDER_ACCESS_ALLOW_UNVERIFIED_LEASE=true を使えません。',
+  );
+  process.exit(1);
+}
+// 出所を確認できない実行結果を本番で受け付けない（fail-closed。API 側でも拒否する。docs/63 §7）。
+if (isProduction && parsed.data.ASSIST_ALLOW_MOCK_EXECUTION) {
+  console.error(
+    '[config] NODE_ENV=production では ASSIST_ALLOW_MOCK_EXECUTION=true を使えません。',
   );
   process.exit(1);
 }

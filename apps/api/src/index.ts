@@ -4,10 +4,12 @@ import { startFolderAccessSweeper } from './folder-access/service.js';
 import { startHandoverNotificationWorker } from './lib/handover-notify.js';
 import { describeMailTransport } from './lib/mailer.js';
 import { buildServer } from './server.js';
+import { startSupportSessionSweeper } from './support-session/sweep.js';
 
 const app = await buildServer();
 const stopNotificationWorker = startHandoverNotificationWorker(app.log);
 const stopFolderAccessSweeper = startFolderAccessSweeper(app.log);
+const stopSupportSessionSweeper = startSupportSessionSweeper(app.log);
 
 try {
   app.log.info({ transport: describeMailTransport() }, 'メール通知の送信手段');
@@ -32,6 +34,7 @@ async function shutdown(signal: string): Promise<void> {
   app.log.info({ signal }, 'shutting down');
   stopNotificationWorker();
   stopFolderAccessSweeper();
+  stopSupportSessionSweeper();
   await app.close();
   await sql.end({ timeout: 5 });
   process.exit(0);
