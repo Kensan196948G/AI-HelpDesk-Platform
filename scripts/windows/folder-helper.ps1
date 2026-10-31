@@ -323,13 +323,16 @@ function Test-ReparseAllowed {
     [Parameter(Mandatory)][string]$Path,
     [uint32]$Attributes,
     [uint32]$Tag,
-    [AllowNull()][string]$CloudScope
+    [AllowNull()][AllowEmptyCollection()][string[]]$CloudScope
   )
   if (($Attributes -band $script:AttrReparsePoint) -eq 0) { return $true }
   if (Test-IsNameSurrogateTag -Tag $Tag) { return $false }
-  if ([string]::IsNullOrEmpty($CloudScope)) { return $false }
   if (-not (Test-IsCloudTag -Tag $Tag)) { return $false }
-  return (Test-PathWithin -Candidate $Path -Root $CloudScope)
+  foreach ($scope in @($CloudScope)) {
+    if ([string]::IsNullOrEmpty($scope)) { continue }
+    if (Test-PathWithin -Candidate $Path -Root $scope) { return $true }
+  }
+  return $false
 }
 
 # ---------------------------------------------------------------------------
@@ -519,6 +522,36 @@ function ConvertTo-ProbeReason {
   return 'IO_ERROR'
 }
 
+function Get-CloudScopes {
+  # OneDrive の UserFolder の候補（複数アカウント）のうち、範囲として認めるものの最終パスを返す。
+  # HKCU は本人が書き換えられるので、本人のプロファイル配下か、起点（既知フォルダ）の最終パスを
+  # 含む場合に限る。プロファイル自身・その祖先・ドライブ直下は認めない。
+  param(
+    [AllowNull()][AllowEmptyCollection()][string[]]$Candidates,
+    [Parameter(Mandatory)][string]$ProfileFinal,
+    [AllowNull()][string]$RootFinal,
+    [Parameter(Mandatory)][scriptblock]$Probe
+  )
+  $scopes = New-Object System.Collections.Generic.List[string]
+  foreach ($candidate in @($Candidates)) {
+    $norm = ConvertTo-NormalizedPath -Path $candidate
+    if ($null -eq $norm -or (Test-IsDriveRoot -Path $norm)) { continue }
+    # PowerShell の変数名は大文字小文字を区別しない。$Probe を上書きしない。
+    $info = & $Probe (ConvertTo-ExtendedPath -Path $norm) $false
+    if ($info.Error -ne 0) { continue }
+    $final = ConvertTo-NormalizedPath -Path $info.FinalPath
+    if ($null -eq $final -or (Test-IsDriveRoot -Path $final)) { continue }
+    if (Test-PathWithin -Candidate $ProfileFinal -Root $final) { continue }
+    $underProfile = Test-PathWithin -Candidate $final -Root $ProfileFinal
+    $holdsRoot = (-not [string]::IsNullOrEmpty($RootFinal)) -and (Test-PathWithin -Candidate $RootFinal -Root $final)
+    if (-not $underProfile -and -not $holdsRoot) { continue }
+    $known = $false
+    foreach ($existing in $scopes) { if ([string]::Equals($existing, $final, [StringComparison]::OrdinalIgnoreCase)) { $known = $true } }
+    if (-not $known) { $scopes.Add($final) }
+  }
+  return $scopes.ToArray()
+}
+
 function Resolve-FolderTarget {
   # 起点とセグメントから対象を決める。文字列の前方一致だけで判定しない:
   #  1. ボリューム直下から対象まで全要素を「リンクを開く」モードで開き、reparse を確認する
@@ -528,7 +561,7 @@ function Resolve-FolderTarget {
     [AllowNull()][string]$BasePath,
     [AllowEmptyCollection()][object[]]$Segments,
     [AllowNull()][string]$ProfilePath,
-    [AllowNull()][string]$OneDrivePath,
+    [AllowNull()][AllowEmptyCollection()][string[]]$OneDrivePath,
     [Parameter(Mandatory)][scriptblock]$Probe
   )
   $fail = { param($reason) return @{ Reason = $reason; TargetFinal = $null; RootFinal = $null } }
@@ -543,20 +576,13 @@ function Resolve-FolderTarget {
   $profileFinal = ConvertTo-NormalizedPath -Path $profileProbe.FinalPath
   if ($null -eq $profileFinal) { return (& $fail 'OUT_OF_SCOPE') }
 
+  # 起点の最終パスは範囲の判定にだけ先に使う。起点のエラーは後段の順序のまま報告する。
+  $rootForScope = & $Probe (ConvertTo-ExtendedPath -Path $base) $false
+  $rootFinalForScope = if ($rootForScope.Error -eq 0) { ConvertTo-NormalizedPath -Path $rootForScope.FinalPath } else { $null }
+  $cloudScope = @(Get-CloudScopes -Candidates $OneDrivePath -ProfileFinal $profileFinal -RootFinal $rootFinalForScope -Probe $Probe)
   $scopes = New-Object System.Collections.Generic.List[string]
   $scopes.Add($profileFinal)
-  $cloudScope = $null
-  $oneDriveNorm = ConvertTo-NormalizedPath -Path $OneDrivePath
-  if ($null -ne $oneDriveNorm -and -not (Test-IsDriveRoot -Path $oneDriveNorm)) {
-    $oneDriveProbe = & $Probe (ConvertTo-ExtendedPath -Path $oneDriveNorm) $false
-    if ($oneDriveProbe.Error -eq 0) {
-      $oneDriveFinal = ConvertTo-NormalizedPath -Path $oneDriveProbe.FinalPath
-      if ($null -ne $oneDriveFinal -and -not (Test-IsDriveRoot -Path $oneDriveFinal)) {
-        $scopes.Add($oneDriveFinal)
-        $cloudScope = $oneDriveFinal
-      }
-    }
-  }
+  foreach ($scope in $cloudScope) { $scopes.Add($scope) }
 
   $target = Join-TargetPath -Base $base -Segments $Segments
   foreach ($element in (Get-PathChain -Path $target)) {
@@ -588,7 +614,7 @@ function Resolve-FolderTarget {
 function Get-DirectoryHandleRefusal {
   # 保持したハンドルが検査した対象そのものか。パスではなくハンドルの実体で判定する。
   # $Info: Error, Attributes, ReparseTag, FinalPath（DirectoryHandle.Describe の結果）
-  param([Parameter(Mandatory)][object]$Info, [AllowNull()][string]$TargetPath, [AllowNull()][string]$CloudScope)
+  param([Parameter(Mandatory)][object]$Info, [AllowNull()][string]$TargetPath, [AllowNull()][AllowEmptyCollection()][string[]]$CloudScope)
   if ($Info.Error -ne 0) { return (ConvertTo-ProbeReason -Win32Error $Info.Error) }
   $target = ConvertTo-NormalizedPath -Path $TargetPath
   $final = ConvertTo-NormalizedPath -Path $Info.FinalPath
@@ -610,7 +636,7 @@ function Invoke-ListOperation {
   $noEntries = @()
   $basePath = & $Deps.GetKnownFolder $Op.root
   $profilePath = & $Deps.GetProfilePath
-  $oneDrivePath = & $Deps.GetOneDrivePath
+  $oneDrivePath = @(& $Deps.GetOneDrivePath)
   if ([string]::IsNullOrEmpty($basePath)) { return (& $finish 'error' 'OUT_OF_SCOPE' $false $noEntries $false) }
 
   $segments = @($Op.segments)
@@ -2009,10 +2035,43 @@ function Get-ProfileImagePathForSid {
   try { return (Get-RegistryPathNoExpand -Key $key -Name 'ProfileImagePath') } finally { $key.Dispose() }
 }
 
-function Get-OneDriveUserFolder {
+function Test-OneDriveAccountName {
+  # HKCU\Software\Microsoft\OneDrive\Accounts の配下で見る名前。
+  param([AllowNull()][string]$Name)
+  return ($Name -match '^(Business[0-9]{0,3}|Personal)$')
+}
+
+function Get-OneDriveUserFolders {
+  # 旧来の値と、アカウントごとの値（Accounts\Business*、Accounts\Personal）をすべて返す。
+  # ここでは候補を集めるだけで、範囲として認めるかは Get-CloudScopes が判定する。
+  $folders = New-Object System.Collections.Generic.List[string]
   $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Microsoft\OneDrive', $false)
-  if ($null -eq $key) { return $null }
-  try { return (Get-RegistryPathNoExpand -Key $key -Name 'UserFolder') } finally { $key.Dispose() }
+  if ($null -eq $key) { return @() }
+  try {
+    $legacy = Get-RegistryPathNoExpand -Key $key -Name 'UserFolder'
+    if ($null -ne $legacy) { $folders.Add($legacy) }
+    $accounts = $key.OpenSubKey('Accounts', $false)
+    if ($null -ne $accounts) {
+      try {
+        foreach ($name in $accounts.GetSubKeyNames()) {
+          if (-not (Test-OneDriveAccountName -Name $name)) { continue }
+          $account = $accounts.OpenSubKey($name, $false)
+          if ($null -eq $account) { continue }
+          try {
+            $value = Get-RegistryPathNoExpand -Key $account -Name 'UserFolder'
+            if ($null -ne $value) { $folders.Add($value) }
+          } finally {
+            $account.Dispose()
+          }
+        }
+      } finally {
+        $accounts.Dispose()
+      }
+    }
+  } finally {
+    $key.Dispose()
+  }
+  return $folders.ToArray()
 }
 
 function Get-KnownFolderPath {
@@ -2360,7 +2419,7 @@ function Invoke-HelperOperation {
     OpenDirectory   = { param($path) New-NativeDirectoryHandle -Path $path }
     GetKnownFolder  = { param($root) Get-KnownFolderPath -Root $root }
     GetProfilePath  = { Get-ProfileImagePathForSid -Sid $helperOpRuntime.Sid }
-    GetOneDrivePath = { Get-OneDriveUserFolder }
+    GetOneDrivePath = { Get-OneDriveUserFolders }
     ElapsedMs       = { $helperOpRuntime.Stopwatch.ElapsedMilliseconds }
     ShouldCancel    = $checkCancel
     IsExpired       = { $helperOpRuntime.ExpiresAt -le [DateTimeOffset]::UtcNow }
@@ -2765,7 +2824,7 @@ function Invoke-SkillRunOperation {
       param($theOp)
       $basePath = Get-KnownFolderPath -Root $theOp.targetRoot
       if ([string]::IsNullOrEmpty($basePath)) { return @{ Reason = 'OUT_OF_SCOPE'; TargetFinal = $null; RootFinal = $null } }
-      Resolve-FolderTarget -BasePath $basePath -Segments @($theOp.targetSegments) -ProfilePath (Get-ProfileImagePathForSid -Sid $helperSkillRuntime.Sid) -OneDrivePath (Get-OneDriveUserFolder) -Probe { param($path, $openReparse) Invoke-NativeProbe -Path $path -OpenReparsePoint ([bool]$openReparse) }
+      Resolve-FolderTarget -BasePath $basePath -Segments @($theOp.targetSegments) -ProfilePath (Get-ProfileImagePathForSid -Sid $helperSkillRuntime.Sid) -OneDrivePath @(Get-OneDriveUserFolders) -Probe { param($path, $openReparse) Invoke-NativeProbe -Path $path -OpenReparsePoint ([bool]$openReparse) }
     }
     OpenScript    = { param($def) Open-SkillScript -Definition $def }
     PostStart     = { param($theOp) Invoke-SkillStartRequest -Op $theOp -ServerBase $helperSkillRuntime.ServerBase -Token $helperSkillRuntime.Token -ActorSid $helperSkillRuntime.Sid -SessionId $helperSkillRuntime.SessionId -MachineGuid $helperSkillRuntime.MachineGuid }

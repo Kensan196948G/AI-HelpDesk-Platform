@@ -304,6 +304,47 @@ Assert-Equal 'resolve: プロファイルがドライブ直下' 'OUT_OF_SCOPE' (
 Assert-Equal 'resolve: 起点がドライブ直下' 'OUT_OF_SCOPE' (Invoke-Resolve -Base 'C:\').Reason
 Assert-Equal 'resolve: 起点が UNC' 'OUT_OF_SCOPE' (Invoke-Resolve -Base '\\server\share\Documents').Reason
 
+# OneDrive の複数アカウント（Get-CloudScopes）
+function Get-Scopes {
+  param([object[]]$Candidates, [string]$Root = 'C:\Users\a\Documents')
+  return (@(Get-CloudScopes -Candidates ([string[]]$Candidates) -ProfileFinal 'C:\Users\a' -RootFinal $Root -Probe $fakeProbe) -join ',')
+}
+function Set-ScopeFs {
+  Set-BaseFs
+  foreach ($p in 'C:\Users\a\OneDrive', 'C:\Users\a\OneDrive - Corp', 'C:\Users\a\OneDrive - Other', 'C:\Users\b', 'C:\Users\b\OneDrive', 'D:\', 'D:\Cloud', 'D:\Cloud\Corp', 'D:\Cloud\Corp\Documents', 'D:\Evil') { $script:FakeFs[$p] = @{} }
+}
+Set-ScopeFs
+Assert-Equal 'cloud: プロファイル配下の複数アカウント' 'C:\Users\a\OneDrive,C:\Users\a\OneDrive - Corp' (Get-Scopes -Candidates @('C:\Users\a\OneDrive', 'C:\Users\a\OneDrive - Corp'))
+Assert-Equal 'cloud: 重複は 1 つ' 'C:\Users\a\OneDrive' (Get-Scopes -Candidates @('C:\Users\a\OneDrive', 'c:\users\A\onedrive'))
+Assert-Equal 'cloud: プロファイル外でも起点を含めば可' 'D:\Cloud\Corp' (Get-Scopes -Candidates @('D:\Cloud\Corp') -Root 'D:\Cloud\Corp\Documents')
+Assert-Equal 'cloud: プロファイル外で起点を含まなければ不可' '' (Get-Scopes -Candidates @('D:\Evil'))
+Assert-Equal 'cloud: 別ユーザーは不可' '' (Get-Scopes -Candidates @('C:\Users\b\OneDrive'))
+Assert-Equal 'cloud: 起点と無関係な候補だけ除く' 'C:\Users\a\OneDrive' (Get-Scopes -Candidates @('D:\Evil', 'C:\Users\a\OneDrive'))
+Assert-Equal 'cloud: プロファイル自身は不可' '' (Get-Scopes -Candidates @('C:\Users\a'))
+Assert-Equal 'cloud: プロファイルの祖先は不可' '' (Get-Scopes -Candidates @('C:\Users'))
+Assert-Equal 'cloud: ドライブ直下は不可' '' (Get-Scopes -Candidates @('C:\', 'D:\') -Root 'D:\Cloud\Corp\Documents')
+Assert-Equal 'cloud: UNC は不可' '' (Get-Scopes -Candidates @('\\srv\share\OneDrive'))
+Assert-Equal 'cloud: 存在しない候補は不可' '' (Get-Scopes -Candidates @('C:\Users\a\None'))
+Assert-Equal 'cloud: 候補なし' '' (Get-Scopes -Candidates @())
+$script:FakeFs['C:\Users\a\OneDrive'] = @{ Final = '\\?\D:\Evil' }
+Assert-Equal 'cloud: リンクで範囲外へ解決される候補は不可' '' (Get-Scopes -Candidates @('C:\Users\a\OneDrive'))
+Set-ScopeFs
+$script:FakeFs['C:\Users\a\OneDrive - Corp'] = @{ Attr = 1040; Tag = $tagCloud }
+$script:FakeFs['C:\Users\a\OneDrive - Corp\sub'] = @{ Attr = 1040; Tag = $tagCloud }
+$r = Resolve-FolderTarget -BasePath 'C:\Users\a\OneDrive - Corp' -Segments @('sub') -ProfilePath 'C:\Users\a' -OneDrivePath @('C:\Users\a\OneDrive', 'C:\Users\a\OneDrive - Corp') -Probe $fakeProbe
+Assert-Equal 'cloud: 2 つ目のアカウントのクラウドタグを許可' $null $r.Reason
+$r = Resolve-FolderTarget -BasePath 'C:\Users\a\OneDrive - Corp' -Segments @('sub') -ProfilePath 'C:\Users\a' -OneDrivePath @('C:\Users\a\OneDrive') -Probe $fakeProbe
+Assert-Equal 'cloud: 登録のないアカウントは不可' 'REPARSE_REJECTED' $r.Reason
+$script:FakeFs['D:\Evil'] = @{ Attr = 1040; Tag = $tagCloud }
+$r = Resolve-FolderTarget -BasePath 'D:\Evil' -Segments @() -ProfilePath 'C:\Users\a' -OneDrivePath @('C:\Users\a\OneDrive') -Probe $fakeProbe
+Assert-Equal 'cloud: 範囲に無い場所の既知フォルダは不可' 'REPARSE_REJECTED' $r.Reason
+Assert-True 'reparse: 複数の範囲の 2 つ目' (Test-ReparseAllowed -Path 'C:\Users\a\B\x' -Attributes $attrReparseDir -Tag $tagCloud -CloudScope @('C:\Users\a\A', 'C:\Users\a\B'))
+Assert-False 'reparse: 空の範囲' (Test-ReparseAllowed -Path 'C:\Users\a\B\x' -Attributes $attrReparseDir -Tag $tagCloud -CloudScope @())
+foreach ($n in 'Business1', 'Business', 'Business12', 'Personal') { Assert-True ('cloud: アカウント名 ' + $n) (Test-OneDriveAccountName -Name $n) }
+foreach ($n in 'Evil', 'Business1x', 'BusinessEvil', '', $null) { Assert-False ('cloud: アカウント名の拒否 ' + [string]$n) (Test-OneDriveAccountName -Name $n) }
+$helperRegText = [IO.File]::ReadAllText($helperPath, [Text.Encoding]::UTF8)
+Assert-True 'cloud: Accounts を見る' ($helperRegText.Contains("OpenSubKey('Accounts', `$false)"))
+
 # OneDrive へのリダイレクト
 function Set-OneDriveFs {
   param([string]$OneDriveRoot = 'D:\Cloud\OneDrive')
