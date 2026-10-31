@@ -44,6 +44,29 @@ describe('config（起動時の安全確認）', () => {
     expect(result.stderr).toContain('ACCESS_AUD');
   });
 
+  it('NODE_ENV=production で FOLDER_ACCESS_ALLOW_UNVERIFIED_LEASE=true は起動を拒否する', () => {
+    const result = loadConfig({
+      NODE_ENV: 'production',
+      AUTH_MODE: 'cloudflare-access',
+      FOLDER_ACCESS_ALLOW_UNVERIFIED_LEASE: 'true',
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('FOLDER_ACCESS_ALLOW_UNVERIFIED_LEASE');
+  });
+
+  it('本番以外では FOLDER_ACCESS_ALLOW_UNVERIFIED_LEASE=true で起動できる（検証用）', () => {
+    const result = loadConfig({
+      NODE_ENV: 'development',
+      FOLDER_ACCESS_ALLOW_UNVERIFIED_LEASE: 'true',
+    });
+    expect(result.status, result.stderr).toBe(0);
+  });
+
+  it('FOLDER_ACCESS_ENABLED は true/false 以外を拒否する', () => {
+    const result = loadConfig({ NODE_ENV: 'development', FOLDER_ACCESS_ENABLED: 'yes' });
+    expect(result.status).toBe(1);
+  });
+
   it('production + cloudflare-access は起動できる', () => {
     const result = loadConfig({ NODE_ENV: 'production', AUTH_MODE: 'cloudflare-access' });
     expect(result.status, result.stderr).toBe(0);

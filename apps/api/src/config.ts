@@ -101,6 +101,23 @@ const EnvSchema = z.object({
   // 担当者に返す RSP の公開 URL（ブラウザのリンク用。サーバ間接続には RSP_BASE_URL）
   RSP_PUBLIC_URL: z.string().url().default('https://rsp.mirai-remotetools.com'),
 
+  // 本人同意付きフォルダ一覧（docs/62）。無効時は全 API が 404、画面の導線も出ない。
+  FOLDER_ACCESS_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
+  // 検証専用: 貸与情報を確認できなくても担当者の指定端末で進める。production では起動を拒否する。
+  FOLDER_ACCESS_ALLOW_UNVERIFIED_LEASE: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
+  // Mirai-Info の PII API（/api/device-staff）と Cloudflare Access サービストークン（2 値の組）。
+  // 未設定なら LEASE_UNAVAILABLE で留まる（fail-closed）。
+  LEASE_API_URL: optionalText,
+  LEASE_API_TOKEN_ID: optionalText,
+  LEASE_API_TOKEN_SECRET: optionalText,
+  LEASE_MAX_AGE_HOURS: z.coerce.number().int().positive().default(24),
+
   // Mirai-Info の社員名簿を読むための接続先（未設定なら Unix ソケット + OS ユーザー）。
   MIRAI_INFO_DATABASE_URL: optionalText,
   // DeepSeek API（MVP / Staging のみ）
@@ -146,6 +163,13 @@ if (!parsed.success) {
 if (isProduction && parsed.data.AUTH_MODE === 'local') {
   console.error(
     '[config] NODE_ENV=production では AUTH_MODE=local を使えません。AUTH_MODE=cloudflare-access を設定してください。',
+  );
+  process.exit(1);
+}
+// 貸与情報の検証を省く検証用フラグを本番で有効にさせない（fail-closed）。
+if (isProduction && parsed.data.FOLDER_ACCESS_ALLOW_UNVERIFIED_LEASE) {
+  console.error(
+    '[config] NODE_ENV=production では FOLDER_ACCESS_ALLOW_UNVERIFIED_LEASE=true を使えません。',
   );
   process.exit(1);
 }
