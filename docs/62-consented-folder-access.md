@@ -127,3 +127,106 @@ ACL 拒否は `ACCESS_DENIED` を返し、昇格で回避しない。
 2. RSP のサービスキーで任意の PowerShell を SYSTEM 実行できる。
 3. HelpDesk のターミナル経路の AI 提案にパス制限がない。
 4. ヘルパーの SID 申告は自己申告である。防げるのは誤配備と誤接続で、改ざんされた端末は防げない。
+
+## 9. Windows ヘルパー（`scripts/windows/`）
+
+実装は `folder-helper.ps1`、`install-folder-helper.ps1`、`uninstall-folder-helper.ps1`。
+**Windows API の挙動はすべて実機未実測である。** 検証したのは Linux の pwsh 上の純粋関数と、
+OS 依存部をスタブにした結合動作だけ。§9.5 の確認が済むまで、動作する前提で扱わない。
+
+### 9.1 署名の正準形（ヘルパーと Node で共通）
+
+- メッセージ: 次のキー順、空白なしの JSON（`JSON.stringify` と同じバイト列）。
+  `opId, requestId, sid, sessionId, root, segments, operation, expiresAt`
+- `sessionId` は JSON の数値。ほかは文字列（`segments` は文字列の配列）。
+- `expiresAt` は受信した文字列のまま署名する。日時として解釈し直して整形しない。
+- エスケープは `"`、`\`、`\b \t \n \f \r`、その他の U+0020 未満（`\u00xx` 小文字）、
+  対にならないサロゲート（`\udxxx` 小文字）だけ。`/ < > & '`、U+007F、U+2028/2029、非 ASCII は生の UTF-8。
+- 鍵は `helperToken` 文字列の UTF-8 バイト、メッセージは UTF-8 バイト。
+- `sig` は小文字 16 進 64 文字。ヘルパーは大文字を受けず、固定時間で比較する。
+- `maxEntries / maxBytes / maxSeconds` は署名の対象外なので、ヘルパーは 500 件 / 32768 バイト / 15 秒を超えさせない。
+
+テストベクトル（鍵 `test-helper-token-not-a-secret`、共通の値は
+`requestId=req-0001, sid=S-1-5-21-1000-2000-3000-1001, sessionId=2, operation=list_metadata, expiresAt=2026-11-01T00:00:00.000Z`。Node で生成）:
+
+| opId | root | segments | sig |
+|---|---|---|---|
+| `op-0001` | `Documents` | `[]` | `b70e5c50b8a96ed675de7f16e4eed2f0d001649d7564be1e606ff31691342ad9` |
+| `op-0001` | `Documents` | `["alpha"]` | `8312545a3c8c05654081258357d395dd2cd495c844bf83fa55eaa665fa9012cd` |
+| `op-0003` | `Desktop` | `["資料","2026年度 計画","テスト😀"]` | `66ab20ce0c620c7eda2ce5c1a240a2f509f3073a41c009665247e966a18c37fd` |
+| `op-0004` | `Documents` | JS 表記で `["q\"b\\s/<&>'", "\n\t\b\f\r\x01\x7f", "\u2028\u2029é", "\ud83d"]` | `9f3fdea853998db0898d79174147698a8c8368adefbba4293837aeeba6306a8e` |
+
+1 行目の正準形: `{"opId":"op-0001","requestId":"req-0001","sid":"S-1-5-21-1000-2000-3000-1001","sessionId":2,"root":"Documents","segments":[],"operation":"list_metadata","expiresAt":"2026-11-01T00:00:00.000Z"}`
+
+`apps/api/src/folder-access/sign.test.ts` の固定ベクトル（sig `32bb903bb816eb361d56378e98cb41d7d491cf58a18c22ecd207cca2aa69b2f7`）も PowerShell 側のテストで一致を確認している。
+`op-0004` は正準化の境界の確認用で、これらの文字はセグメント検証では拒否される。
+
+### 9.2 手順
+
+```powershell
+# 本人の標準権限のウィンドウで実行する（管理者不要、パスワード不要）
+powershell -ExecutionPolicy Bypass -File .\install-folder-helper.ps1 -ServerUrl https://helpdesk.example.com
+# 画面に出たコードを、本人としてログインした HelpDesk の画面に入力する
+
+# 削除（タスク・トークン・状態フォルダを消し、サーバへの失効通知を試みる）
+powershell -ExecutionPolicy Bypass -File .\uninstall-folder-helper.ps1
+
+# テスト（Pester 不要、Linux の pwsh でも可）
+pwsh -NoProfile -File scripts/windows/tests/folder-helper.tests.ps1
+```
+
+- タスク名は `AIHelpDesk-FolderHelper-<SID末尾>`。本人のログオン時に LogonType Interactive / RunLevel Limited / 実行時間制限なしで動く。
+- 状態は `%LOCALAPPDATA%\AIHelpDesk\folder-helper\`（ACL は本人のみ）。`token.dat` は DPAPI（CurrentUser）。
+  `helper.log` はイベント名・opId・状態コード・件数・例外の型名だけを記録し、パス・ファイル名・トークン・コードは書かない。
+- **案件ごとに `install-folder-helper.ps1` を実行する。** サーバは同意の終了、ペアリング期限切れ、セッションの変更（再ログオンを含む）で
+  `revoked:true` を返す。ヘルパーはトークンを消して `revoked.flag` を置いて停止し、自動では再登録しない（install がフラグを消して再登録する）。
+  このためログオン時タスクが効くのは、トークンが有効な間の再起動などに限られる。
+- ペアリングコードは install の画面に `Write-Host` で表示する。タスク（`-Background`）が登録し直したときだけ `pairing-code.txt` に書き、
+  最初の op を受けたとき（ペア済みとみなす）または期限切れで消す。
+
+### 9.3 §5 の補足
+
+| 項目 | 内容 |
+|---|---|
+| `sessionState` | WTS の接続状態を小文字で送る（`active`, `connected`, `connectquery`, `shadow`, `disconnected`, `idle`, `listen`, `reset`, `down`, `init`、取得失敗は `unknown`）。一覧を実行するのは `active` のときだけ |
+| 結果の `status` | ヘルパーが送るのは `ok` / `error`。切り詰めは `ok` + `truncated:true`（サーバ側で `partial` に変換） |
+| 結果の `reason` | `BAD_OP, BAD_SIGNATURE, ELEVATED, SID_MISMATCH, SESSION_MISMATCH, SESSION_NOT_ACTIVE, EXPIRED, INVALID_ROOT, INVALID_SEGMENT, OUT_OF_SCOPE, REPARSE_REJECTED, ACCESS_DENIED, NOT_FOUND, NOT_A_DIRECTORY, PATH_CHANGED, IO_ERROR, INTERNAL_ERROR`。cancel された op は結果を送らない |
+| `entries[].type` | `file` / `directory` / `link`。`link` は名前サロゲートのタグ（symlink・junction など）。クラウドのプレースホルダーは `file` / `directory` に `attrs.reparse` |
+| `entries[].size` | `file` のみ数値。`directory` と `link` は `null` |
+| **未実装（提案）** `POST /revoke` | ヘッダ `x-folder-helper-token`、ボディ `{}`。uninstall が通知先に使う。現時点のサーバには無く 404 になるが、端末側の削除は続行する。サーバ側では放置された行が残る |
+| **未実装（提案）** poll の `paired` | ペア完了を知らせる値が無いため、最初の op の受信で代用している |
+
+### 9.4 判断: OneDrive と「全祖先の reparse 拒否」
+
+§6 の全祖先拒否を文字どおり適用すると、Files On-Demand のフォルダがクラウドタグを持つ場合に OneDrive 配下を一切扱えない。次のように限定した（**実機未実測の判断**）:
+
+- 名前サロゲートのタグ（symlink・junction 等）は場所を問わず拒否する。
+- クラウドタグ（`(tag & 0xFFFF0FFF) == 0x9000001A`）だけ、`HKCU\Software\Microsoft\OneDrive` の `UserFolder` 配下で許可する。その他のタグは拒否する。
+- `UserFolder` と `ProfileImagePath` は環境変数を展開せずに読み、`%` を含む値、ドライブ直下、UNC は範囲として使わない。
+- 範囲判定は起点・対象・範囲のすべてを `GetFinalPathNameByHandleW` の最終パスに揃えて行う。
+
+`Downloads` は `Environment.SpecialFolder` に無いため `SHGetKnownFolderPath`（`FOLDERID_Downloads`）で取得する。
+
+### 9.5 実機の確認項目（責任者が実施）
+
+- [ ] Windows PowerShell 5.1 の C# 5 コンパイラで `Add-Type` が通る。`FullLanguage` でなければ（AppLocker / WDAC 環境など）終了する
+- [ ] 標準ユーザーでタスクを登録できる（`-AtLogOn -User` と `-LogonType Interactive`）。ログオンで起動し、別ユーザーでは起動しない
+- [ ] `-WindowStyle Hidden` でコンソールが一瞬出ないか
+- [ ] 管理者のフィルタ済みトークンで `IsInRole(Administrator)` が偽、昇格で真。SYSTEM / LOCAL SERVICE / NETWORK SERVICE で終了する
+- [ ] 状態フォルダの ACL が本人のみになる。DPAPI のトークンを別ユーザーで復号できない
+- [ ] `ACCESS_DENIED`: 他ユーザーのプロファイルや ACL で拒否したフォルダで、昇格せずに報告する（`CreateFileW` の `FILE_READ_ATTRIBUTES` は親の権限で通る場合がある）
+- [ ] `FILE_FLAG_BACKUP_SEMANTICS` が標準トークンで ACL を回避しない
+- [ ] junction / symlink（中間・対象・`C:\Users` より上）で `REPARSE_REJECTED`。列挙中の差し替えで `PATH_CHANGED`
+- [ ] 子の symlink / junction が `link` になり、辿らない
+- [ ] OneDrive: 既知フォルダのリダイレクトで範囲内と判定され、Files On-Demand のタグと属性が想定どおり（プレースホルダーの互換モードで属性が隠れないか）。オンライン専用ファイルが **ハイドレートされない**、列挙でディレクトリのダウンロードが起きない
+- [ ] GPO のフォルダリダイレクト（UNC）が `OUT_OF_SCOPE` になる
+- [ ] 500 件 / 32KB / 15 秒の切り詰め。低速な場所で `FindNextFileW` が止まると 15 秒を超え得る（判定は件の間だけ）
+- [ ] 高速ユーザー切替・RDP 切断 / 再接続での `sessionState`。遷移中の値でサーバが `user_logged_off` にしないか。ロック中は `active` のまま（ロックは判定していない）
+- [ ] `HttpWebRequest` のプロキシ・TLS 1.2 と Cloudflare Access bypass の疎通。リダイレクトを辿らない
+- [ ] イベントログ: スクリプトブロック / モジュールログが有効な環境でトークン・名前が記録されないか
+
+### 9.6 残る制約
+
+- 署名の鍵は端末に復号できる形であり、本人権限のマルウェアはトークンを読める。§8 の 4 と同じく、改ざんされた端末は防げない。
+- 同じユーザーの複数セッションでは `MultipleInstances IgnoreNew` により 1 つしか動かない。
+- op の期限判定は端末の時計に依存する。
