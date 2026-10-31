@@ -316,7 +316,7 @@ npm run lint
 npm test            # Unit / API integration（PostgreSQL テスト DB）
 npm run build
 bash scripts/scan-secrets.sh
-npm audit --omit=dev --audit-level=high
+npm audit --audit-level=high && npm audit --omit=dev --audit-level=high
 ```
 
 ### デプロイ（Preview）

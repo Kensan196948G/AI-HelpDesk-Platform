@@ -80,14 +80,30 @@ systemctl --user list-timers ai-helpdesk-backup.timer
 |---|---|
 | 保存先 | `~/backups/ai-helpdesk/ai_helpdesk_preview-YYYYmmdd-HHMMSS.dump`（ディレクトリ 0700 / ファイル 0600） |
 | 形式 | `pg_dump --format=custom`（PG16 のバイナリを使用） |
-| 検証 | 取得直後に `pg_restore --list` で読めることを確認。失敗時は終了コード 1 |
+| 検証 | 一時ファイルへ取得し、`pg_restore --list` で読めたものだけを正式名へ移す。失敗時は一時ファイルを消し、古い dump も消さない |
 | 保持 | 14 日（`AIHD_BACKUP_KEEP_DAYS`）。対象 DB 名の dump だけを削除 |
-| ログ | `~/backups/ai-helpdesk/backup.log`（DB 名・ファイル名・サイズのみ。接続文字列は出さない） |
-| 認証 | `~/.config/ai-helpdesk/api.conf` を読む（0600）。環境変数 `AIHD_ENV_FILE` で変更可 |
+| ログ | `~/backups/ai-helpdesk/backup.log`。成功は `OK`（DB 名・ファイル名・サイズ・SHA-256）、失敗は `FAIL stage=... exit=...`。接続文字列は出さない |
+| 認証 | `~/.config/ai-helpdesk/api.conf`（0600）から `DATABASE_URL` だけを読む。**シェルとして読み込まない**（systemd の EnvironmentFile 形式で、値の `|` などをシェルが解釈するため）。接続情報は libpq の環境変数で渡し、プロセス引数へ出さない |
 | 失敗時 | systemd の `ai-helpdesk-backup.service` が failed になる。`journalctl --user -u ai-helpdesk-backup.service` を確認 |
 
 - 復元は従来どおり**新規 DB**に対して行う（`pg_restore -d aihd_restore <dump>`）。既存 DB へは上書きしない。
 - disk 使用量は 1 回あたり約 85KB（2026-10-25 実測）。保持 14 日でも数 MB。
+
+### 4-2. 復元確認の手順（隔離 DB）
+
+目録読取の成功は復元成功ではない。定期的に、新規の使い捨て DB へ実際に復元して照合する。
+
+1. `aihd_restore_verify_YYYYmmddHHMMSS` の名前で新規 DB を作る（既存 DB には復元しない）。
+2. `pg_restore --no-owner --no-privileges --exit-on-error --single-transaction -d <新規DB> <dump>`。
+3. テーブル一覧、列数、制約、インデックス、関数、トリガ、全テーブルの件数、`schema_migrations`、未検証の外部キー、監査チェーン（`verifyAuditChain`）を元 DB と照合する。
+4. 自分が作った DB だけを名前で確認して削除する。
+
+**失敗の検知**: `systemctl --user status ai-helpdesk-backup.service` が failed、`backup.log` に `FAIL`、または最新の `OK` が 26 時間以上前。**通知の仕組みはない**ので、自動で気づくことはできない。
+
+### 4-3. 障害記録（2026-10-29〜31）
+
+`api.conf` への `SHARED_IDENTITY_GROUPS=a|b` の追加（2026-10-28）以降、`backup-db.sh` が設定をシェルとして読み込んだ際に `|` をパイプと解釈し、終了コード 127 で失敗し続けた。最後の成功は 2026-10-28 02:30。失敗の間、誰にも通知されなかった。
+
 
 ## 5. インシデント対応（個人利用 MVP）
 
