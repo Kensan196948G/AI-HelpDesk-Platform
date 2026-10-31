@@ -517,9 +517,9 @@ Assert-True 'poll: 失効' $state.Revoked
 
 Assert-Equal 'backoff: 通常' 5 (Get-NextPollDelay -Failures 0)
 Assert-Equal 'backoff: 1 回失敗' 10 (Get-NextPollDelay -Failures 1)
-Assert-Equal 'backoff: 上限' 300 (Get-NextPollDelay -Failures 20)
+Assert-Equal 'backoff: 上限' 120 (Get-NextPollDelay -Failures 20)
 Assert-Equal 'backoff: Retry-After' 60 (Get-NextPollDelay -Failures 1 -RetryAfterSeconds 60)
-Assert-Equal 'backoff: Retry-After も上限まで' 300 (Get-NextPollDelay -Failures 1 -RetryAfterSeconds 9999)
+Assert-Equal 'backoff: Retry-After も上限まで' 120 (Get-NextPollDelay -Failures 1 -RetryAfterSeconds 9999)
 
 # ---------------------------------------------------------------------------
 # 結果ボディ

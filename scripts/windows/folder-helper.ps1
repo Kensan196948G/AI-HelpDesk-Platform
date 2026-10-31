@@ -41,7 +41,8 @@ $script:HardMaxSeconds = 15
 $script:MaxSegments = 16
 $script:MaxSegmentLength = 255
 $script:PollBaseSeconds = 5
-$script:PollMaxSeconds = 300
+# サーバは heartbeat が 180 秒途絶えると同意を終了するので、それより短く保つ。
+$script:PollMaxSeconds = 120
 $script:CancelCheckMs = 5000
 $script:MaxResponseBytes = 1048576
 $script:MaxLogBytes = 262144
@@ -678,7 +679,7 @@ function Update-PollState {
 
 function Get-NextPollDelay {
   # 成功で基準間隔へ戻し、失敗ごとに倍にする。Retry-After があれば尊重する。
-  param([int]$Failures, [int]$RetryAfterSeconds = 0, [int]$BaseSeconds = 5, [int]$MaxSeconds = 300)
+  param([int]$Failures, [int]$RetryAfterSeconds = 0, [int]$BaseSeconds = 5, [int]$MaxSeconds = 120)
   if ($Failures -le 0) { $delay = $BaseSeconds }
   else {
     $exp = [Math]::Min($Failures, 10)

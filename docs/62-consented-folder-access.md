@@ -60,14 +60,16 @@ device_pending → helper_pending → consent_pending → active → ended
 
 1. **本人**: Access のメール → Mirai-Info の有効社員。案件の `owner_email` と一致すること。
 2. **貸与端末**: Mirai-Info の PII API（`LEASE_API_URL` + サービストークン）から `employee_no` で取得する。
-   `source` と `fetchedAt`、応答の `generatedAt` を保存し、`LEASE_MAX_AGE_HOURS`（既定 24）を超えたら古い扱い。
+   契約は Mirai-Info PR #262。`source` と `fetchedAt`、`generatedAt` を保存する。鮮度は `dataAsOf.employeeDirectoryLastSeenAt` で判定し、
+   `LEASE_MAX_AGE_HOURS`（既定 72。週末の空きを考慮）を超えたら古い扱い。
    **`device_staff` ビューを SQL で直接読まない**（PII API の Access 制御の迂回になる）。
    - 候補 0 件・複数・照合競合・古い情報は確定しない。`device_pending` に留め、理由を画面に出す。
    - トークン未設定なら `LEASE_UNAVAILABLE` で留まる。
-   - **想定する応答（現行 `/api/device-staff` + `generatedAt`）**: `{ok:true, source, generatedAt, records:[{asset_tag, hostname, employee_no, staff_matched, active?}]}`。
-     認証は Cloudflare Access サービストークン（`LEASE_API_TOKEN_ID` / `LEASE_API_TOKEN_SECRET` の 2 値）。
-     `?employee_no=` は付けるが、絞り込まれなくても応答側で照合する。現行の API は `generatedAt` を返さないため、**追加されるまで `LEASE_STALE` で留まる**。
-     HTML（Access のログイン画面）や形式不正は `LEASE_UNAVAILABLE`。同じ端末が別の社員にも貸与されていれば `LEASE_CONFLICT`。
+   - **応答**: `{ok, source, generatedAt, filter:{employee_no}, dataAsOf:{employeeDirectoryLastSeenAt}, records:[{asset_tag, hostname, employee_no, mesh_node_id, employee_active, lease_active}]}`。
+     認証は Cloudflare Access サービストークン（`LEASE_API_TOKEN_ID` / `LEASE_API_TOKEN_SECRET`）。
+   - `filter.employee_no` と全行の `employee_no` が要求と一致しない応答は `LEASE_UNAVAILABLE`。
+     現貸与は `employee_active === true` かつ `lease_active === true` の行だけ。
+     貸与情報と RSP の `mesh_node_id` が食い違えば `LEASE_CONFLICT`（nodeId は手掛かりで、同一性は MachineGuid で確認する）。
    - 同意の直前に取り直す。端末が変わった・確定できなくなった場合は `lease_conflict`、取得できない場合は同意を進めない。
    - `FOLDER_ACCESS_ALLOW_UNVERIFIED_LEASE=true`（`NODE_ENV=production` では起動拒否）のときだけ、
      検証用に `lease_status='unverified'` として担当者の指定端末で進める。

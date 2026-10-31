@@ -23,22 +23,29 @@ export type LeaseResult =
       source: string;
       fetchedAt: Date;
       generatedAt: Date;
+      meshNodeId: string | null;
     }
   | { kind: 'pending'; code: LeasePendingCode };
 
+// Mirai-Info の契約（Mirai-Info PR #262 / docs/CONSUMER-GUIDE.md）。
 const RecordSchema = z.object({
   hostname: z.string().nullable().optional(),
   asset_tag: z.string().nullable().optional(),
   employee_no: z.string().nullable().optional(),
-  staff_matched: z.boolean().nullable().optional(),
-  // 返却済みなどで現在の貸与先でない行を Mirai-Info 側が示す場合に除外する。
-  active: z.boolean().nullable().optional(),
+  mesh_node_id: z.string().nullable().optional(),
+  employee_active: z.boolean().nullable().optional(),
+  lease_active: z.boolean().nullable().optional(),
 });
 
 const ResponseSchema = z.object({
   ok: z.literal(true),
   source: z.string().optional(),
   generatedAt: z.string().nullable().optional(),
+  // 絞り込み未対応の旧プロセスは filter を返さず全件を返すので、確定に使わない。
+  filter: z.object({ employee_no: z.string() }).optional(),
+  dataAsOf: z
+    .object({ employeeDirectoryLastSeenAt: z.string().nullable().optional() })
+    .optional(),
   records: z.array(RecordSchema),
 });
 
@@ -59,23 +66,37 @@ export function evaluateLeaseResponse(
 ): LeaseResult {
   const parsed = ResponseSchema.safeParse(raw);
   if (!parsed.success) return { kind: 'pending', code: 'LEASE_UNAVAILABLE' };
-  const { records, generatedAt: generatedRaw, source } = parsed.data;
+  const { records, generatedAt: generatedRaw, source, filter, dataAsOf } = parsed.data;
 
-  // generatedAt が無い・読めない・古い応答は確定に使わない。
+  // 絞り込みが効いていない応答（旧プロセス）は確定に使わない。
+  if (filter?.employee_no !== employeeNo) return { kind: 'pending', code: 'LEASE_UNAVAILABLE' };
+  if (records.some((record) => record.employee_no?.trim() !== employeeNo)) {
+    return { kind: 'pending', code: 'LEASE_UNAVAILABLE' };
+  }
+
+  // 鮮度は名簿の最終取得時刻で判定する。generatedAt は応答の組み立て時刻で鮮度の根拠にならない。
   const generatedAt = generatedRaw ? new Date(generatedRaw) : null;
-  if (!generatedAt || Number.isNaN(generatedAt.getTime())) {
+  const dataAt = dataAsOf?.employeeDirectoryLastSeenAt
+    ? new Date(dataAsOf.employeeDirectoryLastSeenAt)
+    : null;
+  if (
+    !generatedAt ||
+    Number.isNaN(generatedAt.getTime()) ||
+    !dataAt ||
+    Number.isNaN(dataAt.getTime())
+  ) {
     return { kind: 'pending', code: 'LEASE_STALE' };
   }
-  const age = now.getTime() - generatedAt.getTime();
+  const age = now.getTime() - dataAt.getTime();
   if (age > maxAgeHours * 3_600_000 || age < -FUTURE_TOLERANCE_MS) {
     return { kind: 'pending', code: 'LEASE_STALE' };
   }
 
-  const current = records.filter((record) => record.active !== false);
-  const mine = current.filter(
+  // 現貸与と認めるのは employee_active と lease_active がともに true の行だけ。
+  const mine = records.filter(
     (record) =>
-      record.employee_no?.trim() === employeeNo &&
-      record.staff_matched !== false &&
+      record.employee_active === true &&
+      record.lease_active === true &&
       normalizedHostname(record.hostname),
   );
   if (mine.length === 0) return { kind: 'pending', code: 'LEASE_NONE' };
@@ -84,15 +105,6 @@ export function evaluateLeaseResponse(
   const hostname = record?.hostname?.trim();
   if (!record || !hostname) return { kind: 'pending', code: 'LEASE_NONE' };
 
-  // 同じ端末が別の社員にも貸与されている場合は照合競合。
-  const conflict = current.some(
-    (other) =>
-      other !== record &&
-      normalizedHostname(other.hostname) === hostname.toLowerCase() &&
-      other.employee_no?.trim() !== employeeNo,
-  );
-  if (conflict) return { kind: 'pending', code: 'LEASE_CONFLICT' };
-
   return {
     kind: 'verified',
     hostname,
@@ -100,6 +112,8 @@ export function evaluateLeaseResponse(
     source: source ?? 'unknown',
     fetchedAt: now,
     generatedAt,
+    // 手掛かりとして保存する。同一性は RSP で確認する。
+    meshNodeId: record.mesh_node_id?.trim() || null,
   };
 }
 
@@ -109,11 +123,10 @@ export async function fetchLease(employeeNo: string): Promise<LeaseResult> {
 
   let url: URL;
   try {
-    // URL は設定値だけから組み立てる。社員番号はクエリとして渡すが、API が絞り込まなくても
+    // URL は設定値だけから組み立てる。社員番号はクエリとして渡す。API が絞り込まなくても
     // 応答側で照合するので結果は変わらない。
     url = new URL(base);
     url.searchParams.set('employee_no', employeeNo);
-    url.searchParams.set('limit', '2000');
   } catch {
     return { kind: 'pending', code: 'LEASE_UNAVAILABLE' };
   }

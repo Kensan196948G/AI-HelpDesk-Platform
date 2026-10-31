@@ -294,6 +294,10 @@ async function determineDevice(
     if (input.rspDeviceId && input.rspDeviceId !== match.device_id) {
       return { kind: 'pending', code: 'LEASE_CONFLICT' };
     }
+    // 貸与情報と RSP の nodeId が両方あって食い違うときは確定しない。
+    if (lease?.meshNodeId && match.mesh_node_id && lease.meshNodeId !== match.mesh_node_id) {
+      return { kind: 'pending', code: 'LEASE_CONFLICT' };
+    }
     if (!match.agent_installed) return { kind: 'pending', code: 'RSP_AGENT_NOT_INSTALLED' };
     const enqueued = await enqueueDeviceIdentityProbe(match.hostname, ctx.id);
     // hostname だけを根拠にしない。キューへ積まれた端末が検索結果と同じことを確かめる。

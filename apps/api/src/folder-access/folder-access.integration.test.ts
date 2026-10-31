@@ -83,19 +83,26 @@ let world: World;
 let app: FastifyInstance;
 let sequence = 0;
 
-function leaseBody(records: Record<string, unknown>[], generatedAt: string | null = 'now') {
+function leaseBody(records: Record<string, unknown>[], dataAt: string | null = 'now') {
+  const now = new Date().toISOString();
   return {
     ok: true,
     source: 'device_staff_view',
     pii: true,
-    ...(generatedAt === null
-      ? {}
-      : { generatedAt: generatedAt === 'now' ? new Date().toISOString() : generatedAt }),
+    generatedAt: now,
+    filter: { employee_no: 'E100' },
+    dataAsOf: { employeeDirectoryLastSeenAt: dataAt === 'now' ? now : dataAt },
     records,
   };
 }
 
-const LEASE_ROW = { asset_tag: 'A-1', hostname: HOST, employee_no: 'E100', staff_matched: true };
+const LEASE_ROW = {
+  asset_tag: 'A-1',
+  hostname: HOST,
+  employee_no: 'E100',
+  employee_active: true,
+  lease_active: true,
+};
 
 function probeOutput(overrides: { guid?: string; quser?: string[] } = {}): string {
   return JSON.stringify({
@@ -109,7 +116,7 @@ function probeOutput(overrides: { guid?: string; quser?: string[] } = {}): strin
 
 function freshWorld(): World {
   return {
-    lease: leaseBody([LEASE_ROW, { ...LEASE_ROW, hostname: 'SYNTH-OTHER', employee_no: 'E200' }]),
+    lease: leaseBody([LEASE_ROW]),
     leaseStatus: 200,
     matches: [
       {
@@ -659,14 +666,34 @@ describe('貸与情報と端末の照合（Mock: PII API / RSP）', () => {
       'LEASE_MULTIPLE',
     ],
     [
-      '競合（同じ端末が別の社員にも貸与）',
+      '絞り込み未対応（別の社員の行を含む）',
       () => leaseBody([LEASE_ROW, { ...LEASE_ROW, employee_no: 'E999' }]),
-      'LEASE_CONFLICT',
+      'LEASE_UNAVAILABLE',
     ],
-    ['generatedAt なし', () => leaseBody([LEASE_ROW], null), 'LEASE_STALE'],
+    [
+      'filter を返さない旧プロセス',
+      () => ({ ...leaseBody([LEASE_ROW]), filter: undefined }),
+      'LEASE_UNAVAILABLE',
+    ],
+    [
+      '退職者',
+      () => leaseBody([{ ...LEASE_ROW, employee_active: false }]),
+      'LEASE_NONE',
+    ],
+    [
+      '貸与が有効でない',
+      () => leaseBody([{ ...LEASE_ROW, lease_active: false }]),
+      'LEASE_NONE',
+    ],
+    [
+      'employee_active が不明',
+      () => leaseBody([{ ...LEASE_ROW, employee_active: null }]),
+      'LEASE_NONE',
+    ],
+    ['名簿の取得時刻なし', () => leaseBody([LEASE_ROW], null), 'LEASE_STALE'],
     [
       '古い',
-      () => leaseBody([LEASE_ROW], new Date(Date.now() - 25 * 3_600_000).toISOString()),
+      () => leaseBody([LEASE_ROW], new Date(Date.now() - 73 * 3_600_000).toISOString()),
       'LEASE_STALE',
     ],
     ['Access のログイン画面相当（形式不正）', () => ({ html: true }), 'LEASE_UNAVAILABLE'],

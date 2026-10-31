@@ -116,7 +116,7 @@ const EnvSchema = z.object({
   LEASE_API_URL: optionalText,
   LEASE_API_TOKEN_ID: optionalText,
   LEASE_API_TOKEN_SECRET: optionalText,
-  LEASE_MAX_AGE_HOURS: z.coerce.number().int().positive().default(24),
+  LEASE_MAX_AGE_HOURS: z.coerce.number().int().positive().default(72),
 
   // Mirai-Info の社員名簿を読むための接続先（未設定なら Unix ソケット + OS ユーザー）。
   MIRAI_INFO_DATABASE_URL: optionalText,
