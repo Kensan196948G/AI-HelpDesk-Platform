@@ -186,6 +186,20 @@ function Get-SummaryScopeRefusal {
   return $null
 }
 
+function Get-SummaryHandleRefusal {
+  # 保持したハンドルが検査した対象そのものか。パスではなくハンドルの実体で判定する。
+  # $Info: Error, Attributes, ReparseTag, FinalPath（DirectoryHandle.Describe の結果）
+  param([Parameter(Mandatory)][object]$Info, [AllowNull()][string]$TargetPath, [AllowNull()][string]$CloudScope)
+  if ($Info.Error -ne 0) { return (ConvertTo-SummaryProbeReason -Win32Error $Info.Error) }
+  $target = ConvertTo-SummaryPath -Path $TargetPath
+  $final = ConvertTo-SummaryPath -Path $Info.FinalPath
+  if ($null -eq $target -or $null -eq $final) { return 'OUT_OF_SCOPE' }
+  if (-not (Test-SummaryReparseAllowed -Path $target -Attributes $Info.Attributes -Tag $Info.ReparseTag -CloudScope $CloudScope)) { return 'REPARSE_REJECTED' }
+  if (($Info.Attributes -band $script:SummaryAttrDirectory) -eq 0) { return 'NOT_A_DIRECTORY' }
+  if (-not [string]::Equals($final, $target, [StringComparison]::OrdinalIgnoreCase)) { return 'PATH_CHANGED' }
+  return $null
+}
+
 function New-SummaryAccumulator {
   return @{ Count = [long]0; File = [long]0; Directory = [long]0; Link = [long]0; TotalSize = [long]0; Truncated = $false }
 }
@@ -251,22 +265,6 @@ namespace AIHelpDesk.SkillFolderSummary {
     public uint High;
   }
 
-  [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
-  internal struct FindData {
-    public uint dwFileAttributes;
-    public RawFileTime ftCreationTime;
-    public RawFileTime ftLastAccessTime;
-    public RawFileTime ftLastWriteTime;
-    public uint nFileSizeHigh;
-    public uint nFileSizeLow;
-    public uint dwReserved0;
-    public uint dwReserved1;
-    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
-    public string cFileName;
-    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 14)]
-    public string cAlternateFileName;
-  }
-
   [StructLayout(LayoutKind.Sequential)]
   internal struct TagInfo {
     public uint FileAttributes;
@@ -275,14 +273,6 @@ namespace AIHelpDesk.SkillFolderSummary {
 
   internal static class Api {
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, ExactSpelling = true)]
-    public static extern IntPtr FindFirstFileExW(string name, int level, out FindData data, int op, IntPtr filter, int flags);
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, ExactSpelling = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    public static extern bool FindNextFileW(IntPtr handle, out FindData data);
-    [DllImport("kernel32.dll", SetLastError = true, ExactSpelling = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    public static extern bool FindClose(IntPtr handle);
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, ExactSpelling = true)]
     public static extern IntPtr CreateFileW(string name, uint access, uint share, IntPtr security, uint disposition, uint flags, IntPtr template);
     [DllImport("kernel32.dll", SetLastError = true, ExactSpelling = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -290,53 +280,99 @@ namespace AIHelpDesk.SkillFolderSummary {
     [DllImport("kernel32.dll", SetLastError = true, ExactSpelling = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool GetFileInformationByHandleEx(IntPtr handle, int infoClass, out TagInfo info, uint size);
+    [DllImport("kernel32.dll", SetLastError = true, ExactSpelling = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool GetFileInformationByHandleEx(IntPtr handle, int infoClass, IntPtr buffer, uint size);
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, ExactSpelling = true)]
     public static extern uint GetFinalPathNameByHandleW(IntPtr handle, StringBuilder path, uint size, uint flags);
   }
 
-  public sealed class Lister : IDisposable {
+  // 検査したディレクトリそのものを列挙する。パスを開き直さないので、検査の後に
+  // ジャンクションへ差し替えられても範囲外を読まない。FILE_SHARE_DELETE を渡さないので、
+  // 開いている間は対象を改名・削除できない。
+  public sealed class DirectoryHandle : IDisposable {
     private static readonly IntPtr Invalid = new IntPtr(-1);
+    private const int InfoClassIdBothRestart = 11;
+    private const int InfoClassIdBoth = 10;
+    private const int OffsetEndOfFile = 40;
+    private const int OffsetAttributes = 56;
+    private const int OffsetNameLength = 60;
+    private const int OffsetEaSize = 64;
+    private const int OffsetName = 104;
     private IntPtr handle;
-    private FindData first;
-    private bool hasFirst;
+    private readonly IntPtr buffer;
+    private const int BufferSize = 65536;
+    private int offset;
+    private bool hasData;
+    private bool started;
     public int LastError;
 
-    public Lister(string searchPath) {
-      handle = Api.FindFirstFileExW(searchPath, 1, out first, 0, IntPtr.Zero, 2);
-      if (handle == Invalid) {
-        int error = Marshal.GetLastWin32Error();
-        LastError = (error == 2) ? 0 : error;
-      } else {
-        hasFirst = true;
-      }
+    public DirectoryHandle(string path) {
+      buffer = Marshal.AllocHGlobal(BufferSize);
+      // FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES、共有は READ | WRITE のみ。
+      // FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT（リンクを辿らない）。
+      handle = Api.CreateFileW(path, 0x81, 0x3, IntPtr.Zero, 3, 0x02200000, IntPtr.Zero);
+      if (handle == Invalid) { LastError = Marshal.GetLastWin32Error(); }
     }
 
-    // . と .. は名前を外へ出さずここで除く。
-    public EntryInfo Next() {
-      while (handle != Invalid) {
-        FindData data;
-        if (hasFirst) {
-          hasFirst = false;
-          data = first;
-        } else if (!Api.FindNextFileW(handle, out data)) {
-          LastError = Marshal.GetLastWin32Error();
-          return null;
-        }
-        if (data.cFileName == "." || data.cFileName == "..") { continue; }
-        EntryInfo entry = new EntryInfo();
-        entry.Attributes = data.dwFileAttributes;
-        entry.ReparseTag = data.dwReserved0;
-        entry.Size = (long)(((ulong)data.nFileSizeHigh << 32) | data.nFileSizeLow);
-        return entry;
+    public ProbeResult Describe() {
+      ProbeResult result = new ProbeResult();
+      if (handle == Invalid) { result.Error = LastError; return result; }
+      TagInfo info;
+      if (!Api.GetFileInformationByHandleEx(handle, 9, out info, (uint)Marshal.SizeOf(typeof(TagInfo)))) {
+        result.Error = Marshal.GetLastWin32Error();
+        return result;
       }
-      return null;
+      result.Attributes = info.FileAttributes;
+      result.ReparseTag = info.ReparseTag;
+      StringBuilder path = new StringBuilder(32768);
+      uint length = Api.GetFinalPathNameByHandleW(handle, path, 32768, 0);
+      if (length == 0 || length >= 32768) {
+        result.Error = (length == 0) ? Marshal.GetLastWin32Error() : 122;
+        return result;
+      }
+      result.FinalPath = path.ToString();
+      return result;
+    }
+
+    public EntryInfo Next() {
+      while (true) {
+        if (!hasData) {
+          int infoClass = started ? InfoClassIdBoth : InfoClassIdBothRestart;
+          if (!Api.GetFileInformationByHandleEx(handle, infoClass, buffer, (uint)BufferSize)) {
+            LastError = Marshal.GetLastWin32Error();
+            return null;
+          }
+          started = true;
+          hasData = true;
+          offset = 0;
+        }
+        IntPtr entry = new IntPtr(buffer.ToInt64() + offset);
+        int next = Marshal.ReadInt32(entry, 0);
+        int nameLength = Marshal.ReadInt32(entry, OffsetNameLength);
+        bool isDot = false;
+        if (nameLength == 2 || nameLength == 4) {
+          // 名前は . と .. の判定だけに使い、保持しない。
+          short first = Marshal.ReadInt16(entry, OffsetName);
+          short second = nameLength == 4 ? Marshal.ReadInt16(entry, OffsetName + 2) : (short)'.';
+          isDot = first == (short)'.' && second == (short)'.';
+        }
+        uint attributes = (uint)Marshal.ReadInt32(entry, OffsetAttributes);
+        uint tag = (attributes & 0x400) != 0 ? (uint)Marshal.ReadInt32(entry, OffsetEaSize) : 0;
+        long size = Marshal.ReadInt64(entry, OffsetEndOfFile);
+        if (next == 0) { hasData = false; } else { offset += next; }
+        if (isDot) { continue; }
+        EntryInfo info = new EntryInfo();
+        info.Attributes = attributes;
+        info.ReparseTag = tag;
+        info.Size = size;
+        return info;
+      }
     }
 
     public void Dispose() {
-      if (handle != Invalid) {
-        Api.FindClose(handle);
-        handle = Invalid;
-      }
+      if (handle != Invalid) { Api.CloseHandle(handle); handle = Invalid; }
+      Marshal.FreeHGlobal(buffer);
     }
   }
 
@@ -406,25 +442,38 @@ function Invoke-FolderSummaryMain {
     $reason = Get-SummaryScopeRefusal -TargetPath ([string]$target.path) -RootPath ([string]$target.rootPath) -ProfilePath $profilePath -OneDrivePath $oneDrivePath -Probe $probe
     if ($null -ne $reason) { Write-SkillJson -Value (New-SummaryFailure -Code $reason); return 1 }
 
+    $cloudScopeForHandle = $null
+    $oneDriveNorm = ConvertTo-SummaryPath -Path $oneDrivePath
+    if ($null -ne $oneDriveNorm -and $oneDriveNorm.Length -gt 3) {
+      $oneDriveInfo = & $probe ('\\?\' + $oneDriveNorm) $false
+      if ($oneDriveInfo.Error -eq 0) { $cloudScopeForHandle = ConvertTo-SummaryPath -Path $oneDriveInfo.FinalPath }
+    }
+
     $acc = New-SummaryAccumulator
     $watch = [Diagnostics.Stopwatch]::StartNew()
     $normalized = ConvertTo-SummaryPath -Path ([string]$target.path)
-    $lister = New-Object AIHelpDesk.SkillFolderSummary.Lister -ArgumentList ('\\?\' + $normalized + '\*')
+    # 検査の後でパスを開き直さない。開いたハンドルが検査した対象であることを確かめ、そのハンドルを列挙する。
+    $directory = New-Object AIHelpDesk.SkillFolderSummary.DirectoryHandle -ArgumentList ('\\?\' + $normalized)
     try {
-      if ($lister.LastError -ne 0) { Write-SkillJson -Value (New-SummaryFailure -Code (ConvertTo-SummaryProbeReason -Win32Error $lister.LastError)); return 1 }
+      $handleRefusal = Get-SummaryHandleRefusal -Info $directory.Describe() -TargetPath $normalized -CloudScope $cloudScopeForHandle
+      if ($null -ne $handleRefusal) { Write-SkillJson -Value (New-SummaryFailure -Code $handleRefusal); return 1 }
       while ($true) {
         if ($acc.Count -ge $script:SummaryMaxEntries -or $watch.Elapsed.TotalSeconds -ge $script:SummaryMaxSeconds) { $acc.Truncated = $true; break }
-        $entry = $lister.Next()
+        $entry = $directory.Next()
         if ($null -eq $entry) { break }
         Add-SummaryEntry -Accumulator $acc -Attributes $entry.Attributes -Tag $entry.ReparseTag -Size $entry.Size
       }
       # 18 = ERROR_NO_MORE_FILES。途中で失敗した集計は返さない。
-      if (-not $acc.Truncated -and $lister.LastError -ne 0 -and $lister.LastError -ne 18) {
-        Write-SkillJson -Value (New-SummaryFailure -Code (ConvertTo-SummaryProbeReason -Win32Error $lister.LastError))
+      if (-not $acc.Truncated -and $directory.LastError -ne 18) {
+        Write-SkillJson -Value (New-SummaryFailure -Code (ConvertTo-SummaryProbeReason -Win32Error $directory.LastError))
         return 1
       }
+      # 祖先の差し替えも含め、列挙の後にもう一度確かめる。変わっていれば集計を返さない。
+      $after = Get-SummaryHandleRefusal -Info $directory.Describe() -TargetPath $normalized -CloudScope $cloudScopeForHandle
+      if ($null -eq $after) { $after = Get-SummaryScopeRefusal -TargetPath ([string]$target.path) -RootPath ([string]$target.rootPath) -ProfilePath $profilePath -OneDrivePath $oneDrivePath -Probe $probe }
+      if ($null -ne $after) { Write-SkillJson -Value (New-SummaryFailure -Code $after); return 1 }
     } finally {
-      $lister.Dispose()
+      $directory.Dispose()
     }
     Write-SkillJson -Value (New-SummaryOutput -Accumulator $acc)
     return 0
