@@ -52,7 +52,7 @@
 |---|---|---|
 | 1 | バックアップ（`pg_dump`、`api.conf` の複製） | 復元可能なファイルがある |
 | 2 | 未登録の 2 名を `users` に登録（`role='requester'`、`password_hash='access-only$no-login'`） | パスワードログイン不可、主ロールが担当者でない |
-| 3 | `sync-roles.ts` で 2 名に `approver` を付与し、シードの `w***@example.com` から `approver` を外す（dry-run → `--apply`） | `approver` が 4 アカウントだけ、監査 `auth.role.sync` |
+| 3 | `sync-roles.ts` で 2 名に `approver` を付与し、シードの `w***@example.com` から `approver` を外す（dry-run → `--apply`） | 実効ロール（`user_roles`、0 行なら `users.role`）の `approver` が 4 アカウントだけ、監査 `auth.role.sync` |
 | 4 | Access ポリシー `1a05a10a-…` の include に社外の 1 件を完全一致で追加。`~/.config/ai-helpdesk/access-allowlist.txt`（0600）を `docs/MailAddress.txt` + 社外 1 件で作成 | 他の include が不変、ドメイン許可なし |
 | 5 | メイン作業ツリーをマージ済み commit へ更新し build。`ACCESS_ALLOWLIST_FILE`（上記の絶対パス）、`RESOLVE_ADMIN_ALLOWLIST`、`COMMIT_SHA` を設定して再起動 | `/api/health` = ok、commit 一致 |
 | 6 | スモーク | 下記 §6 |
@@ -65,18 +65,24 @@
 
 ## 7. 既知の制約
 
-1. **引継ぎ承認の画面経路**: 画面は「自分の状態にある案件」から承認する。受信箱・claim を持たない
-   技術部・社外の承認者は、API の権限はあっても**画面から引継ぎ承認へ到達できない**。ナレッジ承認
-   （`GET /api/knowledge/pending` の一覧）は画面から操作できる。引継ぎ承認は当面 DX 推進部の承認者
-   2 アカウントで運用する。
+1. **引継ぎ承認の画面経路**: 画面の引継ぎ承認は「自分が claim して状態へ取り込んだ案件」からしか呼ばれない。一方、
+   claim した本人は自己承認禁止で 403、他のアカウントは claim が 409 で取り込めない。**そのため
+   `ALLOW_SELF_APPROVAL=false` の間、引継ぎの完了承認は画面から行えず API の直接呼び出しが必要**（コード読解による。
+   実ブラウザでは未確認。この制約は本変更の前から存在する）。ナレッジ承認は `GET /api/knowledge/pending` の一覧から
+   画面で操作できる。
 2. **社外アカウントの権限**: 申請済みナレッジの本文（伏せ字後）と作成者メールの閲覧・判定に加え、責任者として
    リスク 4 以上の Skill の**管理者承認を実行できる**（`/api/resolve/steps/:id/admin-approve`）。承認待ち一覧
    （`/api/resolve/admin/pending`）では**依頼者メールと deviceId も閲覧できる**。この機能は現在の本番では未設定で、
    本変更で初めて有効になる。
+   一般利用者向けの機能（AI 回答、DX 推進部への引継ぎ作成）も依頼者と同様に使える。
 3. **同一人物**: A の 2 アカウント間の承認は職務分離が人物単位で成立しない（監査に記録）。
 4. **除外の範囲**: 除外した DX 推進部 4 名は担当者業務（受信箱・claim・解決記録）を続けられる。
+   自分の下書きを画面で差し戻すと、ローカルは差戻しになるがサーバは 403 で `pending` のまま残る。
+5. **名簿障害時**: 名簿を参照できないと社内利用者にも社員一覧が空で返る（`source=restricted`。fail-closed）。
 6. **許可リストの正本**: 適用後の本番は `~/.config/ai-helpdesk/access-allowlist.txt` を読む。`docs/MailAddress.txt` を
    更新しても本番には反映されない。
+7. **本文照合の限界**: 照合はトランザクション外の読み取りで行い、`keywords` は対象外。照合直後の並行更新は検出できない。
+   DX 推進部の `approver` が他人の行を `pending` で書き換えてから承認する経路は既存のまま残る。
 
 ## 8. ロールバック
 

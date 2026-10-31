@@ -582,7 +582,7 @@ export async function caseHandoverRoutes(app: FastifyInstance): Promise<void> {
   });
 
   /**
-   * ナレッジの承認（承認者は DX 推進部グループの誰か）。
+   * ナレッジの承認（承認者は approver ロールの保持者）。
    * - 承認できるのは approver ロールの保持者だけ（所属は問わない・fail-closed）。
    * - 却下ではなく「承認」だけをこのエンドポイントで扱う。差戻しはブラウザ側の操作。
    * - 対応した本人が承認した場合は self_approved=true で記録する（黙って通さない）。
