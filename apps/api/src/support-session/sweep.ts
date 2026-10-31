@@ -1,7 +1,7 @@
 import { config } from '../config.js';
 import { sql } from '../db.js';
 import { jsonbValue } from '../lib/jsonb-value.js';
-import { applyLiveness, lockSession } from './service.js';
+import { applyLiveness, lockSession, sessionAudit } from './service.js';
 import { ASSIST_LIMITS } from './state.js';
 
 /**
@@ -63,8 +63,52 @@ export async function sweepSupportSessions(): Promise<number> {
       AND stop_requested_at
         <= now() - ((max_seconds + ${ASSIST_LIMITS.runGraceSeconds}::int) * interval '1 second')
   `;
+  await closeExpiredReports();
   await scrubExpiredIdentifiers();
   return ended;
+}
+
+/**
+ * 報告の期限（失効 + 固定時間）までに結果が来なかった実行を記録する（§10）。
+ * 既存の stop_outcome / partial_effect を消さない。未確認を成功や停止完了にしない
+ * （stopped_at・verify_ok・evidence を書かない）。
+ */
+async function closeExpiredReports(): Promise<void> {
+  const due = await sql<
+    { id: string; support_session_id: string; skill_id: string; role: string }[]
+  >`
+    SELECT e.id, e.support_session_id, e.skill_id, e.role
+    FROM assist_executions e
+    JOIN folder_access_helpers h ON h.id = e.helper_id
+    WHERE e.started_at IS NOT NULL
+      AND e.result_received_at IS NULL
+      AND e.report_expired_at IS NULL
+      AND h.revoked_at <= now() - (${ASSIST_LIMITS.revokedReportHours}::int * interval '1 hour')
+  `;
+  for (const row of due) {
+    await sql.begin(async (tx) => {
+      const locked = await lockSession(tx, row.support_session_id);
+      if (!locked) return;
+      const updated = await tx<{ id: string }[]>`
+        UPDATE assist_executions
+        SET report_expired_at = now(),
+            status = CASE WHEN status = 'executing' THEN 'timed_out' ELSE status END,
+            partial_effect = CASE WHEN stop_outcome IS NULL AND role = 'main'
+              THEN COALESCE(partial_effect, '[]'::jsonb) || ${jsonbValue(['STOP_UNCONFIRMED'])}
+              ELSE partial_effect END,
+            stop_outcome = COALESCE(stop_outcome, 'stop_unconfirmed')
+        WHERE id = ${row.id} AND result_received_at IS NULL AND report_expired_at IS NULL
+        RETURNING id
+      `;
+      if (!updated[0]) return;
+      await sessionAudit(tx, 'support_session.report_expired', locked.session, 'system:sweep', {
+        opId: row.id,
+        skillId: row.skill_id,
+        role: row.role,
+        source: 'sweep',
+      });
+    });
+  }
 }
 
 /** 終了から保持期間を過ぎた識別子を消す。状態・理由・時刻は残す（docs/62 §7-1 と同じ方針）。 */

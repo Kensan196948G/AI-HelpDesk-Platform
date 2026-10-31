@@ -270,6 +270,9 @@ export type SkillResultBody = z.infer<typeof SkillResultBodySchema>;
  * - accepted:true  検証の材料として受理した
  * - accepted:false 記録はしたが次へ進めない（reason: LATE_RESULT / DUPLICATE / NOT_STARTED / ...）
  * 本番で mock / manual を送ると 403 EXECUTION_MODE_REJECTED。
+ * トークンの失効から 24 時間（ASSIST_LIMITS.revokedReportHours）を過ぎた報告は
+ * 410 RESULT_REPORT_EXPIRED（保存しない。accepted:false の遅延結果とは別）。再送しても期限は延びない。
+ * 410 を受けたら再送をやめ、実行記録とトークンを片付ける。
  */
 export interface SkillResultResponse {
   ok: true;

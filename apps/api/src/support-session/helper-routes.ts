@@ -13,6 +13,7 @@ import {
   sessionAudit,
   startExecutionTx,
 } from './service.js';
+import { ASSIST_LIMITS } from './state.js';
 
 /**
  * ヘルパーの実行経路（docs/63 §6、§7）。契約は contract.ts。
@@ -33,11 +34,15 @@ function helperToken(request: FastifyRequest): string {
 
 interface HelperKey {
   id: string;
+  report_expired: boolean;
 }
 
 async function findHelper(token: string): Promise<HelperKey> {
   const rows = await sql<HelperKey[]>`
-    SELECT id FROM folder_access_helpers
+    SELECT id,
+      (revoked_at IS NOT NULL AND revoked_at
+        <= now() - (${ASSIST_LIMITS.revokedReportHours}::int * interval '1 hour')) AS report_expired
+    FROM folder_access_helpers
     WHERE token_hash = ${hashToken(token)}
   `;
   const row = rows[0];
@@ -81,6 +86,32 @@ export async function supportSessionHelperRoutes(app: FastifyInstance): Promise<
         throw new ApiError(429, 'RATE_LIMITED', 'リクエストが多すぎます。');
       }
       const { id } = OpParams.parse(request.params);
+
+      // 失効から一定時間を過ぎたトークンの報告は受けない（保存しない）。判定はサーバの時刻で、
+      // 基準の revoked_at は COALESCE で固定なので再送しても延びない。本文の形式より先に判定する。
+      if (helper.report_expired) {
+        const known = await sql.begin(async (tx) => {
+          const keys = await tx<{ support_session_id: string; skill_id: string; role: string }[]>`
+            SELECT support_session_id, skill_id, role FROM assist_executions
+            WHERE id = ${id} AND helper_id = ${helper.id}
+          `;
+          const key = keys[0];
+          if (!key) return false;
+          const locked = await lockSession(tx, key.support_session_id);
+          if (!locked) return false;
+          await sessionAudit(
+            tx,
+            'support_session.report_expired',
+            locked.session,
+            'system:assist-helper',
+            { opId: id, skillId: key.skill_id, role: key.role, source: 'report' },
+          );
+          return true;
+        });
+        if (!known) throw notFound('対象の操作が見つかりません。');
+        throw new ApiError(410, 'RESULT_REPORT_EXPIRED', '結果を報告できる期限を過ぎました。');
+      }
+
       const body = SkillResultBodySchema.parse(request.body);
 
       // real 以外は本番で必ず拒否する。本番以外でも検証用フラグが無ければ受けない（§7）。
