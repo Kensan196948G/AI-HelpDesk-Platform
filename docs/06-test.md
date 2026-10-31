@@ -5,7 +5,7 @@
 | 項目 | 値 |
 |---|---|
 | Node.js | v22.22.3 |
-| Test runner | vitest 3.2.4 |
+| Test runner | vitest 4.1.12 |
 | DB（unit/integration） | Local PostgreSQL 16（`127.0.0.1:5435` / `ai_helpdesk_test`） |
 | API test | `buildServer()` + `app.inject`（実 HTTP なし） |
 | 日付 | 2026-10-23 |
@@ -40,7 +40,7 @@ npx tsx scripts/seed.ts
 | Unit test | ✅ 63 件成功 | PII / signal / audit / PC / AI / password / Worker / Access / 許可リスト / 実PC情報 / 端末エージェント / ブリッジ |
 | Integration test | ✅ 11 件成功 | 主要 3 Flow、セキュリティ、権限、UI 配信、state、AI |
 | API Build | ✅ 成功 | `apps/api/dist` を生成 |
-| Dependency audit（runtime） | ✅ 0 vulnerabilities | `npm audit --omit=dev --audit-level=high` |
+| Dependency audit（runtime） | ✅ 0 vulnerabilities | `npm audit --audit-level=high && npm audit --omit=dev --audit-level=high` |
 | Secret pattern scan | ✅ 検出なし | `scripts/scan-secrets.sh`（CI 用） |
 | Backup / Restore | ✅ 成功 | PG16 `pg_dump` → 新規 DB へ plain 復元 |
 | UI 配信 | ✅ 200 | 元 HTML のタイトル・主要画面・約 500KB |
@@ -125,7 +125,7 @@ Tests       74 passed (74)
 |---|---|
 | Install | `npm ci`（Node 22） |
 | Secret scan | `bash scripts/scan-secrets.sh` |
-| Audit | `npm audit --omit=dev --audit-level=high` |
+| Audit | `npm audit --audit-level=high && npm audit --omit=dev --audit-level=high` |
 | Typecheck / Lint | `npm run typecheck` / `npm run lint` |
 | Migrate | 空 DB へ `npm run db:migrate` を 2 回（冪等性の確認） |
 | Test | `npm test`（PostgreSQL 16 service。global-setup が migrate + seed） |
