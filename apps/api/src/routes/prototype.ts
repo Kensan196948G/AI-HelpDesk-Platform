@@ -21,6 +21,14 @@ const BRIDGE_FILES = [
   path.join('apps', 'api', 'src', 'prototype', 'remote-support-bridge.js'),
   path.join('apps', 'api', 'src', 'prototype', 'handover-workspace-bridge.js'),
 ];
+// 機能フラグが有効なときだけ配信する（無効時は読み込まれず、何も描画しない。docs/62）。
+const FOLDER_ACCESS_BRIDGE_FILE = path.join(
+  'apps',
+  'api',
+  'src',
+  'prototype',
+  'folder-access-bridge.js',
+);
 const COWORK_KEY = 'mirai-wizard-v31-cowork';
 const HELPDESK_KEY = 'mirai-wizard-v31-helpdesk';
 
@@ -143,6 +151,7 @@ const CSP = [
 
 let cachedHtml: string | null = null;
 let cachedBridge: string | null = null;
+let cachedFolderAccessBridge: string | null = null;
 
 function readSource(): string {
   if (!cachedHtml) {
@@ -157,7 +166,11 @@ function readBridge(): string {
       '\n\n',
     );
   }
-  return cachedBridge;
+  if (!config.FOLDER_ACCESS_ENABLED) return cachedBridge;
+  if (!cachedFolderAccessBridge) {
+    cachedFolderAccessBridge = readFileSync(path.join(repoRoot, FOLDER_ACCESS_BRIDGE_FILE), 'utf8');
+  }
+  return `${cachedBridge}\n\n${cachedFolderAccessBridge}`;
 }
 
 function normalizeState(value: unknown): Record<string, unknown> | null {
