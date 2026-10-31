@@ -13,6 +13,7 @@ import {
   normalizeEntries,
   parseProbeOutput,
   parseQuserLines,
+  probeCompletedBefore,
   sanitizeEntryName,
   terminalStatusFor,
 } from './state.js';
@@ -217,6 +218,16 @@ describe('RSP 固定テンプレートの結果', () => {
       machineGuid: GUID,
       sessions: [{ user: 'user-a', sessionId: 1, state: 'active' }],
     });
+  });
+
+  it('結果の完了がヘルパーの登録より前か判定する（タイムゾーンなしは判定しない）', () => {
+    const created = new Date('2026-10-31T01:00:00Z');
+    expect(probeCompletedBefore('2026-10-31T00:59:59Z', created)).toBe(true);
+    expect(probeCompletedBefore('2026-10-31T09:59:59+09:00', created)).toBe(true);
+    expect(probeCompletedBefore('2026-10-31T01:00:01+00:00', created)).toBe(false);
+    expect(probeCompletedBefore('2026-10-31T00:00:00', created)).toBe(false);
+    expect(probeCompletedBefore(null, created)).toBe(false);
+    expect(probeCompletedBefore('invalid+00:00', created)).toBe(false);
   });
 
   const helper = { machineGuid: GUID, sessionId: 1, userName: 'DOMAIN\\User-A' };

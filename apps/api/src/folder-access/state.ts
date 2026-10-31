@@ -334,6 +334,16 @@ export function parseProbeOutput(output: unknown): ProbeResult | null {
   return { machineGuid: machineGuid.trim(), sessions: parseQuserLines(lines) };
 }
 
+/**
+ * RSP の結果がヘルパーの登録より前に完了したか。古い quser ではセッションを判断できない。
+ * タイムゾーンの無い時刻は比較できないので「古くない」と扱う（照合そのものは行う）。
+ */
+export function probeCompletedBefore(completedAt: string | null, helperCreatedAt: Date): boolean {
+  if (!completedAt || !/(Z|[+-]\d{2}:?\d{2})$/i.test(completedAt)) return false;
+  const time = new Date(completedAt).getTime();
+  return !Number.isNaN(time) && time < helperCreatedAt.getTime();
+}
+
 function comparableUser(name: string): string {
   const short = name.slice(name.lastIndexOf('\\') + 1).toLowerCase();
   // quser はユーザー名を 20 文字で切り詰める。

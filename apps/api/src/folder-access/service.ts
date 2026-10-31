@@ -18,6 +18,7 @@ import {
   isTerminal,
   LIMITS,
   parseProbeOutput,
+  probeCompletedBefore,
   terminalStatusFor,
 } from './state.js';
 
@@ -76,6 +77,7 @@ export interface RequestContext {
   helper_stale: boolean | null;
   helper_request_id: string | null;
   helper_session_state: string | null;
+  helper_created_at: Date | null;
 }
 
 /** 依頼を行ロック付きで読む。呼び出し側は sql.begin の中から呼ぶ。 */
@@ -93,7 +95,8 @@ export async function loadContext(tx: Tx, id: string): Promise<RequestContext | 
       (hp.last_seen_at <= now() - (${LIMITS.helperStaleSeconds}::int * interval '1 second'))
         AS helper_stale,
       hp.request_id AS helper_request_id,
-      hp.session_state AS helper_session_state
+      hp.session_state AS helper_session_state,
+      hp.created_at AS helper_created_at
     FROM folder_access_requests r
     JOIN case_handovers h ON h.id = r.handover_id
     LEFT JOIN folder_access_helpers hp ON hp.id = r.helper_id
@@ -418,11 +421,13 @@ export async function reconcileProbe(
   try {
     probe = await fetchDeviceIdentityProbe(logId);
     // AGENT_BUSY は未実行が確定しているので再投入してよい（他の失敗は自動再試行しない）。
-    if (
-      probe.status === 'failed' &&
-      probe.errorCode === 'AGENT_BUSY' &&
-      snapshot.rsp_probe_attempts < LIMITS.maxProbeAttempts
-    ) {
+    const busy = probe.status === 'failed' && probe.errorCode === 'AGENT_BUSY';
+    // ヘルパーの登録より前の quser ではセッションを判断できないので取り直す。
+    const stale =
+      probe.status === 'completed' &&
+      snapshot.helper_created_at !== null &&
+      probeCompletedBefore(probe.completedAt, snapshot.helper_created_at);
+    if ((busy || stale) && snapshot.rsp_probe_attempts < LIMITS.maxProbeAttempts) {
       replacement = (await enqueueDeviceIdentityProbe(snapshot.rsp_hostname, id)).logId;
     }
   } catch {
@@ -546,10 +551,19 @@ export async function sweepFolderAccess(): Promise<number> {
     SET status = 'expired', completed_at = now()
     WHERE status IN ('queued', 'delivered') AND expires_at <= now()
   `;
-  // ペアリングされないまま期限が切れたヘルパーの登録情報は残さない。
+  // ペアリングされないまま期限が切れたヘルパーは失効させ、登録情報を消す。
+  // 行は残す（次の poll で revoked:true を返すと、ヘルパーが自動で再登録せずに止まる）。
+  await sql`
+    UPDATE folder_access_helpers
+    SET revoked_at = COALESCE(revoked_at, now()), user_name = NULL, hostname = NULL,
+        pairing_code_hash = NULL
+    WHERE request_id IS NULL AND pairing_expires_at <= now()
+      AND (revoked_at IS NULL OR user_name IS NOT NULL)
+  `;
+  // 登録は未認証で行えるので、残骸を際限なく増やさない。
   await sql`
     DELETE FROM folder_access_helpers
-    WHERE request_id IS NULL AND pairing_expires_at <= now()
+    WHERE request_id IS NULL AND pairing_expires_at <= now() - interval '1 day'
   `;
   return ended;
 }

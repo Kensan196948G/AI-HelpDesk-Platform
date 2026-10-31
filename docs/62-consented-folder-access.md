@@ -74,7 +74,8 @@ device_pending → helper_pending → consent_pending → active → ended
 3. **端末**: RSP `deviceId` と `mesh_node_id` を保存する。hostname だけを許可の根拠にしない。
    RSP の固定テンプレートで MachineGuid を取得し、ヘルパーの申告と一致しなければ `device_mismatch`。
    テンプレートは引数を挿入しない定数で、キュー投入は依頼の確定時、結果の取得はペアリング後（`pair` / 状態確認 / `poll` の延長。5 秒間隔）に行う。
-   出力は解釈して捨てる（ユーザー名を含むため保存しない）。`AGENT_BUSY` だけ最大 3 回まで再投入する。
+   出力は解釈して捨てる（ユーザー名を含むため HelpDesk には保存しない。RSP の `command_logs` には残る）。
+   `AGENT_BUSY` と、ヘルパーの登録より前に完了した結果（古い quser では判断できない）だけ、最大 3 回まで投入し直す。
    `mesh_node_id` は RSP 応答にあれば保存し、無ければ `null`。
 4. **Windows ユーザー**: ペアリングで結び付ける。
    - ヘルパーは本人セッション内で `WindowsIdentity.GetCurrent()` の SID を取得し、登録して 8 桁のコードを本人の画面に表示する。
@@ -111,6 +112,8 @@ device_pending → helper_pending → consent_pending → active → ended
   → `{ok:true, discarded:false, truncated, count}` または `{ok:true, discarded:true, reason}`（破棄しても 200。再送しない）。
   `status` は `ok` / `partial` / `error`、`reason` は `^[A-Z0-9_]{1,64}$` の固定コードのみ（パスを入れない）、
   `type` は `file` / `directory` / `link` / `other`。本文 64KB 超は 413。500 件 / 32KB 超はサーバが切り詰めて `truncated=true`。
+  トークンの扱い: 無効・不明なトークンは 401。失効済み（同意の終了、ペアリング期限切れを含む）のトークンは poll が `revoked:true` を返す。
+  ペアリング期限切れの登録は 1 日後に行を消すので、その後は 401 になる。
 - `POST /revoke` ヘッダ `x-folder-helper-token`、ボディ `{}` → `{ok:true}`。ヘルパーを失効させ、紐づく同意を `helper_revoked` で終了する。
 
 `sig` は `HMAC-SHA256(helperToken, canonicalJson(opId,requestId,sid,sessionId,root,segments,operation,expiresAt))`（小文字 16 進）。

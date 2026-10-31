@@ -72,7 +72,7 @@ interface World {
   leaseStatus: number;
   matches: Record<string, unknown>[];
   enqueueDevice: string;
-  probe: { status: string; output: unknown; error_code: string | null };
+  probe: { status: string; output: unknown; error_code: string | null; completed_at?: string };
   commands: Record<string, unknown>[];
   leaseCalls: number;
   probeReads: number;
@@ -858,6 +858,30 @@ describe('ペアリングと Windows ユーザー（Mock: RSP）', () => {
     expect(world.commands).toHaveLength(3);
   });
 
+  it('ヘルパーの登録より前の結果では判断せず、固定テンプレートを取り直す', async () => {
+    world.probe = {
+      status: 'completed',
+      output: probeOutput(),
+      error_code: null,
+      completed_at: '2020-01-01T00:00:00+00:00',
+    };
+    const { id, pair, helper } = await pairedRequest();
+    expect(pair.status).toBe('helper_pending');
+    expect(world.commands).toHaveLength(2);
+    expect(world.commands[1]?.command_text).toBe(DEVICE_IDENTITY_PROBE_COMMAND);
+
+    world.probe = {
+      status: 'completed',
+      output: probeOutput(),
+      error_code: null,
+      completed_at: new Date(Date.now() + 60_000).toISOString(),
+    };
+    await sql`UPDATE folder_access_requests SET rsp_probe_checked_at = NULL WHERE id = ${id}`;
+    await poll(helper.helperToken);
+    expect((await requestRow(id))?.status).toBe('consent_pending');
+    expect(world.commands).toHaveLength(2);
+  });
+
   it('RSP の出力が解釈できなければ進めない', async () => {
     world.probe = { status: 'completed', output: 'garbage', error_code: null };
     const { pair } = await pairedRequest();
@@ -1064,8 +1088,23 @@ describe('同意と毎操作の検証（Mock: RSP）', () => {
     `;
     await sweepFolderAccess();
     expect((await requestRow(request.id))?.status).toBe('expired');
+    const scrubbed = await sql<{ user_name: string | null; hostname: string | null }[]>`
+      SELECT user_name, hostname FROM folder_access_helpers WHERE id = ${helper.helperId}
+    `;
+    expect(scrubbed[0]).toEqual({ user_name: null, hostname: null });
+    // 掃除の後も revoked:true を返す（401 にしない。ヘルパーが自動で再登録しないように）。
+    const polled = await poll(helper.helperToken);
+    expect(polled.statusCode).toBe(200);
+    expect(polled.json().revoked).toBe(true);
+
+    await sql`
+      UPDATE folder_access_helpers SET pairing_expires_at = now() - interval '2 days'
+      WHERE id = ${helper.helperId}
+    `;
+    await sweepFolderAccess();
     const rows = await sql`SELECT id FROM folder_access_helpers WHERE id = ${helper.helperId}`;
     expect(rows).toHaveLength(0);
+    expect((await poll(helper.helperToken)).statusCode).toBe(401);
   });
 
   it('取消後: 本人の取消で即時に終了し、結果を消してキューを取り消す', async () => {

@@ -159,6 +159,8 @@
     // 結果はここだけに置く。終了・案件切替で破棄する。
     result: null,
     available: false,
+    // 担当者でない間は問い合わせを減らす（相談者の画面から 6 秒ごとに 403 を出さない）。
+    retryAt: 0,
     busy: false,
     error: null,
     rspDeviceId: '',
@@ -187,6 +189,7 @@
     STAFF.request = null;
     STAFF.result = null;
     STAFF.available = false;
+    STAFF.retryAt = 0;
     STAFF.error = null;
     STAFF.lastKey = '';
   }
@@ -199,6 +202,7 @@
       STAFF.handoverId = STAFF.handoverId ?? (await findHandoverId(target));
       if (!STAFF.handoverId) {
         STAFF.available = false;
+        STAFF.retryAt = Date.now() + 60_000;
         renderStaff();
         return;
       }
@@ -212,6 +216,7 @@
     } catch (error) {
       // 担当者本人以外・機能無効は何も出さない。
       STAFF.available = false;
+      STAFF.retryAt = Date.now() + 60_000;
       STAFF.request = null;
       STAFF.result = null;
       if (![403, 404].includes(error.status)) STAFF.error = String(error.message || error);
@@ -659,7 +664,8 @@
   setInterval(ensureStaffPanel, 1500);
   setInterval(() => {
     if (document.hidden) return;
-    if (document.getElementById('aihdFolderAccessPanel') && STAFF.caseId) void loadStaff();
+    if (!document.getElementById('aihdFolderAccessPanel') || !STAFF.caseId) return;
+    if (STAFF.available || Date.now() >= STAFF.retryAt) void loadStaff();
   }, 6000);
   setInterval(() => {
     if (!document.hidden) void loadMine();

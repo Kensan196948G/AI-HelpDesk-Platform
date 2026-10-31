@@ -149,6 +149,7 @@ export interface RspProbeStatus {
   /** 呼び出し側で解釈して捨てる。ユーザー名を含むので保存・ログ出力しない。 */
   output: unknown;
   errorCode: string | null;
+  completedAt: string | null;
 }
 
 export async function fetchDeviceIdentityProbe(logId: string): Promise<RspProbeStatus> {
@@ -158,6 +159,7 @@ export async function fetchDeviceIdentityProbe(logId: string): Promise<RspProbeS
     status: String(data.status ?? ''),
     output: data.output,
     errorCode: typeof data.error_code === 'string' ? data.error_code : null,
+    completedAt: typeof data.completed_at === 'string' ? data.completed_at : null,
   };
 }
 

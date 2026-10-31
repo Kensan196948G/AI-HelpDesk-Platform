@@ -195,6 +195,11 @@ describe('フォルダ一覧ブリッジ（Mock DOM）', () => {
     await h.settle();
     expect(panel(h, 'aihdFolderAccessPanel')?.style.display).toBe('none');
     expect(panel(h, 'aihdFolderAccessPanel')?.children).toEqual([]);
+    // 担当者でない画面から定期的に 403 を出さない。
+    const before = h.calls.filter((call) => call.includes('/folder-access/requests')).length;
+    for (const timer of h.timers) timer();
+    await h.settle();
+    expect(h.calls.filter((call) => call.includes('/folder-access/requests')).length).toBe(before);
   });
 
   it('担当者パネル: 結果を textContent で描画し、ファイル名を HTML として解釈しない', async () => {
