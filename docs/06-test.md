@@ -5,7 +5,7 @@
 | 項目 | 値 |
 |---|---|
 | Node.js | v22.22.3 |
-| Test runner | vitest 3.2.4 |
+| Test runner | vitest 4.1.12 |
 | DB（unit/integration） | Local PostgreSQL 16（`127.0.0.1:5435` / `ai_helpdesk_test`） |
 | API test | `buildServer()` + `app.inject`（実 HTTP なし） |
 | 日付 | 2026-10-23 |

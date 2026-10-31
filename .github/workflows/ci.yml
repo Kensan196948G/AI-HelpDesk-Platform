@@ -59,6 +59,10 @@ jobs:
       - name: Dependency audit (runtime, high+)
         run: npm audit --omit=dev --audit-level=high
 
+      # devDependencies の Critical/High も落とす（CI・開発端末で実行されるため）。
+      - name: Dependency audit (all deps, high+)
+        run: npm audit --audit-level=high
+
       - name: Typecheck
         run: npm run typecheck
 
