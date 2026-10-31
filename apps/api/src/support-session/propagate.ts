@@ -1,8 +1,10 @@
+import { config } from '../config.js';
 import { hashSid } from '../folder-access/sign.js';
 import { appendAudit } from '../lib/audit-log.js';
 import { jsonbValue } from '../lib/jsonb-value.js';
 import {
   isOpenSession,
+  OPEN_SESSION_STATUSES,
   type SessionEndReason,
   sessionReasonForFolderEnd,
   terminalStatusForSession,
@@ -16,6 +18,11 @@ import {
 
 // postgres.js のトランザクション型は循環を避けて緩く受ける（audit-log.ts と同じ）。
 type AnyTx = any;
+
+/** フラグが無効なら新テーブルに触らない（028 未適用の DB でも既存の経路を壊さない）。 */
+export function assistEnabled(): boolean {
+  return config.FOLDER_ACCESS_ENABLED && config.ASSIST_SESSION_ENABLED;
+}
 
 interface SessionKeyRow {
   id: string;
@@ -41,14 +48,18 @@ export async function stopExecutionsTx(tx: AnyTx, sessionId: string): Promise<vo
     SET stop_requested_at = COALESCE(stop_requested_at, now())
     WHERE support_session_id = ${sessionId} AND status IN ('delivered', 'executing')
   `;
-  // 実行中の変更系は、結果が届くまで「変更が生じた可能性」を隠さない。
+  // 変更系は、結果と確認が揃うまで「変更が生じた可能性」を隠さない。
+  // 実行中・タイムアウト済みの本体と、確認操作の途中で止まった完了済みの本体が対象。
   await tx`
     UPDATE assist_executions e
     SET partial_effect = COALESCE(e.partial_effect, '[]'::jsonb) || ${jsonbValue(['POSSIBLE_CHANGE'])}
     FROM assist_proposals p
     WHERE e.proposal_id = p.id
       AND e.support_session_id = ${sessionId}
-      AND e.status = 'executing'
+      AND (
+        e.status IN ('executing', 'timed_out')
+        OR (e.status = 'completed' AND p.status = 'verifying')
+      )
       AND e.role = 'main'
       AND p.effect = 'modify'
       AND NOT COALESCE(e.partial_effect, '[]'::jsonb) ? 'POSSIBLE_CHANGE'
@@ -66,10 +77,7 @@ export async function terminateSessionTx(
   const updated = await tx`
     UPDATE support_sessions
     SET status = ${status}, end_reason = ${reason}, ended_at = now(), updated_at = now()
-    WHERE id = ${session.id} AND status IN (
-      'binding_pending', 'consent_pending', 'ready', 'proposing', 'awaiting_approval',
-      'approved', 'executing', 'verifying', 'awaiting_next', 'resolve_confirm'
-    )
+    WHERE id = ${session.id} AND status = ANY(${[...OPEN_SESSION_STATUSES]}::text[])
     RETURNING id
   `;
   if (!updated[0]) return false;
@@ -120,6 +128,7 @@ export async function terminateSessionsForFolderRequestTx(
   folderReason: string,
   actorEmail: string,
 ): Promise<void> {
+  if (!assistEnabled()) return;
   const rows: SessionKeyRow[] = await tx`
     SELECT id, case_id, status, sid, windows_session_id, assignee_email, operation_consent_id
     FROM support_sessions

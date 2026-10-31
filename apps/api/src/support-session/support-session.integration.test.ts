@@ -14,7 +14,7 @@ import { computeScriptHash, computeSkillDefinitionHash } from '../resolve/skills
 import { buildServer } from '../server.js';
 import { SKILL_RUN_CAPABILITY, signSkillRun } from './contract.js';
 import { ASSIST_SKILLS } from './skills.js';
-import { ASSIST_LIMITS } from './state.js';
+import { ASSIST_LIMITS, OPEN_SESSION_STATUSES } from './state.js';
 import { sweepSupportSessions } from './sweep.js';
 
 /**
@@ -29,6 +29,7 @@ const directory = vi.hoisted(() => ({ byEmail: new Map<string, Record<string, un
 const synth = vi.hoisted(() => ({
   entries: [] as Record<string, string>[],
   scripts: new Map<string, string>(),
+  throwOnRead: false,
 }));
 
 vi.mock('../lib/mirai-info.js', () => ({
@@ -42,6 +43,7 @@ vi.mock('../lib/mirai-info.js', () => ({
 vi.mock('./skill-source.js', () => ({
   loadApprovalManifest: () => ({ version: 1, skills: synth.entries }),
   readSkillScript: (scriptPath: string) => {
+    if (synth.throwOnRead) throw new Error('synthetic read failure');
     const content = synth.scripts.get(scriptPath);
     return content === undefined ? null : Buffer.from(content);
   },
@@ -483,6 +485,7 @@ beforeAll(async () => {
 beforeEach(() => {
   resetRateLimits();
   world = { commands: [], aiBodies: [], aiReply: {}, unexpected: [] };
+  synth.throwOnRead = false;
   vi.stubGlobal('fetch', vi.fn(fakeFetch));
   config.FOLDER_ACCESS_ENABLED = true;
   config.ASSIST_SESSION_ENABLED = true;
@@ -1198,6 +1201,317 @@ describe('共通支援セッション（Mock: ヘルパー / RSP / 名簿 / PII 
     `;
       expect(rows[0]).toMatchObject({ status: 'revoked', sid: null, machine_guid: null });
       expect((await executionRows(session.id))[0]?.sid).toBeNull();
+    });
+  });
+
+  describe('コードレビューの指摘（#120）', () => {
+    /** 読取の提案を終え、変更系の本体を実行中にする。 */
+    async function modifyExecuting(session: { id: string; token: string }) {
+      const first = await executing(session);
+      await report(session.token, first.op, resultBody(first.op, FOLDER_OUTPUT));
+      const second = await propose(session.id);
+      await decide(session.id, second.proposal.id, {
+        decision: 'Y',
+        approvalHash: second.proposal.approvalHash,
+      });
+      const op = (await poll(session.token)).skillOps?.[0] as Op;
+      expect((await start(session.token, op)).statusCode).toBe(200);
+      return op;
+    }
+
+    it('1. 変更系のタイムアウトは結果がなくても POSSIBLE_CHANGE を記録する', async () => {
+      setManifest(ALL_BUT_DISK);
+      const session = await readySession();
+      await modifyExecuting(session);
+      await sql`
+        UPDATE assist_executions SET deadline_at = now() - interval '1 second'
+        WHERE support_session_id = ${session.id} AND status = 'executing'
+      `;
+      await sweepSupportSessions();
+      const execution = (await executionRows(session.id))[1];
+      expect(execution?.status).toBe('timed_out');
+      expect(execution?.partial_effect).toEqual(['POSSIBLE_CHANGE']);
+    });
+
+    it('1. 読取のタイムアウトには変更の可能性を記録しない', async () => {
+      const session = await readySession();
+      await executing(session);
+      await sql`
+        UPDATE assist_executions SET deadline_at = now() - interval '1 second'
+        WHERE support_session_id = ${session.id}
+      `;
+      await sweepSupportSessions();
+      expect((await executionRows(session.id))[0]?.partial_effect).toBeNull();
+    });
+
+    it('1. 確認操作の途中で止めると、完了済みの変更系本体に POSSIBLE_CHANGE を記録する', async () => {
+      setManifest(ALL_BUT_DISK);
+      const session = await readySession();
+      const op = await modifyExecuting(session);
+      await report(
+        session.token,
+        op,
+        resultBody(op, { applied: true, previousPresent: false, previousValue: null }),
+      );
+      expect((await sessionRow(session.id))?.status).toBe('verifying');
+      await call(ASSIGNEE, 'POST', base(session.id, '/stop'), {});
+      const main = (await executionRows(session.id)).find((row) => row.id === op.opId);
+      expect(main?.status).toBe('completed');
+      expect(main?.partial_effect).toEqual(['POSSIBLE_CHANGE']);
+    });
+
+    it('2. 報告が期限切れを発火させても stop_outcome を保存し、状態を上書きしない', async () => {
+      const session = await readySession();
+      const { op } = await executing(session);
+      await sql`
+        UPDATE assist_executions SET deadline_at = now() - interval '1 second'
+        WHERE support_session_id = ${session.id}
+      `;
+      const response = await report(
+        session.token,
+        op,
+        resultBody(op, null, {
+          status: 'cancelled',
+          resultCode: 'CANCELLED',
+          exitCode: null,
+          stopOutcome: 'stopped',
+        }),
+      );
+      expect(response.json()).toEqual({ ok: true, accepted: false, reason: 'LATE_RESULT' });
+      const execution = (await executionRows(session.id))[0];
+      expect(execution?.status).toBe('timed_out');
+      expect(execution?.stop_outcome).toBe('stopped');
+      expect(execution?.stopped_at).not.toBeNull();
+      expect((await sessionRow(session.id))?.end_reason).toBe('execution_timeout');
+    });
+
+    it('4. rejected（未実行）の申告は not_running を記録する（停止要求の後）', async () => {
+      const session = await readySession();
+      await approveFirst(session);
+      const op = (await poll(session.token)).skillOps?.[0] as Op;
+      await call(OWNER, 'POST', base(session.id, '/revoke'), {});
+      await report(
+        session.token,
+        op,
+        resultBody(op, null, { status: 'rejected', resultCode: 'BAD_SIGNATURE', exitCode: null }),
+      );
+      const execution = (await executionRows(session.id))[0];
+      expect(execution?.status).toBe('rejected_by_helper');
+      expect(execution?.stop_outcome).toBe('not_running');
+      expect(execution?.stopped_at).not.toBeNull();
+    });
+
+    it('4. rejected（未実行）の申告は not_running を記録する（停止要求の前）', async () => {
+      const session = await readySession();
+      await approveFirst(session);
+      const op = (await poll(session.token)).skillOps?.[0] as Op;
+      await report(
+        session.token,
+        op,
+        resultBody(op, null, { status: 'rejected', resultCode: 'ELEVATED', exitCode: null }),
+      );
+      expect((await executionRows(session.id))[0]?.stop_outcome).toBe('not_running');
+    });
+
+    it('5. disk.space は freeGB が数値でなければ成功にしない', async () => {
+      setManifest(['disk.space']);
+      const session = await readySession();
+      const { op } = await executing(session);
+      expect(op.skillId).toBe('disk.space');
+      await report(
+        session.token,
+        op,
+        resultBody(op, { volumes: [{ deviceId: 'C:', freeGB: null, totalGB: null }] }),
+      );
+      const row = await sessionRow(session.id);
+      expect(row?.end_reason).toBe('verify_failed');
+      expect((await executionRows(session.id))[0]?.verify_ok).toBe(false);
+    });
+
+    it('6. proposing の後の例外で元の状態へ戻し、提案を作らず、やり直せる', async () => {
+      const session = await readySession();
+      synth.throwOnRead = true;
+      const failed = await call(OWNER, 'POST', base(session.id, '/proposals'), {});
+      synth.throwOnRead = false;
+      expect(failed.statusCode).toBe(500);
+      const row = await sessionRow(session.id);
+      expect(row?.status).toBe('ready');
+      expect(row?.proposal_count).toBe(0);
+      const { proposal } = await propose(session.id);
+      expect(proposal.skillId).toBe('folder.summary');
+    });
+
+    it('6. 2 回目の提案の例外では awaiting_next へ戻す', async () => {
+      setManifest(ALL_BUT_DISK);
+      const session = await readySession();
+      const { op } = await executing(session);
+      await report(session.token, op, resultBody(op, FOLDER_OUTPUT));
+      synth.throwOnRead = true;
+      const failed = await call(OWNER, 'POST', base(session.id, '/proposals'), {});
+      synth.throwOnRead = false;
+      expect(failed.statusCode).toBe(500);
+      expect((await sessionRow(session.id))?.status).toBe('awaiting_next');
+    });
+
+    it('6. proposing の期限は AI の応答待ちより長く、過ぎたら sweep で止める', async () => {
+      const session = await readySession();
+      await call(OWNER, 'POST', base(session.id, '/consents/ai-input'), {
+        version: 'ai-input-consent/1',
+        ttlMinutes: 30,
+      });
+      config.DEEPSEEK_API_KEY = 'synthetic-ai-key';
+      let remainingMs = 0;
+      world.aiReply = { skillId: 'folder.summary', params: { target: 'T1' }, rationale: '確認' };
+      world.onAi = async () => {
+        const rows = await sql<{ ms: number }[]>`
+          SELECT (EXTRACT(EPOCH FROM proposing_expires_at - now()) * 1000)::float8 AS ms
+          FROM support_sessions WHERE id = ${session.id}
+        `;
+        remainingMs = rows[0]?.ms ?? 0;
+      };
+      await propose(session.id);
+      world.onAi = undefined;
+      expect(remainingMs).toBeGreaterThan(config.DEEPSEEK_TIMEOUT_MS);
+
+      const stalled = await readySession();
+      await sql`
+        UPDATE support_sessions
+        SET status = 'proposing', proposing_expires_at = now() - interval '1 second'
+        WHERE id = ${stalled.id}
+      `;
+      await sweepSupportSessions();
+      const row = await sessionRow(stalled.id);
+      expect(row?.status).toBe('stopped');
+      expect(row?.end_reason).toBe('proposing_timeout');
+      expect(await helperRevoked(stalled.helperId)).toBe(true);
+    });
+
+    it('6. 期限前の proposing は sweep で止めない', async () => {
+      const session = await readySession();
+      await sql`
+        UPDATE support_sessions
+        SET status = 'proposing', proposing_expires_at = now() + interval '1 minute'
+        WHERE id = ${session.id}
+      `;
+      await sweepSupportSessions();
+      expect((await sessionRow(session.id))?.status).toBe('proposing');
+      await sql`UPDATE support_sessions SET status = 'ready' WHERE id = ${session.id}`;
+    });
+
+    describe('7. フラグ無効では新テーブルに触らない（028 未適用の DB を再現）', () => {
+      const TABLES = [
+        'assist_executions',
+        'assist_proposals',
+        'ai_input_consents',
+        'operation_consents',
+        'support_sessions',
+      ];
+      async function withoutTables(run: () => Promise<void>) {
+        for (const table of TABLES) {
+          await sql.unsafe(`ALTER TABLE ${table} RENAME TO ${table}_hidden`);
+        }
+        try {
+          await run();
+        } finally {
+          for (const table of TABLES) {
+            await sql.unsafe(`ALTER TABLE ${table}_hidden RENAME TO ${table}`);
+          }
+        }
+      }
+
+      it('poll・フォルダ同意の終了・定期処理が失敗しない', async () => {
+        const folder = await activeFolderRequest();
+        config.ASSIST_SESSION_ENABLED = false;
+        await withoutTables(async () => {
+          const polled = await poll(folder.token);
+          expect(polled.revoked).toBe(false);
+          expect(polled).not.toHaveProperty('skillOps');
+
+          const revoked = await call(OWNER, 'POST', folderBase(folder.requestId, '/revoke'), {});
+          expect(revoked.statusCode, revoked.body).toBe(200);
+          expect(revoked.json().request.status).toBe('revoked');
+          const rows = await sql<{ status: string }[]>`
+            SELECT status FROM folder_access_requests WHERE id = ${folder.requestId}
+          `;
+          expect(rows[0]?.status).toBe('revoked');
+          expect(await helperRevoked(folder.helperId)).toBe(true);
+
+          await expect(sweepSupportSessions()).resolves.toBe(0);
+          await expect(sweepFolderAccess()).resolves.toBeGreaterThanOrEqual(0);
+        });
+      });
+
+      it('無効の間に同意が終わったセッションは、有効に戻した後の確認で止まる', async () => {
+        const session = await readySession();
+        config.ASSIST_SESSION_ENABLED = false;
+        expect(
+          (await call(OWNER, 'POST', folderBase(session.requestId, '/revoke'), {})).statusCode,
+        ).toBe(200);
+        expect((await sessionRow(session.id))?.status).toBe('ready');
+        config.ASSIST_SESSION_ENABLED = true;
+        const response = await call(OWNER, 'GET', base(session.id));
+        expect(response.json().session.status).toBe('stopped');
+      });
+    });
+
+    it('9. 進行中ステータスを複製しない（部分一意インデックスとも一致する）', async () => {
+      const dir = path.dirname(new URL(import.meta.url).pathname);
+      for (const file of ['routes.ts', 'propagate.ts', 'sweep.ts', 'service.ts']) {
+        const source = readFileSync(path.join(dir, file), 'utf8');
+        expect(source, file).not.toMatch(/'consent_pending',\s*'ready'/);
+      }
+      const rows = await sql<{ indexdef: string }[]>`
+        SELECT indexdef FROM pg_indexes WHERE indexname = 'support_sessions_open_case_idx'
+      `;
+      for (const status of OPEN_SESSION_STATUSES) {
+        expect(rows[0]?.indexdef).toContain(`'${status}'`);
+      }
+    });
+
+    describe('10. /support-sessions/mine', () => {
+      it('終了済みのセッションをロックしない（行ロック中でも待たずに返す）', async () => {
+        const session = await readySession();
+        await call(OWNER, 'POST', base(session.id, '/revoke'), {});
+        await sql.begin(async (tx) => {
+          await tx`SELECT id FROM support_sessions WHERE id = ${session.id} FOR UPDATE`;
+          await tx`SELECT id FROM folder_access_requests WHERE id = ${session.requestId} FOR UPDATE`;
+          const response = await call(OWNER, 'GET', '/api/support-sessions/mine');
+          expect(response.statusCode).toBe(200);
+          const found = response
+            .json()
+            .sessions.find((item: { id: string }) => item.id === session.id);
+          expect(found.status).toBe('revoked');
+          expect(found.endReason).toBe('requester_revoked');
+        });
+      }, 5000);
+
+      it('進行中は期限を反映し、提案と実行をセッションごとに分けて返す', async () => {
+        const first = await readySession();
+        const { proposal } = await propose(first.id);
+        const second = await readySession();
+        const executed = await executing(second);
+        await sql`UPDATE support_sessions SET expires_at = now() - interval '1 second' WHERE id = ${first.id}`;
+        const response = await call(OWNER, 'GET', '/api/support-sessions/mine');
+        const sessions = response.json().sessions as Record<string, any>[];
+        const a = sessions.find((item) => item.id === first.id);
+        const b = sessions.find((item) => item.id === second.id);
+        expect(a?.status).toBe('expired');
+        expect(a?.proposals.map((item: { id: string }) => item.id)).toEqual([proposal.id]);
+        expect(a?.executions).toEqual([]);
+        expect(b?.status).toBe('executing');
+        expect(b?.proposals.map((item: { id: string }) => item.id)).toEqual([executed.proposal.id]);
+        expect(b?.executions.map((item: { id: string }) => item.id)).toEqual([executed.op.opId]);
+        expect(b?.device?.hostname).toBe(HOST);
+      });
+
+      it('所有者が変わったセッションは返さず、状態も変えない', async () => {
+        const session = await readySession();
+        await sql`UPDATE case_handovers SET owner_email = ${OTHER_OWNER} WHERE id = ${session.handoverId}`;
+        const response = await call(OWNER, 'GET', '/api/support-sessions/mine');
+        const ids = response.json().sessions.map((item: { id: string }) => item.id);
+        expect(ids).not.toContain(session.id);
+        expect((await sessionRow(session.id))?.status).toBe('ready');
+      });
     });
   });
 

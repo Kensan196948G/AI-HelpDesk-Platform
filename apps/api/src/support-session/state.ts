@@ -19,6 +19,9 @@ export const ASSIST_LIMITS = {
   activePollSeconds: 5,
   /** 失効したトークンで結果を報告できる時間。helper の revoked_at が基準で、再送で延長しない。 */
   revokedReportHours: 24,
+  /** proposing の期限の下限。AI の応答待ちにも余裕を足す（proposingSeconds）。 */
+  minProposingSeconds: 120,
+  proposingGraceSeconds: 60,
 } as const;
 
 export const OPERATION_CONSENT_VERSION = 'operation-consent/1';
@@ -48,40 +51,51 @@ export function isOpenSession(status: string): boolean {
   return (OPEN_SESSION_STATUSES as readonly string[]).includes(status);
 }
 
-export type SessionEndReason =
+export const SESSION_END_REASONS = [
   // 本人
-  | 'resolved'
-  | 'requester_revoked'
-  | 'requester_declined'
+  'resolved',
+  'requester_revoked',
+  'requester_declined',
   // 担当者
-  | 'operator_stop'
+  'operator_stop',
   // 期限
-  | 'expired'
-  | 'approval_expired'
-  | 'execution_expired'
-  | 'execution_timeout'
+  'expired',
+  'approval_expired',
+  'execution_expired',
+  'execution_timeout',
+  'proposing_timeout',
   // 束縛（docs/62 の終了理由と同名）
-  | 'assignee_changed'
-  | 'session_changed'
-  | 'user_logged_off'
-  | 'helper_revoked'
-  | 'lease_conflict'
-  | 'device_mismatch'
-  | 'sid_mismatch'
-  | 'binding_changed'
-  | 'session_not_active'
+  'assignee_changed',
+  'session_changed',
+  'user_logged_off',
+  'helper_revoked',
+  'lease_conflict',
+  'device_mismatch',
+  'sid_mismatch',
+  'binding_changed',
+  'session_not_active',
   // 反復の停止条件（§8）
-  | 'proposal_limit'
-  | 'duplicate_proposal'
-  | 'no_progress'
-  | 'no_candidate'
-  | 'ai_consent_changed'
-  | 'execution_failed'
-  | 'verify_failed'
-  | 'unverifiable'
-  | 'result_mismatch'
-  | 'ai_stop'
-  | 'escalated';
+  'proposal_limit',
+  'duplicate_proposal',
+  'no_progress',
+  'no_candidate',
+  'ai_consent_changed',
+  'execution_failed',
+  'verify_failed',
+  'unverifiable',
+  'result_mismatch',
+  'ai_stop',
+  'escalated',
+] as const;
+export type SessionEndReason = (typeof SESSION_END_REASONS)[number];
+
+/** proposing の期限（秒）。AI の応答を待つ時間より必ず長くする。 */
+export function proposingSeconds(aiTimeoutMs: number): number {
+  return Math.max(
+    ASSIST_LIMITS.minProposingSeconds,
+    Math.ceil(aiTimeoutMs / 1000) + ASSIST_LIMITS.proposingGraceSeconds,
+  );
+}
 
 export function terminalStatusForSession(reason: SessionEndReason): TerminalSessionStatus {
   switch (reason) {

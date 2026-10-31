@@ -82,6 +82,17 @@ describe('出力の正規化', () => {
     expect(normalizeSkillOutput('disk.space', { volumes: 'x' })).toEqual({});
   });
 
+  it('disk.space は数値の freeGB を持つ要素だけを数える', () => {
+    expect(
+      normalizeSkillOutput('disk.space', {
+        volumes: [{ deviceId: 'C:', freeGB: null }, { deviceId: 'D:', freeGB: 5 }, null, 'x'],
+      }),
+    ).toEqual({ volumeCount: 1, minFreeGB: 5 });
+    expect(normalizeSkillOutput('disk.space', { volumes: [{ freeGB: null }] })).toEqual({
+      volumeCount: 0,
+    });
+  });
+
   it('未知の Skill と欠落は空', () => {
     expect(normalizeSkillOutput('unknown', { a: 1 })).toEqual({});
     expect(normalizeSkillOutput('folder.summary', null)).toBeNull();

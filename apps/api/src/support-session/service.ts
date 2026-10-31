@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { config } from '../config.js';
+import { sql } from '../db.js';
 import {
   activeViolation,
   endRequestTx,
@@ -30,7 +30,10 @@ import {
   type StartBody,
   type StartRejectCode,
 } from './contract.js';
-import { terminateSessionTx } from './propagate.js';
+import { assistEnabled, terminateSessionTx } from './propagate.js';
+
+export { assistEnabled };
+
 import {
   type ApprovedAssistSkill,
   findAssistSkill,
@@ -53,10 +56,6 @@ import {
  */
 
 export const REQUIRED_PRIVILEGE = 'standard_user';
-
-export function assistEnabled(): boolean {
-  return config.FOLDER_ACCESS_ENABLED && config.ASSIST_SESSION_ENABLED;
-}
 
 export interface SessionRow {
   id: string;
@@ -90,6 +89,7 @@ export interface SessionRow {
   created_at: Date;
   session_expired: boolean;
   operation_consent_expired: boolean;
+  proposing_expired: boolean;
   ai_consent_live: boolean;
 }
 
@@ -170,19 +170,32 @@ export interface ExecutionRow {
   run_overdue: boolean;
 }
 
+/** 期限の判定は DB の now() で行う。ロック付きの読み取りと一括の読み取りで共有する。 */
+const SESSION_FLAGS = sql`
+  (s.expires_at <= now()) AS session_expired,
+  (s.operation_consent_expires_at IS NOT NULL AND s.operation_consent_expires_at <= now())
+    AS operation_consent_expired,
+  (s.status = 'proposing' AND s.proposing_expires_at <= now()) AS proposing_expired,
+  (s.ai_input_consent_id IS NOT NULL AND s.ai_input_consent_expires_at > now()) AS ai_consent_live
+`;
+
 async function selectSessionForUpdate(tx: Tx, id: string): Promise<SessionRow | null> {
   const rows = await tx<SessionRow[]>`
-    SELECT s.*,
-      (s.expires_at <= now()) AS session_expired,
-      (s.operation_consent_expires_at IS NOT NULL AND s.operation_consent_expires_at <= now())
-        AS operation_consent_expired,
-      (s.ai_input_consent_id IS NOT NULL AND s.ai_input_consent_expires_at > now())
-        AS ai_consent_live
+    SELECT s.*, ${SESSION_FLAGS}
     FROM support_sessions s
     WHERE s.id = ${id}
     FOR UPDATE OF s
   `;
   return rows[0] ?? null;
+}
+
+/** ロックなしの一括読み取り（一覧の表示用）。 */
+export async function selectSessions(ids: readonly string[]): Promise<SessionRow[]> {
+  return sql<SessionRow[]>`
+    SELECT s.*, ${SESSION_FLAGS}
+    FROM support_sessions s
+    WHERE s.id = ANY(${[...ids]}::uuid[])
+  `;
 }
 
 /** 依頼 → セッションの順にロックして読む。 */
@@ -279,6 +292,11 @@ export async function applyLiveness(
   }
   if (session.session_expired || session.operation_consent_expired) {
     await stopSessionTx(tx, ctx, session, 'expired', actorEmail);
+    return;
+  }
+  // 提案の生成中にプロセスが止まると proposing のまま残る。止めて次へ進めないようにする。
+  if (session.proposing_expired) {
+    await stopSessionTx(tx, ctx, session, 'proposing_timeout', actorEmail);
     return;
   }
   const overdueProposals = await tx<{ id: string }[]>`
@@ -602,7 +620,7 @@ export interface AssistPollOutcome {
   nextPollSeconds: number | null;
 }
 
-/** 停止要求をまだ伝えていない実行を cancel として渡す（機能が無効でも止める）。 */
+/** 停止要求をまだ伝えていない実行を cancel として渡す。 */
 async function drainExecutionCancels(tx: Tx, helperId: string): Promise<string[]> {
   const rows = await tx<{ id: string }[]>`
     UPDATE assist_executions
@@ -623,7 +641,9 @@ async function drainExecutionCancels(tx: Tx, helperId: string): Promise<string[]
 export async function assistPollTx(tx: Tx, input: AssistPollInput): Promise<AssistPollOutcome> {
   const enabled = assistEnabled();
   const outcome: AssistPollOutcome = { enabled, skillOps: [], cancel: [], nextPollSeconds: null };
-  if (enabled && !input.revoked && input.requestId) {
+  // 無効なら新テーブルに触らない（028 未適用の DB でも poll を失敗させない）。
+  if (!enabled) return outcome;
+  if (!input.revoked && input.requestId) {
     const ctx = await loadContext(tx, input.requestId);
     const keys = await tx<{ id: string }[]>`
       SELECT id FROM support_sessions
@@ -861,8 +881,10 @@ function isAllowedFailureCode(code: string): boolean {
 }
 
 async function recordStopReport(tx: Tx, execution: ExecutionRow, body: SkillResultBody) {
-  if (!execution.stop_requested_at) return;
-  const outcome = body.stopOutcome ?? 'stop_unconfirmed';
+  // rejected は実行していないという申告なので、停止要求の有無によらず not_running。
+  const notRun = body.status === 'rejected';
+  if (!notRun && !execution.stop_requested_at) return;
+  const outcome = notRun ? 'not_running' : (body.stopOutcome ?? 'stop_unconfirmed');
   await tx`
     UPDATE assist_executions
     SET stop_outcome = ${outcome},
@@ -904,15 +926,17 @@ export async function recordResultTx(
   if (!locked) return { kind: 'missing' };
   const { ctx, session } = locked;
   const proposal = await selectProposalForUpdate(tx, key.proposal_id);
-  const execution = await selectExecutionForUpdate(tx, opId);
+  let execution = await selectExecutionForUpdate(tx, opId);
   if (!proposal || !execution) return { kind: 'missing' };
+  // 以降のクロージャから参照するので、絞り込み済みの値として持つ。
+  let current: ExecutionRow = execution;
 
   const audit = (action: string, extra: Record<string, unknown>) =>
     sessionAudit(tx, action, session, HELPER_ACTOR, {
       opId,
       proposalId: proposal.id,
-      skillId: execution.skill_id,
-      role: execution.role,
+      skillId: current.skill_id,
+      role: current.role,
       executionMode: body.executionMode,
       resultCode: body.resultCode,
       selfReported: true,
@@ -924,9 +948,9 @@ export async function recordResultTx(
   };
 
   // 二重報告は最初の記録を上書きしない。
-  if (execution.result_received_at) return notAccepted('DUPLICATE');
+  if (current.result_received_at) return notAccepted('DUPLICATE');
 
-  const output = normalizeSkillOutput(execution.skill_id, body.output);
+  const output = normalizeSkillOutput(current.skill_id, body.output);
   const store = async (fields: {
     status: string;
     evidence: boolean;
@@ -956,12 +980,12 @@ export async function recordResultTx(
       WHERE id = ${opId}
     `;
     await mergePartialEffect(tx, opId, body.partialEffect ?? []);
-    await recordStopReport(tx, execution, body);
+    await recordStopReport(tx, current, body);
   };
 
   // 実行していないという申告（署名不正など）。証拠にならず、次へ進まない。
   if (body.status === 'rejected') {
-    if (execution.status !== 'delivered') return notAccepted('NOT_DELIVERED');
+    if (current.status !== 'delivered') return notAccepted('NOT_DELIVERED');
     await store({
       status: 'rejected_by_helper',
       evidence: false,
@@ -976,17 +1000,21 @@ export async function recordResultTx(
   }
 
   // /start を通っていない結果は実行の証拠にならない（内容も保存しない）。
-  if (!execution.started_at) return notAccepted('NOT_STARTED');
+  if (!current.started_at) return notAccepted('NOT_STARTED');
 
   // 遅延結果: 保存するが次へ進めない（§10）。
   await applyLiveness(tx, ctx, session, HELPER_ACTOR);
+  // 期限切れや停止を発火させた場合は状態と stop_requested_at が変わるので読み直す。
+  execution = await selectExecutionForUpdate(tx, opId);
+  if (!execution) return { kind: 'missing' };
+  current = execution;
   const late =
     !isOpenSession(session.status) ||
-    execution.status !== 'executing' ||
-    Boolean(execution.stop_requested_at);
+    current.status !== 'executing' ||
+    Boolean(current.stop_requested_at);
   if (late) {
     await store({
-      status: execution.status === 'executing' ? 'failed' : execution.status,
+      status: current.status === 'executing' ? 'failed' : current.status,
       evidence: false,
       late: true,
       resultCode: body.resultCode,
@@ -1006,14 +1034,14 @@ export async function recordResultTx(
       verifyReason: 'not_real',
     });
     await audit('support_session.result', { result: 'not_real' });
-    await markModifyUnknown(tx, execution, proposal);
+    await markModifyUnknown(tx, current, proposal);
     await stopSessionTx(tx, ctx, session, 'unverifiable', HELPER_ACTOR);
     return { kind: 'not_accepted', reason: 'NOT_REAL' };
   }
 
   // OS の実行主体（自己申告）が束縛と違う。
   if (body.actorSid !== session.sid) {
-    await markModifyUnknown(tx, execution, proposal);
+    await markModifyUnknown(tx, current, proposal);
     await endRequestTx(tx, ctx, 'sid_mismatch', HELPER_ACTOR);
     await reload(tx, session);
     await tx`
@@ -1026,7 +1054,7 @@ export async function recordResultTx(
     return { kind: 'not_accepted', reason: 'SID_MISMATCH' };
   }
   if (body.sessionId !== session.windows_session_id) {
-    await markModifyUnknown(tx, execution, proposal);
+    await markModifyUnknown(tx, current, proposal);
     await endRequestTx(tx, ctx, 'session_changed', HELPER_ACTOR);
     await reload(tx, session);
     await tx`
@@ -1040,11 +1068,11 @@ export async function recordResultTx(
   }
 
   // 改変（op と別物の報告）。ハッシュ不一致で検証を通さない（resolve の取込処理は使わない）。
-  const successCode = ASSIST_SKILL_SUCCESS_CODES[execution.skill_id];
+  const successCode = ASSIST_SKILL_SUCCESS_CODES[current.skill_id];
   const tampered =
-    body.skillId !== execution.skill_id ||
-    body.skillVersion !== execution.skill_version ||
-    body.scriptHash !== execution.script_hash ||
+    body.skillId !== current.skill_id ||
+    body.skillVersion !== current.skill_version ||
+    body.scriptHash !== current.script_hash ||
     (body.status === 'ok' && body.exitCode !== 0) ||
     (body.status === 'ok' && body.resultCode !== 'OK' && body.resultCode !== successCode) ||
     (body.status !== 'ok' && !isAllowedFailureCode(body.resultCode));
@@ -1058,7 +1086,7 @@ export async function recordResultTx(
       verifyReason: 'result_mismatch',
     });
     await audit('support_session.result', { result: 'result_mismatch' });
-    await markModifyUnknown(tx, execution, proposal);
+    await markModifyUnknown(tx, current, proposal);
     await stopSessionTx(tx, ctx, session, 'result_mismatch', HELPER_ACTOR);
     return { kind: 'not_accepted', reason: 'RESULT_MISMATCH' };
   }
@@ -1074,7 +1102,7 @@ export async function recordResultTx(
       verifyReason: 'execution_failed',
     });
     await audit('support_session.result', { result: body.status });
-    await markModifyUnknown(tx, execution, proposal);
+    await markModifyUnknown(tx, current, proposal);
     await tx`
       UPDATE assist_proposals SET status = 'failed', verify_ok = false,
         verify_reason = 'execution_failed'
@@ -1085,7 +1113,7 @@ export async function recordResultTx(
   }
 
   // 成功はサーバの固定条件で判定する（§7）。
-  const evaluation = evaluateVerify(execution.check_definition, output);
+  const evaluation = evaluateVerify(current.check_definition, output);
   const stored = {
     status: 'completed',
     evidence: true,
@@ -1098,7 +1126,7 @@ export async function recordResultTx(
   await audit('support_session.result', { result: 'ok', verifyOk: evaluation.ok });
 
   if (evaluation.ok !== true) {
-    await markModifyUnknown(tx, execution, proposal);
+    await markModifyUnknown(tx, current, proposal);
     const reason = evaluation.ok === false ? 'verify_failed' : 'unverifiable';
     await tx`
       UPDATE assist_proposals SET status = 'failed', verify_ok = ${evaluation.ok},
@@ -1110,7 +1138,7 @@ export async function recordResultTx(
   }
 
   // 次の確認操作（承認時に提示したものだけ。提案の枠を消費しない。§8）。
-  const nextIndex = execution.role === 'main' ? 0 : execution.verify_index + 1;
+  const nextIndex = current.role === 'main' ? 0 : current.verify_index + 1;
   if (nextIndex < proposal.verify.ops.length) {
     await enqueueExecutionTx(tx, ctx, session, proposal, 'verify', nextIndex);
     await tx`UPDATE assist_proposals SET status = 'verifying' WHERE id = ${proposal.id}`;

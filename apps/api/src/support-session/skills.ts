@@ -380,8 +380,9 @@ export function normalizeSkillOutput(
     const free = volumes
       .map((volume) => (volume as { freeGB?: unknown } | null)?.freeGB)
       .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+    // 容量を取得できたドライブだけを数える（freeGB が null の要素で成功にしない）。
     return {
-      volumeCount: volumes.length,
+      volumeCount: free.length,
       ...(free.length > 0 ? { minFreeGB: Math.min(...free) } : {}),
     };
   }

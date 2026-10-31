@@ -1,25 +1,23 @@
 import { config } from '../config.js';
 import { sql } from '../db.js';
 import { jsonbValue } from '../lib/jsonb-value.js';
+import { assistEnabled } from './propagate.js';
 import { applyLiveness, lockSession, sessionAudit } from './service.js';
-import { ASSIST_LIMITS } from './state.js';
+import { ASSIST_LIMITS, OPEN_SESSION_STATUSES } from './state.js';
 
-/**
- * 期限の定期処理（docs/63 §10）。DB だけを触る。機能フラグが無効でも実行する
- * （無効化の後にセッションや取消を残さない）。
- */
+/** 期限の定期処理（docs/63 §10）。DB だけを触る。機能フラグが無効の間は何もしない。 */
 export async function sweepSupportSessions(): Promise<number> {
+  // 無効なら新テーブルに触らない（028 未適用の DB で失敗し続けない）。有効に戻せば追いつく。
+  if (!assistEnabled()) return 0;
   const due = await sql<{ id: string }[]>`
     SELECT DISTINCT s.id
     FROM support_sessions s
     LEFT JOIN assist_proposals p ON p.support_session_id = s.id AND p.status = 'proposed'
     LEFT JOIN assist_executions e ON e.support_session_id = s.id
-    WHERE s.status IN (
-        'binding_pending', 'consent_pending', 'ready', 'proposing', 'awaiting_approval',
-        'approved', 'executing', 'verifying', 'awaiting_next', 'resolve_confirm'
-      )
+    WHERE s.status = ANY(${[...OPEN_SESSION_STATUSES]}::text[])
       AND (
         s.expires_at <= now()
+        OR (s.status = 'proposing' AND s.proposing_expires_at <= now())
         OR s.operation_consent_expires_at <= now()
         OR p.approval_expires_at <= now()
         OR (e.status IN ('queued', 'delivered') AND e.expires_at <= now())

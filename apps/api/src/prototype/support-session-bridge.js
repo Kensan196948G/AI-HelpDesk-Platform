@@ -36,6 +36,8 @@
     approval_expired: '確認の期限（5 分）が切れました。実行していません。',
     execution_expired: '実行の期限が切れました。',
     execution_timeout: '時間内に結果が届きませんでした。成功とは扱いません。',
+    proposing_timeout: '提案を作成できないまま時間が過ぎたため停止しました。',
+    ai_consent_changed: 'AI 入力の同意が変わったため停止しました。提案は使っていません。',
     assignee_changed: '担当者または案件の状態が変わりました。',
     session_changed: 'Windows のセッションが変わりました。',
     user_logged_off: 'ログオフ、または端末との接続が切れました。',
@@ -81,8 +83,9 @@
       else if (key === 'onclick') element.addEventListener('click', value);
       else if (key === 'onchange') element.addEventListener('change', value);
       else if (key === 'value') element.value = value;
-      else if (key === 'disabled' || key === 'selected') element[key] = Boolean(value);
-      else element.setAttribute(key, value);
+      else if (key === 'disabled' || key === 'selected' || key === 'checked') {
+        element[key] = Boolean(value);
+      } else element.setAttribute(key, value);
     }
     for (const child of children.flat()) {
       if (child === null || child === undefined || child === false) continue;
@@ -260,6 +263,8 @@
         { class: 'u-small', style: 'display:block;margin-top:6px' },
         h('input', {
           type: 'checkbox',
+          // 再描画でも保持している値を表示する（見た目と送信内容を一致させる）。
+          checked: form.ai,
           onchange: (event) => {
             form.ai = Boolean(event.target.checked);
           },

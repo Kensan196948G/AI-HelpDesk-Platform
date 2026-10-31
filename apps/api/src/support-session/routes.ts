@@ -31,6 +31,7 @@ import {
   type ProposalRow,
   REQUIRED_PRIVILEGE,
   type SessionRow,
+  selectSessions,
   sessionAudit,
   setSessionStatus,
   stopSessionTx,
@@ -47,9 +48,11 @@ import {
   ASSIST_LIMITS,
   FOLDER_CONSENT_VERSION,
   isOpenSession,
+  OPEN_SESSION_STATUSES,
   OPERATION_CONSENT_VERSION,
   OPERATION_SCOPES,
   type OperationScope,
+  proposingSeconds,
 } from './state.js';
 
 /**
@@ -197,6 +200,16 @@ async function sessionDto(
   const executions = await sql<ExecutionRow[]>`
     SELECT * FROM assist_executions WHERE support_session_id = ${session.id} ORDER BY created_at
   `;
+  return buildSessionDto(session, ctx, view, proposals, executions);
+}
+
+function buildSessionDto(
+  session: SessionRow,
+  ctx: RequestContext | null,
+  view: 'assignee' | 'requester',
+  proposals: readonly ProposalRow[],
+  executions: readonly ExecutionRow[],
+) {
   return {
     id: session.id,
     handoverId: session.handover_id,
@@ -367,6 +380,27 @@ function buildVerifyDefinition(
   return { mainCheck: { ...approved.skill.mainCheck(params) }, ops };
 }
 
+/**
+ * 提案の生成中の例外で、commit 済みの proposing を元へ戻す。
+ * 戻せない場合（DB 障害やプロセスの停止）は proposing_expires_at の期限で止まる。
+ */
+async function restoringProposing<T>(
+  id: string,
+  previousStatus: string,
+  run: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await run();
+  } catch (error) {
+    await sql`
+      UPDATE support_sessions
+      SET status = ${previousStatus}, proposing_expires_at = NULL, updated_at = now()
+      WHERE id = ${id} AND status = 'proposing'
+    `.catch(() => undefined);
+    throw error;
+  }
+}
+
 function publicRationale(text: string): string {
   return redactPII(text).text.slice(0, 200);
 }
@@ -406,10 +440,7 @@ async function assignRoutes(app: FastifyInstance): Promise<void> {
           if (!ctx) return { kind: 'inactive' as const };
           const existing = await tx<{ id: string }[]>`
         SELECT id FROM support_sessions
-        WHERE case_id = ${ctx.case_id} AND status IN (
-          'binding_pending', 'consent_pending', 'ready', 'proposing', 'awaiting_approval',
-          'approved', 'executing', 'verifying', 'awaiting_next', 'resolve_confirm'
-        )
+        WHERE case_id = ${ctx.case_id} AND status = ANY(${[...OPEN_SESSION_STATUSES]}::text[])
       `;
           if (existing[0]) return { kind: 'existing' as const, id: existing[0].id };
           if (
@@ -506,19 +537,49 @@ async function requesterRoutes(app: FastifyInstance): Promise<void> {
   // 本人の状態確認。進行中すべてと、直近に終了したものを返す。
   app.get('/support-sessions/mine', { preHandler: authenticateUi }, async (request) => {
     const email = requireEmail(request);
-    const rows = await sql<{ id: string }[]>`
-      SELECT id FROM support_sessions
-      WHERE requester_email = ${email}
-        AND (ended_at IS NULL OR ended_at > now() - interval '10 minutes')
-      ORDER BY created_at DESC
+    // 5 秒ごとに呼ばれるので、書き込みとロックは進行中のものだけにする。所有者の確認も一括で行う。
+    const listed = await sql<{ id: string; status: string }[]>`
+      SELECT s.id, s.status
+      FROM support_sessions s
+      JOIN case_handovers h ON h.id = s.handover_id
+      WHERE s.requester_email = ${email}
+        AND h.owner_email = ${email}
+        AND (s.ended_at IS NULL OR s.ended_at > now() - interval '10 minutes')
+      ORDER BY s.created_at DESC
       LIMIT 10
     `;
+    const contexts = new Map<string, RequestContext>();
+    for (const row of listed) {
+      if (!isOpenSession(row.status)) continue;
+      const { ctx } = await refresh(row.id, email);
+      contexts.set(row.id, ctx);
+    }
+    const ids = listed.map((row) => row.id);
+    const sessionRows = await selectSessions(ids);
+    const proposals = await sql<ProposalRow[]>`
+      SELECT * FROM assist_proposals
+      WHERE support_session_id = ANY(${ids}::uuid[])
+      ORDER BY step_seq
+    `;
+    const executions = await sql<ExecutionRow[]>`
+      SELECT * FROM assist_executions
+      WHERE support_session_id = ANY(${ids}::uuid[])
+      ORDER BY created_at
+    `;
+    const byId = new Map(sessionRows.map((row) => [row.id, row]));
     const sessions = [];
-    for (const { id } of rows) {
-      const owner = await loadOwnership(id);
-      if (owner.requester_email !== email || owner.owner_email !== email) continue;
-      const { session, ctx } = await refresh(id, email);
-      sessions.push(await sessionDto(session, ctx, 'requester'));
+    for (const id of ids) {
+      const session = byId.get(id);
+      if (!session) continue;
+      sessions.push(
+        buildSessionDto(
+          session,
+          contexts.get(id) ?? null,
+          'requester',
+          proposals.filter((row) => row.support_session_id === id),
+          executions.filter((row) => row.support_session_id === id),
+        ),
+      );
     }
     return { ok: true, sessions };
   });
@@ -785,8 +846,16 @@ async function sharedRoutes(app: FastifyInstance): Promise<void> {
           return { kind: 'limit' as const, session };
         }
         const snapshot = await snapshotForProposing(tx, ctx, session);
-        await setSessionStatus(tx, session, 'proposing');
-        return { kind: 'ok' as const, snapshot };
+        const previousStatus = session.status;
+        await tx`
+          UPDATE support_sessions
+          SET status = 'proposing', updated_at = now(),
+              proposing_expires_at = now() + (${proposingSeconds(config.DEEPSEEK_TIMEOUT_MS)}::int
+                * interval '1 second')
+          WHERE id = ${id}
+        `;
+        session.status = 'proposing';
+        return { kind: 'ok' as const, snapshot, previousStatus };
       });
       if (!begun) throw notFound('セッションが見つかりません。');
       if (begun.kind === 'state')
@@ -799,82 +868,82 @@ async function sharedRoutes(app: FastifyInstance): Promise<void> {
         );
       }
 
-      const pick = await pickCandidate(begun.snapshot);
-
-      const outcome = await sql.begin(async (tx) => {
-        const locked = await lockSession(tx, id);
-        if (!locked) return null;
-        const { ctx, session } = locked;
-        await applyLiveness(tx, ctx, session, email);
-        if (session.status !== 'proposing') return { kind: 'state' as const, session };
-        // AI へ問い合わせたら、応答の種類によらず最初に同意を照合する。取消前の同意で得た応答で
-        // 状態を進めない（再同意でも ID が変わる）。ルールベースへは切り替えない。
-        if (
-          begun.snapshot.useAi &&
-          (!session.ai_consent_live ||
-            session.ai_input_consent_id !== begun.snapshot.aiConsentId ||
-            (session.ai_input_consent_expires_at?.toISOString() ?? null) !==
-              begun.snapshot.aiConsentExpiresAt)
-        ) {
-          await stopSessionTx(tx, ctx, session, 'ai_consent_changed', email);
-          return { kind: 'stopped' as const, reason: 'ai_consent_changed' };
-        }
-        if (pick.kind === 'stop') {
-          await stopSessionTx(tx, ctx, session, pick.reason, email);
-          return { kind: 'stopped' as const, reason: pick.reason };
-        }
-        if (pick.kind === 'confirm') {
-          await setSessionStatus(tx, session, 'resolve_confirm');
-          return { kind: 'ok' as const };
-        }
-        // AI の候補も含め、この場で登録・型・範囲を再検証する（§5）。
-        const approved = resolveApprovedSkill(pick.skillId);
-        const scope = session.operation_consent_scope as OperationScope | null;
-        if (
-          !approved ||
-          approved.skill.verifyOnly ||
-          !scope ||
-          !isWithinScope(approved.skill, scope) ||
-          !validateParams(approved.skill.definition.paramsSchema, pick.params).ok
-        ) {
-          await stopSessionTx(tx, ctx, session, 'no_candidate', email);
-          return { kind: 'stopped' as const, reason: 'no_candidate' };
-        }
-        const verify = buildVerifyDefinition(approved, pick.params);
-        if (!verify) {
-          await stopSessionTx(tx, ctx, session, 'no_candidate', email);
-          return { kind: 'stopped' as const, reason: 'no_candidate' };
-        }
-        const proposalId =
-          (await tx<{ id: string }[]>`SELECT gen_random_uuid() AS id`)[0]?.id ?? '';
-        const nonce = newNonce();
-        const expiry = await tx<{ expires_at: Date }[]>`
+      const outcome = await restoringProposing(id, begun.previousStatus, async () => {
+        const pick = await pickCandidate(begun.snapshot);
+        return sql.begin(async (tx) => {
+          const locked = await lockSession(tx, id);
+          if (!locked) return null;
+          const { ctx, session } = locked;
+          await applyLiveness(tx, ctx, session, email);
+          if (session.status !== 'proposing') return { kind: 'state' as const, session };
+          // AI へ問い合わせたら、応答の種類によらず最初に同意を照合する。取消前の同意で得た応答で
+          // 状態を進めない（再同意でも ID が変わる）。ルールベースへは切り替えない。
+          if (
+            begun.snapshot.useAi &&
+            (!session.ai_consent_live ||
+              session.ai_input_consent_id !== begun.snapshot.aiConsentId ||
+              (session.ai_input_consent_expires_at?.toISOString() ?? null) !==
+                begun.snapshot.aiConsentExpiresAt)
+          ) {
+            await stopSessionTx(tx, ctx, session, 'ai_consent_changed', email);
+            return { kind: 'stopped' as const, reason: 'ai_consent_changed' };
+          }
+          if (pick.kind === 'stop') {
+            await stopSessionTx(tx, ctx, session, pick.reason, email);
+            return { kind: 'stopped' as const, reason: pick.reason };
+          }
+          if (pick.kind === 'confirm') {
+            await setSessionStatus(tx, session, 'resolve_confirm');
+            return { kind: 'ok' as const };
+          }
+          // AI の候補も含め、この場で登録・型・範囲を再検証する（§5）。
+          const approved = resolveApprovedSkill(pick.skillId);
+          const scope = session.operation_consent_scope as OperationScope | null;
+          if (
+            !approved ||
+            approved.skill.verifyOnly ||
+            !scope ||
+            !isWithinScope(approved.skill, scope) ||
+            !validateParams(approved.skill.definition.paramsSchema, pick.params).ok
+          ) {
+            await stopSessionTx(tx, ctx, session, 'no_candidate', email);
+            return { kind: 'stopped' as const, reason: 'no_candidate' };
+          }
+          const verify = buildVerifyDefinition(approved, pick.params);
+          if (!verify) {
+            await stopSessionTx(tx, ctx, session, 'no_candidate', email);
+            return { kind: 'stopped' as const, reason: 'no_candidate' };
+          }
+          const proposalId =
+            (await tx<{ id: string }[]>`SELECT gen_random_uuid() AS id`)[0]?.id ?? '';
+          const nonce = newNonce();
+          const expiry = await tx<{ expires_at: Date }[]>`
         SELECT LEAST(
           now() + (${ASSIST_LIMITS.approvalMinutes}::int * interval '1 minute'),
           ${session.expires_at}::timestamptz,
           ${session.operation_consent_expires_at}::timestamptz
         ) AS expires_at
       `;
-        const approvalExpiresAt = expiry[0]?.expires_at;
-        if (!approvalExpiresAt) throw new Error('期限の計算に失敗しました。');
-        const stepSeq = session.proposal_count + 1;
-        const hash = computeAssistApprovalHash(
-          buildApprovalPayload(ctx, session, {
-            id: proposalId,
-            step_seq: stepSeq,
-            skill_id: pick.skillId,
-            skill_version: approved.version,
-            content_hash: approved.contentHash,
-            script_hash: approved.scriptHash,
-            params: pick.params,
-            required_privilege: REQUIRED_PRIVILEGE,
-            nonce,
-            approval_expires_at: approvalExpiresAt,
-            verify,
-          }),
-        );
-        const { skill } = approved;
-        await tx`
+          const approvalExpiresAt = expiry[0]?.expires_at;
+          if (!approvalExpiresAt) throw new Error('期限の計算に失敗しました。');
+          const stepSeq = session.proposal_count + 1;
+          const hash = computeAssistApprovalHash(
+            buildApprovalPayload(ctx, session, {
+              id: proposalId,
+              step_seq: stepSeq,
+              skill_id: pick.skillId,
+              skill_version: approved.version,
+              content_hash: approved.contentHash,
+              script_hash: approved.scriptHash,
+              params: pick.params,
+              required_privilege: REQUIRED_PRIVILEGE,
+              nonce,
+              approval_expires_at: approvalExpiresAt,
+              verify,
+            }),
+          );
+          const { skill } = approved;
+          await tx`
         INSERT INTO assist_proposals (
           id, support_session_id, step_seq, skill_id, skill_version, content_hash, script_hash,
           params, effect, required_privilege, risk_level, target_ref, title, purpose, impact,
@@ -890,20 +959,21 @@ async function sharedRoutes(app: FastifyInstance): Promise<void> {
           ${jsonbValue(verify)}, ${hash}, ${nonce}, ${approvalExpiresAt}
         )
       `;
-        await tx`
+          await tx`
         UPDATE support_sessions
         SET status = 'awaiting_approval', proposal_count = ${stepSeq}, updated_at = now()
         WHERE id = ${id}
       `;
-        session.status = 'awaiting_approval';
-        await sessionAudit(tx, 'support_session.proposal', session, email, {
-          proposalId,
-          stepSeq,
-          skillId: pick.skillId,
-          effect: skill.effect,
-          proposalSource: pick.source,
+          session.status = 'awaiting_approval';
+          await sessionAudit(tx, 'support_session.proposal', session, email, {
+            proposalId,
+            stepSeq,
+            skillId: pick.skillId,
+            effect: skill.effect,
+            proposalSource: pick.source,
+          });
+          return { kind: 'ok' as const };
         });
-        return { kind: 'ok' as const };
       });
       if (!outcome) throw notFound('セッションが見つかりません。');
       if (outcome.kind === 'state') {
