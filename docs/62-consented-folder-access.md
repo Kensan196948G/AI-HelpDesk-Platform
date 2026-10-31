@@ -288,4 +288,64 @@ pwsh -NoProfile -File scripts/windows/tests/folder-helper.tests.ps1
 - 同じユーザーの複数セッションでは `MultipleInstances IgnoreNew` により 1 つしか動かない。
 - op の期限判定は端末の時計に依存する。
 
-## 10. 実機検証の手順
+## 10. 実機検証の結果と手順（2026-10-31、Windows 11 Pro + PowerShell 5.1）
+
+### 10-1. 検証環境
+
+- 検証端末 1 台（ドメイン参加、MeshAgent 導入済み）。相談者役はローカルの検証ユーザー。実在社員のプロファイルには触れていない。
+- 検証専用 DB + ループバックの API。ヘルパー用パスだけを通すプロキシ + 一時 Quick Tunnel（DNS 変更なし）。検証後に DB とトンネルを削除した。
+- 相談者役の Access アカウントには依頼者自身のアカウントを検証 DB 内でのみ使い、名簿は読み取り専用で参照した。担当者役はデモ用アカウント。
+- 検証用 UI は Playwright（ヘッドレス）で操作した。
+
+### 10-2. 実機で確認した結果
+
+| 観点 | 結果 |
+|---|---|
+| 正常系 | ヘルパー導入 → 登録 → コード入力 → MachineGuid と `quser`（日本語版）の照合 → 同意 → 一覧 7 件 → 終了 / 取消 → 監査 |
+| 実行主体（OS の根拠） | `Win32_Process.GetOwnerSid` のヘルパー所有者 SID のハッシュが同意の SID と一致。SYSTEM ではない。非管理者トークン |
+| 実行主体（比較） | RSP コマンドと Mesh Terminal は `S-1-5-18`。同じ経路で読まない理由の実測 |
+| SYSTEM 起動 | 終了コード 2 で拒否 |
+| ACL 拒否 | 本人に権限のないフォルダは `ACCESS_DENIED`。昇格せず、`FILE_FLAG_BACKUP_SEMANTICS` でも回避されない |
+| リンク | ジャンクション・シンボリックリンクの指定は `REPARSE_REJECTED`。子としては種別 `link` のみ返し、辿らない |
+| 入力拒否 | ADS、`..`、UNC、デバイスパス、絶対パス、ワイルドカード、予約デバイス名、末尾ドットを拒否。存在しない場合は `NOT_FOUND`、ファイル指定は `NOT_A_DIRECTORY` |
+| 上限 | 600 件のフォルダで `partial` / `truncated=true`（349 件で 32KB に到達） |
+| 権限 | 他人・担当者によるペア/同意/取消は 403、approver のみの list/result は 403、相談者の list は 403、同意前の list は 409 |
+| コード | 誤コード 400、再利用 409 |
+| 取消 | 本人取消で 409、結果行 0、ヘルパー失効、端末のヘルパーは自動停止 |
+| 期限切れ | 1 分の同意が失効し 409（`expired`） |
+| 担当変更 | 旧担当 409、結果行 0、ヘルパー失効（`assignee_changed`） |
+| セッション切断 | 切断中の一覧は `SESSION_NOT_ACTIVE`、同意は保持。切断セッションでの登録は `NOT_LOGGED_ON` |
+| 通信断 | ヘルパー停止から 173 秒で `user_logged_off` |
+| 監査 | パス・ファイル名を含まないことを DB で確認 |
+| 画面 | 相談者・担当者の両パネルで状態、確認対象、許可範囲、取消、一覧表示、終了を確認。`S`、`localStorage`、サーバ状態にファイル名なし |
+
+### 10-3. 実機で未確認（完成とは言えない項目）
+
+| 項目 | 理由 |
+|---|---|
+| 貸与端末の実照合 | Mirai-Info のサービストークン未発行。すべて検証モード（`lease_status='unverified'`）で実施。mock のみ |
+| 実際の別ユーザー（別 SID・ユーザー切替） | 第 2 ユーザーはポリシーでログオン拒否（タスク スケジューラ イベント 104）。mock のみ |
+| 実ログオフ | 検証ユーザーの既存セッションを壊すため未実施。heartbeat 途絶で代替確認 |
+| RDP・複数ログオン | 検証環境なし。mock のみ |
+| OneDrive（リダイレクト、ハイドレートなし） | 検証端末で未確認。§9.4 の例外は未承認 |
+| 本人の実画面でのコード表示・操作 | ヘッドレス操作。コードは検証用に端末のログから取得した |
+| `mesh_node_id` の実値 | RSP PR が未配備 |
+
+### 10-4. 実機で判明した注意点
+
+- **起動の不安定さ**: タスクの起動で、CPU 0 のまま進まない事象が 1 回、`0xC0000142` が 2 回発生した。いずれも再現条件は未解明（後者はセッション再接続の前後）。
+  安全側に倒れる（ヘルパーなしでは先へ進まない）が、運用上の課題である。インストーラに再試行（3 回）を追加した。再試行の実機確認は未実施。
+- **端末のオンラインが断続的**: 検証中に 1 回オフラインになり、RSP が `AGENT_NO_REPLY` を返した。
+- **RSP の残留**: 固定テンプレートの出力（MachineGuid、`quser` のユーザー名）は RSP の `command_logs` に残る。
+- **ペアリングのやり直し**: コードを失った状態で再導入しても、トークンがあると再登録しない。`uninstall-folder-helper.ps1` が先に必要。
+- **RSP の危険判定**: 後片付けの再帰削除は `DANGEROUS_BLOCKED` になる。作成物を正確なパスで 1 件ずつ消す。
+
+### 10-5. 再現手順
+
+1. 検証専用 DB を作り、`NODE_ENV=development`、`AUTH_MODE=cloudflare-access`、`ACCESS_JWT_MODE=off`、`FOLDER_ACCESS_ENABLED=true`、`FOLDER_ACCESS_ALLOW_UNVERIFIED_LEASE=true` で API をループバックに起動する。
+2. 端末から到達できる経路を用意する（ヘルパー用パス以外を拒否するプロキシ経由。Quick Tunnel は `--config` に空ファイルを指定しないと `/etc/cloudflared` の ingress で 404 になる）。
+3. 検証ユーザーのセッションをアクティブにする（SYSTEM から `tscon <id> /dest:console`）。合成フォルダを作る。
+4. 本人権限で `install-folder-helper.ps1 -ServerUrl <url>` を実行する。
+5. `scripts/verify/folder-access-real.mjs` で `seed` → `create` → `pair` → `consent` → `list` → `result` → `revoke` を順に実行する（`AIHD_BASE`、`AIHD_OWNER`、`AIHD_OPERATOR`、`AIHD_HOSTNAME`、`DATABASE_URL` を指定）。
+6. 範囲検査は本人権限で `scripts/windows/tests/folder-helper-realfs.ps1` を実行する（名前を出力しない）。
+7. 後片付け: `uninstall-folder-helper.ps1`、作成物の個別削除、`tsdiscon`、DB とトンネルの削除。

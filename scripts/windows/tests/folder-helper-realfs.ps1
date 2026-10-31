@@ -75,7 +75,7 @@ foreach ($case in $cases) {
       $record.status = $outcome.Status; $record.reason = $outcome.Reason
       $record.truncated = $outcome.Truncated; $record.count = @($outcome.Entries).Count
       $record.types = @(@($outcome.Entries) | ForEach-Object { $_.type } | Group-Object | ForEach-Object { "$($_.Name)=$($_.Count)" }) -join ','
-      $record.reparseChildren = @(@($outcome.Entries) | Where-Object { $_.type -eq 'reparse' -or ($_.attrs -and $_.attrs.reparse) }).Count
+      $record.linkChildren = @(@($outcome.Entries) | Where-Object { $_.type -eq 'link' }).Count
     } catch { $record.status = 'exception'; $record.reason = $_.Exception.GetType().Name }
   }
   $record.elapsedMs = $stopwatch.ElapsedMilliseconds
