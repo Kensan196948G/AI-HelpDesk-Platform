@@ -372,14 +372,25 @@ Assert-Equal 'limits: 不正な値は固定上限' '500/32768/15' ('{0}/{1}/{2}'
 $l = Resolve-ListLimits -Op ([pscustomobject]@{})
 Assert-Equal 'limits: 省略は固定上限' '500/32768/15' ('{0}/{1}/{2}' -f $l.MaxEntries, $l.MaxBytes, $l.MaxSeconds)
 
+$script:DepsOnList = $null
+$script:DescribeHook = $null
+$script:DescribeCalls = 0
+$script:SearchPath = $null
 function New-FakeLister {
   param([object[]]$Items, [int]$EndError = 18, [int]$OpenError = 0)
   $lister = [pscustomobject]@{ Items = $Items; Index = 0; LastError = $OpenError; EndError = $EndError; Disposed = $false }
   $lister | Add-Member -MemberType ScriptMethod -Name Next -Value {
+    if ($null -ne $script:DepsOnList) { $hook = $script:DepsOnList; $script:DepsOnList = $null; & $hook }
     if ($this.Index -ge $this.Items.Count) { $this.LastError = $this.EndError; return $null }
     $item = $this.Items[$this.Index]; $this.Index++; return $item
   }
   $lister | Add-Member -MemberType ScriptMethod -Name Dispose -Value { $this.Disposed = $true }
+  # 既定は FakeFs の現状を返す。DescribeHook があれば呼び出し回数ごとに差し替える。
+  $lister | Add-Member -MemberType ScriptMethod -Name Describe -Value {
+    $script:DescribeCalls++
+    if ($null -ne $script:DescribeHook) { return (& $script:DescribeHook $script:DescribeCalls) }
+    return (& $fakeProbe $script:SearchPath $true)
+  }
   return $lister
 }
 function New-RawItems {
@@ -450,9 +461,11 @@ function New-OpDeps {
   $script:DepsOnList = $OnList
   $script:DepsExpired = $Expired
   $script:SearchPath = $null
+  $script:DescribeHook = $null
+  $script:DescribeCalls = 0
   return @{
     Probe           = $fakeProbe
-    OpenLister      = { param($p) $script:SearchPath = $p; if ($null -ne $script:DepsOnList) { & $script:DepsOnList }; return $script:DepsLister }
+    OpenDirectory   = { param($p) $script:SearchPath = $p; return $script:DepsLister }
     GetKnownFolder  = { param($root) 'C:\Users\a\' + $root }
     GetProfilePath  = { 'C:\Users\a' }
     GetOneDrivePath = { $null }
@@ -466,7 +479,8 @@ $lister = New-FakeLister -Items (New-RawItems -Count 2)
 $outcome = Invoke-ListOperation -Op (New-SignedOp -Segments @('sub')) -Deps (New-OpDeps -Lister $lister)
 Assert-Equal 'op-run: ok' 'ok' $outcome.Status
 Assert-Equal 'op-run: 件数' 2 @($outcome.Entries).Count
-Assert-Equal 'op-run: 最終パスのワイルドカードで列挙' '\\?\C:\Users\a\Documents\sub\*' $script:SearchPath
+Assert-Equal 'op-run: 最終パスのハンドルを開く（ワイルドカードなし）' '\\?\C:\Users\a\Documents\sub' $script:SearchPath
+Assert-Equal 'op-run: 列挙の前後でハンドルを検査' 2 $script:DescribeCalls
 Assert-True 'op-run: 列挙ハンドルを閉じる' $lister.Disposed
 
 Set-BaseFs
@@ -496,6 +510,62 @@ $script:FakeFs['C:\Users\a\Documents\sub'] = @{ Attr = 1040; Tag = $tagSymlink }
 $outcome = Invoke-ListOperation -Op (New-SignedOp -Segments @('sub')) -Deps (New-OpDeps -Lister (New-FakeLister -Items (New-RawItems -Count 2)))
 Assert-Equal 'op-run: リンクは列挙しない' 'REPARSE_REJECTED' $outcome.Reason
 Assert-Equal 'op-run: リンクは列挙を開かない' $null $script:SearchPath
+
+# 差替え → 列挙 → 復元: パスの再確認は通るが、ハンドルの実体が違えば名前を返さない（Codex の再現手順）
+$swapInfo = [pscustomobject]@{ Error = 0; Attributes = [uint32]16; ReparseTag = [uint32]0; FinalPath = '\\?\C:\Outside\synthetic' }
+$goodInfo = [pscustomobject]@{ Error = 0; Attributes = [uint32]16; ReparseTag = [uint32]0; FinalPath = '\\?\C:\Users\a\Documents\sub' }
+Set-BaseFs
+$lister = New-FakeLister -Items (New-RawItems -Count 2)
+$deps = New-OpDeps -Lister $lister
+$script:DescribeHook = { param($n) $swapInfo }
+$outcome = Invoke-ListOperation -Op (New-SignedOp -Segments @('sub')) -Deps $deps
+Assert-Equal 'handle: 開いた実体が範囲外なら列挙しない' 'PATH_CHANGED' $outcome.Reason
+Assert-Equal 'handle: 開いた実体が範囲外なら 1 回で止める' 1 $script:DescribeCalls
+Assert-Equal 'handle: 列挙を始めていない' 0 $lister.Index
+Assert-True 'handle: 拒否でもハンドルを閉じる' $lister.Disposed
+Set-BaseFs
+$lister = New-FakeLister -Items (New-RawItems -Count 2)
+$deps = New-OpDeps -Lister $lister
+$script:DescribeHook = { param($n) if ($n -eq 1) { $goodInfo } else { $swapInfo } }
+$outcome = Invoke-ListOperation -Op (New-SignedOp -Segments @('sub')) -Deps $deps
+Assert-Equal 'handle: 列挙後に実体が変われば返さない' 'PATH_CHANGED' $outcome.Reason
+Assert-Equal 'handle: 列挙後の変化は 0 件' 0 @($outcome.Entries).Count
+Assert-Equal 'handle: 状態は error' 'error' $outcome.Status
+Set-BaseFs
+$deps = New-OpDeps -Lister (New-FakeLister -Items (New-RawItems -Count 2))
+$script:DescribeHook = { param($n) if ($n -eq 1) { $goodInfo } else { [pscustomobject]@{ Error = 5; Attributes = [uint32]0; ReparseTag = [uint32]0; FinalPath = $null } } }
+Assert-Equal 'handle: 列挙後に確認できなければ返さない' 'PATH_CHANGED' (Invoke-ListOperation -Op (New-SignedOp -Segments @('sub')) -Deps $deps).Reason
+Set-BaseFs
+$deps = New-OpDeps -Lister (New-FakeLister -Items (New-RawItems -Count 2))
+$script:DescribeHook = { param($n) [pscustomobject]@{ Error = 5; Attributes = [uint32]0; ReparseTag = [uint32]0; FinalPath = $null } }
+Assert-Equal 'handle: 検査の ACL 拒否は既存のコード' 'ACCESS_DENIED' (Invoke-ListOperation -Op (New-SignedOp -Segments @('sub')) -Deps $deps).Reason
+
+# ハンドルの判定（純粋関数）
+function New-HandleInfo { param([uint32]$Attr = 16, [uint32]$Tag = 0, [string]$Final = '\\?\C:\Users\a\Doc', [int]$Err = 0) return [pscustomobject]@{ Error = $Err; Attributes = $Attr; ReparseTag = $Tag; FinalPath = $Final } }
+Assert-Equal 'handle: 一致' $null (Get-DirectoryHandleRefusal -Info (New-HandleInfo) -TargetPath 'C:\Users\a\Doc' -CloudScope $null)
+Assert-Equal 'handle: 大文字小文字は無視' $null (Get-DirectoryHandleRefusal -Info (New-HandleInfo -Final '\\?\c:\users\A\doc') -TargetPath 'C:\Users\a\Doc' -CloudScope $null)
+Assert-Equal 'handle: 別の場所' 'PATH_CHANGED' (Get-DirectoryHandleRefusal -Info (New-HandleInfo -Final '\\?\C:\Users\a\Doc2') -TargetPath 'C:\Users\a\Doc' -CloudScope $null)
+Assert-Equal 'handle: UNC' 'OUT_OF_SCOPE' (Get-DirectoryHandleRefusal -Info (New-HandleInfo -Final '\\?\UNC\srv\share') -TargetPath 'C:\Users\a\Doc' -CloudScope $null)
+Assert-Equal 'handle: ファイル' 'NOT_A_DIRECTORY' (Get-DirectoryHandleRefusal -Info (New-HandleInfo -Attr 32) -TargetPath 'C:\Users\a\Doc' -CloudScope $null)
+Assert-Equal 'handle: リンク' 'REPARSE_REJECTED' (Get-DirectoryHandleRefusal -Info (New-HandleInfo -Attr 1040 -Tag $tagSymlink) -TargetPath 'C:\Users\a\Doc' -CloudScope $null)
+Assert-Equal 'handle: NOT_FOUND' 'NOT_FOUND' (Get-DirectoryHandleRefusal -Info (New-HandleInfo -Err 2) -TargetPath 'C:\Users\a\Doc' -CloudScope $null)
+$tagCloudHandle = [Convert]::ToUInt32('9000601A', 16)
+Assert-Equal 'handle: 範囲内のクラウドタグ' $null (Get-DirectoryHandleRefusal -Info (New-HandleInfo -Attr 1040 -Tag $tagCloudHandle) -TargetPath 'C:\Users\a\Doc' -CloudScope 'C:\Users\a')
+Assert-Equal 'handle: 範囲外のクラウドタグ' 'REPARSE_REJECTED' (Get-DirectoryHandleRefusal -Info (New-HandleInfo -Attr 1040 -Tag $tagCloudHandle) -TargetPath 'C:\Users\a\Doc' -CloudScope $null)
+
+# 列挙の前後の検査順（静的）。パス指定の列挙 API を list_metadata に残さない。
+$listAst = [Management.Automation.Language.Parser]::ParseFile($helperPath, [ref]$null, [ref]$null).Find({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -ceq 'Invoke-ListOperation' }, $true).Extent.Text
+$posResolve = $listAst.IndexOf('$before = Resolve-FolderTarget')
+$posOpen = $listAst.IndexOf('$Deps.OpenDirectory')
+$posCheck1 = $listAst.IndexOf('$handleBefore = Get-DirectoryHandleRefusal')
+$posRead = $listAst.IndexOf('Read-DirectoryEntries')
+$posCheck2 = $listAst.IndexOf('$handleAfter = Get-DirectoryHandleRefusal')
+$posDispose = $listAst.IndexOf('$directory.Dispose()')
+$posResolve2 = $listAst.IndexOf('$after = Resolve-FolderTarget')
+Assert-True 'order: 解決 → 開く → 検査 → 列挙 → 検査 → 閉じる → 再解決' ($posResolve -ge 0 -and $posResolve -lt $posOpen -and $posOpen -lt $posCheck1 -and $posCheck1 -lt $posRead -and $posRead -lt $posCheck2 -and $posCheck2 -lt $posDispose -and $posDispose -lt $posResolve2)
+Assert-False 'order: パスのワイルドカードで列挙しない' ($listAst.Contains("'\*'"))
+Assert-False 'order: パス指定の列挙 API を持たない' ($script:NativeSource.Contains('FindFirstFile') -or $script:NativeSource.Contains('FindNextFile'))
+Assert-True 'order: FILE_SHARE_DELETE なし・OPEN_REPARSE_POINT' ($script:NativeSource.Contains('Api.CreateFileW(path, 0x81, 0x3, IntPtr.Zero, 3, 0x02200000, IntPtr.Zero)'))
 
 # ---------------------------------------------------------------------------
 # poll の状態
@@ -629,6 +699,69 @@ try {
   Write-Output ('compile error: ' + $_.Exception.Message)
 }
 Assert-True ('native: コンパイルできる（' + $PSVersionTable.PSEdition + '）') $compiled
+
+# FILE_ID_BOTH_DIR_INFO の復号（合成バッファ。API は呼ばない。実際のレイアウトは実機未実測）
+function New-DirInfoBuffer {
+  param([object[]]$Records)
+  $mem = [Runtime.InteropServices.Marshal]::AllocHGlobal(4096)
+  for ($i = 0; $i -lt 4096; $i++) { [Runtime.InteropServices.Marshal]::WriteByte($mem, $i, 0) }
+  foreach ($r in $Records) {
+    [Runtime.InteropServices.Marshal]::WriteInt32($mem, $r.At + 0, $r.Next)
+    [Runtime.InteropServices.Marshal]::WriteInt64($mem, $r.At + 24, [long]$r.Time)
+    [Runtime.InteropServices.Marshal]::WriteInt64($mem, $r.At + 40, [long]$r.Size)
+    [Runtime.InteropServices.Marshal]::WriteInt32($mem, $r.At + 56, [int]$r.Attr)
+    [Runtime.InteropServices.Marshal]::WriteInt32($mem, $r.At + 60, $r.Len)
+    [Runtime.InteropServices.Marshal]::WriteInt32($mem, $r.At + 64, [int]$r.Ea)
+    for ($c = 0; $c -lt $r.Name.Length; $c++) { [Runtime.InteropServices.Marshal]::WriteInt16($mem, $r.At + 104 + ($c * 2), [char]$r.Name[$c]) }
+  }
+  return $mem
+}
+$decoder = [AIHelpDesk.FolderHelper.DirectoryEntryDecoder]
+$mem = New-DirInfoBuffer -Records @(
+  @{ At = 0; Next = 112; Time = 132539328000000000L; Size = 42L; Attr = 32; Len = 6; Ea = 77; Name = '資料a' },
+  @{ At = 112; Next = 0; Time = 5L; Size = 0L; Attr = 1040; Len = 4; Ea = 1610612739; Name = 'ln' }
+)
+try {
+  $nextOut = 0
+  $entry = $decoder::Decode($mem, 0, 4096, [ref]$nextOut)
+  Assert-Equal 'decode: 名前（日本語）' '資料a' $entry.Name
+  Assert-Equal 'decode: サイズ' 42 $entry.Size
+  Assert-Equal 'decode: 更新日時' 132539328000000000 $entry.LastWriteFileTime
+  Assert-Equal 'decode: 次の要素' 112 $nextOut
+  Assert-Equal 'decode: reparse でなければタグ 0（EaSize を使わない）' 0 $entry.ReparseTag
+  $entry = $decoder::Decode($mem, 112, 4096, [ref]$nextOut)
+  Assert-Equal 'decode: 終端' 0 $nextOut
+  Assert-Equal 'decode: reparse のタグは EaSize' 1610612739 $entry.ReparseTag
+  Assert-Equal 'decode: リンクは link 種別' 'link' (ConvertTo-ListEntry -Raw ([pscustomobject]@{ Name = $entry.Name; Attributes = [uint32]1040; ReparseTag = [Convert]::ToUInt32('A000000C', 16); Size = 0L; LastWriteFileTime = 0L })).type
+} finally {
+  [Runtime.InteropServices.Marshal]::FreeHGlobal($mem)
+}
+foreach ($bad in @(
+    @{ n = '長さ 0'; r = @{ At = 0; Next = 0; Time = 0L; Size = 0L; Attr = 32; Len = 0; Ea = 0; Name = '' }; o = 0; s = 4096 },
+    @{ n = '負の長さ'; r = @{ At = 0; Next = 0; Time = 0L; Size = 0L; Attr = 32; Len = -2; Ea = 0; Name = '' }; o = 0; s = 4096 },
+    @{ n = '奇数の長さ'; r = @{ At = 0; Next = 0; Time = 0L; Size = 0L; Attr = 32; Len = 3; Ea = 0; Name = 'a' }; o = 0; s = 4096 },
+    @{ n = '名前がはみ出す'; r = @{ At = 0; Next = 0; Time = 0L; Size = 0L; Attr = 32; Len = 4000; Ea = 0; Name = 'a' }; o = 0; s = 200 },
+    @{ n = '次が名前より手前'; r = @{ At = 0; Next = 8; Time = 0L; Size = 0L; Attr = 32; Len = 2; Ea = 0; Name = 'a' }; o = 0; s = 4096 },
+    @{ n = '次が未整列'; r = @{ At = 0; Next = 113; Time = 0L; Size = 0L; Attr = 32; Len = 2; Ea = 0; Name = 'a' }; o = 0; s = 4096 },
+    @{ n = '次がはみ出す'; r = @{ At = 0; Next = 8192; Time = 0L; Size = 0L; Attr = 32; Len = 2; Ea = 0; Name = 'a' }; o = 0; s = 4096 },
+    @{ n = '開始位置が末尾'; r = @{ At = 0; Next = 0; Time = 0L; Size = 0L; Attr = 32; Len = 2; Ea = 0; Name = 'a' }; o = 4000; s = 4096 }
+  )) {
+  $mem = New-DirInfoBuffer -Records @($bad.r)
+  try {
+    $nextOut = 0
+    Assert-Equal ('decode: 拒否 ' + $bad.n) $null ($decoder::Decode($mem, $bad.o, $bad.s, [ref]$nextOut))
+  } finally {
+    [Runtime.InteropServices.Marshal]::FreeHGlobal($mem)
+  }
+}
+# 孤立サロゲートは復号で落とさず、表示前に除去する
+$mem = New-DirInfoBuffer -Records @(@{ At = 0; Next = 0; Time = 0L; Size = 0L; Attr = 32; Len = 4; Ea = 0; Name = ('a' + [char]0xD83D) })
+try {
+  $nextOut = 0
+  Assert-Equal 'decode: 孤立サロゲートは整形で除去' 'a' (ConvertTo-SafeEntryName -Name ($decoder::Decode($mem, 0, 4096, [ref]$nextOut)).Name)
+} finally {
+  [Runtime.InteropServices.Marshal]::FreeHGlobal($mem)
+}
 
 Write-Output ('passed={0} failed={1}' -f $script:Passed, $script:Failed)
 if ($script:Failed -gt 0) { exit 1 }

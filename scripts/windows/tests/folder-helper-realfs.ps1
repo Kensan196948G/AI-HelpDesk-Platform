@@ -57,7 +57,7 @@ foreach ($case in $cases) {
   }
   $deps = @{
     Probe           = { param($path, $openReparse) Invoke-NativeProbe -Path $path -OpenReparsePoint ([bool]$openReparse) }
-    OpenLister      = { param($searchPath) New-NativeLister -SearchPath $searchPath }
+    OpenDirectory   = { param($path) New-NativeDirectoryHandle -Path $path }
     GetKnownFolder  = { param($root) Get-KnownFolderPath -Root $root }
     GetProfilePath  = { Get-ProfileImagePathForSid -Sid $identity.Sid }
     GetOneDrivePath = { Get-OneDriveUserFolder }

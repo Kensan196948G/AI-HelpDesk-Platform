@@ -438,7 +438,7 @@ function Add-ListEntry {
 }
 
 function Read-DirectoryEntries {
-  # 子を開かない。.Next() は FindNextFileW の 1 件分。時間は件の間でしか判定できない。
+  # 子を開かない。.Next() は保持したハンドルのバッファから 1 件返す。時間は件の間でしか判定できない。
   param(
     [Parameter(Mandatory)][object]$Lister,
     [Parameter(Mandatory)][hashtable]$Limits,
@@ -581,11 +581,25 @@ function Resolve-FolderTarget {
   if (-not (Test-PathWithin -Candidate $targetFinal -Root $rootFinal)) { return (& $fail 'OUT_OF_SCOPE') }
   if (($targetProbe.Attributes -band $script:AttrDirectory) -eq 0) { return (& $fail 'NOT_A_DIRECTORY') }
 
-  return @{ Reason = $null; TargetFinal = $targetFinal; RootFinal = $rootFinal }
+  return @{ Reason = $null; TargetFinal = $targetFinal; RootFinal = $rootFinal; CloudScope = $cloudScope }
+}
+
+function Get-DirectoryHandleRefusal {
+  # 保持したハンドルが検査した対象そのものか。パスではなくハンドルの実体で判定する。
+  # $Info: Error, Attributes, ReparseTag, FinalPath（DirectoryHandle.Describe の結果）
+  param([Parameter(Mandatory)][object]$Info, [AllowNull()][string]$TargetPath, [AllowNull()][string]$CloudScope)
+  if ($Info.Error -ne 0) { return (ConvertTo-ProbeReason -Win32Error $Info.Error) }
+  $target = ConvertTo-NormalizedPath -Path $TargetPath
+  $final = ConvertTo-NormalizedPath -Path $Info.FinalPath
+  if ($null -eq $target -or $null -eq $final) { return 'OUT_OF_SCOPE' }
+  if (-not (Test-ReparseAllowed -Path $target -Attributes $Info.Attributes -Tag $Info.ReparseTag -CloudScope $CloudScope)) { return 'REPARSE_REJECTED' }
+  if (($Info.Attributes -band $script:AttrDirectory) -eq 0) { return 'NOT_A_DIRECTORY' }
+  if (-not [string]::Equals($final, $target, [StringComparison]::OrdinalIgnoreCase)) { return 'PATH_CHANGED' }
+  return $null
 }
 
 function Invoke-ListOperation {
-  # 検証済みの op を実行する。$Deps: Probe, OpenLister, GetKnownFolder, GetProfilePath, GetOneDrivePath,
+  # 検証済みの op を実行する。$Deps: Probe, OpenDirectory, GetKnownFolder, GetProfilePath, GetOneDrivePath,
   # ElapsedMs, ShouldCancel, IsExpired。結果には名前が入るので、呼び出し側でログに出さないこと。
   param([Parameter(Mandatory)][object]$Op, [Parameter(Mandatory)][hashtable]$Deps)
   $finish = {
@@ -603,14 +617,19 @@ function Invoke-ListOperation {
   if ($null -ne $before.Reason) { return (& $finish 'error' $before.Reason $false $noEntries $false) }
 
   $limits = Resolve-ListLimits -Op $Op
-  $lister = & $Deps.OpenLister (ConvertTo-ExtendedPath -Path ($before.TargetFinal.TrimEnd('\') + '\*'))
+  # 検査の後でパスを開き直さない。検査した対象をハンドルで保持し、同じハンドルを列挙する。
+  $directory = & $Deps.OpenDirectory (ConvertTo-ExtendedPath -Path $before.TargetFinal)
   try {
-    if ($lister.LastError -ne 0) {
-      return (& $finish 'error' (ConvertTo-ProbeReason -Win32Error $lister.LastError) $false $noEntries $false)
+    if ($directory.LastError -ne 0) {
+      return (& $finish 'error' (ConvertTo-ProbeReason -Win32Error $directory.LastError) $false $noEntries $false)
     }
-    $read = Read-DirectoryEntries -Lister $lister -Limits $limits -ElapsedMs $Deps.ElapsedMs -ShouldCancel $Deps.ShouldCancel -CancelCheckMs $script:CancelCheckMs
+    $handleBefore = Get-DirectoryHandleRefusal -Info $directory.Describe() -TargetPath $before.TargetFinal -CloudScope $before.CloudScope
+    if ($null -ne $handleBefore) { return (& $finish 'error' $handleBefore $false $noEntries $false) }
+    $read = Read-DirectoryEntries -Lister $directory -Limits $limits -ElapsedMs $Deps.ElapsedMs -ShouldCancel $Deps.ShouldCancel -CancelCheckMs $script:CancelCheckMs
+    # 差し替えて列挙して戻された場合も検知できるよう、閉じる前にハンドルの実体を確かめ直す。
+    $handleAfter = Get-DirectoryHandleRefusal -Info $directory.Describe() -TargetPath $before.TargetFinal -CloudScope $before.CloudScope
   } finally {
-    $lister.Dispose()
+    $directory.Dispose()
   }
   if ($read.Cancelled) { return (& $finish 'error' 'CANCELLED' $false $noEntries $true) }
   # 18 = ERROR_NO_MORE_FILES。途中で失敗した一覧は部分結果として返さない。
@@ -620,7 +639,7 @@ function Invoke-ListOperation {
 
   # 列挙の間に祖先が差し替えられていないか再確認する。
   $after = Resolve-FolderTarget -BasePath $basePath -Segments $segments -ProfilePath $profilePath -OneDrivePath $oneDrivePath -Probe $Deps.Probe
-  if ($null -ne $after.Reason -or -not [string]::Equals($after.TargetFinal, $before.TargetFinal, [StringComparison]::OrdinalIgnoreCase)) {
+  if ($null -ne $handleAfter -or $null -ne $after.Reason -or -not [string]::Equals($after.TargetFinal, $before.TargetFinal, [StringComparison]::OrdinalIgnoreCase)) {
     return (& $finish 'error' 'PATH_CHANGED' $false $noEntries $false)
   }
   if (& $Deps.IsExpired) { return (& $finish 'error' 'EXPIRED' $false $noEntries $false) }
@@ -789,45 +808,12 @@ namespace AIHelpDesk.FolderHelper {
   }
 
   [StructLayout(LayoutKind.Sequential)]
-  internal struct FileTimeRaw {
-    public uint Low;
-    public uint High;
-  }
-
-  [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
-  internal struct Win32FindDataW {
-    public uint dwFileAttributes;
-    public FileTimeRaw ftCreationTime;
-    public FileTimeRaw ftLastAccessTime;
-    public FileTimeRaw ftLastWriteTime;
-    public uint nFileSizeHigh;
-    public uint nFileSizeLow;
-    public uint dwReserved0;
-    public uint dwReserved1;
-    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
-    public string cFileName;
-    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 14)]
-    public string cAlternateFileName;
-  }
-
-  [StructLayout(LayoutKind.Sequential)]
   internal struct FileAttributeTagInfo {
     public uint FileAttributes;
     public uint ReparseTag;
   }
 
   internal static class Api {
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, ExactSpelling = true)]
-    public static extern IntPtr FindFirstFileExW(string lpFileName, int fInfoLevelId, out Win32FindDataW lpFindFileData, int fSearchOp, IntPtr lpSearchFilter, int dwAdditionalFlags);
-
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, ExactSpelling = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    public static extern bool FindNextFileW(IntPtr hFindFile, out Win32FindDataW lpFindFileData);
-
-    [DllImport("kernel32.dll", SetLastError = true, ExactSpelling = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    public static extern bool FindClose(IntPtr hFindFile);
-
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, ExactSpelling = true)]
     public static extern IntPtr CreateFileW(string lpFileName, uint dwDesiredAccess, uint dwShareMode, IntPtr lpSecurityAttributes, uint dwCreationDisposition, uint dwFlagsAndAttributes, IntPtr hTemplateFile);
 
@@ -838,6 +824,10 @@ namespace AIHelpDesk.FolderHelper {
     [DllImport("kernel32.dll", SetLastError = true, ExactSpelling = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool GetFileInformationByHandleEx(IntPtr hFile, int fileInformationClass, out FileAttributeTagInfo lpFileInformation, uint dwBufferSize);
+
+    [DllImport("kernel32.dll", SetLastError = true, ExactSpelling = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool GetFileInformationByHandleEx(IntPtr hFile, int fileInformationClass, IntPtr lpFileInformation, uint dwBufferSize);
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, ExactSpelling = true)]
     public static extern uint GetFinalPathNameByHandleW(IntPtr hFile, StringBuilder lpszFilePath, uint cchFilePath, uint dwFlags);
@@ -853,54 +843,125 @@ namespace AIHelpDesk.FolderHelper {
     public static extern int SHGetKnownFolderPath([MarshalAs(UnmanagedType.LPStruct)] Guid rfid, uint dwFlags, IntPtr hToken, out IntPtr ppszPath);
   }
 
-  public sealed class DirectoryLister : IDisposable {
+  // 検査したディレクトリそのものを列挙する。パスを開き直さないので、検査の後に
+  // ジャンクションへ差し替えられても範囲外を読まない。FILE_SHARE_DELETE を渡さないので、
+  // 開いている間は対象を改名・削除できない前提（実機未実測）。子は開かない。
+  public sealed class DirectoryHandle : IDisposable {
     private static readonly IntPtr Invalid = new IntPtr(-1);
-    private const int FindExInfoBasic = 1;
-    private const int FindExSearchNameMatch = 0;
-    private const int FindFirstExLargeFetch = 2;
+    private const int InfoClassIdBothRestart = 11;
+    private const int InfoClassIdBoth = 10;
+    private const int InfoClassAttributeTag = 9;
+    private const int BufferSize = 65536;
+    private const int ErrorNoMoreFiles = 18;
     private const int ErrorFileNotFound = 2;
+    private const int ErrorInvalidData = 13;
     private IntPtr handle;
-    private Win32FindDataW first;
-    private bool hasFirst;
+    private IntPtr buffer;
+    private int offset;
+    private bool hasData;
+    private bool started;
     public int LastError;
 
-    public DirectoryLister(string searchPath) {
-      handle = Api.FindFirstFileExW(searchPath, FindExInfoBasic, out first, FindExSearchNameMatch, IntPtr.Zero, FindFirstExLargeFetch);
-      if (handle == Invalid) {
-        int error = Marshal.GetLastWin32Error();
-        LastError = (error == ErrorFileNotFound) ? 0 : error;
-      } else {
-        hasFirst = true;
-      }
+    public DirectoryHandle(string path) {
+      buffer = Marshal.AllocHGlobal(BufferSize);
+      // FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES、共有は READ | WRITE のみ。
+      // FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT（リンクを辿らない）。
+      handle = Api.CreateFileW(path, 0x81, 0x3, IntPtr.Zero, 3, 0x02200000, IntPtr.Zero);
+      if (handle == Invalid) { LastError = Marshal.GetLastWin32Error(); }
     }
 
+    public PathProbeResult Describe() {
+      PathProbeResult result = new PathProbeResult();
+      if (handle == Invalid) {
+        result.Error = LastError != 0 ? LastError : 6;
+        return result;
+      }
+      FileAttributeTagInfo info;
+      if (!Api.GetFileInformationByHandleEx(handle, InfoClassAttributeTag, out info, (uint)Marshal.SizeOf(typeof(FileAttributeTagInfo)))) {
+        result.Error = Marshal.GetLastWin32Error();
+        return result;
+      }
+      result.Attributes = info.FileAttributes;
+      result.ReparseTag = info.ReparseTag;
+      StringBuilder path = new StringBuilder(32768);
+      uint length = Api.GetFinalPathNameByHandleW(handle, path, 32768, 0);
+      if (length == 0 || length >= 32768) {
+        result.Error = (length == 0) ? Marshal.GetLastWin32Error() : 122;
+        return result;
+      }
+      result.FinalPath = path.ToString();
+      return result;
+    }
+
+    // . と .. もそのまま返す（呼び出し側で除く）。終端は null で LastError = 18。
     public RawFindEntry Next() {
       if (handle == Invalid) { return null; }
-      if (hasFirst) {
-        hasFirst = false;
-        return Convert(first);
+      if (!hasData) {
+        int infoClass = started ? InfoClassIdBoth : InfoClassIdBothRestart;
+        if (!Api.GetFileInformationByHandleEx(handle, infoClass, buffer, (uint)BufferSize)) {
+          int error = Marshal.GetLastWin32Error();
+          // 空の場合の初回のコードは 2 の可能性がある（実機未実測）。
+          LastError = (!started && error == ErrorFileNotFound) ? ErrorNoMoreFiles : error;
+          return null;
+        }
+        started = true;
+        hasData = true;
+        offset = 0;
       }
-      Win32FindDataW data;
-      if (Api.FindNextFileW(handle, out data)) { return Convert(data); }
-      LastError = Marshal.GetLastWin32Error();
-      return null;
-    }
-
-    private static RawFindEntry Convert(Win32FindDataW data) {
-      RawFindEntry entry = new RawFindEntry();
-      entry.Name = data.cFileName;
-      entry.Attributes = data.dwFileAttributes;
-      entry.ReparseTag = data.dwReserved0;
-      entry.Size = (long)(((ulong)data.nFileSizeHigh << 32) | data.nFileSizeLow);
-      entry.LastWriteFileTime = (long)(((ulong)data.ftLastWriteTime.High << 32) | data.ftLastWriteTime.Low);
+      int next;
+      RawFindEntry entry = DirectoryEntryDecoder.Decode(buffer, offset, BufferSize, out next);
+      if (entry == null) {
+        // 境界の合わないバッファは読まない。部分結果にしない。
+        LastError = ErrorInvalidData;
+        hasData = false;
+        return null;
+      }
+      if (next == 0) { hasData = false; } else { offset += next; }
       return entry;
     }
 
     public void Dispose() {
       if (handle != Invalid) {
-        Api.FindClose(handle);
+        Api.CloseHandle(handle);
         handle = Invalid;
       }
+      if (buffer != IntPtr.Zero) {
+        Marshal.FreeHGlobal(buffer);
+        buffer = IntPtr.Zero;
+      }
+    }
+  }
+
+  // FILE_ID_BOTH_DIR_INFO の 1 要素を境界検査つきで読む。Linux のテストでも検証できるよう API を呼ばない。
+  public static class DirectoryEntryDecoder {
+    public const int OffsetLastWrite = 24;
+    public const int OffsetEndOfFile = 40;
+    public const int OffsetAttributes = 56;
+    public const int OffsetNameLength = 60;
+    public const int OffsetEaSize = 64;
+    public const int OffsetName = 104;
+    private const uint AttributeReparsePoint = 0x400;
+
+    // 不正なら null。nextOffset はこの要素から次の要素までのバイト数（0 は終端）。
+    public static RawFindEntry Decode(IntPtr buffer, int offset, int bufferSize, out int nextOffset) {
+      nextOffset = 0;
+      if (offset < 0 || offset > bufferSize - OffsetName) { return null; }
+      IntPtr item = new IntPtr(buffer.ToInt64() + offset);
+      int next = Marshal.ReadInt32(item, 0);
+      int nameLength = Marshal.ReadInt32(item, OffsetNameLength);
+      // 名前は UTF-16 のバイト数。偶数・正でバッファ内に収まること。
+      if (nameLength <= 0 || (nameLength % 2) != 0 || nameLength > bufferSize - offset - OffsetName) { return null; }
+      if (next != 0) {
+        if (next < OffsetName + nameLength || (next % 8) != 0 || next > bufferSize - offset) { return null; }
+      }
+      RawFindEntry entry = new RawFindEntry();
+      entry.Name = Marshal.PtrToStringUni(new IntPtr(item.ToInt64() + OffsetName), nameLength / 2);
+      entry.Attributes = (uint)Marshal.ReadInt32(item, OffsetAttributes);
+      entry.ReparseTag = (entry.Attributes & AttributeReparsePoint) != 0 ? (uint)Marshal.ReadInt32(item, OffsetEaSize) : 0;
+      entry.Size = Marshal.ReadInt64(item, OffsetEndOfFile);
+      entry.LastWriteFileTime = Marshal.ReadInt64(item, OffsetLastWrite);
+      nextOffset = next;
+      return entry;
     }
   }
 
@@ -994,9 +1055,9 @@ function Invoke-NativeProbe {
   return [AIHelpDesk.FolderHelper.Native]::ProbePath($Path, $OpenReparsePoint)
 }
 
-function New-NativeLister {
-  param([Parameter(Mandatory)][string]$SearchPath)
-  return (New-Object AIHelpDesk.FolderHelper.DirectoryLister -ArgumentList $SearchPath)
+function New-NativeDirectoryHandle {
+  param([Parameter(Mandatory)][string]$Path)
+  return (New-Object AIHelpDesk.FolderHelper.DirectoryHandle -ArgumentList $Path)
 }
 
 function Get-CurrentIdentityInfo {
@@ -1383,7 +1444,7 @@ function Invoke-HelperOperation {
   }
   $deps = @{
     Probe           = { param($path, $openReparse) Invoke-NativeProbe -Path $path -OpenReparsePoint ([bool]$openReparse) }
-    OpenLister      = { param($searchPath) New-NativeLister -SearchPath $searchPath }
+    OpenDirectory   = { param($path) New-NativeDirectoryHandle -Path $path }
     GetKnownFolder  = { param($root) Get-KnownFolderPath -Root $root }
     GetProfilePath  = { Get-ProfileImagePathForSid -Sid $helperOpRuntime.Sid }
     GetOneDrivePath = { Get-OneDriveUserFolder }
