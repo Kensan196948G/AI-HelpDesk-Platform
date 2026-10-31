@@ -5,14 +5,14 @@
   [docs/55](55-access-group-mapping.md) / [docs/57](57-shared-identity-20261028.md) / [docs/58](58-phase-c-applied-20261028.md)
 - 区分: **Approval PR**（認可モデルの変更 + 外部公開範囲の拡大）。Y 取得前に本番へ適用しない。
 
-## 1. 構成（実メールは運用設定と `docs/MailAddress.txt` のみに置く）
+## 1. 構成（社外の実メールはリポジトリに置かない）
 
 | アカウント | 名簿の所属（2026-10-31 実測） | Access ログイン（変更前） | 人物 |
 |---|---|---|---|
 | `k-a***@mirai-const.co.jp` | DX推進部（MK0623） | 可 | A |
 | `k***@gmail.com` | 名簿外（デモ扱い） | 可 | A（同一人物。`SHARED_IDENTITY_GROUPS` 設定済み） |
 | `r-k***@mirai-const.co.jp` | 技術部（MK0613） | 可 | B |
-| `h***@takamatsu-cg.co.jp` | 名簿外（社外） | **不可** | C |
+| `h***@（社外ドメイン）` | 名簿外（社外） | **不可** | C |
 
 アカウントは 4、人物は 3。A の 2 アカウント間の承認は従来どおり `sharedIdentity=true` で記録する。
 
@@ -37,9 +37,11 @@
 |---|---|
 | `POST /api/case-handovers/:id/approve` | `approver` ロールのみ（所属不問） |
 | `POST /api/knowledge/ui-sync` の `approved` / `rejected` | `approver` ロールのみ（所属不問）。`draft` / `pending` は従来どおり DX 推進部 |
-| `GET /api/knowledge/pending` | `approver` または DX 推進部 |
+| `GET /api/knowledge/pending` | DX 推進部は `draft` + `pending`。DX 推進部以外の `approver` は `pending` のみ |
+| ナレッジの判定時の本文 | 他人のナレッジの承認/差戻しでは本文を更新しない。未知の `clientRef` からの行作成には DX 推進部の権限が必要 |
+| 遠隔対応（`/api/remote-support/*`） | `users.role` に加えて DX 推進部の確認を必須にする（承認者に担当者権限を与えない） |
 | `GET /api/employees`・`GET /api/case-handovers/recipients` | 名簿で解決できない利用者（社外）には空を返す |
-| `docs/MailAddress.txt` | 社外の承認者 1 件を**完全一致**で追加（ドメインは許可しない） |
+| `docs/MailAddress.txt` | **変更しない**。公開リポジトリのため、社外の実メールはリポジトリ外の許可リスト（§5）に置く |
 
 変更しないもの: 受信箱・claim・解決記録（DX 推進部のみ）、`ALLOW_SELF_APPROVAL=false`、`EMAIL_ALIASES`（空）、
 `SHARED_IDENTITY_GROUPS`、画面の DOM / CSS。
@@ -49,10 +51,10 @@
 | # | 作業 | 確認 |
 |---|---|---|
 | 1 | バックアップ（`pg_dump`、`api.conf` の複製） | 復元可能なファイルがある |
-| 2 | 名簿外・未登録の 2 名を `users` に登録（`password_hash='access-only$no-login'`） | パスワードログイン不可 |
+| 2 | 未登録の 2 名を `users` に登録（`role='requester'`、`password_hash='access-only$no-login'`） | パスワードログイン不可、主ロールが担当者でない |
 | 3 | `sync-roles.ts` で 2 名に `approver` を付与し、シードの `w***@example.com` から `approver` を外す（dry-run → `--apply`） | `approver` が 4 アカウントだけ、監査 `auth.role.sync` |
-| 4 | Access ポリシー `1a05a10a-…` の include に社外の 1 件を完全一致で追加 | 他の include が不変 |
-| 5 | メイン作業ツリーをマージ済み commit へ更新し build。`RESOLVE_ADMIN_ALLOWLIST` と `COMMIT_SHA` を設定して再起動 | `/api/health` = ok、commit 一致 |
+| 4 | Access ポリシー `1a05a10a-…` の include に社外の 1 件を完全一致で追加。`~/.config/ai-helpdesk/access-allowlist.txt`（0600）を `docs/MailAddress.txt` + 社外 1 件で作成 | 他の include が不変、ドメイン許可なし |
+| 5 | メイン作業ツリーをマージ済み commit へ更新し build。`ACCESS_ALLOWLIST_FILE`（上記の絶対パス）、`RESOLVE_ADMIN_ALLOWLIST`、`COMMIT_SHA` を設定して再起動 | `/api/health` = ok、commit 一致 |
 | 6 | スモーク | 下記 §6 |
 
 ## 6. 本番スモーク
@@ -67,13 +69,14 @@
    技術部・社外の承認者は、API の権限はあっても**画面から引継ぎ承認へ到達できない**。ナレッジ承認
    （`GET /api/knowledge/pending` の一覧）は画面から操作できる。引継ぎ承認は当面 DX 推進部の承認者
    2 アカウントで運用する。
-2. **社外アカウントが閲覧できる情報**: 承認待ちナレッジの本文（伏せ字後）と作成者メール、自分の相談画面。
+2. **社外アカウントが閲覧できる情報**: 申請済みナレッジの本文（伏せ字後）と作成者メール、自分の相談画面。責任者としてリスク 4 以上の Skill の承認待ち（`/api/resolve/admin/pending`）も閲覧・承認できる。
+5. **名簿障害時**: 名簿を参照できないと社内利用者にも社員一覧が空で返る（`source=restricted`。fail-closed）。
 3. **同一人物**: A の 2 アカウント間の承認は職務分離が人物単位で成立しない（監査に記録）。
 4. **除外の範囲**: 除外した DX 推進部 4 名は担当者業務（受信箱・claim・解決記録）を続けられる。
 
 ## 8. ロールバック
 
-1. Access ポリシーから社外の 1 件を削除する。
+1. Access ポリシーから社外の 1 件を削除し、`access-allowlist.txt` を削除する。
 2. `api.conf` をバックアップへ戻し、前の commit を build して再起動する。
 3. `sync-roles.ts` を変更前の内容で再適用する（監査は追記のみ）。
    追加した `users` 行は `is_active=false` にする（履歴の参照のため削除しない）。

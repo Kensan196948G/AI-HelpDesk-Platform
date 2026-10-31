@@ -146,6 +146,19 @@ export async function requireHelpdeskActor(
   return resolveHelpdeskActor(email, options);
 }
 
+/** ヘルプデスク相当か（403 を投げずに判定する）。 */
+export async function isHelpdeskActor(
+  email: string | null | undefined,
+  options: HelpdeskPolicyOptions = {},
+): Promise<boolean> {
+  try {
+    await resolveHelpdeskActor(email, options);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * 承認（引継ぎの完了承認・ナレッジの承認/差戻し）の実行者を解決する。
  *

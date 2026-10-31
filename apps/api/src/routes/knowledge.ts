@@ -1,6 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { requireApproverActor, requireHelpdeskActor } from '../auth/helpdesk-scope.js';
+import {
+  isHelpdeskActor,
+  requireApproverActor,
+  requireHelpdeskActor,
+} from '../auth/helpdesk-scope.js';
 import { authenticate, requireRole } from '../auth/session.js';
 import { sameHuman } from '../auth/shared-identity.js';
 import { authenticateUi } from '../auth/ui.js';
@@ -108,9 +112,11 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
    */
   app.get('/knowledge/pending', { preHandler: authenticateUi }, async (request) => {
     if (!request.uiEmail) throw badRequest('UI の認証情報がありません。');
-    // 承認者は所属を問わず閲覧できる（承認画面の一覧）。それ以外はヘルプデスク相当のみ。
+    // 承認者は所属を問わず申請済みを閲覧できる。下書きまで見えるのはヘルプデスク相当のみ。
+    let statuses = ['draft', 'pending'];
     if (request.uiRoles?.includes('approver')) {
       await requireApproverActor(request.uiEmail, request.uiRoles);
+      if (!(await isHelpdeskActor(request.uiEmail))) statuses = ['pending'];
     } else {
       await requireHelpdeskActor(request.uiEmail);
     }
@@ -134,7 +140,7 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
       FROM knowledge k
       LEFT JOIN users u ON u.id = k.author_id
       WHERE k.client_ref IS NOT NULL
-        AND k.status IN ('draft', 'pending')
+        AND k.status IN ${sql(statuses)}
       ORDER BY k.created_at DESC
       LIMIT 50
     `;
@@ -407,6 +413,12 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
         throw conflict('公開済みのナレッジは更新できません。');
       }
 
+      const isDecision = input.status === 'approved' || input.status === 'rejected';
+      // 行の新規作成は下書き権限が要る（承認者だけでは未知の clientRef から作れない）。
+      if (isDecision && !existing) await requireHelpdeskActor(email);
+      // 他人のナレッジを判定するときは本文を変更しない（作成者名義の改ざんを防ぐ）。
+      const lockContent = isDecision && Boolean(existing) && !selfApproved;
+
       if (input.status === 'approved') {
         if (existing && !['draft', 'pending', 'rejected'].includes(existing.status)) {
           throw conflict('承認待ちのナレッジではありません。');
@@ -457,15 +469,17 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
           });
         }
 
-        await tx`
-          UPDATE knowledge SET
-            title = ${title.text},
-            symptom = ${symptom.text},
-            cause = ${cause.text},
-            steps = ${steps.text},
-            keywords = ${input.keywords}
-          WHERE id = ${id}
-        `;
+        if (!lockContent) {
+          await tx`
+            UPDATE knowledge SET
+              title = ${title.text},
+              symptom = ${symptom.text},
+              cause = ${cause.text},
+              steps = ${steps.text},
+              keywords = ${input.keywords}
+            WHERE id = ${id}
+          `;
+        }
 
         if (input.status === 'draft' || input.status === 'pending') {
           await tx`UPDATE knowledge SET status = ${input.status} WHERE id = ${id}`;

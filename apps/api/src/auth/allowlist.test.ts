@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { isEmailAllowed, parseAllowlist } from './allowlist.js';
 
@@ -8,14 +7,6 @@ const SAMPLE = `登録メール
 のみでお願いします。`;
 
 describe('parseAllowlist', () => {
-  it('正本 docs/MailAddress.txt: 他社は完全一致 1 件だけ許可し、ドメインでは許可しない', () => {
-    const text = readFileSync(new URL('../../../../docs/MailAddress.txt', import.meta.url), 'utf8');
-    const allowlist = parseAllowlist(text);
-    expect(allowlist.emails.size).toBe(2);
-    expect([...allowlist.domains]).toEqual(['mirai-const.co.jp']);
-    expect(isEmailAllowed(allowlist, 'other@takamatsu-cg.co.jp')).toBe(false);
-  });
-
   it('MailAddress.txt の完全一致メールと @domain を抽出する', () => {
     const allowlist = parseAllowlist(SAMPLE);
     expect([...allowlist.emails]).toEqual(['kensan1969@gmail.com']);

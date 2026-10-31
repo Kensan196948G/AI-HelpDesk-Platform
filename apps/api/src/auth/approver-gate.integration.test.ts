@@ -43,10 +43,10 @@ let app: FastifyInstance;
 let sequence = 0;
 let currentEmail = '';
 
-async function addUser(email: string, roles: string[]): Promise<void> {
+async function addUser(email: string, roles: string[], primary = 'requester'): Promise<void> {
   const rows = await sql<{ id: string }[]>`
     INSERT INTO users (email, name, role, password_hash)
-    VALUES (${email}, ${email}, ${roles[0] ?? 'requester'}, 'access-only$no-login')
+    VALUES (${email}, ${email}, ${primary}, 'access-only$no-login')
     ON CONFLICT (lower(email)) DO UPDATE SET updated_at = now()
     RETURNING id
   `;
@@ -101,8 +101,8 @@ beforeAll(async () => {
   directory.byEmail.set(DX_PLAIN, { employeeNo: 'T1', name: 'DX', section: 'DX推進部' });
   directory.byEmail.set(DX_APPROVER, { employeeNo: 'T2', name: 'DXA', section: 'DX推進部' });
   directory.byEmail.set(TECH_APPROVER, { employeeNo: 'T3', name: '技術', section: '技術部' });
-  await addUser(DX_PLAIN, ['helpdesk']);
-  await addUser(DX_APPROVER, ['helpdesk', 'approver']);
+  await addUser(DX_PLAIN, ['helpdesk'], 'helpdesk');
+  await addUser(DX_APPROVER, ['helpdesk', 'approver'], 'helpdesk');
   await addUser(TECH_APPROVER, ['approver']);
   await addUser(OUTSIDE_APPROVER, ['approver']);
   writeFileSync(
@@ -218,6 +218,63 @@ describe('引継ぎの承認と担当者権限の分離', () => {
     expect(inbox.statusCode).toBe(403);
     const claim = await call('POST', `/api/case-handovers/${id}/claim`, {});
     expect(claim.statusCode).toBe(403);
+  });
+});
+
+describe('承認者の権限を承認だけに限る', () => {
+  it('他人のナレッジを判定しても本文は変わらない', async () => {
+    as(DX_APPROVER);
+    const payload = draft();
+    expect((await sync(payload)).statusCode).toBe(200);
+
+    as(TECH_APPROVER);
+    const approve = await sync({
+      ...payload,
+      steps: '書き換えた手順',
+      status: 'approved',
+      checklist: CHECKLIST,
+    });
+    expect(approve.statusCode, approve.body).toBe(200);
+    const rows = await sql<{ steps: string }[]>`
+      SELECT steps FROM knowledge WHERE client_ref = ${String(payload.clientRef)}
+    `;
+    expect(rows[0]?.steps).toBe(payload.steps);
+  });
+
+  it.each([
+    ['DX 以外', TECH_APPROVER],
+    ['名簿外', OUTSIDE_APPROVER],
+  ])(
+    '%s の approver は未知の clientRef から行を作れず、下書きも見えない',
+    async (_label, email) => {
+      as(DX_APPROVER);
+      const hidden = draft({ status: 'draft' });
+      expect((await sync(hidden)).statusCode).toBe(200);
+
+      as(email);
+      const created = await sync(draft({ status: 'rejected', comment: '理由' }));
+      expect(created.statusCode, created.body).toBe(403);
+      const pending = await call('GET', '/api/knowledge/pending');
+      const refs = pending.json().items.map((item: { clientRef: string }) => item.clientRef);
+      expect(refs).not.toContain(hidden.clientRef);
+      expect(
+        pending.json().items.every((item: { status: string }) => item.status === 'pending'),
+      ).toBe(true);
+    },
+  );
+
+  it.each([
+    ['DX 以外（主ロール approver）', TECH_APPROVER, 'approver'],
+    ['名簿外（主ロール helpdesk）', OUTSIDE_APPROVER, 'helpdesk'],
+  ])('%s は遠隔対応を操作できない', async (_label, email, primary) => {
+    await sql`UPDATE users SET role = ${primary} WHERE lower(email) = ${email}`;
+    try {
+      as(email);
+      const response = await call('GET', '/api/remote-support/session?caseId=CASE-GATE');
+      expect(response.statusCode, response.body).toBe(403);
+    } finally {
+      await sql`UPDATE users SET role = 'requester' WHERE lower(email) = ${email}`;
+    }
   });
 });
 
