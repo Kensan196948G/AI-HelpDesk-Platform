@@ -167,7 +167,9 @@
     // 案件を切り替えるたびに増やす。古い応答で別の案件の状態を上書きしないために使う。
     epoch: 0,
     busy: false,
+    // 状態確認の失敗（確認が成功すれば消える）と、操作の失敗（次の操作まで残す）を分ける。
     error: null,
+    actionError: null,
     rspDeviceId: '',
     hostname: '',
     lastKey: '',
@@ -205,6 +207,7 @@
     STAFF.available = false;
     STAFF.retryAt = 0;
     STAFF.error = null;
+    STAFF.actionError = null;
     STAFF.lastKey = '';
     // 前の案件の入力を次の案件へ送らない。
     STAFF.rspDeviceId = '';
@@ -263,12 +266,12 @@
     if (STAFF.busy) return;
     const isCurrent = staffScope();
     STAFF.busy = true;
-    STAFF.error = null;
+    STAFF.actionError = null;
     renderStaff();
     try {
       await run(isCurrent);
     } catch (error) {
-      if (isCurrent()) STAFF.error = String(error.message || error);
+      if (isCurrent()) STAFF.actionError = String(error.message || error);
     } finally {
       STAFF.busy = false;
       await loadStaff();
@@ -432,6 +435,7 @@
       STAFF.result?.opId,
       STAFF.result?.receivedAt,
       STAFF.error,
+      STAFF.actionError,
       STAFF.busy,
     ]);
     if (key === STAFF.lastKey) return;
@@ -446,6 +450,7 @@
       heading('📁 フォルダ一覧（本人同意）', STATUS_LABEL[STAFF.request?.status] ?? '未開始'),
       small('担当者本人のみ操作できます（本番承認者の権限では操作できません）。読み取り専用です。'),
       ...staffBody().filter(Boolean),
+      errorLine(STAFF.actionError) ?? document.createTextNode(''),
       errorLine(STAFF.error) ?? document.createTextNode(''),
       STAFF.busy ? small('処理中…') : document.createTextNode(''),
     );
@@ -479,6 +484,7 @@
     disabled: false,
     busy: false,
     error: null,
+    actionError: null,
     // 依頼ごとの入力。別の依頼の入力と混ざらないように分ける。
     forms: new Map(),
     lastKey: '',
@@ -486,7 +492,15 @@
 
   function formFor(id) {
     if (!MINE.forms.has(id)) {
-      MINE.forms.set(id, { code: '', root: 'Documents', subfolder: '', ttl: 30 });
+      MINE.forms.set(id, {
+        code: '',
+        root: 'Documents',
+        subfolder: '',
+        ttl: 30,
+        // 導入コードはこの変数の中だけに置く（画面の再読込で消える。再発行すればよい）。
+        enrollCode: null,
+        enrollExpiresAt: null,
+      });
     }
     return MINE.forms.get(id);
   }
@@ -519,12 +533,12 @@
   async function mineAction(run) {
     if (MINE.busy) return;
     MINE.busy = true;
-    MINE.error = null;
+    MINE.actionError = null;
     renderMine();
     try {
       await run();
     } catch (error) {
-      MINE.error = String(error.message || error);
+      MINE.actionError = String(error.message || error);
     } finally {
       MINE.busy = false;
       await loadMine();
@@ -533,6 +547,57 @@
 
   function minePath(request, suffix) {
     return `/api/folder-access/requests/${encodeURIComponent(request.id)}/${suffix}`;
+  }
+
+  function issueEnrollCode(request) {
+    const form = formFor(request.id);
+    return mineAction(async () => {
+      const issued = await api(minePath(request, 'enroll-code'), {});
+      form.enrollCode = issued.enrollCode;
+      form.enrollExpiresAt = issued.expiresAt;
+    });
+  }
+
+  function liveEnrollCode(form) {
+    if (!form.enrollCode) return null;
+    if (Date.now() >= new Date(form.enrollExpiresAt).getTime()) {
+      form.enrollCode = null;
+      form.enrollExpiresAt = null;
+      return null;
+    }
+    return form.enrollCode;
+  }
+
+  /** 導入コードの発行と install の実行例。 */
+  function enrollSection(request) {
+    const form = formFor(request.id);
+    const code = liveEnrollCode(form);
+    const origin = window.location?.origin ?? '';
+    return [
+      small(
+        'はじめに PC へヘルパーを導入します。導入コードを発行し、ご本人の PC で実行してください。',
+      ),
+      h(
+        'div',
+        { style: 'margin-top:6px' },
+        h(
+          'button',
+          { class: code ? 'u-btn' : 'u-btn pri', onclick: () => issueEnrollCode(request) },
+          code ? '導入コードを再発行' : '導入コードを発行',
+        ),
+      ),
+      code ? small(`導入コード: ${code}`) : null,
+      code
+        ? small(`有効期限: ${new Date(form.enrollExpiresAt).toLocaleString('ja-JP')}（一回限り）`)
+        : null,
+      code
+        ? h(
+            'div',
+            { class: 'u-small', style: 'margin-top:6px;word-break:break-all' },
+            `powershell -ExecutionPolicy Bypass -File .\\install-folder-helper.ps1 -ServerUrl ${origin} -EnrollCode ${code}`,
+          )
+        : null,
+    ];
   }
 
   function submitCode(request) {
@@ -575,7 +640,8 @@
     }
     if (request.status === 'helper_pending') {
       if (!request.paired) {
-        nodes.push(small('PC に表示された 8 桁のコードを入力してください。'));
+        nodes.push(...enrollSection(request));
+        nodes.push(small('導入後、PC に表示された 8 桁のコードを入力してください。'));
         nodes.push(
           h(
             'div',
@@ -701,7 +767,19 @@
 
   function renderMine() {
     const requests = MINE.requests;
-    const key = JSON.stringify([requests, MINE.error, MINE.busy, MINE.disabled]);
+    // 入力中の再描画を避けるため、form 全体ではなく導入コードの表示だけをキーに含める。
+    const enrollKey = requests.map((request) => {
+      const form = MINE.forms.get(request.id);
+      return form ? liveEnrollCode(form) : null;
+    });
+    const key = JSON.stringify([
+      requests,
+      MINE.error,
+      MINE.actionError,
+      MINE.busy,
+      MINE.disabled,
+      enrollKey,
+    ]);
     if (key === MINE.lastKey) return;
     MINE.lastKey = key;
     let panel = document.getElementById('aihdFolderAccessMinePanel');
@@ -726,6 +804,7 @@
         '担当者があなたの PC のフォルダ一覧の確認を依頼しています。読み取り専用です。いつでも取り消せます。',
       ),
       ...requests.map(mineSection),
+      errorLine(MINE.actionError) ?? document.createTextNode(''),
       errorLine(MINE.error) ?? document.createTextNode(''),
       MINE.busy ? small('処理中…') : document.createTextNode(''),
     );

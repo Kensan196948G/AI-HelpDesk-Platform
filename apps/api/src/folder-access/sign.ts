@@ -35,6 +35,23 @@ export function hashPairingCode(code: string): string {
     .digest('hex');
 }
 
+/** 導入コードの保存形。ペアリングコードと同じくサーバの秘密で HMAC する。 */
+export function hashEnrollCode(code: string): string {
+  return createHmac('sha256', config.SESSION_SECRET)
+    .update(`folder-access-enroll:${code}`)
+    .digest('hex');
+}
+
+// 紛らわしい文字（I, L, O, U）を除く 32 文字。12 桁で 60 ビット（総当たりを現実的にしない）。
+const ENROLL_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+export const ENROLL_CODE_PATTERN = /^[0-9A-HJKMNP-TV-Z]{12}$/;
+
+export function generateEnrollCode(): string {
+  let code = '';
+  for (let index = 0; index < 12; index += 1) code += ENROLL_ALPHABET[randomInt(0, 32)];
+  return code;
+}
+
 export function generateHelperToken(): string {
   return randomBytes(32).toString('base64url');
 }

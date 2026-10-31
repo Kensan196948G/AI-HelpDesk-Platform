@@ -224,11 +224,21 @@ function registerPayload(overrides: Record<string, unknown> = {}) {
   };
 }
 
-async function registerHelper(overrides: Record<string, unknown> = {}) {
+/** 直近に作った依頼（registerHelper の既定の導入コードの発行先）。 */
+let latestRequestId = '';
+
+async function issueEnrollCode(requestId = latestRequestId): Promise<string> {
+  const issued = await call(OWNER, 'POST', base(requestId, '/enroll-code'), {});
+  expect(issued.statusCode, issued.body).toBe(200);
+  return issued.json().enrollCode as string;
+}
+
+async function registerHelper(overrides: Record<string, unknown> = {}, requestId?: string) {
+  const enrollCode = await issueEnrollCode(requestId);
   const response = await app.inject({
     method: 'POST',
     url: '/api/device/agent/folder-helper/register',
-    payload: registerPayload(overrides),
+    payload: registerPayload({ enrollCode, ...overrides }),
   });
   expect(response.statusCode, response.body).toBe(200);
   return response.json() as {
@@ -263,6 +273,7 @@ async function createRequest(handoverId: string, extra: Record<string, unknown> 
     ...extra,
   });
   expect(response.statusCode, response.body).toBe(200);
+  latestRequestId = response.json().request.id as string;
   return response.json().request as Record<string, any>;
 }
 
@@ -531,6 +542,8 @@ describe('正常系フルフロー（Mock: RSP / PII API / 名簿）', () => {
     const actions = (await auditRows(request.id)).map((row) => row.action);
     expect(actions).toEqual([
       'folder_access.request',
+      'folder_access.enroll_code',
+      'folder_access.enroll_registered',
       'folder_access.pair',
       'folder_access.consent',
       'folder_access.list_requested',
@@ -1146,6 +1159,7 @@ describe('ペアリングと Windows ユーザー（Mock: RSP）', () => {
   });
 
   it('SID を S-1-5-18 に変えた heartbeat の未ペアヘルパーは失効する', async () => {
+    await createRequest(await makeHandover());
     const helper = await registerHelper();
     const polled = await poll(helper.helperToken, { ...beat, sid: 'S-1-5-18' });
     expect(polled.json().revoked).toBe(true);
@@ -1287,6 +1301,7 @@ describe('同意と毎操作の検証（Mock: RSP）', () => {
     expect(unknown.statusCode).toBe(401);
     expect((await poll('short')).statusCode).toBe(401);
     const { op } = await deliveredOp();
+    await createRequest(await makeHandover());
     const unpaired = await registerHelper();
     const posted = await postResult(unpaired.helperToken, op.opId, resultBody());
     expect(posted.statusCode).toBe(403);
@@ -1393,9 +1408,9 @@ describe('同意と毎操作の検証（Mock: RSP）', () => {
   });
 
   it('poll の paired はペアリング後だけ true', async () => {
+    const request = await createRequest(await makeHandover());
     const helper = await registerHelper();
     expect((await poll(helper.helperToken)).json().paired).toBe(false);
-    const request = await createRequest(await makeHandover());
     await call(OWNER, 'POST', base(request.id, '/pair'), { code: helper.pairingCode });
     expect((await poll(helper.helperToken)).json().paired).toBe(true);
     await call(OWNER, 'POST', base(request.id, '/revoke'), {});
@@ -1855,7 +1870,9 @@ describe('機能フラグと経路', () => {
         url: '/api/device/agent/folder-helper/register',
         payload: registerPayload(),
       });
-      expect(registered.statusCode, registered.body).toBe(200);
+      // Access / Proxy Secret ではなく導入コードで守られる。
+      expect(registered.statusCode, registered.body).toBe(403);
+      expect(registered.json().error.code).toBe('ENROLL_CODE_INVALID');
 
       // 人間向けの API は従来どおり Access / Proxy Secret が必須。
       const human = await app.inject({ method: 'GET', url: '/api/folder-access/mine' });
@@ -2179,13 +2196,16 @@ describe('コードレビューの指摘（#117。Mock: RSP / PII API / 名簿�
           `
         )[0]?.count,
       );
-    const registerRaw = (headers: Record<string, string> = {}) =>
-      app.inject({
+    const registerRaw = async (headers: Record<string, string> = {}) => {
+      // 上限より先に導入コードを確かめるので、有効なコードで試す。
+      const request = await createRequest(await makeHandover());
+      return app.inject({
         method: 'POST',
         url: '/api/device/agent/folder-helper/register',
         headers,
-        payload: registerPayload(),
+        payload: registerPayload({ enrollCode: await issueEnrollCode(request.id) }),
       });
+    };
 
     afterEach(async () => {
       await clearFill();
@@ -2234,16 +2254,29 @@ describe('コードレビューの指摘（#117。Mock: RSP / PII API / 名簿�
     });
 
     it('未認証の接続元の制限は共通のバケットを使わない（満杯でも互いに影響しない）', async () => {
+      const prepared = await createRequest(await makeHandover());
+      const enrollCode = await issueEnrollCode(prepared.id);
       for (let index = 0; index < 10_000; index += 1) {
         checkRateLimit(`synthetic-fill:${index}`, 1, 60_000);
       }
       expect(checkRateLimit('authenticated-route', 1, 60_000)).toBe(false);
-      expect((await registerRaw({ 'cf-connecting-ip': '192.0.2.10' })).statusCode).toBe(200);
+      const registered = await app.inject({
+        method: 'POST',
+        url: '/api/device/agent/folder-helper/register',
+        headers: { 'cf-connecting-ip': '192.0.2.10' },
+        payload: registerPayload({ enrollCode }),
+      });
+      expect(registered.statusCode, registered.body).toBe(200);
       resetRateLimits();
 
       // 接続元を変えて登録を繰り返しても、認証済みの経路のバケットは増えない。
       for (let index = 0; index < 30; index += 1) {
-        await registerRaw({ 'cf-connecting-ip': `198.51.100.${index}` });
+        await app.inject({
+          method: 'POST',
+          url: '/api/device/agent/folder-helper/register',
+          headers: { 'cf-connecting-ip': `198.51.100.${index}` },
+          payload: registerPayload(),
+        });
       }
       expect(checkRateLimit('authenticated-route', 1, 60_000)).toBe(true);
     });
@@ -2251,10 +2284,231 @@ describe('コードレビューの指摘（#117。Mock: RSP / PII API / 名簿�
     it('全体の登録の頻度にも上限がある（接続元を変えても超えられない）', async () => {
       let limited = false;
       for (let index = 0; index < LIMITS.registerGlobalPerMinute + 5; index += 1) {
-        const response = await registerRaw({ 'cf-connecting-ip': `203.0.113.${index % 250}` });
+        const response = await app.inject({
+          method: 'POST',
+          url: '/api/device/agent/folder-helper/register',
+          headers: { 'cf-connecting-ip': `203.0.113.${index % 250}` },
+          payload: registerPayload(),
+        });
         if (response.statusCode === 429) limited = true;
       }
       expect(limited).toBe(true);
     }, 30_000);
+  });
+});
+
+describe('導入コード（Mock: RSP / PII API / 名簿）', () => {
+  const registerWith = (payload: Record<string, unknown>, headers: Record<string, string> = {}) =>
+    app.inject({
+      method: 'POST',
+      url: '/api/device/agent/folder-helper/register',
+      headers,
+      payload: registerPayload(payload),
+    });
+
+  function expectRefused(response: { statusCode: number; body: string; json: () => any }) {
+    expect(response.statusCode, response.body).toBe(403);
+    expect(response.json().error.code).toBe('ENROLL_CODE_INVALID');
+    // 匿名でトークンもペアリングコードも発行されない。
+    expect(response.body).not.toContain('helperToken');
+    expect(response.body).not.toContain('pairingCode');
+  }
+
+  const helperCount = async () =>
+    Number(
+      (await sql<{ count: string }[]>`SELECT count(*) AS count FROM folder_access_helpers`)[0]
+        ?.count,
+    );
+
+  it('発行: 本人だけ、helper_pending のときだけ。一回限りの 10 分のコードを返す', async () => {
+    const request = await createRequest(await makeHandover());
+    const before = Date.now();
+    const issued = await call(OWNER, 'POST', base(request.id, '/enroll-code'), {});
+    expect(issued.statusCode, issued.body).toBe(200);
+    const body = issued.json();
+    expect(body.enrollCode).toMatch(/^[0-9A-HJKMNP-TV-Z]{12}$/);
+    const ttl = new Date(body.expiresAt).getTime() - before;
+    expect(ttl).toBeGreaterThan(9 * 60_000);
+    expect(ttl).toBeLessThanOrEqual(10 * 60_000 + 5_000);
+  });
+
+  it.each([OTHER_OWNER, ASSIGNEE, OTHER_ASSIGNEE, APPROVER_ONLY])(
+    '他人（%s）は他人の依頼のコードを発行できない',
+    async (email) => {
+      const request = await createRequest(await makeHandover());
+      const issued = await call(email, 'POST', base(request.id, '/enroll-code'), {});
+      expect(issued.statusCode).toBe(403);
+      expect(issued.body).not.toContain('enrollCode');
+    },
+  );
+
+  it('helper_pending 以外では発行できない', async () => {
+    world.lease = leaseBody([]);
+    const pending = await createRequest(await makeHandover());
+    expect(pending.status).toBe('device_pending');
+    expect((await call(OWNER, 'POST', base(pending.id, '/enroll-code'), {})).statusCode).toBe(409);
+    world.lease = leaseBody([LEASE_ROW]);
+
+    const { id } = await pairedRequest();
+    expect((await call(OWNER, 'POST', base(id, '/enroll-code'), {})).statusCode).toBe(409);
+    const ended = await createRequest(await makeHandover());
+    await call(OWNER, 'POST', base(ended.id, '/revoke'), {});
+    expect((await call(OWNER, 'POST', base(ended.id, '/enroll-code'), {})).statusCode).toBe(409);
+  });
+
+  it('未認証は発行できない', async () => {
+    const request = await createRequest(await makeHandover());
+    const issued = await call(null, 'POST', base(request.id, '/enroll-code'), {});
+    expect([401, 403]).toContain(issued.statusCode);
+  });
+
+  it.each([
+    ['コードなし', {}],
+    ['誤り', { enrollCode: 'ABCDEFGHJKMN' }],
+    ['形式違い', { enrollCode: "'; DROP TABLE x;--" }],
+    ['長すぎる', { enrollCode: 'A'.repeat(500) }],
+  ])('登録: %s は 403 でトークンを発行しない', async (_name, payload) => {
+    await createRequest(await makeHandover());
+    const before = await helperCount();
+    expectRefused(await registerWith(payload));
+    expect(await helperCount()).toBe(before);
+  });
+
+  it('登録: 再利用できない（一回限り）', async () => {
+    const request = await createRequest(await makeHandover());
+    const enrollCode = await issueEnrollCode(request.id);
+    expect((await registerWith({ enrollCode })).statusCode).toBe(200);
+    expectRefused(await registerWith({ enrollCode }));
+  });
+
+  it('登録: 期限切れは使えない', async () => {
+    const request = await createRequest(await makeHandover());
+    const enrollCode = await issueEnrollCode(request.id);
+    await sql`
+      UPDATE folder_access_requests SET enroll_code_expires_at = now() - interval '1 second'
+      WHERE id = ${request.id}
+    `;
+    expectRefused(await registerWith({ enrollCode }));
+  });
+
+  it('登録: 再発行すると旧コードは無効になる', async () => {
+    const request = await createRequest(await makeHandover());
+    const old = await issueEnrollCode(request.id);
+    const fresh = await issueEnrollCode(request.id);
+    expect(fresh).not.toBe(old);
+    expectRefused(await registerWith({ enrollCode: old }));
+    expect((await registerWith({ enrollCode: fresh })).statusCode).toBe(200);
+  });
+
+  it('登録: 依頼が終わったら使えない', async () => {
+    const request = await createRequest(await makeHandover());
+    const enrollCode = await issueEnrollCode(request.id);
+    await call(OWNER, 'POST', base(request.id, '/revoke'), {});
+    expectRefused(await registerWith({ enrollCode }));
+  });
+
+  it('登録の失敗でコードを消費しない（SID やセッションの拒否、上限）', async () => {
+    const request = await createRequest(await makeHandover());
+    const enrollCode = await issueEnrollCode(request.id);
+    expect((await registerWith({ enrollCode, sid: 'S-1-5-18' })).statusCode).toBe(403);
+    expect((await registerWith({ enrollCode, sessionState: 'down' })).statusCode).toBe(409);
+    expect((await registerWith({ enrollCode })).statusCode).toBe(200);
+  });
+
+  it('誤ったコードの試行に接続元ごとの上限がある（正しいコードでも止まる）', async () => {
+    const request = await createRequest(await makeHandover());
+    const enrollCode = await issueEnrollCode(request.id);
+    const headers = { 'cf-connecting-ip': '192.0.2.77' };
+    for (let index = 0; index < LIMITS.enrollFailuresPerAddress; index += 1) {
+      expectRefused(await registerWith({ enrollCode: 'ABCDEFGHJKMN' }, headers));
+    }
+    const limited = await registerWith({ enrollCode }, headers);
+    expect(limited.statusCode).toBe(429);
+    expect(limited.body).not.toContain('helperToken');
+    // 別の接続元には影響しない。
+    expect((await registerWith({ enrollCode })).statusCode).toBe(200);
+  });
+
+  it('発行の回数に上限がある', async () => {
+    const request = await createRequest(await makeHandover());
+    for (let index = 0; index < LIMITS.maxEnrollCodeIssues; index += 1) {
+      await issueEnrollCode(request.id);
+    }
+    const over = await call(OWNER, 'POST', base(request.id, '/enroll-code'), {});
+    expect(over.statusCode).toBe(429);
+    expect(over.json().error.code).toBe('ENROLL_CODE_LIMIT');
+  });
+
+  it('HMAC で保存し、監査にコードを残さない', async () => {
+    const request = await createRequest(await makeHandover());
+    const enrollCode = await issueEnrollCode(request.id);
+    const rows = await sql<{ enroll_code_hash: string }[]>`
+      SELECT enroll_code_hash FROM folder_access_requests WHERE id = ${request.id}
+    `;
+    expect(rows[0]?.enroll_code_hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(rows[0]?.enroll_code_hash).not.toContain(enrollCode);
+    expect(rows[0]?.enroll_code_hash).not.toBe(
+      createHash('sha256').update(enrollCode).digest('hex'),
+    );
+    await registerWith({ enrollCode });
+    const audits = await auditRows(request.id);
+    const actions = audits.map((row) => row.action);
+    expect(actions).toContain('folder_access.enroll_code');
+    expect(actions).toContain('folder_access.enroll_registered');
+    expect(JSON.stringify(audits)).not.toContain(enrollCode);
+    const used = await sql<{ enroll_code_hash: string | null }[]>`
+      SELECT enroll_code_hash FROM folder_access_requests WHERE id = ${request.id}
+    `;
+    expect(used[0]?.enroll_code_hash).toBeNull();
+  });
+
+  it('依頼の終了で未使用のコードを消す', async () => {
+    const request = await createRequest(await makeHandover());
+    await issueEnrollCode(request.id);
+    await call(OWNER, 'POST', base(request.id, '/revoke'), {});
+    const rows = await sql<{ enroll_code_hash: string | null }[]>`
+      SELECT enroll_code_hash FROM folder_access_requests WHERE id = ${request.id}
+    `;
+    expect(rows[0]?.enroll_code_hash).toBeNull();
+  });
+
+  it('ペア: 別の依頼の導入コードで登録したヘルパーはペアできない', async () => {
+    const other = await createRequest(await makeHandover());
+    const helper = await registerHelper({}, other.id);
+    const mine = await createRequest(await makeHandover());
+    const response = await call(OWNER, 'POST', base(mine.id, '/pair'), {
+      code: helper.pairingCode,
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe('PAIRING_INVALID');
+    const rows = await sql<{ request_id: string | null }[]>`
+      SELECT request_id FROM folder_access_helpers WHERE id = ${helper.helperId}
+    `;
+    expect(rows[0]?.request_id).toBeNull();
+    // 正しい依頼ではペアできる。
+    const ok = await call(OWNER, 'POST', base(other.id, '/pair'), { code: helper.pairingCode });
+    expect(ok.statusCode, ok.body).toBe(200);
+  });
+
+  it('ペア: 導入コードで紐付いていないヘルパー（旧来の行）はペアできない', async () => {
+    const request = await createRequest(await makeHandover());
+    const helper = await registerHelper({}, request.id);
+    await sql`
+      UPDATE folder_access_helpers SET enrolled_request_id = NULL WHERE id = ${helper.helperId}
+    `;
+    const response = await call(OWNER, 'POST', base(request.id, '/pair'), {
+      code: helper.pairingCode,
+    });
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('既存のペアリング（本人が画面へ入力）は残る。コードなしでは同意まで進まない', async () => {
+    const request = await createRequest(await makeHandover());
+    const helper = await registerHelper({}, request.id);
+    const status = await call(OWNER, 'GET', '/api/folder-access/mine');
+    expect(status.statusCode).toBe(200);
+    expect((await call(OWNER, 'POST', base(request.id, '/consent'), CONSENT)).statusCode).toBe(409);
+    const pair = await call(OWNER, 'POST', base(request.id, '/pair'), { code: helper.pairingCode });
+    expect(pair.json().request.status).toBe('consent_pending');
   });
 });

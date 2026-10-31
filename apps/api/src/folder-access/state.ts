@@ -77,6 +77,12 @@ export const LIMITS = {
   maxUnpairedHelpers: 500,
   /** ペアリング期限が切れた未ペア行を残す時間。 */
   unpairedRetentionMinutes: 60,
+  /** 導入コードの有効期限。 */
+  enrollCodeMinutes: 10,
+  /** 1 つの依頼で発行できる回数（再発行を含む）。 */
+  maxEnrollCodeIssues: 5,
+  /** 接続元ごとの誤った導入コードの試行回数（10 分あたり）。 */
+  enrollFailuresPerAddress: 10,
   registerPerAddressPerMinute: 20,
   registerGlobalPerMinute: 120,
   /** 相談者の状態確認で返す、直近に終了した依頼の上限（進行中は全件返す）。 */

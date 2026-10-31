@@ -4,19 +4,22 @@ import { sql } from '../db.js';
 import { ApiError, unauthorized } from '../errors.js';
 import { jsonbValue } from '../lib/jsonb-value.js';
 import { checkRateLimit, clientAddress } from '../lib/rate-limit.js';
-import { checkAddressLimit } from './address-limit.js';
+import { checkAddressLimit, isAddressLimited } from './address-limit.js';
 import { requireFolderAccessEnabled } from './routes.js';
 import {
   activeViolation,
   appendFolderAudit,
   endRequestTx,
   loadContext,
+  type RequestContext,
   reconcileProbe,
   type Tx,
 } from './service.js';
 import {
+  ENROLL_CODE_PATTERN,
   generateHelperToken,
   generatePairingCode,
+  hashEnrollCode,
   hashPairingCode,
   hashToken,
   signOp,
@@ -52,6 +55,8 @@ const RegisterBody = z.object({
   userName: z.string().trim().min(1).max(256),
   hostname: z.string().trim().min(1).max(128),
   helperVersion: z.string().trim().min(1).max(40),
+  // 必須だが、欠落も形式違いも誤りと同じ応答にする（検証は本文の他の項目の後）。
+  enrollCode: z.unknown().optional(),
   ...SessionFields,
 });
 const PollBody = z.object(SessionFields);
@@ -85,6 +90,30 @@ async function findHelper(token: string): Promise<HelperRow> {
   const row = rows[0];
   if (!row) throw unauthorized('ヘルパートークンが無効です。');
   return row;
+}
+
+/** 導入コードを 1 回だけ消費する。有効な依頼が無ければ null（理由は区別しない）。 */
+async function consumeEnrollCode(tx: Tx, code: string): Promise<RequestContext | null> {
+  const hash = hashEnrollCode(code);
+  const found = await tx<{ id: string }[]>`
+    SELECT id FROM folder_access_requests WHERE enroll_code_hash = ${hash}
+  `;
+  const id = found[0]?.id;
+  if (!id) return null;
+  const ctx = await loadContext(tx, id);
+  if (!ctx) return null;
+  const consumed = await tx<{ id: string }[]>`
+    UPDATE folder_access_requests
+    SET enroll_code_hash = NULL, enroll_code_expires_at = NULL, updated_at = now()
+    WHERE id = ${id}
+      AND enroll_code_hash = ${hash}
+      AND enroll_code_expires_at > now()
+      AND status = 'helper_pending'
+      AND helper_id IS NULL
+      AND request_expires_at > now()
+    RETURNING id
+  `;
+  return consumed[0] ? ctx : null;
 }
 
 /**
@@ -238,25 +267,48 @@ export async function folderHelperRoutes(app: FastifyInstance): Promise<void> {
     if (normalizeSessionState(body.sessionState) !== 'active' || body.sessionId === 0) {
       throw new ApiError(409, 'NOT_LOGGED_ON', 'ログオン中のアクティブなセッションが必要です。');
     }
+    const address = clientAddress(request);
+    const failureKey = `enroll-failure:${address}`;
+    if (isAddressLimited(failureKey, LIMITS.enrollFailuresPerAddress)) {
+      throw new ApiError(429, 'RATE_LIMITED', '試行が多すぎます。少し待ってください。');
+    }
+    const refuse = () => {
+      checkAddressLimit(failureKey, LIMITS.enrollFailuresPerAddress + 1, 10 * 60_000);
+      return new ApiError(
+        403,
+        'ENROLL_CODE_INVALID',
+        '導入コードが正しくないか、期限が切れています。',
+      );
+    };
+    const enrollCode =
+      typeof body.enrollCode === 'string' ? body.enrollCode.trim().toUpperCase() : '';
+    if (!ENROLL_CODE_PATTERN.test(enrollCode)) throw refuse();
     const token = generateHelperToken();
     for (let attempt = 0; attempt < 5; attempt += 1) {
       const code = generatePairingCode();
       try {
         const row = await sql.begin(async (tx) => {
+          // 失敗（上限やコードの衝突）ではロールバックするので、導入コードを消費しない。
+          const enrolled = await consumeEnrollCode(tx, enrollCode);
+          if (!enrolled) throw refuse();
           await reserveUnpairedSlot(tx);
           const rows = await tx<{ id: string; pairing_expires_at: Date }[]>`
             INSERT INTO folder_access_helpers (
               token_hash, machine_guid, sid, user_name, session_id, session_state, hostname,
-              helper_version, pairing_code_hash, pairing_expires_at
+              helper_version, pairing_code_hash, pairing_expires_at, enrolled_request_id
             ) VALUES (
               ${hashToken(token)}, ${body.machineGuid.toLowerCase()}, ${body.sid},
               ${sanitizeEntryName(body.userName)}, ${body.sessionId},
               ${normalizeSessionState(body.sessionState)}, ${sanitizeEntryName(body.hostname)},
               ${sanitizeEntryName(body.helperVersion)}, ${hashPairingCode(code)},
-              now() + (${LIMITS.pairingMinutes}::int * interval '1 minute')
+              now() + (${LIMITS.pairingMinutes}::int * interval '1 minute'),
+              ${enrolled.id}
             )
             RETURNING id, pairing_expires_at
           `;
+          await appendFolderAudit(tx, 'folder_access.enroll_registered', enrolled, HELPER_ACTOR, {
+            helperId: rows[0]?.id ?? null,
+          });
           return rows[0];
         });
         if (!row) throw new Error('ヘルパーの登録に失敗しました。');

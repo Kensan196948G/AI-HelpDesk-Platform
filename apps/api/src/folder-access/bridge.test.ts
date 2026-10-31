@@ -264,6 +264,25 @@ describe('フォルダ一覧ブリッジ（Mock DOM）', () => {
     expect(staff.text).not.toContain('TEMPORARY-FAILURE');
   });
 
+  it('操作の失敗は直後の状態確認で消さない（担当者パネル）', async () => {
+    const h = harness((url, init) => {
+      if (url.includes('/mine')) return { status: 200, body: { requests: [] } };
+      if (init?.method === 'POST') {
+        return { status: 409, body: { error: { message: 'ACTION-FAILED' } } };
+      }
+      return { status: 200, body: { request: requestDto('consent_pending') } };
+    });
+    h.load[0]?.();
+    await h.settle();
+    const staff = panel(h, 'aihdFolderAccessPanel') as FakeElement;
+    const end = staff
+      .findAll((element) => element.tag === 'button')
+      .find((button) => button.text.includes('終了')) as FakeElement;
+    end.listeners.click?.[0]?.({});
+    await h.settle();
+    expect(staff.text).toContain('ACTION-FAILED');
+  });
+
   it('担当者パネル: 引継ぎは受信箱ではなく専用の検索で引く（resolved や 51 件目以降でも消えない）', async () => {
     const handoverId = '11111111-1111-4111-8111-111111111111';
     const h = harness(
@@ -316,6 +335,107 @@ describe('フォルダ一覧ブリッジ（Mock DOM）', () => {
     retry.listeners.click?.[0]?.({});
     await h.settle();
     expect(posted.at(-1)).toEqual({ handoverId: handoverB });
+  });
+
+  describe('導入コード', () => {
+    const CODE = 'ABCDEFGHJKMN';
+    const pendingRequest = {
+      ...requestDto('helper_pending', { paired: false }),
+      caseId: 'C',
+    };
+    const route = (url: string, init?: RequestInit) => {
+      if (url.includes('/mine')) return { status: 200, body: { requests: [pendingRequest] } };
+      if (url.endsWith('/enroll-code') && init?.method === 'POST') {
+        return {
+          status: 200,
+          body: { ok: true, enrollCode: CODE, expiresAt: '2099-01-01T00:00:00.000Z' },
+        };
+      }
+      return notFound;
+    };
+    const issueButton = (mine: FakeElement) =>
+      mine
+        .findAll((element) => element.tag === 'button')
+        .find((button) => button.text.includes('導入コード')) as FakeElement;
+
+    it('発行するとコード・期限・install の実行例を textContent で表示する', async () => {
+      const h = harness(route);
+      h.load[0]?.();
+      await h.settle();
+      const mine = panel(h, 'aihdFolderAccessMinePanel') as FakeElement;
+      expect(mine.text).not.toContain(CODE);
+      issueButton(mine).listeners.click?.[0]?.({});
+      await h.settle();
+      const after = panel(h, 'aihdFolderAccessMinePanel') as FakeElement;
+      expect(after.text).toContain(CODE);
+      expect(after.text).toContain('有効期限');
+      expect(after.text).toContain('install-folder-helper.ps1');
+      expect(after.text).toContain(`-EnrollCode ${CODE}`);
+      expect(
+        h.calls.some(
+          (call) => call === `POST /api/folder-access/requests/${pendingRequest.id}/enroll-code`,
+        ),
+      ).toBe(true);
+    });
+
+    it('再描画してもコードを消さず、期限を過ぎたら表示しない', async () => {
+      const clock = { offsetMs: 0 };
+      const expiresAt = new Date(Date.now() + 600_000).toISOString();
+      const h = harness(
+        (url, init) => {
+          if (url.includes('/mine')) return { status: 200, body: { requests: [pendingRequest] } };
+          if (init?.method === 'POST') {
+            return { status: 200, body: { ok: true, enrollCode: CODE, expiresAt } };
+          }
+          return notFound;
+        },
+        undefined,
+        clock,
+      );
+      h.load[0]?.();
+      await h.settle();
+      issueButton(panel(h, 'aihdFolderAccessMinePanel') as FakeElement).listeners.click?.[0]?.({});
+      await h.settle();
+      for (const timer of h.timers) timer();
+      await h.settle();
+      expect((panel(h, 'aihdFolderAccessMinePanel') as FakeElement).text).toContain(CODE);
+      clock.offsetMs = 700_000;
+      for (const timer of h.timers) timer();
+      await h.settle();
+      expect((panel(h, 'aihdFolderAccessMinePanel') as FakeElement).text).not.toContain(CODE);
+    });
+
+    it('ペア済みなら発行の導線を出さない', async () => {
+      const h = harness((url) =>
+        url.includes('/mine')
+          ? {
+              status: 200,
+              body: {
+                requests: [{ ...requestDto('helper_pending', { paired: true }), caseId: 'C' }],
+              },
+            }
+          : notFound,
+      );
+      h.load[0]?.();
+      await h.settle();
+      const mine = panel(h, 'aihdFolderAccessMinePanel') as FakeElement;
+      expect(issueButton(mine)).toBeUndefined();
+    });
+
+    it('発行の失敗はエラーとして見せる', async () => {
+      const h = harness((url, init) => {
+        if (url.includes('/mine')) return { status: 200, body: { requests: [pendingRequest] } };
+        if (init?.method === 'POST') {
+          return { status: 429, body: { error: { message: 'ISSUE-LIMIT' } } };
+        }
+        return notFound;
+      });
+      h.load[0]?.();
+      await h.settle();
+      issueButton(panel(h, 'aihdFolderAccessMinePanel') as FakeElement).listeners.click?.[0]?.({});
+      await h.settle();
+      expect((panel(h, 'aihdFolderAccessMinePanel') as FakeElement).text).toContain('ISSUE-LIMIT');
+    });
   });
 
   it('担当者でなければ（403）担当者パネルを出さない', async () => {

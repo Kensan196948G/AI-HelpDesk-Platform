@@ -164,7 +164,8 @@ export async function endRequestTx(
   const updated = await tx`
     UPDATE folder_access_requests
     SET status = ${status}, end_reason = ${reason}, ended_at = now(), updated_at = now(),
-        consent_segments = '[]'::jsonb, windows_user = NULL, helper_hostname = NULL
+        consent_segments = '[]'::jsonb, windows_user = NULL, helper_hostname = NULL,
+        enroll_code_hash = NULL, enroll_code_expires_at = NULL
     WHERE id = ${ctx.id}
       AND status IN ('device_pending', 'helper_pending', 'consent_pending', 'active')
     RETURNING id

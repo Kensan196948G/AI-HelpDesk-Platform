@@ -24,6 +24,12 @@ export function checkAddressLimit(key: string, limit: number, windowMs: number):
   return true;
 }
 
+/** 数えずに、上限に達しているかだけを見る（失敗だけを数える制限に使う）。 */
+export function isAddressLimited(key: string, limit: number): boolean {
+  const bucket = buckets.get(key);
+  return Boolean(bucket && Date.now() < bucket.resetAt && bucket.count >= limit);
+}
+
 /** テスト用。 */
 export function resetAddressLimits(): void {
   buckets.clear();
