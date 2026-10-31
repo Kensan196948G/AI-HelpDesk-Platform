@@ -6,6 +6,8 @@ import { allowlistSize, getAllowlist } from './auth/allowlist.js';
 import { requireCloudflareAccess } from './auth/ui.js';
 import { config } from './config.js';
 import { ApiError, forbidden } from './errors.js';
+import { folderHelperRoutes } from './folder-access/helper-routes.js';
+import { folderAccessRoutes } from './folder-access/routes.js';
 import { remoteSupportRoutes } from './remote-support/routes.js';
 import { resolveRoutes } from './resolve/routes.js';
 import { ensureSkillCatalog } from './resolve/skills.js';
@@ -47,6 +49,7 @@ export async function buildServer(options?: { logger?: boolean }): Promise<Fasti
               'req.headers.authorization',
               'req.headers["x-proxy-secret"]',
               'req.headers["x-device-token"]',
+              'req.headers["x-folder-helper-token"]',
               'req.headers["x-helpdesk-service-key"]',
               'res.headers["set-cookie"]',
             ],
@@ -228,6 +231,8 @@ export async function buildServer(options?: { logger?: boolean }): Promise<Fasti
   await app.register(dashboardRoutes, { prefix: '/api' });
   await app.register(resolveRoutes, { prefix: '/api' });
   await app.register(remoteSupportRoutes, { prefix: '/api' });
+  await app.register(folderAccessRoutes, { prefix: '/api' });
+  await app.register(folderHelperRoutes, { prefix: '/api' });
   await app.register(healthRoutes, { prefix: '/api' });
 
   return app;

@@ -1,11 +1,13 @@
 import { config } from './config.js';
 import { sql } from './db.js';
+import { startFolderAccessSweeper } from './folder-access/service.js';
 import { startHandoverNotificationWorker } from './lib/handover-notify.js';
 import { describeMailTransport } from './lib/mailer.js';
 import { buildServer } from './server.js';
 
 const app = await buildServer();
 const stopNotificationWorker = startHandoverNotificationWorker(app.log);
+const stopFolderAccessSweeper = startFolderAccessSweeper(app.log);
 
 try {
   app.log.info({ transport: describeMailTransport() }, 'メール通知の送信手段');
@@ -29,6 +31,7 @@ try {
 async function shutdown(signal: string): Promise<void> {
   app.log.info({ signal }, 'shutting down');
   stopNotificationWorker();
+  stopFolderAccessSweeper();
   await app.close();
   await sql.end({ timeout: 5 });
   process.exit(0);

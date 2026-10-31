@@ -8,6 +8,8 @@ export interface RspDeviceMatch {
   agent_installed: boolean;
   agent_online: boolean;
   mesh_deploy_status: string | null;
+  /** RSP 側で追加中の項目。無ければ未定義のまま扱う。 */
+  mesh_node_id?: string | null;
 }
 
 /** RSP ensure-agent の結果。 */
@@ -35,7 +37,14 @@ function serviceKey(): string {
   return key;
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+interface RspBody extends Record<string, unknown> {
+  success?: boolean;
+  data?: unknown;
+  error_code?: string;
+  message?: string;
+}
+
+async function requestBody(path: string, init: RequestInit = {}): Promise<RspBody> {
   let response: Response;
   try {
     response = await fetch(`${rspBaseUrl()}${path}`, {
@@ -55,12 +64,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       'RSP に接続できませんでした。時間をおいて再試行してください。',
     );
   }
-  const body = (await response.json().catch(() => null)) as {
-    success?: boolean;
-    data?: unknown;
-    error_code?: string;
-    message?: string;
-  } | null;
+  const body = (await response.json().catch(() => null)) as RspBody | null;
   if (!response.ok || !body) {
     const code = body?.error_code ?? 'RSP_UNAVAILABLE';
     const message =
@@ -70,7 +74,19 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
         : 'RSP でエラーが発生しました。時間をおいて再試行してください。');
     throw new ApiError(502, code, message);
   }
-  return body.data as T;
+  return body;
+}
+
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  return (await requestBody(path, init)).data as T;
+}
+
+/** サービスコマンド API はフラットな JSON を返す。ラップ形式（{success,data}）も許容する。 */
+function unwrapFlat(body: RspBody): Record<string, unknown> {
+  if (body.success === true && body.data && typeof body.data === 'object') {
+    return body.data as Record<string, unknown>;
+  }
+  return body;
 }
 
 /** hostname（完全一致・大小文字無視）で RSP 端末を検索する。 */
@@ -85,6 +101,64 @@ export async function ensureRspAgent(rspDeviceId: string): Promise<RspEnsureResu
   return request(`/api/v1/service/devices/${encodeURIComponent(rspDeviceId)}/ensure-agent`, {
     method: 'POST',
   });
+}
+
+/**
+ * 端末の識別に使う固定テンプレート（docs/62 §2・§4）。MachineGuid と quser だけを返す。
+ * **引数を挿入しない**（案件・ユーザー由来の文字列をコマンドへ入れる経路を作らない）。
+ * RSP / Mesh は SYSTEM で実行するため、フォルダやファイルには触れない。
+ */
+export const DEVICE_IDENTITY_PROBE_COMMAND =
+  "$ErrorActionPreference='SilentlyContinue';" +
+  "$g=(Get-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\Cryptography' -Name MachineGuid).MachineGuid;" +
+  '$q=@(quser 2>$null | ForEach-Object { [string]$_ });' +
+  '[pscustomobject]@{machineGuid=[string]$g;quser=$q} | ConvertTo-Json -Compress';
+
+export interface RspProbeEnqueued {
+  logId: string;
+  deviceId: string;
+}
+
+/** 固定テンプレートをキューへ積む。結果は `fetchDeviceIdentityProbe` で後から取得する。 */
+export async function enqueueDeviceIdentityProbe(
+  hostname: string,
+  requestId: string,
+): Promise<RspProbeEnqueued> {
+  const body = await requestBody('/api/v1/service/commands', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      hostname,
+      command_text: DEVICE_IDENTITY_PROBE_COMMAND,
+      shell: 'powershell',
+      reason: 'AI HelpDesk: 本人同意付きフォルダ一覧の端末識別（固定テンプレート）',
+      requested_by: `ai-helpdesk:folder-access:${requestId}`,
+    }),
+  });
+  const data = unwrapFlat(body);
+  const logId = String(data.log_id ?? '');
+  const deviceId = String(data.device_id ?? '');
+  if (!logId || !deviceId) {
+    throw new ApiError(502, 'RSP_INVALID_RESPONSE', 'RSP の応答形式が不正です。');
+  }
+  return { logId, deviceId };
+}
+
+export interface RspProbeStatus {
+  status: string;
+  /** 呼び出し側で解釈して捨てる。ユーザー名を含むので保存・ログ出力しない。 */
+  output: unknown;
+  errorCode: string | null;
+}
+
+export async function fetchDeviceIdentityProbe(logId: string): Promise<RspProbeStatus> {
+  const body = await requestBody(`/api/v1/service/commands/${encodeURIComponent(logId)}`);
+  const data = unwrapFlat(body);
+  return {
+    status: String(data.status ?? ''),
+    output: data.output,
+    errorCode: typeof data.error_code === 'string' ? data.error_code : null,
+  };
 }
 
 /** RSP のコマンド実行ログ相関（SM-09）。PII は最小限（担当者メールのみ）。 */
