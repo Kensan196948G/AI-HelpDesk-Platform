@@ -721,6 +721,23 @@ Set-SumFs
 Assert-Equal 'summary: OneDrive のクラウドタグ' $null (Get-SumRefusal -Target 'C:\Users\a\OneDrive\Docs' -Root 'C:\Users\a\OneDrive\Docs' -OneDrive 'C:\Users\a\OneDrive')
 Assert-Equal 'summary: OneDrive の範囲外のクラウドタグ' 'REPARSE_REJECTED' (Get-SumRefusal -Target 'C:\Users\a\OneDrive\Docs' -Root 'C:\Users\a\OneDrive\Docs')
 
+# OneDrive の複数アカウント
+Set-SumFs
+$script:SumFs['C:\Users\a\OneDrive - Corp'] = @{ Attr = 1040; Tag = $tagCloudS }
+$script:SumFs['D:\'] = @{ Attr = 16; Tag = 0 }; $script:SumFs['D:\Evil'] = @{ Attr = 1040; Tag = $tagCloudS }
+function Get-SumScopes { param([string[]]$Candidates, [string]$Root = 'C:\Users\a\Documents') return (@(Get-SummaryCloudScopes -Candidates $Candidates -ProfileFinal 'C:\Users\a' -RootFinal $Root -Probe $sumProbe) -join ',') }
+Assert-Equal 'summary-cloud: プロファイル配下の複数アカウント' 'C:\Users\a\OneDrive,C:\Users\a\OneDrive - Corp' (Get-SumScopes -Candidates @('C:\Users\a\OneDrive', 'C:\Users\a\OneDrive - Corp'))
+Assert-Equal 'summary-cloud: 範囲外は不可' '' (Get-SumScopes -Candidates @('D:\Evil'))
+Assert-Equal 'summary-cloud: 起点を含めば可' 'D:\Evil' (Get-SumScopes -Candidates @('D:\Evil') -Root 'D:\Evil')
+Assert-Equal 'summary-cloud: プロファイル自身は不可' '' (Get-SumScopes -Candidates @('C:\Users\a'))
+Assert-Equal 'summary-cloud: 祖先は不可' '' (Get-SumScopes -Candidates @('C:\Users'))
+Assert-Equal 'summary-cloud: ドライブ直下は不可' '' (Get-SumScopes -Candidates @('D:\'))
+Assert-Equal 'summary-cloud: 2 つ目のアカウントで許可' $null (Get-SummaryScopeRefusal -TargetPath 'C:\Users\a\OneDrive - Corp' -RootPath 'C:\Users\a\OneDrive - Corp' -ProfilePath 'C:\Users\a' -OneDrivePath @('C:\Users\a\OneDrive', 'C:\Users\a\OneDrive - Corp') -Probe $sumProbe)
+Assert-Equal 'summary-cloud: 範囲外の既知フォルダは不可' 'REPARSE_REJECTED' (Get-SummaryScopeRefusal -TargetPath 'D:\Evil' -RootPath 'D:\Evil' -ProfilePath 'C:\Users\a' -OneDrivePath @('C:\Users\a\OneDrive') -Probe $sumProbe)
+Assert-True 'summary-cloud: アカウント名' ((Test-SummaryAccountName -Name 'Business1') -and (Test-SummaryAccountName -Name 'Personal'))
+Assert-False 'summary-cloud: アカウント名の拒否' (Test-SummaryAccountName -Name 'Evil')
+Set-SumFs
+
 $acc = New-SummaryAccumulator
 Add-SummaryEntry -Accumulator $acc -Attributes 32 -Tag 0 -Size 100
 Add-SummaryEntry -Accumulator $acc -Attributes 32 -Tag 0 -Size 50
