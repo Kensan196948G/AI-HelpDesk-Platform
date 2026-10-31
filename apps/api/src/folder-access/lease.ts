@@ -43,9 +43,7 @@ const ResponseSchema = z.object({
   generatedAt: z.string().nullable().optional(),
   // 絞り込み未対応の旧プロセスは filter を返さず全件を返すので、確定に使わない。
   filter: z.object({ employee_no: z.string() }).optional(),
-  dataAsOf: z
-    .object({ employeeDirectoryLastSeenAt: z.string().nullable().optional() })
-    .optional(),
+  dataAsOf: z.object({ employeeDirectoryLastSeenAt: z.string().nullable().optional() }).optional(),
   records: z.array(RecordSchema),
 });
 

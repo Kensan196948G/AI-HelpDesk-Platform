@@ -675,16 +675,8 @@ describe('貸与情報と端末の照合（Mock: PII API / RSP）', () => {
       () => ({ ...leaseBody([LEASE_ROW]), filter: undefined }),
       'LEASE_UNAVAILABLE',
     ],
-    [
-      '退職者',
-      () => leaseBody([{ ...LEASE_ROW, employee_active: false }]),
-      'LEASE_NONE',
-    ],
-    [
-      '貸与が有効でない',
-      () => leaseBody([{ ...LEASE_ROW, lease_active: false }]),
-      'LEASE_NONE',
-    ],
+    ['退職者', () => leaseBody([{ ...LEASE_ROW, employee_active: false }]), 'LEASE_NONE'],
+    ['貸与が有効でない', () => leaseBody([{ ...LEASE_ROW, lease_active: false }]), 'LEASE_NONE'],
     [
       'employee_active が不明',
       () => leaseBody([{ ...LEASE_ROW, employee_active: null }]),
