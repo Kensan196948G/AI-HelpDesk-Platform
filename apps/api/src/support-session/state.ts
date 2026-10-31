@@ -17,6 +17,8 @@ export const ASSIST_LIMITS = {
   maxConsentTtlMinutes: 30,
   /** 進行中のヘルパーへ勧めるポーリング間隔。 */
   activePollSeconds: 5,
+  /** 失効したトークンで結果を報告できる時間。helper の revoked_at が基準で、再送で延長しない。 */
+  revokedReportHours: 24,
 } as const;
 
 export const OPERATION_CONSENT_VERSION = 'operation-consent/1';

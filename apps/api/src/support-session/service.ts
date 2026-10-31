@@ -163,6 +163,7 @@ export interface ExecutionRow {
   stop_requested_at: Date | null;
   stopped_at: Date | null;
   stop_outcome: string | null;
+  report_expired_at: Date | null;
   partial_effect: string[] | null;
   created_at: Date;
   op_expired: boolean;

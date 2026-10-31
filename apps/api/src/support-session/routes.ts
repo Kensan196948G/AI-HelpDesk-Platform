@@ -181,6 +181,7 @@ function executionDto(row: ExecutionRow) {
     stopRequestedAt: row.stop_requested_at?.toISOString() ?? null,
     stoppedAt: row.stopped_at?.toISOString() ?? null,
     stopOutcome: row.stop_outcome,
+    reportExpiredAt: row.report_expired_at?.toISOString() ?? null,
     partialEffect: row.partial_effect,
   };
 }
@@ -257,6 +258,7 @@ function invalidState(session: SessionRow, message: string): ApiError {
 interface ProposingSnapshot {
   /** AI へ問い合わせた時点の同意。応答の採用時に一致を確かめる。 */
   aiConsentId: string | null;
+  aiConsentExpiresAt: string | null;
   scope: OperationScope;
   rootKind: string | null;
   useAi: boolean;
@@ -285,6 +287,7 @@ async function snapshotForProposing(
     rootKind: ctx.consent_root,
     useAi: session.ai_consent_live && aiConfigured(),
     aiConsentId: session.ai_input_consent_id,
+    aiConsentExpiresAt: session.ai_input_consent_expires_at?.toISOString() ?? null,
     usedProposals: session.proposal_count,
     history: proposals.map((row) => ({ skillId: row.skill_id, params: row.params })),
     steps: proposals.map((row) => {
@@ -804,6 +807,18 @@ async function sharedRoutes(app: FastifyInstance): Promise<void> {
         const { ctx, session } = locked;
         await applyLiveness(tx, ctx, session, email);
         if (session.status !== 'proposing') return { kind: 'state' as const, session };
+        // AI へ問い合わせたら、応答の種類によらず最初に同意を照合する。取消前の同意で得た応答で
+        // 状態を進めない（再同意でも ID が変わる）。ルールベースへは切り替えない。
+        if (
+          begun.snapshot.useAi &&
+          (!session.ai_consent_live ||
+            session.ai_input_consent_id !== begun.snapshot.aiConsentId ||
+            (session.ai_input_consent_expires_at?.toISOString() ?? null) !==
+              begun.snapshot.aiConsentExpiresAt)
+        ) {
+          await stopSessionTx(tx, ctx, session, 'ai_consent_changed', email);
+          return { kind: 'stopped' as const, reason: 'ai_consent_changed' };
+        }
         if (pick.kind === 'stop') {
           await stopSessionTx(tx, ctx, session, pick.reason, email);
           return { kind: 'stopped' as const, reason: pick.reason };
@@ -811,15 +826,6 @@ async function sharedRoutes(app: FastifyInstance): Promise<void> {
         if (pick.kind === 'confirm') {
           await setSessionStatus(tx, session, 'resolve_confirm');
           return { kind: 'ok' as const };
-        }
-        // AI の応答を待つ間に同意が取り消されたら、その候補を使わない。
-        // 取り消して再同意した場合も、取消前の同意で得た応答は使わない（同意 ID で照合する）。
-        if (
-          pick.source === 'deepseek' &&
-          (!session.ai_consent_live || session.ai_input_consent_id !== begun.snapshot.aiConsentId)
-        ) {
-          await stopSessionTx(tx, ctx, session, 'ai_consent_changed', email);
-          return { kind: 'stopped' as const, reason: 'ai_consent_changed' };
         }
         // AI の候補も含め、この場で登録・型・範囲を再検証する（§5）。
         const approved = resolveApprovedSkill(pick.skillId);

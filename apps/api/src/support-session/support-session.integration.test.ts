@@ -1201,6 +1201,170 @@ describe('共通支援セッション（Mock: ヘルパー / RSP / 名簿 / PII 
     });
   });
 
+  describe('失効済みトークンの報告期限（410 RESULT_REPORT_EXPIRED）', () => {
+    async function revokedDuringRun() {
+      const session = await readySession();
+      const { op } = await executing(session);
+      await call(OWNER, 'POST', base(session.id, '/revoke'), {});
+      return { session, op };
+    }
+    const ageRevocation = (helperId: string, age: string) =>
+      sql`
+        UPDATE folder_access_helpers SET revoked_at = now() - ${age}::interval WHERE id = ${helperId}
+      `;
+    const revokedAt = async (helperId: string) =>
+      (
+        await sql<{ revoked_at: Date }[]>`
+          SELECT revoked_at FROM folder_access_helpers WHERE id = ${helperId}
+        `
+      )[0]?.revoked_at.getTime();
+    const auditActions = async (id: string) =>
+      sql<{ detail: unknown }[]>`
+        SELECT detail FROM audit_log
+        WHERE target_type = 'support_session' AND target_id = ${id}
+          AND action = 'support_session.report_expired'
+        ORDER BY id
+      `;
+
+    it('期限内は遅延結果（accepted:false）として保存する', async () => {
+      const { session, op } = await revokedDuringRun();
+      await ageRevocation(session.helperId, '23 hours');
+      const response = await report(session.token, op, resultBody(op, FOLDER_OUTPUT));
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({ ok: true, accepted: false, reason: 'LATE_RESULT' });
+      expect((await executionRows(session.id))[0]?.late_result).toBe(true);
+    });
+
+    it('期限切れは 410 で保存せず、監査に機微を残さない', async () => {
+      const { session, op } = await revokedDuringRun();
+      await ageRevocation(session.helperId, '25 hours');
+      const response = await report(session.token, op, resultBody(op, FOLDER_OUTPUT));
+      expect(response.statusCode).toBe(410);
+      expect(response.json().error.code).toBe('RESULT_REPORT_EXPIRED');
+      expect(response.json()).not.toHaveProperty('accepted');
+      const execution = (await executionRows(session.id))[0];
+      expect(execution?.result_received_at).toBeNull();
+      expect(execution?.normalized_output).toBeNull();
+      expect(execution?.late_result).toBe(false);
+      const audits = await auditActions(session.id);
+      expect(audits).toHaveLength(1);
+      expect(JSON.stringify(audits)).toContain(op.opId);
+      const text = JSON.stringify(audits);
+      for (const canary of [SID, MACHINE, HOST, session.token, CANARY_SEGMENT]) {
+        expect(text).not.toContain(canary);
+      }
+    });
+
+    it('本文の形式より先に判定し、mock でも 410 を返す', async () => {
+      const { session, op } = await revokedDuringRun();
+      await ageRevocation(session.helperId, '25 hours');
+      const malformed = await report(session.token, op, {});
+      expect(malformed.statusCode).toBe(410);
+      const mock = await report(
+        session.token,
+        op,
+        resultBody(op, FOLDER_OUTPUT, { executionMode: 'mock' }),
+      );
+      expect(mock.statusCode).toBe(410);
+    });
+
+    it('再送・poll で期限が延びない', async () => {
+      const { session, op } = await revokedDuringRun();
+      await ageRevocation(session.helperId, '25 hours');
+      const before = await revokedAt(session.helperId);
+      for (let i = 0; i < 3; i += 1) {
+        expect((await report(session.token, op, resultBody(op, FOLDER_OUTPUT))).statusCode).toBe(
+          410,
+        );
+        expect((await poll(session.token)).revoked).toBe(true);
+      }
+      expect(await revokedAt(session.helperId)).toBe(before);
+      await sweepSupportSessions();
+      expect(await revokedAt(session.helperId)).toBe(before);
+      expect((await report(session.token, op, resultBody(op, FOLDER_OUTPUT))).statusCode).toBe(410);
+    });
+
+    it('自分の実行でなければ 404 のまま', async () => {
+      const { session } = await revokedDuringRun();
+      await ageRevocation(session.helperId, '25 hours');
+      const response = await helperCall(session.token, `ops/${RSP_DEVICE}/skill-result`, {});
+      expect(response.statusCode).toBe(404);
+    });
+
+    it('失効していないトークンには期限がない', async () => {
+      const session = await readySession();
+      const { op } = await executing(session);
+      await sql`
+        UPDATE folder_access_helpers SET last_seen_at = now() WHERE id = ${session.helperId}
+      `;
+      const response = await report(session.token, op, resultBody(op, FOLDER_OUTPUT));
+      expect(response.statusCode).toBe(200);
+    });
+
+    it('/start の扱いは変わらない（期限切れでも 409 で拒否を記録する）', async () => {
+      const session = await readySession();
+      await approveFirst(session);
+      const op = (await poll(session.token)).skillOps?.[0] as Op;
+      await call(OWNER, 'POST', base(session.id, '/revoke'), {});
+      await ageRevocation(session.helperId, '25 hours');
+      const response = await start(session.token, op);
+      expect(response.statusCode).toBe(409);
+      expect(response.json().reason).toBe('SESSION_ENDED');
+      expect((await executionRows(session.id))[0]?.status).toBe('rejected_at_start');
+    });
+
+    it('報告が来ないまま期限を過ぎた実行は sweep で停止未確認として残す', async () => {
+      const { session } = await revokedDuringRun();
+      await ageRevocation(session.helperId, '25 hours');
+      await sweepSupportSessions();
+      const execution = (await executionRows(session.id))[0];
+      expect(execution?.report_expired_at).not.toBeNull();
+      expect(execution?.stop_outcome).toBe('stop_unconfirmed');
+      expect(execution?.stopped_at).toBeNull();
+      expect(execution?.evidence).toBe(false);
+      expect(execution?.verify_ok).toBeNull();
+      expect(execution?.result_received_at).toBeNull();
+      expect(execution?.status).not.toBe('completed');
+      expect(await auditActions(session.id)).toHaveLength(1);
+      // 同じ実行を 2 回記録しない。
+      await sweepSupportSessions();
+      expect(await auditActions(session.id)).toHaveLength(1);
+      const response = await call(OWNER, 'GET', base(session.id));
+      expect(response.json().session.executions[0].reportExpiredAt).not.toBeNull();
+    });
+
+    it('sweep は既存の stop_outcome / partial_effect を消さない', async () => {
+      const { session } = await revokedDuringRun();
+      await sql`
+        UPDATE assist_executions
+        SET stop_outcome = 'stop_failed', partial_effect = ${sql.json(['MARKER_WRITTEN'])}
+        WHERE support_session_id = ${session.id}
+      `;
+      await ageRevocation(session.helperId, '25 hours');
+      await sweepSupportSessions();
+      const execution = (await executionRows(session.id))[0];
+      expect(execution?.stop_outcome).toBe('stop_failed');
+      expect(execution?.partial_effect).toEqual(['MARKER_WRITTEN']);
+      expect(execution?.report_expired_at).not.toBeNull();
+    });
+
+    it('期限前に報告済み・未開始の実行は記録の対象にしない', async () => {
+      const reported = await revokedDuringRun();
+      await report(reported.session.token, reported.op, resultBody(reported.op, FOLDER_OUTPUT));
+      await ageRevocation(reported.session.helperId, '25 hours');
+      const unstarted = await readySession();
+      await approveFirst(unstarted);
+      await poll(unstarted.token);
+      await call(OWNER, 'POST', base(unstarted.id, '/revoke'), {});
+      await ageRevocation(unstarted.helperId, '25 hours');
+      await sweepSupportSessions();
+      const first = (await executionRows(reported.session.id))[0];
+      expect(first?.report_expired_at).toBeNull();
+      expect(first?.late_result).toBe(true);
+      expect((await executionRows(unstarted.id))[0]?.report_expired_at).toBeNull();
+    });
+  });
+
   describe('結果の出所', () => {
     it.each(['mock', 'manual'])('既定では %s の報告を拒否し、何も保存しない', async (mode) => {
       const session = await readySession();
@@ -1571,6 +1735,112 @@ describe('共通支援セッション（Mock: ヘルパー / RSP / 名簿 / PII 
         SELECT status, end_reason FROM support_sessions WHERE id = ${session.id}
       `;
       expect(rows[0]?.end_reason).toBe('ai_consent_changed');
+    });
+
+    describe('AI の応答待ちに同意が変わると、応答の種類によらず同じ理由で止める', () => {
+      const revokeDuringAi = (id: string) => async () => {
+        const revoked = await call(OWNER, 'POST', base(id, '/consents/ai-input/revoke'), {});
+        expect(revoked.statusCode, revoked.body).toBe(200);
+      };
+      const reconsentDuringAi = (id: string) => async () => {
+        await revokeDuringAi(id)();
+        const again = await call(OWNER, 'POST', base(id, '/consents/ai-input'), {
+          version: 'ai-input-consent/1',
+          ttlMinutes: 30,
+        });
+        expect(again.statusCode, again.body).toBe(200);
+      };
+      const expireDuringAi = (id: string) => async () => {
+        await sql`
+          UPDATE support_sessions SET ai_input_consent_expires_at = now() - interval '1 second'
+          WHERE id = ${id}
+        `;
+      };
+      const changeExpiryDuringAi = (id: string) => async () => {
+        await sql`
+          UPDATE support_sessions
+          SET ai_input_consent_expires_at = ai_input_consent_expires_at + interval '1 minute'
+          WHERE id = ${id}
+        `;
+      };
+
+      async function proposeDuringChange(id: string, change: () => Promise<void>) {
+        world.onAi = change;
+        const response = await call(OWNER, 'POST', base(id, '/proposals'), {});
+        world.onAi = undefined;
+        expect(world.aiBodies.length, response.body).toBeGreaterThan(0);
+        const rows = await sql<{ status: string; end_reason: string | null }[]>`
+          SELECT status, end_reason FROM support_sessions WHERE id = ${id}
+        `;
+        const proposals = await sql`
+          SELECT id, status FROM assist_proposals WHERE support_session_id = ${id}
+        `;
+        return { row: rows[0], proposals };
+      }
+
+      it.each([
+        ['取消', revokeDuringAi],
+        ['取消して再同意', reconsentDuringAi],
+        ['期限切れ', expireDuringAi],
+        ['期限の変更', changeExpiryDuringAi],
+      ])('stop の応答: %s', async (_name, change) => {
+        const session = await withAi();
+        world.aiReply = { skillId: '', decision: 'stop', rationale: '終了' };
+        const { row } = await proposeDuringChange(session.id, change(session.id));
+        expect(row).toEqual({ status: 'stopped', end_reason: 'ai_consent_changed' });
+      });
+
+      it.each([
+        ['取消', revokeDuringAi],
+        ['取消して再同意', reconsentDuringAi],
+        ['期限切れ', expireDuringAi],
+      ])('escalate の応答: %s', async (_name, change) => {
+        const session = await withAi();
+        world.aiReply = { skillId: '', decision: 'escalate', rationale: '人手' };
+        const { row } = await proposeDuringChange(session.id, change(session.id));
+        expect(row).toEqual({ status: 'stopped', end_reason: 'ai_consent_changed' });
+      });
+
+      it.each([
+        ['取消', revokeDuringAi],
+        ['取消して再同意', reconsentDuringAi],
+        ['期限切れ', expireDuringAi],
+      ])('confirm（検証済みの後の stop）: %s', async (_name, change) => {
+        const session = await withAi();
+        world.aiReply = { skillId: 'folder.summary', params: { target: 'T1' }, rationale: '確認' };
+        const { op } = await executing(session);
+        await report(session.token, op, resultBody(op, FOLDER_OUTPUT));
+        world.aiReply = { skillId: '', decision: 'stop', rationale: '解決' };
+        const { row } = await proposeDuringChange(session.id, change(session.id));
+        expect(row).toEqual({ status: 'stopped', end_reason: 'ai_consent_changed' });
+      });
+
+      it('AI の応答が使えなくても、ルールベースへ切り替えて提案しない', async () => {
+        const session = await withAi();
+        world.aiReply = { skillId: 'system.shutdown', params: {} };
+        const { row, proposals } = await proposeDuringChange(
+          session.id,
+          revokeDuringAi(session.id),
+        );
+        expect(row).toEqual({ status: 'stopped', end_reason: 'ai_consent_changed' });
+        expect(proposals).toHaveLength(0);
+      });
+
+      it('重複の応答でも同意の変更を理由に止める', async () => {
+        const session = await withAi();
+        world.aiReply = { skillId: 'folder.summary', params: { target: 'T1' }, rationale: '確認' };
+        const { op } = await executing(session);
+        await report(session.token, op, resultBody(op, FOLDER_OUTPUT));
+        const { row } = await proposeDuringChange(session.id, revokeDuringAi(session.id));
+        expect(row).toEqual({ status: 'stopped', end_reason: 'ai_consent_changed' });
+      });
+
+      it('同意が変わらなければ escalate はそのまま進む', async () => {
+        const session = await withAi();
+        world.aiReply = { skillId: '', decision: 'escalate', rationale: '人手' };
+        const { row } = await proposeDuringChange(session.id, async () => undefined);
+        expect(row).toEqual({ status: 'escalated', end_reason: 'escalated' });
+      });
     });
 
     it('同意を取り消せば AI を呼ばない', async () => {
