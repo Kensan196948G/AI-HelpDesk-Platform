@@ -369,6 +369,8 @@ try {
     const outcome = await app.begin(async (tx) => {
       if (handoverId) await tx`DELETE FROM case_handovers WHERE id = ${handoverId}`;
       await tx`DELETE FROM case_handovers WHERE case_id = ${CASE_ID}`;
+      // E2E で付与した approver を残さない（除外対象の DX 担当者に権限を残さないため）。
+      await tx`DELETE FROM user_roles WHERE granted_by = 'e2e' AND role = 'approver'`;
       // A/B/C の状態を一度消し、退避した内容だけを戻す（検証用フィクスチャを残さない）。
       await tx`DELETE FROM prototype_states WHERE user_email IN (${A_KEY}, ${B_KEY}, ${C_KEY})`;
       for (const [key, data] of backup) {
