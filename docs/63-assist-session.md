@@ -127,3 +127,28 @@ SYSTEM を持つ者はヘルパーと本人タスクを操作できる。**封�
 | `folder.summary` | read | 許可フォルダ直下の件数、種別別件数、合計サイズ、`truncated`。名前を返さない |
 | `user.marker.set` / `clear` | modify（可逆） | `HKCU\\Software\\AIHelpDesk\\Verify` の合成値。前値を返し復元する。検証用 manifest のみ |
 | 読取 Skill 1 件 | read | `disk.space` |
+
+## 12. 実装と本仕様の差（2026-11-01）
+
+- poll は `skillOps` を別配列で返し、`capabilities` を申告したヘルパーにだけ配送する。結果は `POST /ops/:id/skill-result`。
+- 確認専用の `user.marker.status` を追加した（提案不可）。
+- 新 Skill は専用カタログに置き、resolve には載せない。§6 の拒否は構造で担保し、resolve 側に実行時ガードはない。
+- 高リスク Skill は管理者承認を実装せず、**カタログから除外**している。
+- フォルダ同意の版は固定値。`binding_pending` は未使用。
+- nonce は 2 段（Y と `/start` で各 1 回）。
+- 全終端でフォルダ同意とトークンを失効する（解決時も）。
+- 成功コードは Skill ごとに固定のため、「進捗なし」は実質「同一 Skill の連続成功」である。
+- ヘルパー: `/start` の無応答・5xx は `rejected` + `START_NO_RESPONSE`。poll が 30 秒成功しなければ子を停止する。op の期限は開始前だけ判定する。
+
+## 13. 未実装・未確認
+
+| 項目 | 状態 |
+|---|---|
+| Skill の承認手段 | **阻害要因**。`scripts/approve-skills.ts` は `SKILL_CATALOG` だけで `approved.json` を全書換えするので、新 Skill を承認できない |
+| 担当者パネル | 未実装（開始と中止は API のみ） |
+| `diag.sleep` | サーバ未登録（実行中の停止試験に発行手段が必要） |
+| 実 Windows | **未実施**。ヘルパーと Skill 承認は Mock。Add-Type、Job、stdin、ハッシュ一致（CRLF 変換で不一致になる）、HKCU、ログオフ時の停止はすべて未実測 |
+| 実 AI | 未確認（ユーザーは利用を承認済み） |
+| 実貸与照合 | 未確認（Mirai-Info #262 のマージ、read API 再起動、トークン発行が必要） |
+| 認証済みブラウザ | 未確認（これまでの画面確認はヘッダ注入のヘッドレス） |
+
