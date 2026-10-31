@@ -60,6 +60,11 @@ async function addUser(email: string, roles: string[]): Promise<void> {
   }
 }
 
+function nextSequence(): number {
+  sequence += 1;
+  return sequence;
+}
+
 function as(email: string): void {
   currentEmail = email;
   clearUiRoleCache();
@@ -77,7 +82,7 @@ function call(method: 'GET' | 'POST', url: string, payload?: Record<string, unkn
 
 function draft(overrides: Record<string, unknown> = {}) {
   return {
-    clientRef: `GATE-${Date.now()}-${(sequence += 1)}`,
+    clientRef: `GATE-${Date.now()}-${nextSequence()}`,
     status: 'pending',
     title: 'プリンタの再接続',
     symptom: '印刷できない',
@@ -178,7 +183,7 @@ describe('引継ぎの承認と担当者権限の分離', () => {
   async function claimedHandoverId(): Promise<string> {
     const rows = await sql<{ id: string }[]>`
       INSERT INTO case_handovers (case_id, owner_email, status, snapshot, claimed_by)
-      VALUES (${`CASE-GATE-${Date.now()}-${(sequence += 1)}`}, ${DX_PLAIN}, 'claimed',
+      VALUES (${`CASE-GATE-${Date.now()}-${nextSequence()}`}, ${DX_PLAIN}, 'claimed',
         ${sql.json({ case: { subject: 'gate' } })}, ${DX_PLAIN})
       RETURNING id
     `;
