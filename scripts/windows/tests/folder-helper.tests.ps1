@@ -304,6 +304,47 @@ Assert-Equal 'resolve: プロファイルがドライブ直下' 'OUT_OF_SCOPE' (
 Assert-Equal 'resolve: 起点がドライブ直下' 'OUT_OF_SCOPE' (Invoke-Resolve -Base 'C:\').Reason
 Assert-Equal 'resolve: 起点が UNC' 'OUT_OF_SCOPE' (Invoke-Resolve -Base '\\server\share\Documents').Reason
 
+# OneDrive の複数アカウント（Get-CloudScopes）
+function Get-Scopes {
+  param([object[]]$Candidates, [string]$Root = 'C:\Users\a\Documents')
+  return (@(Get-CloudScopes -Candidates ([string[]]$Candidates) -ProfileFinal 'C:\Users\a' -RootFinal $Root -Probe $fakeProbe) -join ',')
+}
+function Set-ScopeFs {
+  Set-BaseFs
+  foreach ($p in 'C:\Users\a\OneDrive', 'C:\Users\a\OneDrive - Corp', 'C:\Users\a\OneDrive - Other', 'C:\Users\b', 'C:\Users\b\OneDrive', 'D:\', 'D:\Cloud', 'D:\Cloud\Corp', 'D:\Cloud\Corp\Documents', 'D:\Evil') { $script:FakeFs[$p] = @{} }
+}
+Set-ScopeFs
+Assert-Equal 'cloud: プロファイル配下の複数アカウント' 'C:\Users\a\OneDrive,C:\Users\a\OneDrive - Corp' (Get-Scopes -Candidates @('C:\Users\a\OneDrive', 'C:\Users\a\OneDrive - Corp'))
+Assert-Equal 'cloud: 重複は 1 つ' 'C:\Users\a\OneDrive' (Get-Scopes -Candidates @('C:\Users\a\OneDrive', 'c:\users\A\onedrive'))
+Assert-Equal 'cloud: プロファイル外でも起点を含めば可' 'D:\Cloud\Corp' (Get-Scopes -Candidates @('D:\Cloud\Corp') -Root 'D:\Cloud\Corp\Documents')
+Assert-Equal 'cloud: プロファイル外で起点を含まなければ不可' '' (Get-Scopes -Candidates @('D:\Evil'))
+Assert-Equal 'cloud: 別ユーザーは不可' '' (Get-Scopes -Candidates @('C:\Users\b\OneDrive'))
+Assert-Equal 'cloud: 起点と無関係な候補だけ除く' 'C:\Users\a\OneDrive' (Get-Scopes -Candidates @('D:\Evil', 'C:\Users\a\OneDrive'))
+Assert-Equal 'cloud: プロファイル自身は不可' '' (Get-Scopes -Candidates @('C:\Users\a'))
+Assert-Equal 'cloud: プロファイルの祖先は不可' '' (Get-Scopes -Candidates @('C:\Users'))
+Assert-Equal 'cloud: ドライブ直下は不可' '' (Get-Scopes -Candidates @('C:\', 'D:\') -Root 'D:\Cloud\Corp\Documents')
+Assert-Equal 'cloud: UNC は不可' '' (Get-Scopes -Candidates @('\\srv\share\OneDrive'))
+Assert-Equal 'cloud: 存在しない候補は不可' '' (Get-Scopes -Candidates @('C:\Users\a\None'))
+Assert-Equal 'cloud: 候補なし' '' (Get-Scopes -Candidates @())
+$script:FakeFs['C:\Users\a\OneDrive'] = @{ Final = '\\?\D:\Evil' }
+Assert-Equal 'cloud: リンクで範囲外へ解決される候補は不可' '' (Get-Scopes -Candidates @('C:\Users\a\OneDrive'))
+Set-ScopeFs
+$script:FakeFs['C:\Users\a\OneDrive - Corp'] = @{ Attr = 1040; Tag = $tagCloud }
+$script:FakeFs['C:\Users\a\OneDrive - Corp\sub'] = @{ Attr = 1040; Tag = $tagCloud }
+$r = Resolve-FolderTarget -BasePath 'C:\Users\a\OneDrive - Corp' -Segments @('sub') -ProfilePath 'C:\Users\a' -OneDrivePath @('C:\Users\a\OneDrive', 'C:\Users\a\OneDrive - Corp') -Probe $fakeProbe
+Assert-Equal 'cloud: 2 つ目のアカウントのクラウドタグを許可' $null $r.Reason
+$r = Resolve-FolderTarget -BasePath 'C:\Users\a\OneDrive - Corp' -Segments @('sub') -ProfilePath 'C:\Users\a' -OneDrivePath @('C:\Users\a\OneDrive') -Probe $fakeProbe
+Assert-Equal 'cloud: 登録のないアカウントは不可' 'REPARSE_REJECTED' $r.Reason
+$script:FakeFs['D:\Evil'] = @{ Attr = 1040; Tag = $tagCloud }
+$r = Resolve-FolderTarget -BasePath 'D:\Evil' -Segments @() -ProfilePath 'C:\Users\a' -OneDrivePath @('C:\Users\a\OneDrive') -Probe $fakeProbe
+Assert-Equal 'cloud: 範囲に無い場所の既知フォルダは不可' 'REPARSE_REJECTED' $r.Reason
+Assert-True 'reparse: 複数の範囲の 2 つ目' (Test-ReparseAllowed -Path 'C:\Users\a\B\x' -Attributes $attrReparseDir -Tag $tagCloud -CloudScope @('C:\Users\a\A', 'C:\Users\a\B'))
+Assert-False 'reparse: 空の範囲' (Test-ReparseAllowed -Path 'C:\Users\a\B\x' -Attributes $attrReparseDir -Tag $tagCloud -CloudScope @())
+foreach ($n in 'Business1', 'Business', 'Business12', 'Personal') { Assert-True ('cloud: アカウント名 ' + $n) (Test-OneDriveAccountName -Name $n) }
+foreach ($n in 'Evil', 'Business1x', 'BusinessEvil', '', $null) { Assert-False ('cloud: アカウント名の拒否 ' + [string]$n) (Test-OneDriveAccountName -Name $n) }
+$helperRegText = [IO.File]::ReadAllText($helperPath, [Text.Encoding]::UTF8)
+Assert-True 'cloud: Accounts を見る' ($helperRegText.Contains("OpenSubKey('Accounts', `$false)"))
+
 # OneDrive へのリダイレクト
 function Set-OneDriveFs {
   param([string]$OneDriveRoot = 'D:\Cloud\OneDrive')
@@ -761,6 +802,91 @@ try {
   Assert-Equal 'decode: 孤立サロゲートは整形で除去' 'a' (ConvertTo-SafeEntryName -Name ($decoder::Decode($mem, 0, 4096, [ref]$nextOut)).Name)
 } finally {
   [Runtime.InteropServices.Marshal]::FreeHGlobal($mem)
+}
+
+# ---------------------------------------------------------------------------
+# 導入コード（これより後は関数を上書きするので、ファイルの最後に置く）
+# ---------------------------------------------------------------------------
+foreach ($case in @(@{ s = 403; b = '{"error":{"code":"ENROLL_CODE_INVALID"}}'; e = $true }, @{ s = 403; b = '{"error":{"code":"FORBIDDEN"}}'; e = $false }, @{ s = 403; b = ''; e = $false }, @{ s = 400; b = 'ENROLL_CODE_INVALID'; e = $false }, @{ s = 0; b = ''; e = $false })) {
+  Assert-Equal ('enroll: 判定 ' + $case.s + ' ' + $case.b) $case.e (Test-EnrollCodeRejected -Status $case.s -Body $case.b)
+}
+$helperAst = [Management.Automation.Language.Parser]::ParseFile($helperPath, [ref]$null, [ref]$null)
+$registrationCallers = @($helperAst.FindAll({ param($n) $n -is [Management.Automation.Language.CommandAst] -and $n.GetCommandName() -ceq 'Invoke-HelperRegistration' }, $true))
+Assert-Equal 'enroll: ヘルパー内に登録の呼び出しがない' 0 $registrationCallers.Count
+Assert-False 'enroll: 本体はコードを受け取らない' ($helperAst.ParamBlock.Parameters.Name.VariablePath.UserPath -contains 'EnrollCode')
+$codeUses = @($helperAst.FindAll({ param($n) $n -is [Management.Automation.Language.VariableExpressionAst] -and $n.VariablePath.UserPath -ieq 'EnrollCode' }, $true))
+Assert-Equal 'enroll: 本体で使うのは引数と本文だけ' 2 $codeUses.Count
+$installAst = [Management.Automation.Language.Parser]::ParseFile($installPath, [ref]$null, [ref]$null)
+$installCodeUses = @($installAst.FindAll({ param($n) $n -is [Management.Automation.Language.VariableExpressionAst] -and $n.VariablePath.UserPath -ieq 'EnrollCode' }, $true))
+Assert-Equal 'enroll: install で使うのは引数と登録だけ' 2 $installCodeUses.Count
+Assert-True 'enroll: install の引数は必須' ($installText.Contains('[Parameter(Mandatory)][string]$EnrollCode'))
+Assert-True 'enroll: 無効なコードは固定の文言で終了' ($installText.Contains("throw '導入コードが無効です。"))
+$verifyPath = Join-Path (Split-Path -Parent $windowsDir) 'verify/folder-access-real.mjs'
+Assert-True 'enroll: 検証ドライバに手順がある' ([IO.File]::ReadAllText($verifyPath, [Text.Encoding]::UTF8).Contains("case 'enroll-code':"))
+
+$enrollRoot = Join-Path ([IO.Path]::GetTempPath()) ('aihd-enroll-' + [Guid]::NewGuid().ToString('N'))
+$null = New-Item -ItemType Directory -Path $enrollRoot
+$script:EnrollHttp = New-Object System.Collections.Generic.List[object]
+$script:EnrollStatus = 200
+$script:EnrollFailBody = ''
+function Get-StateDirectory { return $enrollRoot }
+function Get-SessionInfo { return @{ SessionId = 2; SessionState = 'active' } }
+function Get-CurrentIdentityInfo { return @{ Sid = 'S-1-5-21-1-2-3-1001'; Name = 'synthetic'; IsAdministrator = $false } }
+function Get-MachineGuidValue { return 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa' }
+function Initialize-NativeInterop { $null = 0 }
+function Initialize-StateDirectory { param($Sid) return $enrollRoot }
+function Write-HelperLog { param($EventName, $Fields) $null = $EventName }
+# DPAPI は Linux に無いのでトークン本体だけ平文のスタブにする。
+function Save-HelperToken { param($HelperId, $HelperToken) [IO.File]::WriteAllText((Get-StatePath -Name 'token.dat'), $HelperToken) }
+function Read-HelperToken {
+  $path = Get-StatePath -Name 'token.dat'
+  if (-not (Test-Path -LiteralPath $path)) { return $null }
+  return [pscustomobject]@{ helperId = 'h'; helperToken = [IO.File]::ReadAllText($path) }
+}
+function Invoke-HelperHttp {
+  param($Url, $Token, $BodyJson, $TimeoutSec = 30)
+  $script:EnrollHttp.Add(@{ Url = $Url; Body = $BodyJson })
+  if ($script:EnrollStatus -ne 200) { return @{ Status = $script:EnrollStatus; Body = $script:EnrollFailBody; RetryAfter = 0; ErrorType = $null } }
+  return @{ Status = 200; Body = '{"helperId":"h2","helperToken":"SYNTHETIC-TOKEN","pairingCode":"12345678","pairingExpiresAt":"2099-01-01T00:00:00.000Z"}'; RetryAfter = 0; ErrorType = $null }
+}
+$enrollIdentity = @{ Sid = 'S-1-5-21-1-2-3-1001'; Name = 'synthetic'; IsAdministrator = $false }
+try {
+  $reg = Invoke-HelperRegistration -ServerBase 'https://x.example.com' -Identity $enrollIdentity -EnrollCode 'SYNTHETICCODE' -InBackground $true
+  Assert-True 'enroll: 登録できる' $reg.Ok
+  Assert-Equal 'enroll: 本文に入れる' 'SYNTHETICCODE' (ConvertFrom-HelperJson -Json $script:EnrollHttp[0].Body).enrollCode
+  Write-HelperConfig -ServerBase 'https://x.example.com' -AllowInsecure $false
+  $leaked = @(Get-ChildItem -LiteralPath $enrollRoot -Recurse -File | Where-Object { [IO.File]::ReadAllText($_.FullName).Contains('SYNTHETICCODE') })
+  Assert-Equal 'enroll: 状態ファイルに残さない' 0 $leaked.Count
+  Remove-StateFile -Name 'token.dat'
+  Remove-StateFile -Name 'pairing-code.txt'
+
+  $script:EnrollHttp.Clear()
+  $script:EnrollStatus = 403
+  $script:EnrollFailBody = '{"ok":false,"error":{"code":"ENROLL_CODE_INVALID"}}'
+  $reg = Invoke-HelperRegistration -ServerBase 'https://x.example.com' -Identity $enrollIdentity -EnrollCode 'SYNTHETICCODE' -InBackground $true
+  Assert-False 'enroll: 無効なコードは失敗' $reg.Ok
+  Assert-True 'enroll: 無効なコードを判別' $reg.EnrollRejected
+  Assert-Equal 'enroll: 再試行しない' 1 $script:EnrollHttp.Count
+  Assert-False 'enroll: トークンを作らない' (Test-Path -LiteralPath (Get-StatePath -Name 'token.dat'))
+  $script:EnrollStatus = 200
+
+  # 本体はコードなしで登録しない
+  $ServerUrl = 'https://x.example.com'
+  $AllowInsecureHttp = $false
+  $RegisterOnly = $false
+  foreach ($mode in $true, $false) {
+    $Background = $mode
+    $script:EnrollHttp.Clear()
+    Assert-Equal ('main: トークンなしは終了 ' + $mode) 0 (Invoke-HelperMain 6>$null)
+    Assert-Equal ('main: 登録しない ' + $mode) 0 $script:EnrollHttp.Count
+  }
+  $Background = $true
+  $RegisterOnly = $true
+  Assert-Equal 'main: RegisterOnly でも登録しない' 3 (Invoke-HelperMain 6>$null)
+  Assert-Equal 'main: RegisterOnly の通信なし' 0 $script:EnrollHttp.Count
+  $RegisterOnly = $false
+} finally {
+  Remove-Item -LiteralPath $enrollRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 Write-Output ('passed={0} failed={1}' -f $script:Passed, $script:Failed)

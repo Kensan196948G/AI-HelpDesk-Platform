@@ -60,7 +60,7 @@ foreach ($case in $cases) {
     OpenDirectory   = { param($path) New-NativeDirectoryHandle -Path $path }
     GetKnownFolder  = { param($root) Get-KnownFolderPath -Root $root }
     GetProfilePath  = { Get-ProfileImagePathForSid -Sid $identity.Sid }
-    GetOneDrivePath = { Get-OneDriveUserFolder }
+    GetOneDrivePath = { Get-OneDriveUserFolders }
     ElapsedMs       = { $stopwatch.ElapsedMilliseconds }
     ShouldCancel    = { $false }
     IsExpired       = { $false }

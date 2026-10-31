@@ -18,7 +18,7 @@
 .PARAMETER Background
   タスクからの非対話起動。ペアリングコードは状態フォルダの pairing-code.txt に書く。
 .PARAMETER RegisterOnly
-  前面で登録だけを行い、コードを本人の画面に表示して終了する。
+  トークンの有無だけを確かめて終了する（無ければ終了コード 3）。登録は導入コードを持つ install-folder-helper.ps1 だけが行う。
 .PARAMETER NoMain
   ドットソース時にメインループを実行しない（テスト・install / uninstall 用）。
 #>
@@ -322,13 +322,16 @@ function Test-ReparseAllowed {
     [Parameter(Mandatory)][string]$Path,
     [uint32]$Attributes,
     [uint32]$Tag,
-    [AllowNull()][string]$CloudScope
+    [AllowNull()][AllowEmptyCollection()][string[]]$CloudScope
   )
   if (($Attributes -band $script:AttrReparsePoint) -eq 0) { return $true }
   if (Test-IsNameSurrogateTag -Tag $Tag) { return $false }
-  if ([string]::IsNullOrEmpty($CloudScope)) { return $false }
   if (-not (Test-IsCloudTag -Tag $Tag)) { return $false }
-  return (Test-PathWithin -Candidate $Path -Root $CloudScope)
+  foreach ($scope in @($CloudScope)) {
+    if ([string]::IsNullOrEmpty($scope)) { continue }
+    if (Test-PathWithin -Candidate $Path -Root $scope) { return $true }
+  }
+  return $false
 }
 
 # ---------------------------------------------------------------------------
@@ -518,6 +521,36 @@ function ConvertTo-ProbeReason {
   return 'IO_ERROR'
 }
 
+function Get-CloudScopes {
+  # OneDrive の UserFolder の候補（複数アカウント）のうち、範囲として認めるものの最終パスを返す。
+  # HKCU は本人が書き換えられるので、本人のプロファイル配下か、起点（既知フォルダ）の最終パスを
+  # 含む場合に限る。プロファイル自身・その祖先・ドライブ直下は認めない。
+  param(
+    [AllowNull()][AllowEmptyCollection()][string[]]$Candidates,
+    [Parameter(Mandatory)][string]$ProfileFinal,
+    [AllowNull()][string]$RootFinal,
+    [Parameter(Mandatory)][scriptblock]$Probe
+  )
+  $scopes = New-Object System.Collections.Generic.List[string]
+  foreach ($candidate in @($Candidates)) {
+    $norm = ConvertTo-NormalizedPath -Path $candidate
+    if ($null -eq $norm -or (Test-IsDriveRoot -Path $norm)) { continue }
+    # PowerShell の変数名は大文字小文字を区別しない。$Probe を上書きしない。
+    $info = & $Probe (ConvertTo-ExtendedPath -Path $norm) $false
+    if ($info.Error -ne 0) { continue }
+    $final = ConvertTo-NormalizedPath -Path $info.FinalPath
+    if ($null -eq $final -or (Test-IsDriveRoot -Path $final)) { continue }
+    if (Test-PathWithin -Candidate $ProfileFinal -Root $final) { continue }
+    $underProfile = Test-PathWithin -Candidate $final -Root $ProfileFinal
+    $holdsRoot = (-not [string]::IsNullOrEmpty($RootFinal)) -and (Test-PathWithin -Candidate $RootFinal -Root $final)
+    if (-not $underProfile -and -not $holdsRoot) { continue }
+    $known = $false
+    foreach ($existing in $scopes) { if ([string]::Equals($existing, $final, [StringComparison]::OrdinalIgnoreCase)) { $known = $true } }
+    if (-not $known) { $scopes.Add($final) }
+  }
+  return $scopes.ToArray()
+}
+
 function Resolve-FolderTarget {
   # 起点とセグメントから対象を決める。文字列の前方一致だけで判定しない:
   #  1. ボリューム直下から対象まで全要素を「リンクを開く」モードで開き、reparse を確認する
@@ -527,7 +560,7 @@ function Resolve-FolderTarget {
     [AllowNull()][string]$BasePath,
     [AllowEmptyCollection()][object[]]$Segments,
     [AllowNull()][string]$ProfilePath,
-    [AllowNull()][string]$OneDrivePath,
+    [AllowNull()][AllowEmptyCollection()][string[]]$OneDrivePath,
     [Parameter(Mandatory)][scriptblock]$Probe
   )
   $fail = { param($reason) return @{ Reason = $reason; TargetFinal = $null; RootFinal = $null } }
@@ -542,20 +575,13 @@ function Resolve-FolderTarget {
   $profileFinal = ConvertTo-NormalizedPath -Path $profileProbe.FinalPath
   if ($null -eq $profileFinal) { return (& $fail 'OUT_OF_SCOPE') }
 
+  # 起点の最終パスは範囲の判定にだけ先に使う。起点のエラーは後段の順序のまま報告する。
+  $rootForScope = & $Probe (ConvertTo-ExtendedPath -Path $base) $false
+  $rootFinalForScope = if ($rootForScope.Error -eq 0) { ConvertTo-NormalizedPath -Path $rootForScope.FinalPath } else { $null }
+  $cloudScope = @(Get-CloudScopes -Candidates $OneDrivePath -ProfileFinal $profileFinal -RootFinal $rootFinalForScope -Probe $Probe)
   $scopes = New-Object System.Collections.Generic.List[string]
   $scopes.Add($profileFinal)
-  $cloudScope = $null
-  $oneDriveNorm = ConvertTo-NormalizedPath -Path $OneDrivePath
-  if ($null -ne $oneDriveNorm -and -not (Test-IsDriveRoot -Path $oneDriveNorm)) {
-    $oneDriveProbe = & $Probe (ConvertTo-ExtendedPath -Path $oneDriveNorm) $false
-    if ($oneDriveProbe.Error -eq 0) {
-      $oneDriveFinal = ConvertTo-NormalizedPath -Path $oneDriveProbe.FinalPath
-      if ($null -ne $oneDriveFinal -and -not (Test-IsDriveRoot -Path $oneDriveFinal)) {
-        $scopes.Add($oneDriveFinal)
-        $cloudScope = $oneDriveFinal
-      }
-    }
-  }
+  foreach ($scope in $cloudScope) { $scopes.Add($scope) }
 
   $target = Join-TargetPath -Base $base -Segments $Segments
   foreach ($element in (Get-PathChain -Path $target)) {
@@ -587,7 +613,7 @@ function Resolve-FolderTarget {
 function Get-DirectoryHandleRefusal {
   # 保持したハンドルが検査した対象そのものか。パスではなくハンドルの実体で判定する。
   # $Info: Error, Attributes, ReparseTag, FinalPath（DirectoryHandle.Describe の結果）
-  param([Parameter(Mandatory)][object]$Info, [AllowNull()][string]$TargetPath, [AllowNull()][string]$CloudScope)
+  param([Parameter(Mandatory)][object]$Info, [AllowNull()][string]$TargetPath, [AllowNull()][AllowEmptyCollection()][string[]]$CloudScope)
   if ($Info.Error -ne 0) { return (ConvertTo-ProbeReason -Win32Error $Info.Error) }
   $target = ConvertTo-NormalizedPath -Path $TargetPath
   $final = ConvertTo-NormalizedPath -Path $Info.FinalPath
@@ -609,7 +635,7 @@ function Invoke-ListOperation {
   $noEntries = @()
   $basePath = & $Deps.GetKnownFolder $Op.root
   $profilePath = & $Deps.GetProfilePath
-  $oneDrivePath = & $Deps.GetOneDrivePath
+  $oneDrivePath = @(& $Deps.GetOneDrivePath)
   if ([string]::IsNullOrEmpty($basePath)) { return (& $finish 'error' 'OUT_OF_SCOPE' $false $noEntries $false) }
 
   $segments = @($Op.segments)
@@ -694,6 +720,13 @@ function Update-PollState {
       if ($State.Seen.Add($id)) { $State.Queue.Enqueue($op); $State.OpSeen = $true }
     }
   }
+}
+
+function Test-EnrollCodeRejected {
+  # POST /register の 403 ENROLL_CODE_INVALID。再試行しない。
+  param([int]$Status, [AllowNull()][string]$Body)
+  if ($Status -ne 403 -or [string]::IsNullOrEmpty($Body)) { return $false }
+  return $Body.Contains('ENROLL_CODE_INVALID')
 }
 
 function Get-NextPollDelay {
@@ -1105,10 +1138,43 @@ function Get-ProfileImagePathForSid {
   try { return (Get-RegistryPathNoExpand -Key $key -Name 'ProfileImagePath') } finally { $key.Dispose() }
 }
 
-function Get-OneDriveUserFolder {
+function Test-OneDriveAccountName {
+  # HKCU\Software\Microsoft\OneDrive\Accounts の配下で見る名前。
+  param([AllowNull()][string]$Name)
+  return ($Name -match '^(Business[0-9]{0,3}|Personal)$')
+}
+
+function Get-OneDriveUserFolders {
+  # 旧来の値と、アカウントごとの値（Accounts\Business*、Accounts\Personal）をすべて返す。
+  # ここでは候補を集めるだけで、範囲として認めるかは Get-CloudScopes が判定する。
+  $folders = New-Object System.Collections.Generic.List[string]
   $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Microsoft\OneDrive', $false)
-  if ($null -eq $key) { return $null }
-  try { return (Get-RegistryPathNoExpand -Key $key -Name 'UserFolder') } finally { $key.Dispose() }
+  if ($null -eq $key) { return @() }
+  try {
+    $legacy = Get-RegistryPathNoExpand -Key $key -Name 'UserFolder'
+    if ($null -ne $legacy) { $folders.Add($legacy) }
+    $accounts = $key.OpenSubKey('Accounts', $false)
+    if ($null -ne $accounts) {
+      try {
+        foreach ($name in $accounts.GetSubKeyNames()) {
+          if (-not (Test-OneDriveAccountName -Name $name)) { continue }
+          $account = $accounts.OpenSubKey($name, $false)
+          if ($null -eq $account) { continue }
+          try {
+            $value = Get-RegistryPathNoExpand -Key $account -Name 'UserFolder'
+            if ($null -ne $value) { $folders.Add($value) }
+          } finally {
+            $account.Dispose()
+          }
+        }
+      } finally {
+        $accounts.Dispose()
+      }
+    }
+  } finally {
+    $key.Dispose()
+  }
+  return $folders.ToArray()
 }
 
 function Get-KnownFolderPath {
@@ -1168,7 +1234,7 @@ function Initialize-StateDirectory {
 
 function Get-StatePath {
   param([Parameter(Mandatory)][ValidateSet('token.dat', 'config.json', 'pairing-code.txt', 'helper.log', 'revoked.flag')][string]$Name)
-  return ((Get-StateDirectory) + '\' + $Name)
+  return [IO.Path]::Combine((Get-StateDirectory), $Name)
 }
 
 function Save-HelperToken {
@@ -1319,9 +1385,11 @@ function Clear-PairingCodeIfDone {
 }
 
 function Invoke-HelperRegistration {
+  # 導入コードはこのリクエストの本文にだけ入れる。ログ・状態ファイル・タスクの引数へ残さない。
   param(
     [Parameter(Mandatory)][string]$ServerBase,
     [Parameter(Mandatory)][hashtable]$Identity,
+    [Parameter(Mandatory)][string]$EnrollCode,
     [bool]$InBackground
   )
   $session = Get-SessionInfo
@@ -1335,11 +1403,12 @@ function Invoke-HelperRegistration {
       sessionState  = $session.SessionState
       hostname      = [Environment]::MachineName
       helperVersion = $script:HelperVersion
+      enrollCode    = $EnrollCode
     })
   $response = Invoke-HelperHttp -Url (Get-HelperApiUrl -ServerBase $ServerBase -Action 'register') -Token $null -BodyJson $body
   if ($response.Status -lt 200 -or $response.Status -ge 300) {
     Write-HelperLog -EventName 'register_failed' -Fields @{ httpStatus = $response.Status; errorType = $response.ErrorType }
-    return @{ Ok = $false; RetryAfter = $response.RetryAfter }
+    return @{ Ok = $false; RetryAfter = $response.RetryAfter; EnrollRejected = (Test-EnrollCodeRejected -Status $response.Status -Body $response.Body) }
   }
   $parsed = ConvertFrom-HelperJson -Json $response.Body
   $helperId = [string](Get-OpField -Op $parsed -Name 'helperId')
@@ -1347,12 +1416,12 @@ function Invoke-HelperRegistration {
   $pairingCode = Get-OpField -Op $parsed -Name 'pairingCode'
   if ($helperToken -isnot [string] -or $helperToken.Length -eq 0 -or $pairingCode -isnot [string] -or $pairingCode.Length -eq 0) {
     Write-HelperLog -EventName 'register_bad_response'
-    return @{ Ok = $false; RetryAfter = 0 }
+    return @{ Ok = $false; RetryAfter = 0; EnrollRejected = $false }
   }
   Save-HelperToken -HelperId $helperId -HelperToken $helperToken
   Show-PairingCode -Code $pairingCode -ExpiresAt ([string](Get-OpField -Op $parsed -Name 'pairingExpiresAt')) -InBackground $InBackground
   Write-HelperLog -EventName 'registered'
-  return @{ Ok = $true; RetryAfter = 0 }
+  return @{ Ok = $true; RetryAfter = 0; EnrollRejected = $false }
 }
 
 function Invoke-HelperPoll {
@@ -1447,7 +1516,7 @@ function Invoke-HelperOperation {
     OpenDirectory   = { param($path) New-NativeDirectoryHandle -Path $path }
     GetKnownFolder  = { param($root) Get-KnownFolderPath -Root $root }
     GetProfilePath  = { Get-ProfileImagePathForSid -Sid $helperOpRuntime.Sid }
-    GetOneDrivePath = { Get-OneDriveUserFolder }
+    GetOneDrivePath = { Get-OneDriveUserFolders }
     ElapsedMs       = { $helperOpRuntime.Stopwatch.ElapsedMilliseconds }
     ShouldCancel    = $checkCancel
     IsExpired       = { $helperOpRuntime.ExpiresAt -le [DateTimeOffset]::UtcNow }
@@ -1525,16 +1594,13 @@ function Invoke-HelperMain {
   $failures = 0
   $retryAfter = 0
   $tokenInfo = Read-HelperToken
-  while ($null -eq $tokenInfo) {
+  if ($null -eq $tokenInfo) {
+    # 導入コードが無いので登録しない。登録は install-folder-helper.ps1 -EnrollCode だけが行う。
     Remove-StateFile -Name 'token.dat'
-    $registered = Invoke-HelperRegistration -ServerBase $serverBase -Identity $identity -InBackground ([bool]$Background)
-    if ($registered.Ok) { $tokenInfo = Read-HelperToken; if ($null -ne $tokenInfo) { break } }
-    if ($RegisterOnly) {
-      Write-Host '登録に失敗しました。'
-      return 3
-    }
-    $failures++
-    Start-Sleep -Seconds (Get-NextPollDelay -Failures $failures -RetryAfterSeconds $registered.RetryAfter -BaseSeconds $script:PollBaseSeconds -MaxSeconds $script:PollMaxSeconds)
+    Write-HelperLog -EventName 'no_token_exit'
+    if (-not $Background) { Write-Host 'トークンがありません。install-folder-helper.ps1 -EnrollCode で登録してください。' }
+    if ($RegisterOnly) { return 3 }
+    return 0
   }
   if ($RegisterOnly) { return 0 }
 
@@ -1548,7 +1614,7 @@ function Invoke-HelperMain {
     if ($poll.Ok) {
       $failures = 0
     } elseif ($poll.Status -eq 401) {
-      # トークンが無効。次回ログオン時に再登録する（ペアリングには本人の操作が必要）。
+      # トークンが無効。再登録には導入コードが必要なので install を待つ。
       Write-HelperLog -EventName 'token_rejected' -Fields @{ httpStatus = $poll.Status }
       Remove-StateFile -Name 'token.dat'
       Remove-StateFile -Name 'pairing-code.txt'
