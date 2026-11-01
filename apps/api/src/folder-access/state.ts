@@ -362,6 +362,8 @@ export function parseQuserLines(lines: readonly string[]): ProbeSession[] {
   for (const line of lines) {
     if (!line.trim()) continue;
     if (/\bID\b/.test(line) && /USERNAME|ユーザー名/i.test(line)) continue;
+    // 日本語版は見出しが 2 行に折れ、1 行目が「アイドル」だけになる（実機で確認）。この語だけの行に限る。
+    if (/^\s*(?:アイドル|IDLE)\s*$/i.test(line)) continue;
     const tokens = [...line.matchAll(/\S+/gu)];
     const anchors: { index: number; id: number; state: ProbeSession['state'] }[] = [];
     for (let i = 0; i + 1 < tokens.length; i += 1) {
