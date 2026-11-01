@@ -1474,8 +1474,9 @@ function Invoke-SkillRun {
     }
     $outputJson = if ($null -ne $parsedOutput) { [string]$parsedOutput.Json } else { $null }
     # 止める前に子が終わっていても、取消を受けたなら結果を明示する（省くと stop_unconfirmed になる）。
+    # 子は動いて完了しているので not_running（未実行）ではない。変更は生じ得る。
     $afterFlags = & $Deps.GetStopFlags
-    $stopOutcome = if ($stopFailed) { 'stop_failed' } elseif ($afterFlags.Cancelled -or $afterFlags.Revoked) { 'not_running' } else { $null }
+    $stopOutcome = if ($stopFailed) { 'stop_failed' } elseif ($afterFlags.Cancelled -or $afterFlags.Revoked) { 'completed_before_stop' } else { $null }
     $codes = [string[]]@(Get-PartialEffectCodes -Effect $effect -InputDelivered $true -CompletedOk ($status -ceq 'ok') -StopFailed $stopFailed)
     $json = New-SkillResultJson -ActorSid $ActorSid -SessionId $SessionId -SkillId $Op.skillId -SkillVersion $Op.skillVersion -ScriptHash $Op.scriptHash -Status $status -ResultCode $resultCode -ExitCode $finished.ExitCode -StartedAt $startedAt -FinishedAt $finishedAt -ElapsedMs $elapsedTotal -OutputJson $outputJson -StopOutcome $stopOutcome -PartialEffect $codes
     return @{ Action = 'report'; Json = $json; Recorded = $true }

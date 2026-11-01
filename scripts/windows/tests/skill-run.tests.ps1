@@ -504,7 +504,7 @@ Assert-Equal 'stop: 401 は 5 秒後の poll で判定' 5000 $script:Sim.Elapsed
 
 # 子が先に終わっていても取消を受けたことを明示する
 $r = Invoke-Sim -Over @{ Cancelled = $true }
-Assert-Equal 'stop: 取消を受けたが動いていない' 'not_running' $r.Body.stopOutcome
+Assert-Equal 'stop: 子は動いて完了している（未実行と報告しない）' 'completed_before_stop' $r.Body.stopOutcome
 
 # 終了後の判定
 $base = @{ ExitCode = 0; Stdout = '{"a":1}'; StdoutTruncated = $false; StderrBytes = 0; LeftoverStopFailed = $false }

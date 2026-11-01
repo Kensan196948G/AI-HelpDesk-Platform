@@ -70,6 +70,7 @@
     stop_failed: '停止できませんでした',
     not_running: '実行していません',
     stop_unconfirmed: '停止を確認できていません',
+    completed_before_stop: '停止の前に完了しました',
   };
   const REASON_LABEL = {
     SYMPTOM_MATCH: '相談の症状に対応する操作です。',
@@ -165,12 +166,10 @@
     return MINE.forms.get(id);
   }
 
-  async function loadFolderRequests() {
+  /** フォルダブリッジが持つ依頼を使う（案内のために問い合わせを増やさない）。 */
+  function folderRequests() {
     try {
-      const data = await api('/api/folder-access/mine');
-      return (data.requests ?? []).filter((request) =>
-        ['device_pending', 'helper_pending', 'consent_pending', 'active'].includes(request.status),
-      );
+      return window.__AIHD_FOLDER_ACCESS_BRIDGE__?.requests?.() ?? [];
     } catch {
       return [];
     }
@@ -183,7 +182,7 @@
       MINE.sessions = data.sessions ?? [];
       MINE.disabled = false;
       MINE.error = null;
-      MINE.folderRequests = await loadFolderRequests();
+      MINE.folderRequests = folderRequests();
       const ids = new Set(MINE.sessions.map((session) => session.id));
       for (const id of MINE.forms.keys()) {
         if (!ids.has(id)) MINE.forms.delete(id);
@@ -475,7 +474,7 @@
     const lines = [small(parts.filter(Boolean).join(' / '))];
     if (execution.output) lines.push(small(outputText(execution.output)));
     if (execution.lateResult) lines.push(small('遅れて届いた結果です。次へ進めません。'));
-    if (execution.stopOutcome === 'not_running') {
+    if (execution.stopOutcome === 'not_running' && !execution.partialEffect?.length) {
       // 実行していない。停止や変更の話を出さない。
       lines.push(small(STOP_LABEL.not_running));
       return lines;

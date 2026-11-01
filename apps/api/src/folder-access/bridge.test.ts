@@ -537,6 +537,26 @@ describe('フォルダ一覧ブリッジ（Mock DOM）', () => {
     });
   });
 
+  it('他のブリッジへ進行中の依頼だけを渡す（ファイル名などの結果は渡さない）', async () => {
+    const h = harness((url) =>
+      url.includes('/mine')
+        ? {
+            status: 200,
+            body: {
+              requests: [
+                { ...requestDto('helper_pending'), id: 'open', caseId: 'C' },
+                { ...requestDto('ended'), id: 'closed', caseId: 'C' },
+              ],
+            },
+          }
+        : notFound,
+    );
+    h.load[0]?.();
+    await h.settle();
+    const bridge = h.window.__AIHD_FOLDER_ACCESS_BRIDGE__ as { requests: () => { id: string }[] };
+    expect(bridge.requests().map((request) => request.id)).toEqual(['open']);
+  });
+
   it('担当者でなければ（403）担当者パネルを出さない', async () => {
     const h = harness((url) =>
       url.includes('/mine')

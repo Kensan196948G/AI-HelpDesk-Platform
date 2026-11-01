@@ -53,6 +53,8 @@ import {
   isWithinScope,
   proposableSkills,
   resolveApprovedSkill,
+  type SkillAvailability,
+  skillAvailability,
 } from './skills.js';
 import {
   AI_INPUT_CONSENT_VERSION,
@@ -217,7 +219,16 @@ async function sessionDto(
   const executions = await sql<ExecutionRow[]>`
     SELECT * FROM assist_executions WHERE support_session_id = ${session.id} ORDER BY created_at
   `;
-  return buildSessionDto(session, ctx, view, proposals, executions);
+  return buildSessionDto(session, ctx, view, proposals, executions, memoAvailability());
+}
+
+/** 1 リクエストで 1 回だけ計算する（必要になったときに）。 */
+function memoAvailability(): () => SkillAvailability {
+  let value: SkillAvailability | null = null;
+  return () => {
+    value ??= skillAvailability();
+    return value;
+  };
 }
 
 function buildSessionDto(
@@ -226,6 +237,7 @@ function buildSessionDto(
   view: 'assignee' | 'requester',
   proposals: readonly ProposalRow[],
   executions: readonly ExecutionRow[],
+  availability: () => SkillAvailability,
 ) {
   return {
     id: session.id,
@@ -254,12 +266,7 @@ function buildSessionDto(
         : null,
     // 実行できないものを実行できるように見せないための情報。
     aiAvailable: aiConfigured(),
-    skillAvailability: SHOWS_AVAILABILITY.includes(session.status)
-      ? {
-          readOnly: proposableSkills('read_only').length,
-          userReversible: proposableSkills('user_reversible').length,
-        }
-      : null,
+    skillAvailability: SHOWS_AVAILABILITY.includes(session.status) ? availability() : null,
     operationConsent: session.operation_consent_id
       ? {
           scope: session.operation_consent_scope,
@@ -592,7 +599,7 @@ async function assignRoutes(app: FastifyInstance): Promise<void> {
           if (!ctx) return { kind: 'inactive' as const };
           const existing = await tx<{ id: string }[]>`
         SELECT id FROM support_sessions
-        WHERE case_id = ${ctx.case_id} AND status = ANY(${[...OPEN_SESSION_STATUSES]}::text[])
+        WHERE handover_id = ${ctx.handover_id} AND status = ANY(${[...OPEN_SESSION_STATUSES]}::text[])
       `;
           if (existing[0]) return { kind: 'existing' as const, id: existing[0].id };
           if (
@@ -726,6 +733,7 @@ async function requesterRoutes(app: FastifyInstance): Promise<void> {
       ORDER BY created_at
     `;
     const byId = new Map(sessionRows.map((row) => [row.id, row]));
+    const availability = memoAvailability();
     const sessions = [];
     for (const id of ids) {
       const session = byId.get(id);
@@ -737,6 +745,7 @@ async function requesterRoutes(app: FastifyInstance): Promise<void> {
           'requester',
           proposals.filter((row) => row.support_session_id === id),
           executions.filter((row) => row.support_session_id === id),
+          availability,
         ),
       );
     }

@@ -9,7 +9,11 @@
  */
 (() => {
   if (window.__AIHD_FOLDER_ACCESS_BRIDGE__) return;
-  window.__AIHD_FOLDER_ACCESS_BRIDGE__ = { version: 1 };
+  window.__AIHD_FOLDER_ACCESS_BRIDGE__ = {
+    version: 1,
+    // 進行中の依頼の状態だけを他のブリッジへ渡す（一覧の結果は渡さない）。
+    requests: () => MINE.requests.filter((request) => !isClosed(request)),
+  };
 
   const ROOTS = [
     ['Desktop', 'デスクトップ'],

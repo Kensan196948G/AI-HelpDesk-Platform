@@ -1,5 +1,3 @@
-import { z } from 'zod';
-
 /**
  * 案件の内容を固定の語彙へ写像する（docs/63 §4 の AI 入力）。純関数。
  * 入力の自由文は判定にだけ使い、出力には固定の enum とコードしか含めない。
@@ -43,34 +41,100 @@ export const CONFIRMED_FACTS = [
 ] as const;
 export type ConfirmedFact = (typeof CONFIRMED_FACTS)[number];
 
-const SYMPTOM_RULES: { tag: SymptomTag; category: CaseCategory; pattern: RegExp }[] = [
+const CANNOT = 'でき(ない|ません|なく)';
+
+/**
+ * 症状の辞書。話題の語だけでは数えず、問題を示す形（否定形など）に限る。
+ * 「見つかりました」「容量は十分あります」のような肯定文を症状にしない。
+ * keyword はナレッジのキーワード（文ではなく語）との対応に使う。
+ */
+const SYMPTOM_RULES: {
+  tag: SymptomTag;
+  category: CaseCategory;
+  pattern: RegExp;
+  keyword: RegExp;
+}[] = [
   {
     tag: 'folder_missing',
     category: 'storage',
-    pattern: /フォルダ.{0,12}(見つか[らり]|ない|消え)/,
+    pattern:
+      /フォルダ.{0,8}(見つから(ない|ず)|見つかりません|見当たら(ない|ず)|見当たりません|消え(た|ました|て)|開け(ない|ません))|フォルダ(が|は)?(ない|ありません)/,
+    keyword: /フォルダ/,
   },
-  { tag: 'file_missing', category: 'storage', pattern: /ファイル.{0,12}(見つか[らり]|ない|消え)/ },
+  {
+    tag: 'file_missing',
+    category: 'storage',
+    pattern:
+      /ファイル.{0,8}(見つから(ない|ず)|見つかりません|見当たら(ない|ず)|見当たりません|消え(た|ました|て)|開け(ない|ません))|ファイル(が|は)?(ない|ありません)/,
+    keyword: /ファイル/,
+  },
   {
     tag: 'storage_full',
     category: 'storage',
-    pattern: /容量|空き|ディスク.{0,8}(いっぱい|不足)|disk full|storage/i,
+    pattern:
+      /(容量|空き).{0,8}(足り(ない|ません)|不足|少な|いっぱい|(が|は)(ない|ありません))|ディスク.{0,8}(いっぱい|不足)|disk full/i,
+    keyword: /容量|空き|ディスク|disk|storage/i,
   },
-  { tag: 'save_failed', category: 'storage', pattern: /保存(でき|に失敗)/ },
-  { tag: 'print_failed', category: 'printing', pattern: /印刷|プリンタ|プリント|スプーラ|print/i },
-  { tag: 'vpn_failed', category: 'network', pattern: /VPN/i },
+  {
+    tag: 'save_failed',
+    category: 'storage',
+    pattern: new RegExp(`保存(${CANNOT}|に失敗)`),
+    keyword: /保存/,
+  },
+  {
+    tag: 'print_failed',
+    category: 'printing',
+    pattern: new RegExp(
+      `(印刷|プリント).{0,8}(${CANNOT}|失敗|エラー|されない|されません)|プリンタ.{0,12}(${CANNOT}|つながら|応答し(ない|ません)|動か|エラー|認識し)|スプーラ.{0,8}(エラー|停止)|print.{0,10}(fail|error)`,
+      'i',
+    ),
+    keyword: /印刷|プリンタ|プリント|スプーラ|print/i,
+  },
+  {
+    tag: 'vpn_failed',
+    category: 'network',
+    pattern: new RegExp(`VPN.{0,12}(つながら|つながりません|接続${CANNOT}|切れ|エラー|失敗)`, 'i'),
+    keyword: /VPN/i,
+  },
   {
     tag: 'network_down',
     category: 'network',
-    pattern: /ネットワーク|つながら|Wi-?Fi|インターネット|オフライン/i,
+    pattern: new RegExp(
+      `つながら(ない|ず)|つながりません|(ネットワーク|インターネット|Wi-?Fi|ネット).{0,12}(切れ|エラー|${CANNOT})|オフライン`,
+      'i',
+    ),
+    keyword: /ネットワーク|インターネット|Wi-?Fi/i,
   },
-  { tag: 'password_reset', category: 'account', pattern: /パスワード|password/i },
-  { tag: 'login_failed', category: 'account', pattern: /ログイン|サインイン|login|sign.?in/i },
+  {
+    tag: 'password_reset',
+    category: 'account',
+    pattern: new RegExp(
+      `パスワード.{0,12}(忘れ|わから|分から|わかりません|期限|ロック|変更${CANNOT})|password.{0,12}(forgot|reset|expired)`,
+      'i',
+    ),
+    keyword: /パスワード|password/i,
+  },
+  {
+    tag: 'login_failed',
+    category: 'account',
+    pattern: new RegExp(
+      `(ログイン|サインイン).{0,8}(${CANNOT}|失敗|エラー)|(login|sign.?in).{0,8}(fail|error)`,
+      'i',
+    ),
+    keyword: /ログイン|サインイン|login|sign.?in/i,
+  },
   {
     tag: 'app_crash',
     category: 'software',
-    pattern: /(アプリ|ソフト).{0,12}(落ち|起動しない|固まる)|クラッシュ/,
+    pattern: /(アプリ|ソフト).{0,12}(落ち|起動し(ない|ません)|固ま)|クラッシュ/,
+    keyword: /クラッシュ|起動/,
   },
-  { tag: 'slow', category: 'performance', pattern: /重い|遅い|動作が遅|slow/i },
+  {
+    tag: 'slow',
+    category: 'performance',
+    pattern: /重い|遅い|動作が遅|slow/i,
+    keyword: /重い|遅い|slow/i,
+  },
 ];
 
 export interface CaseFacts {
@@ -78,17 +142,6 @@ export interface CaseFacts {
   symptomTags: SymptomTag[];
   purpose: CasePurpose;
 }
-
-const REQUESTER_ROLES = new Set(['', 'user', 'employee']);
-
-const MessageSchema = z
-  .object({
-    text: z.unknown().optional(),
-    content: z.unknown().optional(),
-    role: z.unknown().optional(),
-    from: z.unknown().optional(),
-  })
-  .passthrough();
 
 function strings(...values: unknown[]): string[] {
   return values.filter((value): value is string => typeof value === 'string');
@@ -103,12 +156,9 @@ function consultationText(snapshot: unknown): string {
   const messages = (chat as { messages?: unknown } | null | undefined)?.messages;
   if (Array.isArray(messages)) {
     for (const raw of messages) {
-      const parsed = MessageSchema.safeParse(raw);
-      if (!parsed.success) continue;
-      const role = String(parsed.data.role ?? parsed.data.from ?? '').toLowerCase();
-      // AI や担当者の発言を症状として数えない。
-      if (!REQUESTER_ROLES.has(role)) continue;
-      parts.push(...strings(parsed.data.text, parsed.data.content));
+      // 本人の発言だけ（画面のメッセージは kind で区別する）。AI・案内・担当者の発言を数えない。
+      const message = raw as { kind?: unknown; text?: unknown } | null;
+      if (message?.kind === 'user') parts.push(...strings(message.text));
     }
   }
   return parts.join('\n').slice(0, 8000);
@@ -142,8 +192,11 @@ export function confirmedFacts(steps: readonly VerifiedStepFact[]): ConfirmedFac
     if (step.verified !== true) continue;
     if (step.skillId === 'folder.summary') {
       facts.add('FOLDER_ACCESSIBLE');
-      const count = step.output?.fileCount;
-      if (typeof count === 'number' && count > 0) facts.add('FOLDER_HAS_ENTRIES');
+      const hasEntries = ['fileCount', 'directoryCount', 'linkCount'].some((field) => {
+        const count = step.output?.[field];
+        return typeof count === 'number' && count > 0;
+      });
+      if (hasEntries) facts.add('FOLDER_HAS_ENTRIES');
     }
     if (step.skillId === 'disk.space') facts.add('DISK_SPACE_READ');
     if (step.skillId === 'user.marker.set' || step.skillId === 'user.marker.clear') {
@@ -166,9 +219,10 @@ export function knowledgeRefs(
 ): KnowledgeRef[] {
   const refs: KnowledgeRef[] = [];
   for (const row of rows) {
-    const tags = tagsFromText((row.keywords ?? []).join('\n')).filter((tag) =>
-      caseTags.includes(tag),
-    );
+    const words = (row.keywords ?? []).join('\n');
+    const tags = SYMPTOM_RULES.filter(
+      (rule) => caseTags.includes(rule.tag) && rule.keyword.test(words),
+    ).map((rule) => rule.tag);
     if (tags.length > 0) refs.push({ id: row.id, tags });
     if (refs.length >= limit) break;
   }

@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import { repoRoot } from '../config.js';
-import { readSkillScriptHash } from './skill-source.js';
+import { loadApprovalManifest, readSkillScriptHash } from './skill-source.js';
 
 vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>();
@@ -42,5 +42,31 @@ describe('スクリプトのハッシュ（実ファイル）', () => {
   it('ファイルが無ければ null（未承認として扱う）', () => {
     rmSync(file, { force: true });
     expect(readSkillScriptHash(relative)).toBeNull();
+  });
+
+  describe('承認の manifest', () => {
+    const manifestFile = path.join(dir, 'approved.json');
+    const manifestReads = () =>
+      vi.mocked(readFileSync).mock.calls.filter((call) => call[0] === manifestFile).length;
+    const write = (id: string) =>
+      writeFileSync(manifestFile, JSON.stringify({ version: 1, skills: [{ id }] }));
+
+    it('変更がなければ読み直さず、変更を検知する', () => {
+      write('a');
+      expect(loadApprovalManifest(manifestFile).skills[0]?.id).toBe('a');
+      const count = manifestReads();
+      loadApprovalManifest(manifestFile);
+      loadApprovalManifest(manifestFile);
+      expect(manifestReads()).toBe(count);
+      write('b');
+      expect(loadApprovalManifest(manifestFile).skills[0]?.id).toBe('b');
+    });
+
+    it('無い・壊れたファイルは空（未承認）', () => {
+      writeFileSync(manifestFile, '{broken');
+      expect(loadApprovalManifest(manifestFile).skills).toEqual([]);
+      rmSync(manifestFile, { force: true });
+      expect(loadApprovalManifest(manifestFile).skills).toEqual([]);
+    });
   });
 });

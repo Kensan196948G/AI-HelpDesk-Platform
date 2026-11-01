@@ -85,6 +85,7 @@ function harness(
   route: (url: string, init?: RequestInit) => Reply,
   clock: { offsetMs: number } = { offsetMs: 0 },
   caseRef: { current: Record<string, unknown> | null } = { current: null },
+  folder: { requests: unknown[] } = { requests: [] },
 ) {
   const wizParent = new FakeElement('div');
   const wiz = new FakeElement('div');
@@ -145,6 +146,8 @@ function harness(
   };
   context.window = {
     addEventListener: (_type: string, listener: () => void) => load.push(listener),
+    // フォルダブリッジが持つ依頼（support-session 側からは問い合わせない）。
+    __AIHD_FOLDER_ACCESS_BRIDGE__: { requests: () => folder.requests },
   };
   runInNewContext(source, context);
   const flush = async () => {
@@ -310,7 +313,7 @@ describe('本人パネル（Mock: DOM / fetch）', () => {
           session({
             stopRequestedAt: null,
             stopOutcome: 'not_running',
-            partialEffect: ['POSSIBLE_CHANGE'],
+            partialEffect: null,
           }),
         ],
       },
@@ -519,6 +522,47 @@ describe('本人パネル（Mock: DOM / fetch）', () => {
           ? { status: 200, body: { requests: [] } }
           : { status: 200, body: { session } };
 
+    const stopped = (fields: Record<string, unknown>) => ({
+      ...BASE,
+      status: 'stopped',
+      proposals: [],
+      executions: [
+        {
+          role: 'main',
+          stepSeq: 2,
+          skillId: 'user.marker.set',
+          executionMode: 'real',
+          resultCode: 'MARKER_SET',
+          verifyOk: null,
+          output: null,
+          lateResult: true,
+          stopRequestedAt: '2026-11-01T00:00:00.000Z',
+          ...fields,
+        },
+      ],
+    });
+
+    it('停止の前に完了した実行を「実行していません」と出さず、変更の可能性を隠さない', async () => {
+      const page = harness(
+        withSession(
+          stopped({ stopOutcome: 'completed_before_stop', partialEffect: ['POSSIBLE_CHANGE'] }),
+        ),
+      );
+      await page.start();
+      const text = (page.panel() as FakeElement).text;
+      expect(text).not.toContain('実行していません');
+      expect(text).toContain('停止の前に完了しました');
+      expect(text).toContain('変更が生じた可能性があります');
+    });
+
+    it('not_running でも partialEffect があれば隠さない', async () => {
+      const page = harness(
+        withSession(stopped({ stopOutcome: 'not_running', partialEffect: ['MARKER_WRITTEN'] })),
+      );
+      await page.start();
+      expect((page.panel() as FakeElement).text).toContain('変更が生じた可能性があります');
+    });
+
     it('目的・対象・影響・成功条件・確認・失敗時・推測と事実の区別を表示する', async () => {
       const session = {
         ...BASE,
@@ -645,12 +689,13 @@ describe('本人パネル（Mock: DOM / fetch）', () => {
         status: 'helper_pending',
         paired: false,
       };
-      const page = harness((url) =>
-        url.includes('/folder-access/mine')
-          ? { status: 200, body: { requests: [request] } }
-          : { status: 200, body: { sessions: [] } },
-      );
+      const page = harness(() => ({ status: 200, body: { sessions: [] } }), undefined, undefined, {
+        requests: [request],
+      });
       await page.start();
+      await page.tick();
+      // フォルダブリッジのデータを使い、追加で問い合わせない。
+      expect(page.calls.some((item) => item.url.includes('/folder-access/mine'))).toBe(false);
       const text = (page.panel() as FakeElement).text;
       expect(text).toContain('▶ 1. 導入コード');
       expect(text).toContain('PC に表示されたコード');

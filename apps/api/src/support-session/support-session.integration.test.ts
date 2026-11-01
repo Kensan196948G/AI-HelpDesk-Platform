@@ -72,7 +72,7 @@ const OTHER_SID = 'S-1-5-21-2000000001-2000000002-2000000003-1205';
 const USER = 'CORP\\canary-user';
 const SESSION = 2;
 const CANARY_SEGMENT = 'CANARY-個人フォルダ';
-const CANARY_SUBJECT = 'CANARY-相談本文-給与 保存先のフォルダが見つからない 容量も不安';
+const CANARY_SUBJECT = 'CANARY-相談本文-給与 保存先のフォルダが見つからない 容量も不足';
 const LEASE_URL = 'https://lease.test.invalid/api/device-staff';
 const RSP_URL = 'https://rsp.test.invalid';
 const AI_URL = 'https://ai.test.invalid';
@@ -315,7 +315,7 @@ async function makeHandover(): Promise<string> {
   const snapshot = {
     caseId,
     case: { id: caseId, subject: CANARY_SUBJECT, userId: 'u1' },
-    chat: { id: caseId, messages: [{ text: CANARY_SUBJECT }] },
+    chat: { id: caseId, messages: [{ kind: 'user', text: CANARY_SUBJECT }] },
     ticket: { id: `TKT-${sequence}` },
   };
   const rows = await sql<{ id: string }[]>`
@@ -1491,7 +1491,7 @@ describe('共通支援セッション（Mock: ヘルパー / RSP / 名簿 / PII 
         expect(source, file).not.toMatch(/'consent_pending',\s*'ready'/);
       }
       const rows = await sql<{ indexdef: string }[]>`
-        SELECT indexdef FROM pg_indexes WHERE indexname = 'support_sessions_open_case_idx'
+        SELECT indexdef FROM pg_indexes WHERE indexname = 'support_sessions_open_handover_idx'
       `;
       for (const status of OPEN_SESSION_STATUSES) {
         expect(rows[0]?.indexdef).toContain(`'${status}'`);
@@ -1914,6 +1914,217 @@ describe('共通支援セッション（Mock: ヘルパー / RSP / 名簿 / PII 
       setManifest(['folder.summary']);
       const read = (await call(OWNER, 'GET', base(none.id))).json().session;
       expect(read.skillAvailability).toEqual({ readOnly: 1, userReversible: 1 });
+    });
+  });
+
+  describe('コードレビューの指摘 3 回目', () => {
+    describe('1. 進行中のセッションは引継ぎごと（案件番号は相談者ごとの採番）', () => {
+      /** 別の相談者の、同じ案件番号の引継ぎでセッションの前まで進める。 */
+      async function otherRequesterSameCase(caseId: string) {
+        const folder = await activeFolderRequest();
+        await sql`
+          UPDATE case_handovers SET case_id = ${caseId}, owner_email = ${OTHER_OWNER}
+          WHERE id = ${folder.handoverId}
+        `;
+        await sql`
+          UPDATE folder_access_requests SET case_id = ${caseId}, requester_email = ${OTHER_OWNER}
+          WHERE id = ${folder.requestId}
+        `;
+        return folder;
+      }
+
+      it('別の相談者の同じ案件番号で、別人のセッションを返さない', async () => {
+        const mine = await startSession();
+        const cases = await sql<{ case_id: string }[]>`
+          SELECT case_id FROM support_sessions WHERE id = ${mine.id}
+        `;
+        const other = await otherRequesterSameCase(cases[0]?.case_id ?? '');
+        const created = await call(ASSIGNEE, 'POST', '/api/support-sessions', {
+          handoverId: other.handoverId,
+        });
+        expect(created.statusCode, created.body).toBe(200);
+        const session = created.json().session;
+        expect(session.id).not.toBe(mine.id);
+        expect(session.handoverId).toBe(other.handoverId);
+        const rows = await sql<{ requester_email: string }[]>`
+          SELECT requester_email FROM support_sessions WHERE id = ${session.id}
+        `;
+        expect(rows[0]?.requester_email).toBe(OTHER_OWNER);
+        // 互いの本人パネルに混ざらない。
+        const ownIds = (await call(OWNER, 'GET', '/api/support-sessions/mine'))
+          .json()
+          .sessions.map((item: { id: string }) => item.id);
+        expect(ownIds).toContain(mine.id);
+        expect(ownIds).not.toContain(session.id);
+      });
+
+      it('同じ引継ぎの 2 回目は同じセッションを返し、DB でも 2 件にならない', async () => {
+        const session = await startSession();
+        const again = await call(ASSIGNEE, 'POST', '/api/support-sessions', {
+          handoverId: session.handoverId,
+        });
+        expect(again.json().session.id).toBe(session.id);
+        const rows = await sql<
+          { folder_request_id: string; case_id: string; expires_at: Date; lease_status: string }[]
+        >`
+          SELECT folder_request_id, case_id, expires_at, lease_status
+          FROM support_sessions WHERE id = ${session.id}
+        `;
+        const row = rows[0];
+        await expect(
+          sql`
+            INSERT INTO support_sessions (
+              handover_id, case_id, requester_email, assignee_email, folder_request_id,
+              lease_status, status, expires_at
+            ) VALUES (
+              ${session.handoverId}, ${`${row?.case_id}-dup`}, ${OWNER}, ${ASSIGNEE},
+              ${row?.folder_request_id ?? ''}, ${row?.lease_status ?? ''}, 'ready',
+              ${row?.expires_at ?? new Date()}
+            )
+          `,
+        ).rejects.toThrow();
+      });
+    });
+
+    describe('2. 停止の前に完了した実行', () => {
+      async function modifyRunning(session: { id: string; token: string }) {
+        const first = await executing(session);
+        await report(session.token, first.op, resultBody(first.op, FOLDER_OUTPUT));
+        const second = await propose(session.id);
+        await decide(session.id, second.proposal.id, {
+          decision: 'Y',
+          approvalHash: second.proposal.approvalHash,
+        });
+        const op = (await poll(session.token)).skillOps?.[0] as Op;
+        await start(session.token, op);
+        return op;
+      }
+      const output = { applied: true, previousPresent: false, previousValue: null };
+
+      it('completed_before_stop は停止にせず、変更の可能性を残す', async () => {
+        setManifest(ALL_BUT_DISK);
+        const session = await readySession();
+        const op = await modifyRunning(session);
+        await call(OWNER, 'POST', base(session.id, '/revoke'), {});
+        await report(
+          session.token,
+          op,
+          resultBody(op, output, { stopOutcome: 'completed_before_stop' }),
+        );
+        const execution = (await executionRows(session.id)).find((row) => row.id === op.opId);
+        expect(execution?.stop_outcome).toBe('completed_before_stop');
+        expect(execution?.stopped_at).toBeNull();
+        expect(execution?.partial_effect).toContain('POSSIBLE_CHANGE');
+      });
+
+      it('動いた実行の not_running（ok の報告）は未実行として扱わない', async () => {
+        setManifest(ALL_BUT_DISK);
+        const session = await readySession();
+        const op = await modifyRunning(session);
+        await call(OWNER, 'POST', base(session.id, '/revoke'), {});
+        await report(session.token, op, resultBody(op, output, { stopOutcome: 'not_running' }));
+        const execution = (await executionRows(session.id)).find((row) => row.id === op.opId);
+        expect(execution?.stop_outcome).toBe('completed_before_stop');
+        expect(execution?.stopped_at).toBeNull();
+        expect(execution?.partial_effect).toContain('POSSIBLE_CHANGE');
+      });
+
+      it('未確認の後に届いたら未確認だけを解消し、変更の可能性は残す', async () => {
+        setManifest(ALL_BUT_DISK);
+        const session = await readySession();
+        const op = await modifyRunning(session);
+        await call(OWNER, 'POST', base(session.id, '/revoke'), {});
+        await sql`
+          UPDATE assist_executions SET stop_requested_at = now() - interval '1 hour'
+          WHERE id = ${op.opId}
+        `;
+        await sweepSupportSessions();
+        await report(
+          session.token,
+          op,
+          resultBody(op, output, { stopOutcome: 'completed_before_stop' }),
+        );
+        const execution = (await executionRows(session.id)).find((row) => row.id === op.opId);
+        expect(execution?.partial_effect).toEqual(['POSSIBLE_CHANGE']);
+      });
+    });
+
+    describe('4. 定期処理は 1 件の失敗で止まらない', () => {
+      /** 指定の行の更新だけを失敗させる（合成の障害）。 */
+      async function withFailingRow(table: string, id: string, run: () => Promise<void>) {
+        await sql.unsafe(`
+          CREATE OR REPLACE FUNCTION test_fail_row() RETURNS trigger AS $$
+          BEGIN
+            IF NEW.id = '${id}'::uuid THEN RAISE EXCEPTION 'synthetic sweep failure'; END IF;
+            RETURN NEW;
+          END $$ LANGUAGE plpgsql
+        `);
+        await sql.unsafe(`
+          CREATE TRIGGER test_fail_row BEFORE UPDATE ON ${table}
+          FOR EACH ROW EXECUTE FUNCTION test_fail_row()
+        `);
+        try {
+          await run();
+        } finally {
+          await sql.unsafe(`DROP TRIGGER test_fail_row ON ${table}`);
+          await sql.unsafe('DROP FUNCTION test_fail_row()');
+        }
+      }
+
+      it('セッションごとに捕捉してログし、他のセッションと保持期限の削除を続ける', async () => {
+        const broken = await readySession();
+        const healthy = await readySession();
+        const retained = await readySession();
+        await call(OWNER, 'POST', base(retained.id, '/revoke'), {});
+        await sql`
+          UPDATE support_sessions SET ended_at = now() - interval '400 days' WHERE id = ${retained.id}
+        `;
+        await sql`
+          UPDATE support_sessions SET expires_at = now() - interval '1 second'
+          WHERE id IN (${broken.id}, ${healthy.id})
+        `;
+        const errors: unknown[] = [];
+        await withFailingRow('support_sessions', broken.id, async () => {
+          await sweepSupportSessions({ error: (obj) => errors.push(obj) });
+        });
+        expect(errors.length).toBeGreaterThan(0);
+        expect(JSON.stringify(errors)).toContain(broken.id);
+        expect((await sessionRow(broken.id))?.status).toBe('ready');
+        expect((await sessionRow(healthy.id))?.status).toBe('expired');
+        const rows = await sql<{ sid: string | null }[]>`
+          SELECT sid FROM support_sessions WHERE id = ${retained.id}
+        `;
+        expect(rows[0]?.sid).toBeNull();
+      });
+
+      it('報告期限の記録も 1 件の失敗で止まらない', async () => {
+        const broken = await readySession();
+        const brokenRun = await executing(broken);
+        const healthy = await readySession();
+        const healthyRun = await executing(healthy);
+        await call(OWNER, 'POST', base(broken.id, '/revoke'), {});
+        await call(OWNER, 'POST', base(healthy.id, '/revoke'), {});
+        await sql`
+          UPDATE folder_access_helpers SET revoked_at = now() - interval '25 hours'
+          WHERE id IN (${broken.helperId}, ${healthy.helperId})
+        `;
+        const errors: unknown[] = [];
+        await withFailingRow('assist_executions', brokenRun.op.opId, async () => {
+          await sweepSupportSessions({ error: (obj) => errors.push(obj) });
+        });
+        expect(errors.length).toBeGreaterThan(0);
+        const row = (await executionRows(healthy.id)).find((e) => e.id === healthyRun.op.opId);
+        expect(row?.report_expired_at).not.toBeNull();
+      });
+    });
+
+    it('8. 状態確認の 1 リクエストで承認の manifest を 1 回だけ読む', async () => {
+      await startSession();
+      await startSession();
+      synth.manifestLoads = 0;
+      const response = await call(OWNER, 'GET', '/api/support-sessions/mine');
+      expect(response.json().sessions.length).toBeGreaterThanOrEqual(2);
+      expect(synth.manifestLoads).toBe(1);
     });
   });
 
@@ -2785,7 +2996,7 @@ describe('共通支援セッション（Mock: ヘルパー / RSP / 名簿 / PII 
         UPDATE case_handovers
         SET snapshot = snapshot || ${sql.json({
           case: { subject },
-          chat: { messages: [{ role: 'user', text: subject }] },
+          chat: { messages: [{ kind: 'user', text: subject }] },
         })}
         WHERE id = ${handoverId}
       `;

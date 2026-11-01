@@ -236,7 +236,16 @@ export const SKILL_RESULT_STATUSES = [
 ] as const;
 export type SkillResultStatus = (typeof SKILL_RESULT_STATUSES)[number];
 
-export const STOP_OUTCOMES = ['stopped', 'stop_failed', 'not_running'] as const;
+/**
+ * stopped: 動いていた子を止めた。stop_failed: 止められなかった。
+ * not_running: 実行していない。completed_before_stop: 動いて完了した後に取消を受けた（変更は生じ得る）。
+ */
+export const STOP_OUTCOMES = [
+  'stopped',
+  'stop_failed',
+  'not_running',
+  'completed_before_stop',
+] as const;
 
 export const SkillResultBodySchema = z.object({
   /** 'real' 以外は本番で拒否（403）。本番以外でも証拠にならない。 */

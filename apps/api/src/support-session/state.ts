@@ -1,4 +1,4 @@
-import { stableStringify } from '../domain/audit.js';
+import { stableStringify } from '../domain/stable-stringify.js';
 
 /**
  * 共通支援セッションの純関数（docs/63）。DB / ネットワークに触れない。

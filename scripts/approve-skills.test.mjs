@@ -15,7 +15,12 @@ function run(...args) {
   return spawnSync('npx', ['tsx', 'scripts/approve-skills.ts', ...args], {
     cwd: repoRoot,
     encoding: 'utf8',
-    env: { ...process.env, NODE_ENV: 'test' },
+    // DB なしで動くこと（環境の設定に依存しないこと）を確かめる。
+    env: Object.fromEntries(
+      Object.entries(process.env).filter(
+        ([key]) => !['DATABASE_URL', 'SESSION_SECRET', 'NODE_ENV'].includes(key),
+      ),
+    ),
   });
 }
 
@@ -37,6 +42,33 @@ describe('scripts/approve-skills.ts', () => {
   });
 
   const read = () => JSON.parse(readFileSync(manifest, 'utf8'));
+
+  it('--help は DB や環境の設定なしで動く', () => {
+    const result = run('--help');
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain('--dry-run');
+    expect(result.stdout).toContain('--only');
+    expect(result.stderr).not.toContain('環境変数');
+  }, 60_000);
+
+  it.each([['--only'], ['--only', '--dry-run'], ['--only', ' , '], ['--manifest'], ['--note']])(
+    '値のない %s は失敗にする（全カタログを承認しない）',
+    (...args) => {
+      const before = sha(manifest);
+      const flagArgs = args.filter((item) => typeof item === 'string');
+      // --manifest の値なしは、記録先を指定しない形で確かめる（書き込まれれば後片付けの確認で分かる）。
+      const target = flagArgs[0] === '--manifest' ? [] : ['--manifest', manifest];
+      const result = run('--by', 'reviewer@example.com', ...target, ...flagArgs);
+      expect(result.status).toBe(1);
+      expect(sha(manifest)).toBe(before);
+    },
+    60_000,
+  );
+
+  it('--by の値がなければ失敗にする', () => {
+    const result = run('--manifest', manifest, '--by');
+    expect(result.status).toBe(1);
+  }, 60_000);
 
   it('--by がなければ承認しない（既定の承認者を持たない）', () => {
     const before = sha(manifest);

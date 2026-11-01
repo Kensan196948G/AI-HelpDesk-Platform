@@ -4,8 +4,8 @@ import {
   computeSkillDefinitionHash,
   SKILL_CATALOG,
   type SkillDefinition,
-} from '../resolve/skills.js';
-import { ASSIST_SKILLS } from './skills.js';
+} from '../resolve/skill-catalog.js';
+import { ASSIST_SKILLS } from './assist-catalog.js';
 
 /**
  * Skill の人間レビュー承認の計算（scripts/approve-skills.ts の本体）。ファイルを書かない。

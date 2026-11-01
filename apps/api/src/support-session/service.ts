@@ -894,18 +894,24 @@ function isAllowedFailureCode(code: string): boolean {
  */
 async function recordStopReport(tx: Tx, execution: ExecutionRow, body: SkillResultBody) {
   const notRun = body.status === 'rejected';
+  // 動いて ok を返した実行の not_running は、未実行ではなく「停止の前に完了」。
+  const reported =
+    body.status === 'ok' && body.stopOutcome === 'not_running'
+      ? 'completed_before_stop'
+      : body.stopOutcome;
   const outcome = notRun
     ? 'not_running'
-    : (body.stopOutcome ?? (execution.stop_requested_at ? 'stop_unconfirmed' : null));
+    : (reported ?? (execution.stop_requested_at ? 'stop_unconfirmed' : null));
   if (!outcome) return;
   const stopped = outcome === 'stopped' || outcome === 'not_running';
+  const settled = stopped || outcome === 'completed_before_stop';
   await tx`
     UPDATE assist_executions
     SET stop_outcome = ${outcome},
         stopped_at = CASE WHEN ${stopped} THEN now() ELSE stopped_at END,
         partial_effect = CASE
           WHEN ${notRun} THEN NULL
-          WHEN ${stopped} THEN NULLIF(partial_effect - 'STOP_UNCONFIRMED', '[]'::jsonb)
+          WHEN ${settled} THEN NULLIF(partial_effect - 'STOP_UNCONFIRMED', '[]'::jsonb)
           ELSE partial_effect
         END
     WHERE id = ${execution.id}
@@ -1041,6 +1047,8 @@ export async function recordResultTx(
       late: true,
       resultCode: body.resultCode,
     });
+    // 遅れて届いても動いた実行なら、変更の可能性を隠さない。
+    if (current.role === 'main') await markModifyUnknown(tx, current, proposal);
     await audit('support_session.late_result', { result: body.status });
     return { kind: 'not_accepted', reason: 'LATE_RESULT' };
   }

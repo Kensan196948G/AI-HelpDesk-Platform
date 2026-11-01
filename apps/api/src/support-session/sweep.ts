@@ -5,8 +5,33 @@ import { assistEnabled } from './propagate.js';
 import { applyLiveness, lockSession, sessionAudit } from './service.js';
 import { ASSIST_LIMITS, OPEN_SESSION_STATUSES } from './state.js';
 
+export interface SweepLog {
+  error: (obj: unknown, msg: string) => void;
+}
+
+const consoleLog: SweepLog = {
+  error: (obj, msg) => console.error(msg, obj),
+};
+
+/** 1 件の失敗で残りの処理を止めない。メッセージだけを記録する（端末の値を出さない）。 */
+async function guarded(
+  log: SweepLog,
+  step: string,
+  ref: Record<string, unknown>,
+  run: () => Promise<unknown>,
+): Promise<void> {
+  try {
+    await run();
+  } catch (error) {
+    log.error(
+      { step, ...ref, message: error instanceof Error ? error.message : String(error) },
+      '共通支援セッションの期限処理の一部に失敗しました。',
+    );
+  }
+}
+
 /** 期限の定期処理（docs/63 §10）。DB だけを触る。機能フラグが無効の間は何もしない。 */
-export async function sweepSupportSessions(): Promise<number> {
+export async function sweepSupportSessions(log: SweepLog = consoleLog): Promise<number> {
   // 無効なら新テーブルに触らない（030 未適用の DB で失敗し続けない）。有効に戻せば追いつく。
   if (!assistEnabled()) return 0;
   const due = await sql<{ id: string }[]>`
@@ -26,17 +51,23 @@ export async function sweepSupportSessions(): Promise<number> {
   `;
   let ended = 0;
   for (const { id } of due) {
-    await sql.begin(async (tx) => {
-      const locked = await lockSession(tx, id);
-      if (!locked) return;
-      const before = locked.session.status;
-      await applyLiveness(tx, locked.ctx, locked.session, 'system:sweep');
-      if (locked.session.status !== before) ended += 1;
-    });
+    await guarded(log, 'liveness', { sessionId: id }, () =>
+      sql.begin(async (tx) => {
+        const locked = await lockSession(tx, id);
+        if (!locked) return;
+        const before = locked.session.status;
+        await applyLiveness(tx, locked.ctx, locked.session, 'system:sweep');
+        if (locked.session.status !== before) ended += 1;
+      }),
+    );
   }
 
   // 終端後に開始されなかった配送を閉じる。
-  await sql`
+  await guarded(
+    log,
+    'close_delivered',
+    {},
+    () => sql`
     UPDATE assist_executions e
     SET status = 'expired', stop_outcome = COALESCE(stop_outcome, 'not_running'),
         stopped_at = COALESCE(stopped_at, now())
@@ -45,9 +76,14 @@ export async function sweepSupportSessions(): Promise<number> {
       AND s.ended_at IS NOT NULL
       AND e.status = 'delivered'
       AND e.expires_at <= now()
-  `;
+  `,
+  );
   // 停止要求の後に報告が届かないものは、止まったと書かない（§10）。
-  await sql`
+  await guarded(
+    log,
+    'stop_unconfirmed',
+    {},
+    () => sql`
     UPDATE assist_executions e
     SET stop_outcome = 'stop_unconfirmed',
         status = CASE WHEN e.status = 'executing' THEN 'timed_out' ELSE e.status END,
@@ -62,9 +98,10 @@ export async function sweepSupportSessions(): Promise<number> {
       AND e.stop_outcome IS NULL
       AND e.stop_requested_at
         <= now() - ((e.max_seconds + ${ASSIST_LIMITS.runGraceSeconds}::int) * interval '1 second')
-  `;
-  await closeExpiredReports();
-  await scrubExpiredIdentifiers();
+  `,
+  );
+  await guarded(log, 'expired_reports', {}, () => closeExpiredReports(log));
+  await guarded(log, 'retention', {}, () => scrubExpiredIdentifiers());
   return ended;
 }
 
@@ -73,7 +110,7 @@ export async function sweepSupportSessions(): Promise<number> {
  * 既存の stop_outcome / partial_effect を消さない。未確認を成功や停止完了にしない
  * （stopped_at・verify_ok・evidence を書かない）。
  */
-async function closeExpiredReports(): Promise<void> {
+async function closeExpiredReports(log: SweepLog): Promise<void> {
   const due = await sql<
     { id: string; support_session_id: string; skill_id: string; role: string }[]
   >`
@@ -86,10 +123,11 @@ async function closeExpiredReports(): Promise<void> {
       AND h.revoked_at <= now() - (${ASSIST_LIMITS.revokedReportHours}::int * interval '1 hour')
   `;
   for (const row of due) {
-    await sql.begin(async (tx) => {
-      const locked = await lockSession(tx, row.support_session_id);
-      if (!locked) return;
-      const updated = await tx<{ id: string }[]>`
+    await guarded(log, 'expired_report', { sessionId: row.support_session_id, opId: row.id }, () =>
+      sql.begin(async (tx) => {
+        const locked = await lockSession(tx, row.support_session_id);
+        if (!locked) return;
+        const updated = await tx<{ id: string }[]>`
         UPDATE assist_executions e
         SET report_expired_at = now(),
             status = CASE WHEN e.status = 'executing' THEN 'timed_out' ELSE e.status END,
@@ -102,14 +140,15 @@ async function closeExpiredReports(): Promise<void> {
           AND e.id = ${row.id} AND e.result_received_at IS NULL AND e.report_expired_at IS NULL
         RETURNING e.id
       `;
-      if (!updated[0]) return;
-      await sessionAudit(tx, 'support_session.report_expired', locked.session, 'system:sweep', {
-        opId: row.id,
-        skillId: row.skill_id,
-        role: row.role,
-        source: 'sweep',
-      });
-    });
+        if (!updated[0]) return;
+        await sessionAudit(tx, 'support_session.report_expired', locked.session, 'system:sweep', {
+          opId: row.id,
+          skillId: row.skill_id,
+          role: row.role,
+          source: 'sweep',
+        });
+      }),
+    );
   }
 }
 
@@ -139,7 +178,7 @@ export function startSupportSessionSweeper(log: {
   error: (obj: unknown, msg: string) => void;
 }): () => void {
   const timer = setInterval(() => {
-    sweepSupportSessions().catch((error: unknown) => {
+    sweepSupportSessions(log).catch((error: unknown) => {
       log.error({ err: error }, '共通支援セッションの期限処理に失敗しました。');
     });
   }, 60_000);
