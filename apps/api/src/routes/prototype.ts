@@ -10,6 +10,7 @@ import { sql } from '../db.js';
 import { ApiError, badRequest } from '../errors.js';
 import { jsonbValue } from '../lib/jsonb-value.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
+import { assistEnabled } from '../support-session/propagate.js';
 
 const PROTOTYPE_FILE = 'Mirai_AIHelpdesk_Cowork_StepWizard_V3.1_PCinfo_Offline.html';
 const BRIDGE_FILES = [
@@ -23,6 +24,22 @@ const BRIDGE_FILES = [
   path.join('apps', 'api', 'src', 'prototype', 'remote-support-bridge.js'),
   path.join('apps', 'api', 'src', 'prototype', 'handover-workspace-bridge.js'),
 ];
+// 機能フラグが有効なときだけ配信する（無効時は読み込まれず、何も描画しない。docs/62）。
+const FOLDER_ACCESS_BRIDGE_FILE = path.join(
+  'apps',
+  'api',
+  'src',
+  'prototype',
+  'folder-access-bridge.js',
+);
+// 共通支援セッションの本人パネル（docs/63）。両方のフラグが有効なときだけ配信する。
+const SUPPORT_SESSION_BRIDGE_FILE = path.join(
+  'apps',
+  'api',
+  'src',
+  'prototype',
+  'support-session-bridge.js',
+);
 const COWORK_KEY = 'mirai-wizard-v31-cowork';
 const HELPDESK_KEY = 'mirai-wizard-v31-helpdesk';
 
@@ -187,6 +204,8 @@ const CSP = [
 
 let cachedHtml: string | null = null;
 let cachedBridge: string | null = null;
+let cachedFolderAccessBridge: string | null = null;
+let cachedSupportSessionBridge: string | null = null;
 
 function readSource(): string {
   if (!cachedHtml) {
@@ -201,7 +220,20 @@ function readBridge(): string {
       '\n\n',
     );
   }
-  return cachedBridge;
+  if (!config.FOLDER_ACCESS_ENABLED) return cachedBridge;
+  if (!cachedFolderAccessBridge) {
+    cachedFolderAccessBridge = readFileSync(path.join(repoRoot, FOLDER_ACCESS_BRIDGE_FILE), 'utf8');
+  }
+  const withFolderAccess = `${cachedBridge}\n\n${cachedFolderAccessBridge}`;
+  // 受付の停止中も配信する。本人が既存のセッションを取り消し、結果を確認できるようにする。
+  if (!assistEnabled()) return withFolderAccess;
+  if (!cachedSupportSessionBridge) {
+    cachedSupportSessionBridge = readFileSync(
+      path.join(repoRoot, SUPPORT_SESSION_BRIDGE_FILE),
+      'utf8',
+    );
+  }
+  return `${withFolderAccess}\n\n${cachedSupportSessionBridge}`;
 }
 
 function normalizeState(value: unknown): Record<string, unknown> | null {

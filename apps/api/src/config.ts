@@ -101,6 +101,40 @@ const EnvSchema = z.object({
   // 担当者に返す RSP の公開 URL（ブラウザのリンク用。サーバ間接続には RSP_BASE_URL）
   RSP_PUBLIC_URL: z.string().url().default('https://rsp.mirai-remotetools.com'),
 
+  // 本人同意付きフォルダ一覧（docs/62）。無効時は全 API が 404、画面の導線も出ない。
+  FOLDER_ACCESS_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
+  // 検証専用: 貸与情報を確認できなくても担当者の指定端末で進める。production では起動を拒否する。
+  FOLDER_ACCESS_ALLOW_UNVERIFIED_LEASE: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
+  // Mirai-Info の PII API（/api/device-staff）と Cloudflare Access サービストークン（2 値の組）。
+  // 未設定なら LEASE_UNAVAILABLE で留まる（fail-closed）。
+  LEASE_API_URL: optionalText,
+  LEASE_API_TOKEN_ID: optionalText,
+  LEASE_API_TOKEN_SECRET: optionalText,
+  LEASE_MAX_AGE_HOURS: z.coerce.number().int().positive().default(72),
+  // 同意の終了からこの日数を過ぎた行の識別子（SID・端末など）を定期処理で消す。
+  FOLDER_ACCESS_RETENTION_DAYS: z.coerce.number().int().positive().default(30),
+
+  // 共通支援セッションと AI 操作ループ（docs/63）。FOLDER_ACCESS_ENABLED に加えて必要。無効時は全 API が 404。
+  ASSIST_SESSION_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
+  // 受付の停止と既存の終了を分ける（docs/63 §12）。off: 全 API が 404 で、定期処理は識別子の消去だけ。
+  // drain: 新規（開始・同意・提案・Y）を 409 で止め、既存の終了処理は動かす。on: 通常。
+  // 未設定なら ASSIST_SESSION_ENABLED に従う（true は on、false は off）。設定すればこちらを優先する。
+  ASSIST_SESSION_MODE: z.enum(['off', 'drain', 'on']).optional(),
+  // 検証専用: mock / manual の結果報告を記録する（証拠にはしない）。production では起動を拒否する。
+  ASSIST_ALLOW_MOCK_EXECUTION: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
+
   // Mirai-Info の社員名簿を読むための接続先（未設定なら Unix ソケット + OS ユーザー）。
   MIRAI_INFO_DATABASE_URL: optionalText,
   // DeepSeek API（MVP / Staging のみ）
@@ -146,6 +180,32 @@ if (!parsed.success) {
 if (isProduction && parsed.data.AUTH_MODE === 'local') {
   console.error(
     '[config] NODE_ENV=production では AUTH_MODE=local を使えません。AUTH_MODE=cloudflare-access を設定してください。',
+  );
+  process.exit(1);
+}
+// 無効のつもりの環境で有効にならないよう、矛盾する指定は起動を拒否する（fail-closed）。
+if (parsed.data.ASSIST_SESSION_MODE === 'on' && process.env.ASSIST_SESSION_ENABLED === 'false') {
+  console.error(
+    '[config] ASSIST_SESSION_MODE=on と ASSIST_SESSION_ENABLED=false は同時に指定できません。',
+  );
+  process.exit(1);
+}
+// 貸与情報の検証を省く検証用フラグを本番で有効にさせない（fail-closed）。
+if (isProduction && parsed.data.FOLDER_ACCESS_ALLOW_UNVERIFIED_LEASE) {
+  console.error(
+    '[config] NODE_ENV=production では FOLDER_ACCESS_ALLOW_UNVERIFIED_LEASE=true を使えません。',
+  );
+  process.exit(1);
+}
+// 出所を確認できない実行結果を本番で受け付けない（fail-closed。API 側でも拒否する。docs/63 §7）。
+// 検証用 Skill の承認を本番へ持ち込まない。
+if (isProduction && process.env.ASSIST_VERIFICATION_MANIFEST?.trim()) {
+  console.error('[config] NODE_ENV=production では ASSIST_VERIFICATION_MANIFEST を使えません。');
+  process.exit(1);
+}
+if (isProduction && parsed.data.ASSIST_ALLOW_MOCK_EXECUTION) {
+  console.error(
+    '[config] NODE_ENV=production では ASSIST_ALLOW_MOCK_EXECUTION=true を使えません。',
   );
   process.exit(1);
 }
