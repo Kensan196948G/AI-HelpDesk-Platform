@@ -62,6 +62,16 @@ describe('config（起動時の安全確認）', () => {
     expect(result.status, result.stderr).toBe(0);
   });
 
+  it('NODE_ENV=production で ASSIST_VERIFICATION_MANIFEST は起動を拒否する', () => {
+    const result = loadConfig({
+      NODE_ENV: 'production',
+      AUTH_MODE: 'cloudflare-access',
+      ASSIST_VERIFICATION_MANIFEST: '/tmp/verification-manifest.json',
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('ASSIST_VERIFICATION_MANIFEST');
+  });
+
   it('NODE_ENV=production で ASSIST_ALLOW_MOCK_EXECUTION=true は起動を拒否する（docs/63 §7）', () => {
     const result = loadConfig({
       NODE_ENV: 'production',
