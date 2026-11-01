@@ -96,6 +96,54 @@ function loadRemoteBridge(routes: Routes, caseId: { value: string }) {
 const ME_REQUESTER = { status: 200, body: { remoteSupport: false, helpdeskActor: false } };
 const ME_STAFF = { status: 200, body: { remoteSupport: true, helpdeskActor: true } };
 
+describe('staff-access-bridge: 権限なしの判定を保持し続けない', () => {
+  function load(reply: () => Reply) {
+    let now = 1_000;
+    const fetch = vi.fn(async () => {
+      const current = reply();
+      return { ok: current.status === 200, status: current.status, json: async () => current.body };
+    });
+    const FakeDate = { now: () => now };
+    const window: Record<string, any> = {};
+    vm.runInNewContext(accessCode, { window, fetch, Date: FakeDate });
+    return {
+      fetch,
+      access: window.__AIHD_STAFF_ACCESS__,
+      advance: (ms: number) => {
+        now += ms;
+      },
+    };
+  }
+
+  it('名簿の一時障害で false が返っても、60 秒後の取り直しで担当者の機能が戻る', async () => {
+    let reply = ME_REQUESTER;
+    const { access, fetch, advance } = load(() => reply);
+    expect(await access.allowed('helpdeskActor')).toBe(false);
+    reply = ME_STAFF;
+    advance(59_000);
+    expect(await access.allowed('helpdeskActor')).toBe(false);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    advance(1_000);
+    expect(await access.allowed('helpdeskActor')).toBe(true);
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('担当者の結果は取り直さない（/api/me の回数を増やさない）', async () => {
+    const { access, fetch, advance } = load(() => ME_STAFF);
+    await access.allowed('helpdeskActor');
+    advance(600_000);
+    await access.allowed('remoteSupport');
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('サーバの 403（deny）は取り直しで解除しない', async () => {
+    const { access, advance } = load(() => ME_STAFF);
+    access.deny('helpdeskActor');
+    advance(600_000);
+    expect(await access.allowed('helpdeskActor')).toBe(false);
+  });
+});
+
 describe('remote-support-bridge: 担当者以外は遠隔対応 API を呼ばない', () => {
   it('/api/me が権限なしなら、再描画や案件切替があっても 1 回も呼ばない', async () => {
     const caseId = { value: 'CASE-1' };
