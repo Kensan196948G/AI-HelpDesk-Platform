@@ -205,7 +205,7 @@ Linux の pwsh 7 では次を確かめられない。
 
 ### 8-3. Linux の試験で確かめたこと
 
-`command-agent.tests.ps1` の結果は [green.txt](evidence/script-identity-20261101/green.txt)（passed=196、failed=0、skipped=8）。修正前は [red.txt](evidence/script-identity-20261101/red.txt)（passed=153、failed=31、skipped=8）。修正を外した写しでも試験が失敗することを確かめた（green.txt の変異の確認）。
+`command-agent.tests.ps1` の結果は [green.txt](evidence/script-identity-20261101/green.txt)（passed=197、failed=0、skipped=8）。修正前は [red.txt](evidence/script-identity-20261101/red.txt)（passed=153、failed=31、skipped=8）。修正を外した写しでも試験が失敗することを確かめた（green.txt の変異の確認）。
 
 **確認できたもの:** ハッシュがハンドルの中身で計算されること（パスとハンドルの中身を食い違わせて確認）。ハンドルが子の実行中と終了の時点で開いていること（子から排他オープンを試して確認）。排他オープン（`FileShare.None`）の書込みが拒否され、差替え、LF→CRLF、配布更新のいずれでも承認のバイト列が実行されること。排他で開かれていれば fail-closed になること。リンクの拒否。昇格の拒否と `SPOOLER_RESTART` の維持。タイムアウト、出力超過、例外、起動失敗の後にハンドルが閉じること。
 
