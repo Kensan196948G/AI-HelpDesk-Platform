@@ -17,7 +17,7 @@
 | 上限 | タイムアウト 60 秒で停止（子プロセスを含む）。stdout / stderr は 64KB まで、1MiB を超えたら停止。報告は最大 2,000 字 |
 | 出所 | Windows では `executionSource=endpoint_agent`。Windows 以外は `mock`。設定や引数で変えられない。本番のサーバは `mock` を拒否する |
 | 秘密 | トークン、CF のシークレット、proxy シークレット、`aihd_...` の形は画面、ログ、報告に出さない |
-| 既存の操作 | `SPOOLER_RESTART`（skill_id なし）は従来どおり `Restart-Service -Name Spooler -Force`。一般ユーザーでは権限不足で失敗することがある |
+| 既存の操作 | `SPOOLER_RESTART`（skill_id なし）の実行は従来どおり `Restart-Service -Name Spooler -Force`。一般ユーザーでは権限不足で失敗することがある。起動時の拒否（SYSTEM、緩い ACL、http、admin）はこの経路にもかかる。`x-device-id` を送るようになった |
 
 昇格したプロセスで起動すると警告を出すが、止めない（`SPOOLER_RESTART` の従来の使い方を変えないため）。**Skill の確認には通常の権限で起動する。**
 
@@ -44,41 +44,50 @@ scripts\skills\windows\dns-flush.ps1
 
 ## 3. 設定ファイル
 
-既定の場所は `%USERPROFILE%\.config\ai-helpdesk\device-agent-windows.json`。値はユーザーが入れる。リポジトリ、PR、ログに書かない。
+**端末情報の収集タスクとは別の設定ファイルと別のトークンにする。** 例: `%USERPROFILE%\.config\ai-helpdesk\command-agent-windows.json` を作り、`-ConfigPath` で指定する。既定の `device-agent-windows.json` は収集タスクの設定で、`browserDeviceId` が短縮形（`WEB-XXXXXXXX`）のことがある。トークンの端末は最初に送った `x-device-id` に固定されるので、短縮形で一度送ると以後は配信されないか `DEVICE_MISMATCH` になる。値はユーザーが入れる。リポジトリ、PR、ログに書かない。
 
 | 項目 | 必須 | 内容 |
 |---|---|---|
-| `url` | 必須 | `https://<ホスト>/api/device/agent`。`/api/device/command` は自動で作る |
+| `url` | 必須 | `https://<ホスト>/api/device/agent`。`/api/device/command` は自動で作る。§3-1 の接続先 |
 | `deviceToken` | 必須 | 管理者が `scripts/issue-device-token.ts --email <本人のメール>` で発行した standard のトークン |
-| `browserDeviceId` | 必須 | ブラウザの端末 ID。その PC のブラウザの `localStorage` の `aihd.device.id`（未接続のカードに表示される）。画面の `WEB-XXXXXXXX` は短縮形なので使わない。無いとサーバは配信しない |
+| `browserDeviceId` | 必須 | ブラウザの端末 ID。**`url` と同じオリジン**を開いたブラウザの `localStorage` の `aihd.device.id`（未接続のカードに表示される）。別のオリジンの値は使えない。画面の `WEB-XXXXXXXX` は短縮形なので使わない。無いとサーバは配信しない |
 | `cfAccessClientId` / `cfAccessClientSecret` | 環境による | Access のサービストークン。`/api/device/command` を Access のパス限定で bypass していれば不要（docs/19 §4-3） |
 | `proxySecret` | 環境による | サーバが `REQUIRE_PROXY_SECRET` のとき |
+
+トークンは `scripts/issue-device-token.ts --email <本人のメール> --out <新しいファイル>` で別に発行する（既存のファイルを指定すると `deviceToken` を上書きする）。
 
 本人だけが読めるようにする。緩ければエージェントは起動しない（本人、SYSTEM、Administrators 以外に Allow があると拒否）。
 
 ```powershell
-$cfg = "$env:USERPROFILE\.config\ai-helpdesk\device-agent-windows.json"
+$cfg = "$env:USERPROFILE\.config\ai-helpdesk\command-agent-windows.json"
 icacls $cfg /inheritance:r /grant:r "${env:USERNAME}:(R,W)"
 ```
 
+### 3-1. 接続先
+
+resolve カードの経路（#126）と結果の出所の判定は、この PR のブランチにあり main にはない。実機の確認は**このブランチで動かした検証インスタンス**へ接続し、トークンもその DB で発行する（docs/63 §14 と同じ形）。Preview はマージ済みの main からしか作らないので、この経路を確認できない。
+
 ## 4. 実行、停止、アンインストール
+
+**順序:** 相談を始める前に、エージェントを常駐（`-Once` なし）で起動しておく。応答中でないと端末は「未接続」になり、読み取り診断の開始ボタンが出ない。
 
 **相談者本人のユーザー（mirai-user 相当の一般ユーザー）** でログオンし、昇格していない PowerShell で実行する。管理者として実行しない。SYSTEM のタスクにしない。
 
 ```powershell
 $agent = "$env:LOCALAPPDATA\AIHelpDesk\agent\scripts\windows\command-agent.ps1"
+$cfg = "$env:USERPROFILE\.config\ai-helpdesk\command-agent-windows.json"
 
 # 1 回だけ（まずこれで確認する）。コマンドが無ければ何もせず終わる
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File $agent -Once
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File $agent -ConfigPath $cfg -Once
 
 # 実行せず、受け取るコマンドだけ確認する（報告もしない）
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File $agent -Once -DryRun
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File $agent -ConfigPath $cfg -Once -DryRun
 
 # 常駐（Ctrl+C で止まる）
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File $agent
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File $agent -ConfigPath $cfg
 ```
 
-`-ConfigPath <パス>` で設定ファイルを変えられる。`-Once` はポーリングに失敗すると終了コード 1 で終わる。
+`-Once` はポーリングに失敗すると終了コード 1 で終わる。
 
 **ログオン時に自動で起動する場合:** 本人のスタートアップフォルダ（`shell:startup`）に上の常駐のコマンドのショートカットを置く。一般ユーザーがログオントリガのタスクを登録できるかは未確認である。
 
@@ -116,5 +125,6 @@ Linux の pwsh 7 では次を確かめられない。
 - `taskkill /T` によるプロセスツリーの停止。
 - `endpoint_agent` の申告の実送信（Linux は `mock` を申告する。分岐は関数で確認した）と、本番のサーバが受け付けること。
 - 本物の Skill の実行結果と、その出力の文字コード。
+- 常駐のエージェントでの端末の接続表示（E2E はコマンドを作ってから `-Once` を流した）。
 - TLS 1.2 の有効化（5.1 のときだけ `ServicePointManager` へ足す。実際の接続は未確認）。
 - Cloudflare Access 越しの通信、スタートアップからの起動、昇格していないユーザーでの `SPOOLER_RESTART`。
