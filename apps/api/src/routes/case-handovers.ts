@@ -442,6 +442,7 @@ export async function caseHandoverRoutes(app: FastifyInstance): Promise<void> {
 
   /**
    * 完了の承認を待つ引継ぎ（docs/14 §2-19）。承認者は担当者の受信箱を開けないので別に返す。
+   * 担当者が解決を記録した行だけ出す（引き受けただけの案件を閉じさせない）。
    * 承認に必要な最小限だけ返し、相談者の情報、端末情報、会話は返さない。
    * これは案件を閉じる承認の一覧で、KB の公開承認（/knowledge/pending）とは別物である。
    */
@@ -453,7 +454,7 @@ export async function caseHandoverRoutes(app: FastifyInstance): Promise<void> {
       SELECT id, case_id, owner_email, assignee_hint, recipient_no, recipient_name,
              status, snapshot, claimed_by, approved_by, approved_at, self_approved, created_at
       FROM case_handovers
-      WHERE status IN ('claimed', 'resolved')
+      WHERE status = 'resolved'
       ORDER BY created_at DESC
       LIMIT 50
     `;

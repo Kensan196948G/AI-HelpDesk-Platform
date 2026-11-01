@@ -67,7 +67,17 @@ describe('redactPII（表記ゆれ）', () => {
   });
 });
 
-describe('UUID の中の数字を電話番号と誤認しない', () => {
+describe('UUID の中の数字を電話番号やカード番号と誤認しない', () => {
+  it('数字の並びが長い UUID も壊さない', () => {
+    for (const id of [
+      '12345678-1234-4123-a123-abcdefabcdef',
+      '11111111-1111-4111-8111-111111111111',
+    ]) {
+      expect(redactPII(`ID ${id}`).text).toContain(id);
+    }
+    expect(redactPII('カード 4111-1111-1111-1111').text).toContain('[カード番号]');
+  });
+
   it('実行 ID をそのまま残し、横の電話番号は伏せる', () => {
     const id = '23b8f117-7833-441e-83b7-7ad081537ae9';
     const result = redactPII(`実行ID ${id} 連絡先 090-1234-5678`);

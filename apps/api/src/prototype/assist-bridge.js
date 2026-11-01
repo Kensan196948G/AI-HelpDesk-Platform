@@ -1458,13 +1458,19 @@
     const items = Array.isArray(data && data.items) ? data.items : [];
     const payload = ahKnowledgeSyncPayload(draft, 'approved');
     const row = items.find((item) => item.clientRef === payload.clientRef);
-    if (!row) return '';
+    if (!row) return { hash: '', keywords: [] };
+    // サーバは保存時に伏せ字にする。伏せた部分があると一致しないので、公開せず一覧での確認へ回す。
     const same =
-      row.title === payload.title &&
+      row.title === payload.title.trim() &&
       row.symptom === payload.symptom.trim() &&
       row.cause === payload.cause.trim() &&
       row.steps === payload.steps.trim();
-    return same ? String(row.contentHash || '') : '';
+    return same
+      ? {
+          hash: String(row.contentHash || ''),
+          keywords: Array.isArray(row.keywords) ? row.keywords : [],
+        }
+      : { hash: '', keywords: [] };
   }
 
   /** 引き受けた引継ぎの下書きなら、元の引継ぎを本文と一緒に送る（KB から案件へたどるため）。 */
@@ -1482,13 +1488,20 @@
 
   async function ahSyncKnowledge(draft, status, extra) {
     const options = Object.assign({}, extra);
+    const body = () => ahKnowledgeSyncPayload(ahWithSourceHandover(draft), status, options);
     if (status === 'approved' && !options.contentHash) {
-      options.contentHash = await ahReviewedHash(draft);
+      const reviewed = await ahReviewedHash(draft);
+      options.contentHash = reviewed.hash;
+      return ahJsonFetch('/api/knowledge/ui-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(Object.assign(body(), { keywords: reviewed.keywords })),
+      });
     }
     return ahJsonFetch('/api/knowledge/ui-sync', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(ahKnowledgeSyncPayload(ahWithSourceHandover(draft), status, options)),
+      body: JSON.stringify(body()),
     });
   }
 
@@ -1870,9 +1883,10 @@
     return (AH.pending || []).find((item) => String(item.id) === target) || null;
   }
 
-  async function ahApprovePending(item) {
+  async function ahApprovePending(item, scope) {
     if (!item) return;
-    const boxes = Array.from(document.querySelectorAll('[data-pd-check]')).filter(
+    // 承認者のパネルと ⑥ の一覧の両方が開いていても、押した側の確認だけを読む。
+    const boxes = Array.from((scope || document).querySelectorAll('[data-pd-check]')).filter(
       (box) => box.getAttribute('data-pd-check') === String(item.id),
     );
     const checklist = {};
@@ -2087,7 +2101,7 @@
     } else if (action === 'pd-refresh') {
       void ahRefreshPending(true);
     } else if (action === 'pd-approve') {
-      void ahApprovePending(ahFindPending(id));
+      void ahApprovePending(ahFindPending(id), trigger.closest('[data-pd-item]'));
     } else if (action === 'pd-reject') {
       void ahRejectPending(ahFindPending(id));
     }
@@ -2098,10 +2112,11 @@
     if (!target || !target.getAttribute) return;
     const id = target.getAttribute('data-pd-check');
     if (!id) return;
-    const boxes = Array.from(document.querySelectorAll('[data-pd-check]')).filter(
+    const scope = (target.closest && target.closest('[data-pd-item]')) || document;
+    const boxes = Array.from(scope.querySelectorAll('[data-pd-check]')).filter(
       (box) => box.getAttribute('data-pd-check') === id,
     );
-    const button = Array.from(document.querySelectorAll('[data-ahd="pd-approve"]')).find(
+    const button = Array.from(scope.querySelectorAll('[data-ahd="pd-approve"]')).find(
       (candidate) => candidate.getAttribute('data-id') === id,
     );
     if (button) {

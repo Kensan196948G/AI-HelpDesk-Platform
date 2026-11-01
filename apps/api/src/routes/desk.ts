@@ -4,7 +4,7 @@ import { requireRole } from '../auth/session.js';
 import { sql } from '../db.js';
 import { detectIntent } from '../domain/ai.js';
 import { CATEGORY_META } from '../domain/constants.js';
-import { redactKnowledgeText, redactPII } from '../domain/pii.js';
+import { redactKnowledgeKeywords, redactKnowledgeText, redactPII } from '../domain/pii.js';
 import { signalAfterResolution } from '../domain/signal.js';
 import { conflict, notFound } from '../errors.js';
 import { appendAudit } from '../lib/audit-log.js';
@@ -229,8 +229,14 @@ export async function deskRoutes(app: FastifyInstance): Promise<void> {
       const symptom = redactKnowledgeText(found.body);
       const cause = redactKnowledgeText(resolution.cause);
       const steps = redactKnowledgeText(resolution.steps);
-      const keywords = Array.from(
-        new Set([...intent.keywords, meta.shortLabel, found.subject].filter(Boolean)),
+      const keywords = redactKnowledgeKeywords(
+        Array.from(
+          new Set(
+            [...intent.keywords, meta.shortLabel, found.subject.trim().slice(0, 40).trim()].filter(
+              Boolean,
+            ),
+          ),
+        ),
       ).slice(0, 12);
 
       const result = await sql.begin(async (tx) => {

@@ -546,10 +546,12 @@ describe('POST /knowledge/ui-sync はクライアント指定の status で穴�
     expect(stored[0]?.steps).toBe(body.steps);
     expect(stored[0]?.status).toBe('pending');
 
-    const approve = await sync(APPROVER, {
-      ...tampered,
-      status: 'approved',
-      checklist: FULL_CHECKLIST,
+    // 指紋なし（一覧を読んでいない）の承認は自分の行に当たる。他人の行の指紋を付けると 409 になる。
+    as(APPROVER);
+    const approve = await app.inject({
+      method: 'POST',
+      url: '/api/knowledge/ui-sync',
+      payload: { ...tampered, status: 'approved', checklist: FULL_CHECKLIST },
     });
     // 自分の行が優先されるので、これは自己承認になり AI の根拠にならない。
     expect(approve.statusCode, approve.body).toBe(200);

@@ -81,9 +81,9 @@ export function redactPII(input: string): RedactionResult {
 
   for (const rule of RULES) {
     let count = 0;
-    // UUID の 16 進の中の数字の並びは電話番号ではない。実行 ID を壊すと追跡できなくなる。
+    // UUID の中の数字の並びは電話番号でもカード番号でもない。実行 ID を壊すと追跡できなくなる。
     const uuids =
-      rule.type === 'phone'
+      rule.type === 'phone' || rule.type === 'card'
         ? [...text.matchAll(UUID_PATTERN)].map((m) => ({
             start: m.index,
             end: m.index + m[0].length,

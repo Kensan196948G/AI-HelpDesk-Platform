@@ -297,6 +297,39 @@ describe('本文の束縛: POST /knowledge/:id/review', () => {
   });
 });
 
+describe('下書き番号が重なるとき', () => {
+  it('指紋つきの承認は一覧で読んだ他人の行に当たり、自分の同じ番号の行を上書きしない', async () => {
+    const { id, clientRef, payload } = await submitted();
+    // 承認者にも同じ番号の下書きがある（衝突すると別の行になる）。
+    const own = await syncAs(APPROVER, {
+      ...payload,
+      title: '承認者の別の下書き',
+      status: 'draft',
+    });
+    expect(own.statusCode).toBe(200);
+    const ownId = own.json().knowledge.id;
+    expect(ownId).not.toBe(id);
+    const item = await pendingItem(id);
+    const res = await syncAs(APPROVER, {
+      clientRef,
+      status: 'approved',
+      title: item.title,
+      symptom: item.symptom,
+      cause: item.cause,
+      steps: item.steps,
+      keywords: item.keywords,
+      checklist: FULL_CHECKLIST,
+      contentHash: item.contentHash,
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    expect(res.json().selfApproved).toBe(false);
+    expect((await rowOf(id)).status).toBe('approved');
+    const mine = await rowOf(ownId);
+    expect(mine.status).toBe('draft');
+    expect(mine.title).toBe('承認者の別の下書き');
+  });
+});
+
 describe('本文の束縛: POST /knowledge/ui-sync', () => {
   const approvePayload = (item: Record<string, unknown>, clientRef: string) => ({
     clientRef,
@@ -601,13 +634,15 @@ describe('承認者の画面の API（docs/14 §2-19）', () => {
   });
 
   it('完了待ちだけを最小限の項目で返し、相談者と端末を返さない', async () => {
+    const resolved = await handover('resolved', AUTHOR);
     const claimed = await handover('claimed', AUTHOR);
     const pending = await handover('pending', null);
     as(APPROVER);
     const res = await app.inject({ method: 'GET', url: '/api/case-handovers/awaiting-approval' });
     expect(res.statusCode, res.body).toBe(200);
     const ids = res.json().items.map((item: { id: string }) => item.id);
-    expect(ids).toContain(claimed);
+    expect(ids).toContain(resolved);
+    expect(ids).not.toContain(claimed);
     expect(ids).not.toContain(pending);
     const text = res.body;
     expect(text).not.toContain(REQUESTER);

@@ -542,10 +542,12 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
       // 重なっても他人の行を下書き・申請で上書きせず、作成者別の clientRef で別の行にする。
       // 上書きを許すと、他人名義のまま差し替えて自分で承認でき、職務分離を抜けられる。
       const ownClientRef = `${input.clientRef}~${authorId.slice(0, 8)}`;
+      // 指紋つきの判定は一覧で読んだ行そのもの。同じ番号の自分の行へ当てない。
+      const preferredRef = isDecision && input.contentHash ? input.clientRef : ownClientRef;
       const existingRows = await sql<any[]>`
         SELECT * FROM knowledge
         WHERE client_ref IN (${input.clientRef}, ${ownClientRef})
-        ORDER BY (client_ref = ${ownClientRef}) DESC
+        ORDER BY (client_ref = ${preferredRef}) DESC
         LIMIT 1
       `;
       const collidesWithOther =
