@@ -124,6 +124,8 @@ beforeEach(() => {
 });
 
 afterAll(async () => {
+  // 承認済みの行を残すと、同じ DB の次の実行で KB 検索の上位を奪う。
+  await sql`DELETE FROM knowledge WHERE client_ref LIKE 'GATE-%'`;
   config.ALLOW_SELF_APPROVAL = originals.self;
   config.AUTH_MODE = originals.authMode;
   config.ACCESS_ALLOWLIST_FILE = originals.allowlist;

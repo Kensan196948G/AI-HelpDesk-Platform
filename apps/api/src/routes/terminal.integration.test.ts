@@ -168,6 +168,8 @@ beforeEach(async () => {
   vi.stubGlobal('fetch', fetchMock);
   await sql`DELETE FROM terminal_sessions WHERE case_id IN ${sql(CASES)}`;
   await sql`DELETE FROM case_handovers WHERE case_id IN ${sql(CASES)}`;
+  // 試験ごとに作った KB を消す（配列を空にする前に。次の実行の KB 検索へ残さない）。
+  for (const id of knowledgeIds) await sql`DELETE FROM knowledge WHERE id = ${id}`;
   reportIds = [];
   knowledgeIds = [];
 });
