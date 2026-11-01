@@ -165,6 +165,34 @@
     return Array.from(new Set(names.filter(Boolean)));
   }
 
+  /** 担当者欄の既定値。名簿の本人なら本人、選択肢に無ければ未選択。原本のデモ名を既定にしない。 */
+  function defaultAssignee(names, suggest, me) {
+    if (me && me.real) return names.includes(me.name) ? me.name : '';
+    return names.includes(suggest) ? suggest : names[0] || '';
+  }
+
+  /** 名簿の本人の画面では、原本のデモ担当者を選択肢から外す（名簿が取れないときは外さない）。 */
+  function assigneeOptions(names, me) {
+    const staff = window.__AIHD_EMPLOYEES__ && window.__AIHD_EMPLOYEES__.staff;
+    if (!me || !me.real || !Array.isArray(staff) || !staff.length) return names;
+    const real = new Set(staff.map((employee) => employee.name));
+    return names.filter((name) => real.has(name));
+  }
+
+  function currentUser() {
+    try {
+      return me();
+    } catch {
+      return null;
+    }
+  }
+
+  // 原本の「③ 引継ぎ」の担当者欄も同じ既定値にする（配信時の差し替え。routes/prototype.ts）。
+  window.__AIHD_ASSIGNEE__ = (name, suggest) => {
+    const user = currentUser();
+    return user && user.real ? name === user.name : name === suggest;
+  };
+
   function signal(t) {
     if (t.sec) return 'red';
     if (t.status === 'escalated' && dueAt(t) < Date.now()) return 'red';
@@ -675,12 +703,18 @@
       return '<section class="hw-action readonly"><div class="hw-action-h"><b>閲覧のみ</b><span class="hw-tag display">表示</span><span class="hw-chip">権限分離</span></div><p class="hw-note">承認者・監査担当は、担当開始・解決記録を登録できません。内容の確認と監査の参照のみ行えます。</p></section>';
     }
     if (t.status === 'escalated') {
-      const names = staffNames();
-      const selected = names.includes(t.suggest) ? t.suggest : names[0] || '';
+      const user = currentUser();
+      const names = assigneeOptions(staffNames(), user);
+      const selected = defaultAssignee(names, t.suggest, user);
       return (
         '<section class="hw-action"><div class="hw-action-h"><b>次の一手：担当を決めて対応を開始</b><span class="hw-tag input">入力</span>' +
-        (t.suggest ? '<span class="hw-chip">AIのおすすめ ' + esc(t.suggest) + '</span>' : '') +
+        (t.suggest && names.includes(t.suggest)
+          ? '<span class="hw-chip">AIのおすすめ ' + esc(t.suggest) + '</span>'
+          : '') +
         '</div><div class="hw-form-row"><label>担当者<select id="hw-assignee">' +
+        (selected === '' && names.length
+          ? '<option value="" selected>（選択してください）</option>'
+          : '') +
         (names.length
           ? names
               .map(
