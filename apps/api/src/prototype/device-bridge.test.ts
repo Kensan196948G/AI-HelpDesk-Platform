@@ -135,7 +135,6 @@ describe('device bridge', () => {
     expect(snapshot.device).toBe('PC-MOCK');
     expect(snapshot.userId).toBe('u2');
     expect(snapshot.items[0]?.v).toContain('Windows 11');
-    expect((sandbox.MODELS as { local: string }).local).toBe('DeepSeek-V4.1-Flash');
 
     (sandbox.pcStart as (value: unknown) => void)({ id: 'case-1' });
     expect(getPcStartCalls()).toBe(1);

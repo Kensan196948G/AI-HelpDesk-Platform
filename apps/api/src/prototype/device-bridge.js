@@ -464,23 +464,6 @@
     }
   }
 
-  // AI モデルの表示名を事実に合わせる（レイアウトは変更しない）。
-  try {
-    if (typeof MODELS === 'object' && MODELS) {
-      MODELS.local = 'DeepSeek-V4.1-Flash';
-      MODELS.external = 'DeepSeek-V4.1-Flash（承認済み外部）';
-      const select = document.querySelector('#model');
-      if (select) {
-        for (const option of select.options) {
-          if (option.value === 'local') option.textContent = MODELS.local;
-          if (option.value === 'external') option.textContent = MODELS.external;
-        }
-      }
-    }
-  } catch (error) {
-    // ignore
-  }
-
   window.__AIHD_DEVICE_ID__ = deviceId();
   window.__AIHD_DEVICE_DEBUG__ = {
     state,

@@ -558,7 +558,8 @@
         const text = messageText(m, cw.proposals);
         if (!text) return '';
         const role = m.kind === 'user' ? 'user' : 'ai';
-        const who = m.kind === 'user' ? '依頼者' : m.who || 'AI';
+        const honest = window.__AIHD_HONEST__;
+        const who = m.kind === 'user' ? '依頼者' : m.who || (honest ? honest.whoFor(m) : 'AI');
         const proposal = m.kind === 'proposal' ? cw.proposals.find((p) => p.id === m.propId) : null;
         return (
           '<div class="hw-msg ' +

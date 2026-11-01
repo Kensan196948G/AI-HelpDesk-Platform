@@ -387,6 +387,12 @@ export function buildPcContext(snapshot: CaseSnapshot): string {
   const pc = snapshot.case.pc as { snap?: { items?: unknown[] } } | undefined;
   const items = Array.isArray(pc?.snap?.items) ? pc?.snap?.items : [];
   if (items.length === 0) return '';
+  // 画面の固定データから作った記録（PCエージェント欄が「模擬」）は実 AI の根拠にしない。
+  const isDemo = items.some((raw) => {
+    const item = raw as { k?: string; v?: string };
+    return item.k === 'PCエージェント' && String(item.v ?? '').includes('模擬');
+  });
+  if (isDemo) return '';
   return items
     .map((raw) => {
       const item = raw as { grp?: string; k?: string; v?: string };
