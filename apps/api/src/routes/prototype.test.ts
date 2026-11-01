@@ -11,6 +11,8 @@ import {
   ENSURE_CASE_USERS,
   KB_LABEL_PATCHES,
   patchCaseUserResolution,
+  KB_DRAFT_BODY_ORIGINAL,
+  patchKbDraftBody,
   patchKbLabels,
   patchStateLoad,
   STATE_DEFAULTS_PATCH,
@@ -362,6 +364,14 @@ describe('画面の KB 表示の差し替え（DB で未承認を承認済みと
       expect(patched, from).not.toContain(from);
       expect(patched).toContain(to);
     }
+  });
+
+  it('KB 下書きの症状は引継ぎ本文をそのまま使わない（配信時に差し替える）', () => {
+    const html = readFileSync(path.join(repoRoot, config.PROTOTYPE_HTML_PATH), 'utf8');
+    const patched = patchKbDraftBody(html);
+    expect(html).toContain(KB_DRAFT_BODY_ORIGINAL);
+    expect(patched).not.toContain(KB_DRAFT_BODY_ORIGINAL);
+    expect(patched).toContain('__AIHD_KB_CONSULT__');
   });
 
   it('差し替え後の行は JavaScript として解釈でき、判定関数の結果を表示する', () => {

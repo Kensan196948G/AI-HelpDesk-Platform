@@ -4,7 +4,7 @@
  */
 import { createHash } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { config } from '../config.js';
 import { sql } from '../db.js';
 import { jsonbValue } from '../lib/jsonb-value.js';
@@ -378,5 +378,159 @@ describe('N・取消・期限切れの後に進まない', () => {
       headers: AGENT_HEADERS,
     });
     expect(response.statusCode).toBe(204);
+  });
+});
+
+/**
+ * 印刷の相談にも承認済み KB を届ける（docs/65 §7 欠陥 2）。外部 AI はスタブ。
+ * 判定は #125 と同じ findApprovedKnowledge。state の KB は使わない。
+ */
+describe('解決ループの提案と承認済み KB', () => {
+  const KB_REF = 'kb-resolve-refs-e2e';
+  const AUTHOR_EMAIL = 'resolve-kb-author@example.com';
+  const APPROVER_EMAIL = 'resolve-kb-approver@example.com';
+  const KB_NO = 'KB-RESOLVE-1';
+  const STATE_MARKER = 'ZX9状態のKB';
+  let authorId = '';
+  let approverId = '';
+  const originalKey = config.DEEPSEEK_API_KEY;
+  const originalFetch = globalThis.fetch;
+  let sent: Array<Record<string, unknown>> = [];
+  let aiReply: Record<string, unknown> = {};
+
+  async function cleanupKb() {
+    await sql`DELETE FROM knowledge WHERE client_ref = ${KB_REF} OR kb_no = ${KB_NO}`;
+  }
+
+  function stubAi() {
+    sent = [];
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      if (!String(url).includes('/chat/completions')) return originalFetch(url, init);
+      const body = JSON.parse(String(init?.body)) as {
+        messages: Array<{ role: string; content: string }>;
+      };
+      sent.push(JSON.parse(body.messages.at(-1)?.content ?? '{}'));
+      return new Response(
+        JSON.stringify({ choices: [{ message: { content: JSON.stringify(aiReply) } }] }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    }) as typeof fetch;
+  }
+
+  beforeEach(async () => {
+    await resetData();
+    await cleanupKb();
+    const rows = await sql<{ id: string; email: string }[]>`
+      INSERT INTO users (email, name, role, password_hash)
+      VALUES (${AUTHOR_EMAIL}, '作成者', 'helpdesk', 'access-only$no-login'),
+             (${APPROVER_EMAIL}, '承認者', 'approver', 'access-only$no-login')
+      ON CONFLICT (lower(email)) DO UPDATE SET updated_at = now()
+      RETURNING id, email
+    `;
+    authorId = rows.find((row) => row.email === AUTHOR_EMAIL)?.id ?? '';
+    approverId = rows.find((row) => row.email === APPROVER_EMAIL)?.id ?? '';
+    config.DEEPSEEK_API_KEY = 'stub-key-not-real';
+    aiReply = { skillId: 'spooler.status', params: {}, rationale: 'スタブ', decision: null };
+    stubAi();
+  });
+
+  afterEach(async () => {
+    globalThis.fetch = originalFetch;
+    config.DEEPSEEK_API_KEY = originalKey;
+    await cleanupKb();
+    await sql`DELETE FROM users WHERE email IN (${AUTHOR_EMAIL}, ${APPROVER_EMAIL})`;
+  });
+
+  async function insertKb(overrides: { approverId?: string } = {}) {
+    await sql`
+      INSERT INTO knowledge (
+        kb_no, title, symptom, cause, steps, keywords, status, author_id, approver_id,
+        approved_at, client_ref, version
+      ) VALUES (
+        ${KB_NO}, 'プリンタの待機ジョブが滞留したときの対処', '印刷ができない',
+        '待機ジョブの滞留', ${`1. 待機ジョブを確認する\n2. ${'手順の続き'.repeat(200)}`},
+        ${['待機ジョブ']}, 'approved', ${authorId}, ${overrides.approverId ?? approverId},
+        now(), ${KB_REF}, 2
+      )
+    `;
+  }
+
+  it('関連する承認済み KB の参照を提案の AI 入力へ入れる（上限つき）', async () => {
+    await insertKb();
+    const response = await post('/api/resolve/sessions', { caseId: CASE_ID, deviceId: DEVICE });
+    expect(response.statusCode, response.body).toBe(200);
+    const refs = sent.at(-1)?.knowledgeRefs as Array<Record<string, unknown>>;
+    const ref = refs.find((item) => item.kbNo === KB_NO);
+    expect(ref).toMatchObject({ kbNo: KB_NO, version: 2 });
+    expect(String(ref?.title)).toContain('待機ジョブ');
+    expect(String(ref?.stepsSummary)).toContain('待機ジョブを確認する');
+    expect(String(ref?.stepsSummary).length).toBeLessThanOrEqual(301);
+    expect(refs.length).toBeLessThanOrEqual(3);
+  });
+
+  it('AI が使わなければ、一致した KB は示すが「使った」としない', async () => {
+    await insertKb();
+    const body = (
+      await post('/api/resolve/sessions', { caseId: CASE_ID, deviceId: DEVICE })
+    ).json();
+    const refs = body.step.knowledgeRefs;
+    expect(refs.matched.map((item: { kbNo: string }) => item.kbNo)).toContain(KB_NO);
+    expect(refs.used).toEqual([]);
+  });
+
+  it('AI が使ったと答えた KB だけ used に入る。送っていない番号は捨てる', async () => {
+    await insertKb();
+    aiReply = { ...aiReply, usedKnowledge: [KB_NO, 'KB-NOT-SENT'] };
+    const body = (
+      await post('/api/resolve/sessions', { caseId: CASE_ID, deviceId: DEVICE })
+    ).json();
+    expect(body.step.knowledgeRefs.used).toEqual([KB_NO]);
+    const reread = (await getStep(body.step.id)).json();
+    expect(reread.step.knowledgeRefs.used).toEqual([KB_NO]);
+  });
+
+  it('自己承認の KB と本人の state の KB は参照に入らない', async () => {
+    await insertKb({ approverId: authorId });
+    await sql`
+      UPDATE prototype_states
+      SET data = jsonb_set(data, '{kb}', ${jsonbValue([
+        { id: 'KB-STATE', status: 'active', title: `プリンタ ${STATE_MARKER}`, symptom: '印刷' },
+      ])})
+      WHERE user_email = ${EMAIL} AND name = 'cowork'
+    `;
+    await post('/api/resolve/sessions', { caseId: CASE_ID, deviceId: DEVICE });
+    const input = JSON.stringify(sent.at(-1));
+    expect(input).not.toContain(KB_NO);
+    expect(input).not.toContain(STATE_MARKER);
+  });
+
+  it('無関係な相談には KB を送らない', async () => {
+    const { proposeNext } = await import('./proposer.js');
+    const { listApprovedSkills } = await import('./skills.js');
+    const { knowledgeRefsForCase } = await import('./knowledge-refs.js');
+    await insertKb();
+    const text = '経費精算の締め日を教えてください';
+    const refs = await knowledgeRefsForCase(text);
+    expect(refs.map((item) => item.kbNo)).not.toContain(KB_NO);
+    await proposeNext({
+      text,
+      history: [],
+      skills: await listApprovedSkills(),
+      knowledgeRefs: refs,
+    });
+    expect(JSON.stringify(sent.at(-1))).not.toContain(KB_NO);
+  });
+
+  it('KB に端末情報が残っていても提案の AI 入力では除く', async () => {
+    await insertKb();
+    await sql`
+      UPDATE knowledge SET steps = '1. WEB-2B6D41AA の待機ジョブを確認する',
+        approved_at = now() + interval '1 second'
+      WHERE kb_no = ${KB_NO}
+    `;
+    await post('/api/resolve/sessions', { caseId: CASE_ID, deviceId: DEVICE });
+    const input = JSON.stringify(sent.at(-1));
+    expect(input).toContain(KB_NO);
+    expect(input).not.toContain('WEB-2B6D41AA');
   });
 });

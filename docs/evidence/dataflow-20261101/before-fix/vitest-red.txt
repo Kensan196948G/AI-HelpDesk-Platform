@@ -1,0 +1,41 @@
+修正前（2026-11-01）: 欠陥を再現する試験の結果
+      Tests  38 failed | 95 passed (133)
+ FAIL  apps/api/src/domain/pii-knowledge.test.ts > redactKnowledgeText（KB へ入れない端末情報） > FQDN を除く
+ FAIL  apps/api/src/domain/pii-knowledge.test.ts > redactKnowledgeText（KB へ入れない端末情報） > IP を除く
+ FAIL  apps/api/src/domain/pii-knowledge.test.ts > redactKnowledgeText（KB へ入れない端末情報） > MAC を除く
+ FAIL  apps/api/src/domain/pii-knowledge.test.ts > redactKnowledgeText（KB へ入れない端末情報） > containsDeviceInfo は端末情報の有無を返す
+ FAIL  apps/api/src/domain/pii-knowledge.test.ts > redactKnowledgeText（KB へ入れない端末情報） > シリアル を除く
+ FAIL  apps/api/src/domain/pii-knowledge.test.ts > redactKnowledgeText（KB へ入れない端末情報） > デモ形式の端末名 を除く
+ FAIL  apps/api/src/domain/pii-knowledge.test.ts > redactKnowledgeText（KB へ入れない端末情報） > ホスト名 を除く
+ FAIL  apps/api/src/domain/pii-knowledge.test.ts > redactKnowledgeText（KB へ入れない端末情報） > ホスト名（ラベル） を除く
+ FAIL  apps/api/src/domain/pii-knowledge.test.ts > redactKnowledgeText（KB へ入れない端末情報） > メール を除く
+ FAIL  apps/api/src/domain/pii-knowledge.test.ts > redactKnowledgeText（KB へ入れない端末情報） > 何度かけても同じ結果になる（承認時の本文照合が壊れない）
+ FAIL  apps/api/src/domain/pii-knowledge.test.ts > redactKnowledgeText（KB へ入れない端末情報） > 実診断の結果と実行 ID の節を除く
+ FAIL  apps/api/src/domain/pii-knowledge.test.ts > redactKnowledgeText（KB へ入れない端末情報） > 引継ぎ本文の端末と PC 基本情報の節を除き、相談内容だけ残す
+ FAIL  apps/api/src/domain/pii-knowledge.test.ts > redactKnowledgeText（KB へ入れない端末情報） > 社員番号 を除く
+ FAIL  apps/api/src/domain/pii-knowledge.test.ts > redactKnowledgeText（KB へ入れない端末情報） > 社員番号形式の端末名 を除く
+ FAIL  apps/api/src/domain/pii-knowledge.test.ts > redactKnowledgeText（KB へ入れない端末情報） > 端末 ID を除く
+ FAIL  apps/api/src/domain/pii-knowledge.test.ts > redactKnowledgeText（KB へ入れない端末情報） > 端末の UUID を除く
+ FAIL  apps/api/src/domain/pii-knowledge.test.ts > redactKnowledgeText（KB へ入れない端末情報） > 端末情報のない手順は変えない
+ FAIL  apps/api/src/domain/pii-knowledge.test.ts > scrubAiAnswer（相談者へ見せない定型文） > 入力の指示についての言及を除く
+ FAIL  apps/api/src/domain/pii-knowledge.test.ts > scrubAiAnswer（相談者へ見せない定型文） > 通常の回答は変えない
+ FAIL  apps/api/src/prototype/assist-bridge.test.ts > assist-bridge: F-06 承認者向けサーバ下書き（別ID承認） > KB の症状の元は相談内容だけにし、端末・PC 基本情報・実診断の結果を入れない
+ FAIL  apps/api/src/prototype/assist-bridge.test.ts > assist-bridge: F-06 承認者向けサーバ下書き（別ID承認） > 承認者が確認できるよう、症状・原因・手順を表示する（エスケープする）
+ FAIL  apps/api/src/prototype/handover-workspace-assignee.test.ts > 担当者欄の既定値 > デモの利用者（切替モード）は従来どおりおすすめを選ぶ
+ FAIL  apps/api/src/prototype/handover-workspace-assignee.test.ts > 担当者欄の既定値 > 名簿の本人でログインしていれば本人を選ぶ（おすすめのデモ名より優先）
+ FAIL  apps/api/src/prototype/handover-workspace-assignee.test.ts > 担当者欄の既定値 > 本人が選択肢に無ければ未選択にする（先頭のデモ名を選ばない）
+ FAIL  apps/api/src/resolve/real-path.integration.test.ts > 解決ループの提案と承認済み KB > AI が使ったと答えた KB だけ used に入る。送っていない番号は捨てる
+ FAIL  apps/api/src/resolve/real-path.integration.test.ts > 解決ループの提案と承認済み KB > AI が使わなければ、一致した KB は示すが「使った」としない
+ FAIL  apps/api/src/resolve/real-path.integration.test.ts > 解決ループの提案と承認済み KB > KB に端末情報が残っていても提案の AI 入力では除く
+ FAIL  apps/api/src/resolve/real-path.integration.test.ts > 解決ループの提案と承認済み KB > 無関係な相談には KB を送らない
+ FAIL  apps/api/src/resolve/real-path.integration.test.ts > 解決ループの提案と承認済み KB > 自己承認の KB と本人の state の KB は参照に入らない
+ FAIL  apps/api/src/resolve/real-path.integration.test.ts > 解決ループの提案と承認済み KB > 関連する承認済み KB の参照を提案の AI 入力へ入れる（上限つき）
+ FAIL  apps/api/src/routes/knowledge-ai-provenance.integration.test.ts > 承認済み KB は全体で参照する（次の人へ） > AI へ指示文への言及を求めず、回答に出ても相談者へ見せない
+ FAIL  apps/api/src/routes/knowledge-ai-provenance.integration.test.ts > 承認済み KB は全体で参照する（次の人へ） > 既に保存された申請に端末情報があれば、別人の承認を理由付きで拒否する
+ FAIL  apps/api/src/routes/knowledge-ai-provenance.integration.test.ts > 承認済み KB は全体で参照する（次の人へ） > 既に承認済みの行に端末情報が残っていても AI 入力では除く（行は書き換えない）
+ FAIL  apps/api/src/routes/knowledge-ai-provenance.integration.test.ts > 承認済み KB は全体で参照する（次の人へ） > 申請の本文に端末情報があっても DB に保存しない
+ FAIL  apps/api/src/routes/prototype.test.ts > 画面の KB 表示の差し替え（DB で未承認を承認済みと表示しない） > KB 下書きの症状は引継ぎ本文をそのまま使わない（配信時に差し替える）
+ FAIL  apps/api/src/terminal/report.test.ts > RSP実行セッションの報告書 > ナレッジ下書きに端末 ID とホスト名を残さない（実行記録の出力を含む）
+ FAIL  scripts/report-state-kb-provenance.test.mjs > KB 本文の端末情報の検出（読み取りのみ、docs/64 §8） > スクリプトの判定はサーバの伏せ字と一致する
+ FAIL  scripts/report-state-kb-provenance.test.mjs > KB 本文の端末情報の検出（読み取りのみ、docs/64 §8） > 端末情報を含む行を状態ごとに数える
+ Test Files  8 failed (8)

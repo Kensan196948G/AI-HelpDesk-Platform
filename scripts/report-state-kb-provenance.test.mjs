@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
+  countsDeviceInfo,
   dbRowBlocker,
   demoKbKeys,
   refusalReason,
@@ -95,5 +96,39 @@ describe('report-state-kb-provenance', () => {
       draftsWithoutClientRef: 0,
     });
     expect(JSON.stringify(report)).not.toContain('example.com');
+  });
+});
+
+describe('KB 本文の端末情報の検出（読み取りのみ、docs/64 §8）', () => {
+  const body = (symptom) => ({ title: 't', symptom, cause: 'c', steps: 's' });
+
+  it('端末情報を含む行を状態ごとに数える', () => {
+    const report = summarize(
+      [],
+      [
+        row({ ...body('【端末】WEB-2B6D41AA／Linux') }),
+        row({ client_ref: 'ui-2', ...body('普通の症状') }),
+        row({ client_ref: 'ui-3', status: 'pending', ...body('取得日時：2026 コンピュータ名：X') }),
+      ],
+      new Set(),
+    );
+    expect(report.db.approvedWithDeviceInfo).toBe(1);
+    expect(report.db.notApprovedWithDeviceInfo).toBe(1);
+    expect(JSON.stringify(report)).not.toContain('WEB-2B6D41AA');
+  });
+
+  it('スクリプトの判定はサーバの伏せ字と一致する', async () => {
+    const { containsDeviceInfo } = await import('../apps/api/src/domain/pii.ts');
+    for (const text of [
+      '【端末】WEB-2B6D41AA／Linux',
+      'MRK-MK9101',
+      'DESKTOP-AB12CD3',
+      '00:1A:2B:3C:4D:5E',
+      'e87ca109-4344-4c21-9be1-f6e93ebb0c02',
+      '印刷キューを開く',
+      'Windows 11 で確認する',
+    ]) {
+      expect(countsDeviceInfo(text), text).toBe(containsDeviceInfo(text));
+    }
   });
 });

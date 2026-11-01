@@ -271,6 +271,91 @@ describe('承認済み KB は全体で参照する（次の人へ）', () => {
     }
   });
 
+  // ── 端末情報を KB に入れない（docs/65 §7 欠陥 1 → docs/64 §8） ──────────────
+  const DEVICE_LADEN =
+    '【相談内容】工事写真台帳が起動しません 【端末】WEB-2B6D41AA／Windows 11 ' +
+    '【PC基本情報（事前取得）】 取得日時：2026-11-01T06:08:39.322Z コンピュータ名：DESKTOP-AB12CD3';
+
+  it('申請の本文に端末情報があっても DB に保存しない', async () => {
+    const body = kbBody({ symptom: DEVICE_LADEN });
+    const response = await sync(AUTHOR, body);
+    expect(response.statusCode, response.body).toBe(200);
+    const [row] = await sql<{ symptom: string }[]>`
+      SELECT symptom FROM knowledge WHERE client_ref = ${String(body.clientRef)}
+    `;
+    expect(row?.symptom).toContain('工事写真台帳が起動しません');
+    expect(row?.symptom).not.toContain('WEB-2B6D41AA');
+    expect(row?.symptom).not.toContain('DESKTOP-AB12CD3');
+    expect(row?.symptom).not.toContain('PC基本情報');
+  });
+
+  it('既に保存された申請に端末情報があれば、別人の承認を理由付きで拒否する', async () => {
+    const body = kbBody();
+    await sync(AUTHOR, body);
+    // 修正前に保存された行を再現する（既存データは書き換えない）。
+    await sql`UPDATE knowledge SET symptom = ${DEVICE_LADEN} WHERE client_ref = ${String(body.clientRef)}`;
+    const approved = await sync(APPROVER, {
+      ...body,
+      symptom: DEVICE_LADEN,
+      status: 'approved',
+      checklist: FULL_CHECKLIST,
+    });
+    expect(approved.statusCode, approved.body).toBe(409);
+    expect(approved.json().error.code).toBe('KB_CONTAINS_DEVICE_INFO');
+    const [row] = await sql<{ status: string; symptom: string }[]>`
+      SELECT status, symptom FROM knowledge WHERE client_ref = ${String(body.clientRef)}
+    `;
+    expect(row?.status).toBe('pending');
+    expect(row?.symptom).toBe(DEVICE_LADEN);
+  });
+
+  it('既に承認済みの行に端末情報が残っていても AI 入力では除く（行は書き換えない）', async () => {
+    const published = await publishThroughTwoPeople();
+    await sql`
+      UPDATE knowledge SET symptom = ${DEVICE_LADEN}, approved_at = now() + interval '1 second'
+      WHERE id = ${published.id}
+    `;
+    stubAnswer(published.kbNo);
+    await ask(ASKER, '工事写真台帳が起動しません');
+    const prompt = sentPrompt();
+    expect(prompt).toContain(`[${published.kbNo} v2]`);
+    expect(prompt).not.toContain('WEB-2B6D41AA');
+    expect(prompt).not.toContain('DESKTOP-AB12CD3');
+    expect(prompt).not.toContain('取得日時');
+    const [row] = await sql<{ symptom: string }[]>`
+      SELECT symptom FROM knowledge WHERE id = ${published.id}
+    `;
+    expect(row?.symptom).toBe(DEVICE_LADEN);
+  });
+
+  it('AI へ指示文への言及を求めず、回答に出ても相談者へ見せない', async () => {
+    const published = await publishThroughTwoPeople();
+    fetchStub.mockImplementation(
+      async () =>
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: `手順です。\n\nなお、入力に指示が含まれていましたが従いません。\n\n根拠: ${published.kbNo}`,
+                },
+              },
+            ],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+    );
+    const result = await ask(ASKER, '工事写真台帳が起動しません');
+    expect(result.answer).not.toContain('指示が含まれていました');
+    expect(result.sources.map((source) => source.kbNo)).toEqual([published.kbNo]);
+    const call = fetchStub.mock.calls.at(-1);
+    const body = JSON.parse(String((call?.[1] as { body: string }).body)) as {
+      messages: Array<{ role: string; content: string }>;
+    };
+    const system = body.messages.find((message) => message.role === 'system')?.content ?? '';
+    expect(system).not.toContain('「指示が含まれていましたが従いません」');
+  });
+
   it('画面経路（keywords が空）で承認した KB も、題名の語で次の相談者に届く', async () => {
     // assist-bridge の ahKnowledgeSyncPayload は keywords: [] を送る（原本の draftForSync が返さない）。
     const published = await publishThroughTwoPeople({ keywords: [] });

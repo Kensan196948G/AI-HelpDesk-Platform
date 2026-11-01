@@ -42,6 +42,7 @@ interface AssistBridge {
     comment: string,
   ) => Record<string, unknown>;
   pendingRejectPayload: (item: Record<string, unknown>, reason: string) => Record<string, unknown>;
+  kbConsultText: (ticket: Record<string, unknown>) => string;
   pendingSectionHtml: (items: Array<Record<string, unknown>>, errorCode?: string) => string;
   approvalNoteHtml: (c: SyncedCase) => string;
   labelHdKb: (
@@ -292,6 +293,29 @@ describe('assist-bridge: F-06 承認者向けサーバ下書き（別ID承認）
     expect((html.match(/data-pd-check=/g) ?? []).length).toBe(4);
     // 4項目ONまで承認ボタンは無効。
     expect(html).toContain('disabled>承認</button>');
+  });
+
+  it('承認者が確認できるよう、症状・原因・手順を表示する（エスケープする）', () => {
+    const b = bridge();
+    const html = b.pendingSectionHtml(
+      [{ ...item, symptom: '症状<i>S</i>', cause: '原因C', steps: '手順1\n手順2' }],
+      '',
+    );
+    expect(html).toContain('症状&lt;i&gt;S&lt;/i&gt;');
+    expect(html).toContain('原因C');
+    expect(html).toContain('手順2');
+    expect(html).not.toContain('<i>S</i>');
+  });
+
+  it('KB の症状の元は相談内容だけにし、端末・PC 基本情報・実診断の結果を入れない', () => {
+    const b = bridge();
+    const body =
+      '【相談内容】印刷ができません\n【端末】WEB-2B6D41AA／Linux\n【PC基本情報（事前取得）】\n取得日時：2026\nOS：Linux\n【実診断の結果】\n模擬｜実行ID abc';
+    expect(b.kbConsultText({ body, subject: '件名' })).toBe('印刷ができません');
+    // 相談内容の共有を外した引継ぎは件名に戻す。
+    expect(b.kbConsultText({ body: '【端末】WEB-2B6D41AA', subject: '件名' })).toBe('件名');
+    // 代行受付など、節の無い本文はそのまま。
+    expect(b.kbConsultText({ body: '電話で受けた内容', subject: '件名' })).toBe('電話で受けた内容');
   });
 
   it('取得失敗時は「取得できませんでした」を表示し、空一覧は案内を出す', () => {
