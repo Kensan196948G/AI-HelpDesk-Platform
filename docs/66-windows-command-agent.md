@@ -113,6 +113,14 @@ Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" |
 
 CI の `.github/workflows` は変えていない。#117 / #120 の CI には pwsh の手順があるので、それらと統合するときに `pwsh -NoProfile -NonInteractive -File scripts/windows/tests/command-agent.tests.ps1` を足してもよいが、`npm test` から実行されるので必須ではない。
 
+## 5-1. 実機で確かめたこと（2026-11-01、Windows PowerShell 5.1、検証端末 1 台）
+
+- 10 ファイルを本人権限で配置し、CRLF 変換なしでハッシュが一致して `spooler.status` が 2 回完了（各約 1.3 秒）。出所 `endpoint_agent` をサーバが受理。
+- 実行者は検証ユーザー本人、切断セッション（session 2）のまま常駐で動作。接続先の再起動中の 502 の後に自動で復帰。
+- `icacls` で設定ファイルを本人のみにした状態で起動できた。
+
+**ここに書いていないものは未確認。** 昇格の拒否、SYSTEM の拒否、タイムアウトの停止、引数のある Skill、Cloudflare Access 越し、スタートアップ起動、一般ユーザーの `SPOOLER_RESTART`、変更系 Skill は実機で確かめていない。
+
 ## 6. 確認できていないこと（実機が要る）
 
 Linux の pwsh 7 では次を確かめられない。

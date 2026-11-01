@@ -5,6 +5,15 @@ README の図と記述の各線を、実際の経路と証跡に対応づける�
 - 作成: 2026-11-01。対象は `verify/dataflow-integration`（検証用の統合。#125 と #126 を含む）。
 - 通しの E2E: `scripts/e2e/dataflow-integration.mjs`、結果は [docs/evidence/dataflow-20261101/](evidence/dataflow-20261101/)。`stub/`、`real-ai/` が修正後、`before-fix/` が修正前の再現、`round1-*/` が最初の通しの記録。
 
+## 0. 実機で確かめた範囲（2026-11-01）
+
+相談 → 本人 Y → 実端末の読取診断 → 結果確認 → 引継ぎ を、検証用 Windows 端末 1 台（PowerShell 5.1、Node なし）で実行した。証跡は [docs/evidence/real-device-20261101/](evidence/real-device-20261101/)。
+
+- **条件:** Skill は `spooler.status` のみ。実 DeepSeek は提案だけで、相談文は合成。認証は `AUTH_MODE=local`、ブラウザはサーバ上のヘッドレス（端末のブラウザではない）、名簿は合成。検証ユーザーは Administrators 所属の UAC 制限トークン。
+- **確認した拒否:** 期限切れの Y は 409 でコマンド 0 件。
+- **実機で通していない部分:** 引継ぎの後（担当者の対応、KB 下書き、別人承認、次の相談）は実機の結果から続けておらず、`--mock` の通し E2E の結果である。
+- **解決の証拠ではない:** 読取成功は診断の成功で、相談の解決ではない。変更系と `SPOOLER_RESTART` は実行していない。
+
 ## 1. ラベルの定義
 
 | ラベル | 意味 |
@@ -50,7 +59,7 @@ README の図と記述の各線を、実際の経路と証跡に対応づける�
 | 💬 答える（印刷の相談） | STEP 2 の送信 | **`/api/ai/answer` を呼ばない** | `prototype_states` | なし | 解決ループへ誘導、または未接続の案内 | 下の「調べる」。結果の後に承認済み KB を案内する（§5） | AI の文章の回答は**未接続**。M では**デモ** | I | E2E A1、N0、N3 |
 | 🔍 調べる（PC 基本情報: ブラウザ） | STEP 2 の取得 | `POST /api/device/browser` | `device_inventories` | ブラウザ | 項目一覧 | 本人の同意で引継ぎへ | **実データ** | M / I | E2E の API 記録（`apiLog.*`）、`device.test.ts` |
 | 🔍 調べる（読み取り診断、resolve カード） | 開始 → 本人 Y | `POST /api/resolve/sessions`、`/steps/:id/approve` | `resolution_*`、`device_commands` | `--mock` | 模擬と表示、DB に `executionSource=mock` | 出所付きで引継ぎ・報告書 | 経路は**実データ（mock まで）**。実端末の結果は**未検証** | I | E2E A4〜A9、X1、`real-path.integration.test.ts`、#126 の `docs/evidence/wizard-real-path-20261101/` |
-| 🔍 調べる（読み取り診断、Node の無い Windows の実行器） | 開始 → 本人 Y | 同上 | 同上 | `scripts/windows/command-agent.ps1` | Linux の pwsh とスタブの Skill で模擬。出所は `mock` | 同上 | **未検証**（Windows PowerShell 5.1、本物の Skill、`endpoint_agent` は未実行） | I | [docs/66](66-windows-command-agent.md)、`docs/evidence/command-agent-ps1-20261101/` |
+| 🔍 調べる（読み取り診断、Node の無い Windows の実行器） | 開始 → 本人 Y | `POST /api/resolve/sessions`、`/steps/:id/approve` | `resolution_*`、`device_commands` | `scripts/windows/command-agent.ps1`（検証ユーザー、session 2） | 実端末の `spooler.status`（`Running`）。DB に `executionSource=endpoint_agent` | 出所と実行 ID 付きで引継ぎ。デモ値なし | **実データ（`spooler.status` の 1 シナリオ、下記の条件に限る）** | I | [docs/evidence/real-device-20261101/](evidence/real-device-20261101/) |
 | 🔍 調べる（読み取り診断、元ウィザードの印刷以外） | STEP 3 の確認 Y | なし | `prototype_states` | なし | 固定データ | デモと表示 | **デモ** | M / I | docs/14 §2-11 |
 | 🛠 直す（提案カード） | 提案の Y | なし（`ACT.realExec` を押したときだけ `/api/device/command`） | `prototype_states` | 模擬（`SPOOLER_RESTART` のみ別経路） | 「実行しました（模擬）」 | デモと表示 | **デモ** | M / I | docs/14 §2-11 |
 | 🛠 直す（`SPOOLER_RESTART` の実機） | 提案カードの実行ボタン | `POST /api/device/command` | `device_commands` | エージェント | - | - | **未検証**。`SPOOLER_RESTART` の実機の実行記録は見つからない（docs/19 は「実機（Windows）での実行は未実施」、`docs/evidence/device-command/20261023/` は `mock:true`）。I では印刷の提案カードが出ないので、この経路の入口がウィザードから無くなる（**未接続**） | M のみ入口あり | docs/19、`device.test.ts`、E2E A2 |
