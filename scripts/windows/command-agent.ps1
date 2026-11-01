@@ -29,7 +29,7 @@
   既存の SPOOLER_RESTART（skill_id なし）の動作は変えていない。管理者権限が必要な場合がある。
 #>
 param(
-  [string]$ConfigPath = "$env:USERPROFILE\.config\ai-helpdesk\device-agent-windows.json",
+  [string]$ConfigPath = "$env:USERPROFILE\.config\ai-helpdesk\command-agent-windows.json",
   [int]$IntervalSeconds = 5,
   [switch]$Once,
   [switch]$DryRun,
@@ -629,6 +629,8 @@ function Invoke-CommandTick {
     return
   }
 
+  # 実行の失敗と報告の失敗を分ける。報告に失敗しても、済んだ実行を失敗として送り直さない。
+  $outcome = $null
   try {
     if ($skillId) {
       $result = Invoke-SkillCommand -Command $command
@@ -639,16 +641,17 @@ function Invoke-CommandTick {
     } else {
       throw "未対応の操作です: $opId"
     }
-    Send-CommandResult -Id $id -Outcome @{ ok = $true; result = $result }
+    $outcome = @{ ok = $true; result = $result }
     Write-AgentLog "done $id"
   } catch {
     $message = Get-TruncatedText -Text (Protect-Text $_.Exception.Message) -Limit $script:SummaryLimitChars
-    try {
-      Send-CommandResult -Id $id -Outcome @{ ok = $false; error = $message }
-    } catch {
-      Write-AgentLog "report error $id"
-    }
+    $outcome = @{ ok = $false; error = $message }
     Write-AgentLog "failed ${id}: $message"
+  }
+  try {
+    Send-CommandResult -Id $id -Outcome $outcome
+  } catch {
+    Write-AgentLog "report error $id"
   }
 }
 

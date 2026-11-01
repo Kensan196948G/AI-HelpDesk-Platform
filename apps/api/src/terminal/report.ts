@@ -1,6 +1,6 @@
 import { sameHuman } from '../auth/shared-identity.js';
 import { type FinalReport, FinalReportSchema } from '../domain/final-report.js';
-import { redactKnowledgeText, redactPII } from '../domain/pii.js';
+import { redactKnowledgeKeywords, redactKnowledgeText, redactPII } from '../domain/pii.js';
 import { type CaseSnapshot, normalizeState } from '../lib/case-handover.js';
 import type { HandoverRow } from '../routes/case-handovers.js';
 import type { OutputSource, TerminalSessionRow, TerminalStepRow } from './session.js';
@@ -388,15 +388,17 @@ export function buildKnowledgeDraft(input: KnowledgeDraftInput): KnowledgeDraftC
   const steps = redactKnowledgeText(clipped(lines.join('\n'), 8000)).text;
 
   const category = text(caseRecord.cat, 40);
-  const keywords = Array.from(
-    new Set(
-      [CATEGORY_LABEL[category], subject, ...recorded.map((step) => text(step.intent, 40))].filter(
-        (value): value is string => Boolean(value),
+  const keywords = redactKnowledgeKeywords(
+    Array.from(
+      new Set(
+        [CATEGORY_LABEL[category], subject, ...recorded.map((step) => text(step.intent, 40))]
+          .filter((value): value is string => Boolean(value))
+          .map((value) => value.trim()),
       ),
     ),
   )
     .slice(0, 12)
-    .map((value) => value.slice(0, 40));
+    .map((value) => value.slice(0, 40).trim());
 
   // 承認は ui-sync の上限と本文照合を通る。伏せ字で長さが変わるので最後に切り、前後の空白を落とす。
   return {
