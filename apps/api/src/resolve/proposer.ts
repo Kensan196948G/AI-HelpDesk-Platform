@@ -378,13 +378,13 @@ async function proposeWithDeepSeek(context: ProposalContext): Promise<Proposal |
  */
 /** AI の説明が解決を断定していたら、固定の文へ置き換える（#120 の判定を使う。docs/67）。 */
 const RATIONALE_REPLACED =
-  '読み取りの結果を確認するための提案です。解決したかどうかはご本人が確認してください。';
+  '提案の内容を確認して、実行するかを判断してください。解決したかどうかはご本人が確認してください。';
 
 export async function proposeNext(context: ProposalContext): Promise<Proposal | null> {
   const selected = await selectProposal(context);
   if (!selected) return null;
   const proposal =
-    selected.rationale && acceptAiExplanation(selected.rationale, null, false).rejected
+    selected.rationale && acceptAiExplanation(selected.rationale, null, true).rejected
       ? { ...selected, rationale: RATIONALE_REPLACED, rationaleRejected: true }
       : selected;
   return {

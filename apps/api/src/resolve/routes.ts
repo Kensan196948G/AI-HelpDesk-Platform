@@ -1382,9 +1382,15 @@ export async function sweepResolveTimeouts(): Promise<number> {
       AND st.deadline_at IS NOT NULL
       AND st.deadline_at < now()
       AND c.status IN ('done', 'failed')
+    ORDER BY st.deadline_at
     LIMIT 50
   `;
-  for (const step of finished) await applyCommandOutcome(step.user_email, step.id);
+  for (const step of finished) {
+    // 1 件の失敗で後続のタイムアウト処理を止めない。
+    await applyCommandOutcome(step.user_email, step.id).catch((error) => {
+      console.warn('[resolve] 結果の取り込みに失敗しました', step.id, error?.code ?? 'unknown');
+    });
+  }
   // 対象セッションを先に特定し、session → step の固定順でロックする。
   const candidates = await sql<{ session_id: string }[]>`
     SELECT DISTINCT session_id FROM resolution_steps

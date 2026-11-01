@@ -205,7 +205,8 @@
       const select = document.getElementById('q_as');
       if (select && !select.value) {
         if (typeof toast === 'function') toast('担当者を選択してください', 'bad');
-        return undefined;
+        // 呼び出し側が成功として扱わないように例外にする。
+        throw new Error('担当者が未選択です');
       }
       return originalStartWork.apply(this, args);
     };

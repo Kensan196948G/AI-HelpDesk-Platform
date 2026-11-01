@@ -194,7 +194,7 @@ const STILL = /今も|いまも|現在も|まだ|依然|ずっと|相変わら�
 
 /** それだけで解消を述べる表現。語が無ければ、同じ文か、対象が 1 つに決まるときだけ効く。 */
 const RESOLVED =
-  /(?:直り|治り|解決し|解消し|復旧し|回復し|修復し)(?:ました|た)|直った|治った|解決済|解消済|もう大丈夫|問題なくなり|(?:でき|つながる|動く)ようになり|(?:今|いま|現在)は?.{0,12}(?:でき(?:る|ます|て)|開け(?:る|ます)|つなが(?:る|ります|って)|動(?:く|きます|いて)|使え(?:る|ます)|見つか|問題(?:は)?(?:ない|ありません)|大丈夫|正常)/;
+  /(?:直り|治り|解決し|解消し|復旧し|回復し|修復し)(?:ました|た)|直った|治った|解決済|解消済|もう大丈夫|問題なくなり|(?:できる?|つながる|動く)ようになり|(?:今(?![朝日週月回度も])|いま(?!も)|現在(?!も))は?.{0,12}(?!.*(?:ません|ない))(?:でき(?:る|ます|て)|開け(?:る|ます)|つなが(?:る|ります|って)|動(?:く|きます|いて)|使え(?:る|ます)|見つか|問題(?:は)?(?:ない|ありません)|大丈夫|正常)/;
 /** 今は動くという表現。語か同じ文の症状が無ければ、何が動いたのか分からないので効かせない。 */
 const WORKING =
   /でき(?:ました|た)|(?:つながり|見つかり|開け|開き|起動し|動き)ました|つながった|見つかった|正常|問題(?:は)?(?:ない|ありません|なし)/;
@@ -289,7 +289,7 @@ const RETRACTED_SYMPTOM =
 /**
  * 相談文の症状の扱い。辞書に無い言い方（「紙が出ません」）を「症状なし」と誤読しないよう、
  * active でないものを retracted と unknown に分ける。retracted は相談の最後の節が否定や解消のときだけ。
- * 「エラーは出ていませんが、紙が出ません」のように続きがあれば止めない。伝聞（言われました）も数えない。
+ * 「エラーは出ていませんが、紙が出ません」のように続きがあれば止めない。伝聞、願望、質問も数えない。
  */
 export function symptomStatusOf(text: string): 'active' | 'retracted' | 'unknown' {
   if (tagsFromText(text).length > 0) return 'active';
@@ -297,8 +297,13 @@ export function symptomStatusOf(text: string): 'active' | 'retracted' | 'unknown
   const lastSentence = sentences[sentences.length - 1] ?? '';
   const clauses = clausesOf(lastSentence);
   const last = clauses[clauses.length - 1] ?? '';
-  if (/言われ|とのこと|らしい/.test(last)) return 'unknown';
-  return RETRACTED_SYMPTOM.test(last) ? 'retracted' : 'unknown';
+  // 伝聞、願望、質問は解消の報告ではない。
+  if (/言われ|とのこと|らしい|たい|ですか|でしょうか|ますか/.test(last)) return 'unknown';
+  if (!RETRACTED_SYMPTOM.test(last)) return 'unknown';
+  // 別の節に今の不具合（「紙が出ません」）があれば止めない。過去形（でした）は数えない。
+  const earlier = sentences.flatMap(clausesOf).slice(0, -1);
+  const ongoing = earlier.some((clause) => /(?:ません|ない)$/.test(clause.trim()));
+  return ongoing ? 'unknown' : 'retracted';
 }
 
 /**

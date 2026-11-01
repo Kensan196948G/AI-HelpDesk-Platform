@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { acceptAiExplanation, symptomStatusOf } from '../support-session/case-facts.js';
+import {
+  acceptAiExplanation,
+  symptomStatusOf,
+  tagsFromText,
+} from '../support-session/case-facts.js';
 import {
   buildSkillCatalogForAi,
   escalationReasonForDecision,
@@ -282,5 +286,13 @@ describe('AI の説明の断定を採用しない（#120 の判定。docs/67）'
     expect(symptomStatusOf('画面にエラーは出ていませんが、印刷しても紙が出ません')).toBe('unknown');
     expect(symptomStatusOf('スプーラは問題ないと言われましたが紙が出ません')).toBe('unknown');
     expect(symptomStatusOf('スプーラは問題ないと言われました')).toBe('unknown');
+    expect(symptomStatusOf('印刷できるようになりたいです')).toBe('unknown');
+    expect(symptomStatusOf('このまま使っても問題ないですか')).toBe('unknown');
+    expect(symptomStatusOf('紙が出ませんが、エラーはありません')).toBe('unknown');
+    // 続いている症状を、今の語で解消と読まない。
+    for (const text of ['今もフォルダが見つかりません', '今朝からファイルが見つかりません']) {
+      expect(tagsFromText(text).length).toBeGreaterThan(0);
+    }
+    expect(tagsFromText('印刷できません。再起動したら印刷できるようになりました')).toEqual([]);
   });
 });
