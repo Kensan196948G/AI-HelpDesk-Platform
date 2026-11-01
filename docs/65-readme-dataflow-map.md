@@ -13,6 +13,11 @@ README の図と記述の各線を、実際の経路と証跡に対応づける�
 - **確認した拒否:** 期限切れの Y は 409 でコマンド 0 件。
 - **実機で通していない部分:** 引継ぎの後（担当者の対応、KB 下書き、別人承認、次の相談）は実機の結果から続けておらず、`--mock` の通し E2E の結果である。
 - **解決の証拠ではない:** 読取成功は診断の成功で、相談の解決ではない。変更系と `SPOOLER_RESTART` は実行していない。
+- **本人の Y の実態:** Y はユーザーの番号選択を受けて、担当者がヘッドレス画面から送った。相談者本人が端末のブラウザで押したものではない。実行 `2209b951` は条件付きの事前承認だった（Skill と引数の一致を機械で照合してから送信）。
+- **本人の照合はしていない:** resolve の経路は相談者と Windows ユーザーを照合しない。端末側の確認はデバイストークンだけである。
+- **引継ぎの端末欄:** サーバのヘッドレスブラウザの端末で、実診断の端末と別である。実診断の結果の出所と実行 ID は実端末のものだが、端末欄を実端末の情報と読まない。
+- **実 AI の送信内容:** 実機の回の DeepSeek の提案は送信内容を検査していない（通し E2E の中継の確認はこの回には無い）。
+- **拒否の位置づけ:** 期限切れの 409 は試験として流したものではなく、偶然起きたものである。拒否の試験は E2E の D1〜D14（API 直接、`--mock`）。
 
 ## 1. ラベルの定義
 
@@ -59,7 +64,7 @@ README の図と記述の各線を、実際の経路と証跡に対応づける�
 | 💬 答える（印刷の相談） | STEP 2 の送信 | **`/api/ai/answer` を呼ばない** | `prototype_states` | なし | 解決ループへ誘導、または未接続の案内 | 下の「調べる」。結果の後に承認済み KB を案内する（§5） | AI の文章の回答は**未接続**。M では**デモ** | I | E2E A1、N0、N3 |
 | 🔍 調べる（PC 基本情報: ブラウザ） | STEP 2 の取得 | `POST /api/device/browser` | `device_inventories` | ブラウザ | 項目一覧 | 本人の同意で引継ぎへ | **実データ** | M / I | E2E の API 記録（`apiLog.*`）、`device.test.ts` |
 | 🔍 調べる（読み取り診断、resolve カード） | 開始 → 本人 Y | `POST /api/resolve/sessions`、`/steps/:id/approve` | `resolution_*`、`device_commands` | `--mock` | 模擬と表示、DB に `executionSource=mock` | 出所付きで引継ぎ・報告書 | 経路は**実データ（mock まで）**。実端末の結果は**未検証** | I | E2E A4〜A9、X1、`real-path.integration.test.ts`、#126 の `docs/evidence/wizard-real-path-20261101/` |
-| 🔍 調べる（読み取り診断、Node の無い Windows の実行器） | 開始 → 本人 Y | `POST /api/resolve/sessions`、`/steps/:id/approve` | `resolution_*`、`device_commands` | `scripts/windows/command-agent.ps1`（検証ユーザー、session 2） | 実端末の `spooler.status`（`Running`）。DB に `executionSource=endpoint_agent` | 出所と実行 ID 付きで引継ぎ。デモ値なし | **実データ（`spooler.status` の 1 シナリオ、下記の条件に限る）** | I | [docs/evidence/real-device-20261101/](evidence/real-device-20261101/) |
+| 🔍 調べる（読み取り診断、Node の無い Windows の実行器） | 開始 → 本人 Y | `POST /api/resolve/sessions`、`/steps/:id/approve` | `resolution_*`、`device_commands` | `scripts/windows/command-agent.ps1`（検証ユーザー、session 2） | 実端末の `spooler.status`（`Running`）。DB に `executionSource=endpoint_agent` | 出所と実行 ID 付きで引継ぎ。デモ値なし | **実端末の結果は実データ（`spooler.status` の 1 シナリオ）。認証（`AUTH_MODE=local`）、ヘッドレス画面、名簿は検証用で実受入に数えない**（§0、§1） | I | [docs/evidence/real-device-20261101/](evidence/real-device-20261101/) |
 | 🔍 調べる（読み取り診断、元ウィザードの印刷以外） | STEP 3 の確認 Y | なし | `prototype_states` | なし | 固定データ | デモと表示 | **デモ** | M / I | docs/14 §2-11 |
 | 🛠 直す（提案カード） | 提案の Y | なし（`ACT.realExec` を押したときだけ `/api/device/command`） | `prototype_states` | 模擬（`SPOOLER_RESTART` のみ別経路） | 「実行しました（模擬）」 | デモと表示 | **デモ** | M / I | docs/14 §2-11 |
 | 🛠 直す（`SPOOLER_RESTART` の実機） | 提案カードの実行ボタン | `POST /api/device/command` | `device_commands` | エージェント | - | - | **未検証**。`SPOOLER_RESTART` の実機の実行記録は見つからない（docs/19 は「実機（Windows）での実行は未実施」、`docs/evidence/device-command/20261023/` は `mock:true`）。I では印刷の提案カードが出ないので、この経路の入口がウィザードから無くなる（**未接続**） | M のみ入口あり | docs/19、`device.test.ts`、E2E A2 |
@@ -90,6 +95,7 @@ README の図と記述の各線を、実際の経路と証跡に対応づける�
 |---|---|---|---|---|---|---|
 | 解決 → 下書き | ワークスペースの「解決を記録」 | なし（state のみ） | 担当者の `prototype_states` | **実データ**。症状は相談内容だけ（修正 1）。M では端末情報が入る | I | E2E K2、K3、K18 |
 | 下書き → 申請 | 「承認申請」 | `POST /api/knowledge/ui-sync`（`pending`） | `knowledge` | **実データ** | M / I | E2E K1 |
+| 承認の出所の表示 | 結果カード、回答の出典、報告書 | `knowledgeRefs`、`sources` | - | `seed`、`shared_identity`、`other_person` を区別して表示（I のみ。M は「承認済み」と一括）。使うかの方針は変えていない。**本番の 9 件が `seed` と判定されるかは未確認**（[docs/64](64-kb-approved-provenance.md) §9） | I | E2E N7、`approval-origin.test.ts`、`knowledge-ai-provenance.integration.test.ts` |
 | 別人が承認（DX 推進部の承認者） | ⑥ の「サーバ下書き」（I は本文も表示） | `GET /api/knowledge/pending`、`POST /ui-sync`（`approved`） | `knowledge.approver_id`、`version` | **実データ（合成の構成）**。本番の人物構成では別人がいない（docs/61 §7） | M / I | E2E K7、K8、K19 |
 | 別人が承認（DX 推進部以外の承認者） | 画面の役割に承認者が出ない | API のみ | - | **未接続**。docs/61 §7 の制約を今回実ブラウザで確認した | M / I | E2E U1 |
 | 権限なしの承認の拒否 | - | `POST /ui-sync` | - | **実データ**（API 直接） | M / I | E2E K5、K6 |

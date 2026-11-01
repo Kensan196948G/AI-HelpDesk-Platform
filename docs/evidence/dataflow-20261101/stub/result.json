@@ -13,7 +13,7 @@
       "id": "A1",
       "title": "印刷の相談は /api/ai/answer を呼ばない（固定ルールでも AI でもなく解決ループへ）",
       "ok": true,
-      "note": "PUT /api/state/cowork 200 / GET /api/me 200 / GET /api/resolve/device-status 200 / PUT /api/state/helpdesk 200"
+      "note": "GET /api/me 200 / GET /api/resolve/device-status 200 / PUT /api/state/cowork 200 / PUT /api/state/helpdesk 200"
     },
     {
       "id": "A2",
@@ -151,7 +151,7 @@
       "id": "K1",
       "title": "申請で DB に pending の行ができる（作成者=担当者）",
       "ok": true,
-      "note": "pending/KB-2026-0107"
+      "note": "pending/KB-2026-0101"
     },
     {
       "id": "K2",
@@ -169,7 +169,7 @@
       "id": "K4",
       "title": "承認前は pending の KB が AI 入力に入らない",
       "ok": true,
-      "note": "KB-2026-0107"
+      "note": "KB-2026-0101"
     },
     {
       "id": "K5",
@@ -193,7 +193,7 @@
       "id": "K19",
       "title": "承認者の画面に症状・原因・手順が出る（確認しないまま承認させない）",
       "ok": true,
-      "note": "KB-2026-0107 印刷ができませんときの対処\n作成者 synth.staff@example.test／状態 pending／作成 2026-11-01T06:47:01.162Z\n症状\n印刷ができません\n原因\n印刷スプーラの待機ジ"
+      "note": "KB-2026-0101 印刷ができませんときの対処\n作成者 synth.staff@example.test／状態 pending／作成 2026-11-01T08:18:19.386Z\n症状\n印刷ができません\n原因\n印刷スプーラの待機ジ"
     },
     {
       "id": "K7",
@@ -215,9 +215,9 @@
     },
     {
       "id": "K10",
-      "title": "B の自由記述の相談で AI 入力に [KB-2026-0107 v2] が入る",
+      "title": "B の自由記述の相談で AI 入力に [KB-2026-0101 v2] が入る",
       "ok": true,
-      "note": "[KB-2026-0107 v2]"
+      "note": "[KB-2026-0101 v2]"
     },
     {
       "id": "K11",
@@ -235,13 +235,13 @@
       "id": "K14",
       "title": "B の AI 入力の KB に A の端末 ID が入らない",
       "ok": true,
-      "note": "WEB-10757B4A"
+      "note": "WEB-EBB31B3E"
     },
     {
       "id": "K15",
       "title": "B の AI 入力の KB に A の PC 基本情報が入らない",
       "ok": true,
-      "note": "[KB-2026-0107 v2] 印刷ができませんときの対処\n症状: 印刷ができません\n原因: 印刷スプーラの待機ジョブが滞留していた（検証用の記録）\n手順:\nスプーラの状態を読み取って確認する\n待機ジョブの有無を担当者が確認する"
+      "note": "[KB-2026-0101 v2] 印刷ができませんときの対処\n出所: 別の担当者が承認\n症状: 印刷ができません\n原因: 印刷スプーラの待機ジョブが滞留していた（検証用の記録）\n手順:\nスプーラの状態を読み取って確認する\n待機ジョブの有無"
     },
     {
       "id": "K16",
@@ -283,7 +283,7 @@
       "id": "I4",
       "title": "注入した KB は出典に出ない",
       "ok": true,
-      "note": "[\"KB-2026-0003\",\"KB-2026-0107\"]"
+      "note": "[\"KB-2026-0003\",\"KB-2026-0101\"]"
     },
     {
       "id": "I5",
@@ -299,9 +299,9 @@
     },
     {
       "id": "N1",
-      "title": "印刷の相談の提案の AI 入力に [KB-2026-0107 v2] の参照が入る",
+      "title": "印刷の相談の提案の AI 入力に [KB-2026-0101 v2] の参照が入る",
       "ok": true,
-      "note": "[\"KB-2026-0003\",\"KB-2026-0107\"]"
+      "note": "[\"KB-2026-0003\",\"KB-2026-0101\"]"
     },
     {
       "id": "N2",
@@ -320,6 +320,12 @@
       "title": "AI が使っていないときに「AI が参照」と表示しない",
       "ok": true,
       "note": ""
+    },
+    {
+      "id": "N7",
+      "title": "結果カードの出所: この流れの KB は別の担当者、シードは初期登録と区別する",
+      "ok": true,
+      "note": "{\"KB-2026-0003\":\"seed\",\"KB-2026-0101\":\"other_person\"}"
     },
     {
       "id": "N5",
@@ -493,12 +499,6 @@
   "apiLog": {
     "A_consult": [
       {
-        "method": "PUT",
-        "path": "/api/state/cowork",
-        "status": 200,
-        "count": 12
-      },
-      {
         "method": "GET",
         "path": "/api/me",
         "status": 200,
@@ -509,6 +509,12 @@
         "path": "/api/resolve/device-status",
         "status": 200,
         "count": 2
+      },
+      {
+        "method": "PUT",
+        "path": "/api/state/cowork",
+        "status": 200,
+        "count": 12
       },
       {
         "method": "PUT",
@@ -554,7 +560,7 @@
         "method": "PUT",
         "path": "/api/state/cowork",
         "status": 200,
-        "count": 12
+        "count": 13
       },
       {
         "method": "GET",
@@ -624,7 +630,7 @@
         "method": "PUT",
         "path": "/api/state/cowork",
         "status": 200,
-        "count": 12
+        "count": 11
       },
       {
         "method": "POST",
@@ -688,7 +694,7 @@
         "method": "PUT",
         "path": "/api/state/cowork",
         "status": 200,
-        "count": 13
+        "count": 15
       },
       {
         "method": "POST",
@@ -767,12 +773,6 @@
       {
         "method": "GET",
         "path": "/api/resolve/device-status",
-        "status": 200,
-        "count": 1
-      },
-      {
-        "method": "GET",
-        "path": "/api/remote-support/session",
         "status": 200,
         "count": 1
       },
@@ -922,7 +922,7 @@
         "method": "PUT",
         "path": "/api/state/cowork",
         "status": 200,
-        "count": 41
+        "count": 42
       },
       {
         "method": "POST",
@@ -1038,7 +1038,7 @@
         "method": "PUT",
         "path": "/api/state/cowork",
         "status": 200,
-        "count": 70
+        "count": 73
       },
       {
         "method": "PUT",
@@ -1056,7 +1056,7 @@
         "method": "GET",
         "path": "/api/resolve/device-status",
         "status": 200,
-        "count": 8
+        "count": 7
       },
       {
         "method": "POST",
@@ -1112,14 +1112,18 @@
     },
     "handoverStatusAfterStaffResolve": "resolved",
     "handoverStatusAfterKbApproval": "resolved",
-    "knowledgeSegmentHead": "[KB-2026-0107 v2] 印刷ができませんときの対処\n症状: 印刷ができません\n原因: 印刷スプーラの待機ジョブが滞留していた（検証用の記録）\n手順:\nスプーラの状態を読み取って確認する\n待機ジョブの有無を担当者が確認する",
+    "knowledgeSegmentHead": "[KB-2026-0101 v2] 印刷ができませんときの対処\n出所: 別の担当者が承認\n症状: 印刷ができません\n原因: 印刷スプーラの待機ジョブが滞留していた（検証用の記録）\n手順:\nスプーラの状態を読み取って確認する\n待機ジョブの有無を担当者が確認する",
     "printNoAgentShowsKb": false,
+    "cardOrigins": {
+      "KB-2026-0003": "seed",
+      "KB-2026-0101": "other_person"
+    },
     "flow": {
       "caseId": "CASE-0001",
-      "sessionId": "e5d7ff36-06c8-4dde-8433-f555d9723eaf",
-      "proposalStepId": "8aeb1e9c-690c-4630-8600-41efb5adcf65",
-      "commandId": "1a5ce8ce-69bc-45d9-ac9c-47b4006d5f47",
-      "deviceId": "10757b4a-ba33-4e59-a3ef-58222f5a16dc",
+      "sessionId": "003e170e-1d0a-47d2-bf1e-97a50bfb1bd8",
+      "proposalStepId": "6e4c3b07-fd90-41e8-ad67-1b192a2ca412",
+      "commandId": "140ca1dd-5c1a-4267-96cb-f1acd3280e75",
+      "deviceId": "ebb31b3e-c493-4344-9dea-d7b3f744c778",
       "source": "mock",
       "ui": true,
       "api": true,
@@ -1127,10 +1131,10 @@
       "agent": true,
       "handoverSnapshot": true
     },
-    "handoverId": "6dba74f2-7e90-40d8-bcbc-56ed8f40f00a",
+    "handoverId": "4a0ec725-8198-4e18-8ecf-176ba664f586",
     "knowledge": {
-      "id": "e5b6c6ac-2729-4e8d-bd48-3abde5167c66",
-      "kbNo": "KB-2026-0107",
+      "id": "f9ad2343-70a7-42b7-a29b-71bf03a9b3d3",
+      "kbNo": "KB-2026-0101",
       "version": 2,
       "approverIsNotAuthor": true,
       "labelInAiInput": true,
@@ -1152,7 +1156,7 @@
           "origin": "シード（scripts/seed.ts）"
         },
         {
-          "label": "[KB-2026-0107 v2]",
+          "label": "[KB-2026-0101 v2]",
           "origin": "この流れで承認した KB"
         }
       ]
@@ -1167,7 +1171,7 @@
           "origin": "シード（scripts/seed.ts）"
         },
         {
-          "kbNo": "KB-2026-0107",
+          "kbNo": "KB-2026-0101",
           "version": 2,
           "stepsSummaryLength": 37,
           "origin": "この流れで承認した KB"
