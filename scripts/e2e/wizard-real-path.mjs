@@ -201,6 +201,7 @@ async function startApi(role) {
       MIRAI_INFO_DATABASE_URL: dbUrl,
       SESSION_SECRET: randomBytes(32).toString('hex'),
       AUTH_MODE: 'local',
+      RESOLVE_REQUESTER_DIAGNOSIS_ENABLED: 'true',
       DEV_AUTH_EMAIL: EMAIL[role],
       DEEPSEEK_API_KEY: 'stub-not-a-real-key',
       DEEPSEEK_BASE_URL: `http://127.0.0.1:${PORTS.ai}`,

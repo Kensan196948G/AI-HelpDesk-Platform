@@ -192,6 +192,7 @@ async function startApi(role) {
       MIRAI_INFO_DATABASE_URL: dbUrl,
       SESSION_SECRET: randomBytes(32).toString('hex'),
       AUTH_MODE: 'local',
+      RESOLVE_REQUESTER_DIAGNOSIS_ENABLED: 'true',
       DEV_AUTH_EMAIL: EMAIL[role],
       ALLOW_SELF_APPROVAL: 'false',
       // 担当者と承認者は同じ人物が判定する。別人物の承認に見せない。

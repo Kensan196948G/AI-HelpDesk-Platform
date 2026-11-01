@@ -283,6 +283,18 @@ export function tagsFromText(text: string): SymptomTag[] {
   return SYMPTOM_RULES.filter((rule) => tags.has(rule.tag)).map((rule) => rule.tag);
 }
 
+const RETRACTED_SYMPTOM =
+  /(?:直り|治り|解消し|解決し|復旧し)(?:ました|た)|問題(?:は|も)?(?:ありません|ない|なくなり)|(?:エラー|症状|不具合)(?:は|も)?(?:ありません|出ていません|なくなり|ない)|でき(?:ました|るようになり)/;
+
+/**
+ * 相談文の症状の扱い。辞書に無い言い方（「紙が出ません」）を「症状なし」と誤読しないよう、
+ * active でないものを、否定や解消の表現がある retracted と、判断できない unknown に分ける。
+ */
+export function symptomStatusOf(text: string): 'active' | 'retracted' | 'unknown' {
+  if (tagsFromText(text).length > 0) return 'active';
+  return RETRACTED_SYMPTOM.test(text) ? 'retracted' : 'unknown';
+}
+
 /**
  * ナレッジの本文を固定のタグへ写す。ナレッジは解決した事例の記録なので、
  * 解消の表現で消さない（打ち消しだけを除く）。戻り値は固定の語彙だけ。

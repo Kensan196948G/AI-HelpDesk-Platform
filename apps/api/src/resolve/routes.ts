@@ -10,6 +10,7 @@ import { ApiError, badRequest, notFound } from '../errors.js';
 import { appendAudit } from '../lib/audit-log.js';
 import { jsonbValue } from '../lib/jsonb-value.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
+import { symptomStatusOf } from '../support-session/case-facts.js';
 import { isResolveAdmin } from './admin.js';
 import {
   type AdminApprovalPayload,
@@ -1529,7 +1530,13 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
     const { deviceId } = DeviceStatusQuerySchema.parse(request.query);
     const owned = await ownsDevice(email, deviceId);
     const lastSeen = owned ? await standardAgentLastSeenAt(email, deviceId) : null;
-    return { ok: true, deviceId, owned, agentConnected: isDeviceOnline(lastSeen) };
+    // 検証専用の経路なので既定は案内しない（docs/67）。相談者と Windows ユーザーを照合していない。
+    return {
+      ok: true,
+      deviceId,
+      owned,
+      agentConnected: config.RESOLVE_REQUESTER_DIAGNOSIS_ENABLED && isDeviceOnline(lastSeen),
+    };
   });
 
   // IT 管理者の承認待ち（リスク 4 以上）。管理者以外には存在を返さない。
@@ -1775,6 +1782,14 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
       }
       const ownedCase = await findOwnedCase(email, input.caseId);
       if (!ownedCase) throw notFound('案件が見つかりません。');
+      // 否定や解消が書かれた相談へ端末の操作を提案しない（#120 の判定を使う。docs/67）。
+      if (symptomStatusOf(caseText(ownedCase)) === 'retracted') {
+        throw new ApiError(
+          409,
+          'NO_ACTIVE_SYMPTOM',
+          '相談文から、いま続いている症状を読み取れませんでした。続いている場合は症状を書き直すか、担当者へ引き継いでください。',
+        );
+      }
 
       const skills = await listApprovedSkills();
       const proposal = await proposeNext({

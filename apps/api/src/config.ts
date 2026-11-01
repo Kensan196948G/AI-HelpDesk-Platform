@@ -89,6 +89,12 @@ const EnvSchema = z.object({
 
   // 解決ループ（Phase C）: 端末オフライン判定の閾値（秒）。設計 §4-3 の「2 分応答なし」。
   RESOLVE_DEVICE_OFFLINE_SEC: z.coerce.number().int().positive().default(120),
+  // 相談者の画面から解決ループの読取診断へ案内するか（docs/67 の経路②。既定は案内しない）。
+  // 案内を止めるだけで API を閉じない。止める保証として数えない。
+  RESOLVE_REQUESTER_DIAGNOSIS_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
   // リスク 4 以上の Skill を承認できる IT 管理者（カンマ区切り）。
   // 既定は空＝誰も承認できない（fail-closed）。比較は canonicalEmail を通す。
   RESOLVE_ADMIN_ALLOWLIST: z.string().default(''),

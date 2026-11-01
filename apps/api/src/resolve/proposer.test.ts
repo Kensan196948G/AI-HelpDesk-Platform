@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { acceptAiExplanation, symptomStatusOf } from '../support-session/case-facts.js';
 import {
   buildSkillCatalogForAi,
   escalationReasonForDecision,
@@ -260,5 +261,22 @@ describe('buildSkillCatalogForAi', () => {
     ]);
     expect(catalog[0].requiresElevation).toBe(true);
     expect(catalog[2].requiresElevation).toBe(false);
+  });
+});
+
+describe('AI の説明の断定を採用しない（#120 の判定。docs/67）', () => {
+  it('解決を断定する説明は固定の文へ置き換える', async () => {
+    const accepted = acceptAiExplanation('スプーラを再起動して解決しました', null, false);
+    expect(accepted.rejected).toBe(true);
+    expect(acceptAiExplanation('スプーラの状態を確認します', null, false).rejected).toBe(false);
+  });
+
+  it('否定、解消、過去形は retracted、言い方が辞書に無いものは unknown', () => {
+    expect(symptomStatusOf('印刷エラーはありません')).toBe('retracted');
+    expect(symptomStatusOf('印刷できませんでしたが、もう直りました')).toBe('retracted');
+    expect(symptomStatusOf('昨日は印刷できませんでした。今は問題ありません')).toBe('retracted');
+    expect(symptomStatusOf('印刷できない')).toBe('active');
+    expect(symptomStatusOf('印刷できず、VPNもつながりません')).toBe('active');
+    expect(symptomStatusOf('紙が出ません')).toBe('unknown');
   });
 });

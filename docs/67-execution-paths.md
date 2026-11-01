@@ -63,3 +63,19 @@
 ## 4. 記録しないこと
 
 実端末の識別子、実ユーザー名、秘密の値はこの文書と証跡に書かない。
+
+## 追記: 経路②へつないだもの（検証統合で実施）
+
+統合の受入で「②に効いていない」とした項目のうち、次をつないだ。**再実装せず #120 の関数を使う。** 下の表が上の記述より新しい。
+
+| 項目 | 実装 | 試験 |
+|---|---|---|
+| 否定、解消、過去形 | 開始時に `symptomStatusOf` が `retracted` なら `409 NO_ACTIVE_SYMPTOM`。提案も端末の操作も作らない。辞書に無い言い方（「紙が出ません」）は `unknown` で止めない | `proposer.test.ts`、実 AI では未確認 |
+| 複数症状 | `tagsFromText` の結果を `activeSymptoms` として AI の入力へ渡す。判定は AI に任せる | 語の抽出の試験のみ |
+| AI の断定 | `acceptAiExplanation` で拒否したら説明を固定の文へ置き換える | `proposer.test.ts` |
+| 相談者への案内 | `RESOLVE_REQUESTER_DIAGNOSIS_ENABLED`（既定 `false`）。**案内を止めるだけで API は閉じない。フラグを停止の保証に数えない** | `real-path.integration.test.ts` |
+
+**②に効いていないまま:** `phase` / `verification`、`ASSIST_SESSION_MODE`、本人と Windows ユーザーの照合。
+
+**残る判断:** `ACT.realExec` の先の `/api/device/command` を閉じるか（未実施）。
+

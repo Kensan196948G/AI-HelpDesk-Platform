@@ -577,6 +577,8 @@ describe('固定症状タグの束縛（#120 の symptom_tags。docs/64 §11）'
     const res = await review(id, approveBody(offHash));
     expect(res.statusCode, res.body).toBe(200);
     expect((await rowOf(id)).symptom_tags).toBeNull();
+  });
+});
 
 describe('承認者の画面の API（docs/14 §2-19）', () => {
   const REQUESTER = 'kbbind-requester@example.com';
