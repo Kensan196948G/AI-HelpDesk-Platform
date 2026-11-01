@@ -1371,6 +1371,20 @@ async function cancelSessionWork(
  */
 export async function sweepResolveTimeouts(): Promise<number> {
   let swept = 0;
+  // 実行が終わっているのに結果を見る画面が無かったものは、タイムアウトにせず結果を取り込む。
+  // 実端末の結果を「返らなかった」として引継ぎへ流さない（docs/65 §0-1）。
+  const finished = await sql<{ id: string; user_email: string }[]>`
+    SELECT st.id, s.user_email
+    FROM resolution_steps st
+    JOIN resolution_sessions s ON s.id = st.session_id
+    JOIN device_commands c ON c.id = st.command_id
+    WHERE st.status IN ('approved', 'executing')
+      AND st.deadline_at IS NOT NULL
+      AND st.deadline_at < now()
+      AND c.status IN ('done', 'failed')
+    LIMIT 50
+  `;
+  for (const step of finished) await applyCommandOutcome(step.user_email, step.id);
   // 対象セッションを先に特定し、session → step の固定順でロックする。
   const candidates = await sql<{ session_id: string }[]>`
     SELECT DISTINCT session_id FROM resolution_steps

@@ -189,6 +189,18 @@ describe('RSP実行セッションの報告書', () => {
     expect(content.steps.length).toBeLessThanOrEqual(8000);
   });
 
+  it('件名に端末情報があっても keywords に残さず、語の前後に空白を残さない', () => {
+    const handover = handoverRow();
+    (handover.snapshot as any).case.subject = 'DESKTOP-AB12CD3 で印刷不可';
+    const content = buildKnowledgeDraft({
+      handover,
+      session: sessionRow(),
+      steps: [step(1, { intent: `${'あ'.repeat(39)} い` })],
+    });
+    expect(content.keywords.join(' ')).not.toContain('DESKTOP-AB12CD3');
+    for (const keyword of content.keywords) expect(keyword).toBe(keyword.trim());
+  });
+
   it('ナレッジ下書きに端末 ID とホスト名を残さない（実行記録の出力を含む）', () => {
     const content = buildKnowledgeDraft({
       handover: handoverRow(),

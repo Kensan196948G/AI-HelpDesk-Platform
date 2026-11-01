@@ -278,5 +278,9 @@ describe('AI の説明の断定を採用しない（#120 の判定。docs/67）'
     expect(symptomStatusOf('印刷できない')).toBe('active');
     expect(symptomStatusOf('印刷できず、VPNもつながりません')).toBe('active');
     expect(symptomStatusOf('紙が出ません')).toBe('unknown');
+    // 続いている症状を止めない。
+    expect(symptomStatusOf('画面にエラーは出ていませんが、印刷しても紙が出ません')).toBe('unknown');
+    expect(symptomStatusOf('スプーラは問題ないと言われましたが紙が出ません')).toBe('unknown');
+    expect(symptomStatusOf('スプーラは問題ないと言われました')).toBe('unknown');
   });
 });

@@ -70,7 +70,7 @@
 
 | 項目 | 実装 | 試験 |
 |---|---|---|
-| 否定、解消、過去形 | 開始時に `symptomStatusOf` が `retracted` なら `409 NO_ACTIVE_SYMPTOM`。提案も端末の操作も作らない。辞書に無い言い方（「紙が出ません」）は `unknown` で止めない | `proposer.test.ts`、実 AI では未確認 |
+| 否定、解消、過去形 | 開始時に `symptomStatusOf` が `retracted`（最後の節が否定や解消）なら `409 NO_ACTIVE_SYMPTOM`。提案も端末の操作も作らない。辞書に無い言い方（「紙が出ません」）は `unknown` で止めない | `proposer.test.ts`、`real-path.integration.test.ts`。**画面の表示と実 AI は未確認** |
 | 複数症状 | `tagsFromText` の結果を `activeSymptoms` として AI の入力へ渡す。判定は AI に任せる | 語の抽出の試験のみ |
 | AI の断定 | `acceptAiExplanation` で拒否したら説明を固定の文へ置き換える | `proposer.test.ts` |
 | 相談者への案内 | `RESOLVE_REQUESTER_DIAGNOSIS_ENABLED`（既定 `false`）。**案内を止めるだけで API は閉じない。フラグを停止の保証に数えない** | `real-path.integration.test.ts` |

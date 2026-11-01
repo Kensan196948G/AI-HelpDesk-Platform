@@ -288,11 +288,17 @@ const RETRACTED_SYMPTOM =
 
 /**
  * 相談文の症状の扱い。辞書に無い言い方（「紙が出ません」）を「症状なし」と誤読しないよう、
- * active でないものを、否定や解消の表現がある retracted と、判断できない unknown に分ける。
+ * active でないものを retracted と unknown に分ける。retracted は相談の最後の節が否定や解消のときだけ。
+ * 「エラーは出ていませんが、紙が出ません」のように続きがあれば止めない。伝聞（言われました）も数えない。
  */
 export function symptomStatusOf(text: string): 'active' | 'retracted' | 'unknown' {
   if (tagsFromText(text).length > 0) return 'active';
-  return RETRACTED_SYMPTOM.test(text) ? 'retracted' : 'unknown';
+  const sentences = sentencesOf(text);
+  const lastSentence = sentences[sentences.length - 1] ?? '';
+  const clauses = clausesOf(lastSentence);
+  const last = clauses[clauses.length - 1] ?? '';
+  if (/言われ|とのこと|らしい/.test(last)) return 'unknown';
+  return RETRACTED_SYMPTOM.test(last) ? 'retracted' : 'unknown';
 }
 
 /**

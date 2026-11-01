@@ -437,6 +437,8 @@ describe('画面の KB 表示の差し替え（DB で未承認を承認済みと
     expect(html).toContain(ASSIGNEE_ORIGINAL);
     expect(patched).not.toContain(ASSIGNEE_ORIGINAL);
     expect(patched).toContain('__AIHD_ASSIGNEE__');
+    // 本人が選択肢に無いとき、先頭のデモ担当者が選ばれたままにならない。
+    expect(patched).toContain('__AIHD_ASSIGNEE_BLANK__');
   });
 
   it('差し替え後の行は JavaScript として解釈でき、判定関数の結果を表示する', () => {

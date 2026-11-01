@@ -192,6 +192,24 @@
     const user = currentUser();
     return user && user.real ? name === user.name : name === suggest;
   };
+  // 本人が原本の選択肢に無いとき、先頭のデモ担当者が選ばれたまま送られないようにする。
+  window.__AIHD_ASSIGNEE_BLANK__ = () => {
+    const user = currentUser();
+    if (!user || !user.real) return '';
+    const listed = typeof STAFF !== 'undefined' && STAFF.some((s) => s.name === user.name);
+    return listed ? '' : '<option value="" selected>（選択してください）</option>';
+  };
+  if (window.App && typeof window.App.startWork === 'function') {
+    const originalStartWork = window.App.startWork;
+    window.App.startWork = function (...args) {
+      const select = document.getElementById('q_as');
+      if (select && !select.value) {
+        if (typeof toast === 'function') toast('担当者を選択してください', 'bad');
+        return undefined;
+      }
+      return originalStartWork.apply(this, args);
+    };
+  }
 
   function signal(t) {
     if (t.sec) return 'red';

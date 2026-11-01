@@ -70,3 +70,8 @@
 ## 確かめていないこと
 
 実端末、実 Windows、実ブラウザの操作、Access、実 DeepSeek、貸与照合の本番の経路、通しの E2E（`scripts/e2e/dataflow-integration.mjs` は統合の後に流していない）。UI 経路の KB は `ui-sync` の API を直接呼んだ結果で、画面のクリックではない。ローカル保持期限は pwsh、Linux、スタブでの確認である。
+
+## 追記: 経路②への接続
+
+上の表の「未接続」のうち、否定、解消、過去形、複数症状、AI の断定は、この表の後で②へつないだ。実装と試験は [docs/67](../../67-execution-paths.md) の追記を正とする。`phase` / `verification`、`ASSIST_SESSION_MODE`、保持期限（folder-helper）は②に効かないまま。
+
