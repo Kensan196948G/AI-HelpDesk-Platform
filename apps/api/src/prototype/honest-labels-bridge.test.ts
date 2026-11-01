@@ -63,6 +63,7 @@ function createSandbox(options: { snapshot?: unknown; locked?: boolean } = {}) {
     pcLines: () => ['実データの行'],
     pcCardHtml: () => '35項目を読み取りました',
     pcSnapshot: () => options.snapshot ?? null,
+    USERS: { u1: { device: 'MRK-NB-1024' } },
     HD: {
       intake: (input: Record<string, unknown>) => {
         intakeCalls.push(input);
@@ -191,6 +192,21 @@ describe('固定データの表示（renderMsg）', () => {
     expect(confirm).toContain('デモデータ（実端末の結果ではありません）');
   });
 
+  it('端末エージェントへ実行を送った相談では「実端末は変更していません」と言い切らない', () => {
+    const { sandbox } = createSandbox();
+    const exec = { kind: 'exec', html: '⚙️ 実行<div>PCエージェントの作業</div>' };
+    const before = { messages: [exec] };
+    expect(call<string>(sandbox, 'renderMsg', exec, before)).toContain('実端末は変更していません');
+    const real = { kind: 'ai', html: '<p>✅ 実端末で実行しました。</p>' };
+    const html = call<string>(sandbox, 'renderMsg', exec, { messages: [exec, real] });
+    expect(html).not.toContain('実端末は変更していません');
+    expect(html).toContain('実端末での実行は下のメッセージを確認してください');
+    // 実行カードより前の記録は関係しない
+    expect(call<string>(sandbox, 'renderMsg', exec, { messages: [real, exec] })).toContain(
+      '実端末は変更していません',
+    );
+  });
+
   it('タグを増減させない（文言だけの変更）', () => {
     const source =
       '🔍 診断<span class="r">端末 X</span><div class="small muted">取得するのは設定・サービス状態・件数のみ。ファイルの中身・閲覧履歴・画面は取得しません。</div>';
@@ -205,35 +221,66 @@ describe('固定データの表示（renderMsg）', () => {
 });
 
 describe('引継ぎへ渡す値', () => {
-  it('実取得した端末があれば、デモ端末の代わりに渡す', () => {
-    const { sandbox } = createSandbox({ snapshot: REAL_SNAPSHOT });
-    const card = call<{ ctx: { device: string } }>(sandbox, 'consentCard', {
-      id: 'chat-1',
-      userId: 'u1',
-    });
-    expect(card.ctx.device).toBe('WEB-ABCD1234／Windows 11 Pro');
-  });
+  const CHAT = { id: 'chat-1', userId: 'u1' };
 
-  it('実取得が無ければ未取得と明記し、デモ端末を渡さない', () => {
-    for (const snapshot of [null, DEMO_SNAPSHOT]) {
-      const { sandbox } = createSandbox({ snapshot });
-      const card = call<{ ctx: { device: string } }>(sandbox, 'consentCard', {
-        id: 'chat-1',
-        userId: 'u1',
-      });
+  it('閲覧中のブラウザの端末（pcSnapshot）を依頼者の端末として渡さない', () => {
+    // 事前取得を断った案件・別 PC・非所有者の閲覧はいずれも案件に記録が無い状態になる。
+    for (const pc of [undefined, null, { state: 'running', snap: REAL_SNAPSHOT }]) {
+      const { sandbox, state } = createSandbox({ snapshot: REAL_SNAPSHOT });
+      state.cases.push({ chatId: 'chat-1', pc });
+      const card = call<{ ctx: { device: string } }>(sandbox, 'consentCard', CHAT);
       expect(card.ctx.device).toBe('未取得（実端末の情報はありません）');
-      expect(card.ctx.device).not.toContain('MRK-');
+      const pane = call<string>(sandbox, 'paneHtml', { userId: 'u1', pc });
+      expect(pane).not.toContain('WEB-ABCD1234');
+      expect(pane).toContain('未取得（実端末の情報はありません）');
     }
   });
 
-  it('案件に保存した実取得の端末を優先する', () => {
-    const { sandbox, state } = createSandbox({ snapshot: null });
-    state.cases.push({ chatId: 'chat-1', pc: { snap: REAL_SNAPSHOT } });
-    const card = call<{ ctx: { device: string } }>(sandbox, 'consentCard', {
-      id: 'chat-1',
-      userId: 'u1',
-    });
+  it('固定データの記録もデモ端末として渡さない', () => {
+    const { sandbox, state } = createSandbox();
+    state.cases.push({ chatId: 'chat-1', pc: { state: 'done', snap: DEMO_SNAPSHOT } });
+    const card = call<{ ctx: { device: string } }>(sandbox, 'consentCard', CHAT);
+    expect(card.ctx.device).toBe('未取得（実端末の情報はありません）');
+  });
+
+  it('同意カードの案件に記録された実取得を使い、開いている別の相談を参照しない', () => {
+    const { sandbox, state } = createSandbox();
+    state.ui.chat = 'chat-other';
+    state.cases.push(
+      { chatId: 'chat-other', pc: { state: 'done', snap: { device: 'WEB-OTHER', items: [] } } },
+      { chatId: 'chat-1', pc: { state: 'done', snap: REAL_SNAPSHOT } },
+    );
+    const card = call<{ ctx: { device: string } }>(sandbox, 'consentCard', CHAT);
     expect(card.ctx.device).toBe('WEB-ABCD1234／Windows 11 Pro');
+  });
+
+  it('STEP 4 の表示と同意カードの値が一致する', () => {
+    const { sandbox, state } = createSandbox();
+    const target = { chatId: 'chat-1', userId: 'u1', pc: { state: 'done', snap: REAL_SNAPSHOT } };
+    state.cases.push(target);
+    const card = call<{ ctx: { device: string } }>(sandbox, 'consentCard', CHAT);
+    expect(call<string>(sandbox, 'paneHtml', target)).toContain(card.ctx.device);
+  });
+
+  it('修正前の同意カードは、描画の時点で表示と共有する値を揃える', () => {
+    const { sandbox } = createSandbox({ snapshot: REAL_SNAPSHOT });
+    const message = {
+      kind: 'consent',
+      state: 'pending',
+      reason: '実行に失敗しました。操作: 取消／対象: 見積書_第3版.pdf',
+      ctx: { device: 'MRK-NB-1024／Windows 11 Enterprise 24H2', diag: ['印刷キュー：2件'] },
+    };
+    call(sandbox, 'renderMsg', message, CHAT);
+    expect(message.ctx.device).toBe('未取得（実端末の情報はありません）');
+    expect(message.ctx.diag).toEqual(['【デモデータ】印刷キュー：2件']);
+    expect(message.reason).not.toContain('見積書_第3版.pdf');
+  });
+
+  it('送信済みの同意カードは書き換えない', () => {
+    const { sandbox } = createSandbox();
+    const message = { kind: 'consent', state: 'sent', ctx: { device: 'MRK-NB-1024／X', diag: [] } };
+    call(sandbox, 'renderMsg', message, CHAT);
+    expect(message.ctx.device).toBe('MRK-NB-1024／X');
   });
 
   it('診断結果の各行をデモと明記し、理由から固定のジョブ名を除く', () => {
@@ -249,7 +296,17 @@ describe('引継ぎへ渡す値', () => {
     expect(card.reason).not.toContain('見積書_第3版.pdf');
   });
 
-  it('保存済みの同意カードから作るチケットも同じ値に揃える（重ねて印を付けない）', () => {
+  it('チケットの端末は再計算せず、本人が見た値を渡す', () => {
+    const { sandbox, state, ticketCalls } = createSandbox({ snapshot: { device: 'WEB-VIEWER' } });
+    call(sandbox, 'createTicket', state, {
+      userId: 'u1',
+      shared: { 端末: 'WEB-ABCD1234／Windows 11 Pro' },
+    });
+    const shared = ticketCalls[0]?.shared as Record<string, unknown>;
+    expect(shared.端末).toBe('WEB-ABCD1234／Windows 11 Pro');
+  });
+
+  it('描画を経ずに送られた古いカードの値も、チケットでデモを除く（重ねて印を付けない）', () => {
     const { sandbox, state, ticketCalls } = createSandbox({ snapshot: REAL_SNAPSHOT });
     call(sandbox, 'createTicket', state, {
       userId: 'u1',
@@ -266,8 +323,9 @@ describe('引継ぎへ渡す値', () => {
       '【デモデータ】印刷キュー：2件',
       '【デモデータ】VPN接続状態：接続中',
     ]);
-    expect(shared.端末).toBe('WEB-ABCD1234／Windows 11 Pro');
+    expect(shared.端末).toBe('未取得（実端末の情報はありません）');
     expect(JSON.stringify(shared)).not.toContain('MRK-NB-1024');
+    expect(JSON.stringify(shared)).not.toContain('WEB-ABCD1234');
     expect(JSON.stringify(shared)).not.toContain('見積書_第3版.pdf');
   });
 
@@ -301,7 +359,10 @@ describe('引継ぎへ渡す値', () => {
 describe('ウィザードの文言（paneHtml / asideHtml）', () => {
   it('一次対応の説明と共有欄を事実に合わせる', () => {
     const { sandbox } = createSandbox({ snapshot: REAL_SNAPSHOT });
-    const html = call<string>(sandbox, 'paneHtml', { userId: 'u1' });
+    const html = call<string>(sandbox, 'paneHtml', {
+      userId: 'u1',
+      pc: { state: 'done', snap: REAL_SNAPSHOT },
+    });
     expect(html).not.toContain('端末の状態（読み取りのみ）から答えます');
     expect(html).toContain('それ以外の自由記述だけ DeepSeek');
     expect(html).toContain('<b>AIの診断結果（デモデータ：実端末の結果ではありません）</b>');
@@ -318,14 +379,28 @@ describe('発言者・判定ヘルパー', () => {
     createSandbox().sandbox.__AIHD_HONEST__ as {
       whoFor(message: Message): string;
       usedRealAi(chat: unknown): boolean;
+      reportModel(chat: unknown): string;
     };
 
   it('担当者画面と報告書の発言者を実 AI とルールで分ける', () => {
     const api = honest();
     expect(api.whoFor({ provider: 'deepseek' })).toBe('AI（DeepSeek）');
     expect(api.whoFor({ model: 'DeepSeek-V4.1-Flash' })).toBe('ルールベース（デモデータ）');
-    expect(api.whoFor({ kind: 'block' })).toBe('ルールベース（デモデータ）');
+    // 事故の初動案内などは実際の手順なのでデモと表示しない。
+    expect(api.whoFor({ kind: 'block' })).toBe('定型の案内');
     expect(api.whoFor({ model: 'AIヘルプデスク連携' })).toBe('AIヘルプデスク連携');
+  });
+
+  it('報告書のモデル欄は実際に使ったものを書く', () => {
+    const api = honest();
+    const report = (...messages: Message[]) => api.reportModel({ messages });
+    expect(report({ provider: 'deepseek' }, { provider: 'fallback' })).toBe('DeepSeek-V4.1-Flash');
+    expect(report({ provider: 'fallback' })).toBe('承認済みナレッジ検索（DeepSeek 未使用）');
+    expect(report({ provider: 'fallback' }, { model: 'x' })).toBe(
+      '承認済みナレッジ検索（DeepSeek 未使用）',
+    );
+    expect(report({ model: 'x' })).toBe('ルールベース（デモデータ）');
+    expect(api.reportModel(null)).toBe('ルールベース（デモデータ）');
   });
 
   it('実 AI の回答がある相談だけを実 AI 利用とする', () => {
@@ -371,6 +446,8 @@ describe('原本 HTML との対応（文言や関数が変わると置換が黙�
     'v0.3（模擬）',
     '実端末へコマンドを送信',
     '実端末で実行しました',
+    "kind:'block'",
+    "title:'🚨 情報セキュリティ事故の可能性があります（初動案内）'",
     '実端末での実行に失敗',
   ])('%s が原本にある', (needle) => {
     expect(original).toContain(needle);

@@ -127,8 +127,7 @@
   /** 報告書のモデル欄。実 AI の回答が無い相談に DeepSeek と書かない。 */
   function ahReportModel(chat) {
     const honest = ahHonest();
-    if (!honest) return ahModel();
-    return honest.usedRealAi(chat) ? honest.REAL_MODEL : honest.RULE_LABEL;
+    return honest ? honest.reportModel(chat) : ahModel();
   }
 
   function ahKindLabel(c) {

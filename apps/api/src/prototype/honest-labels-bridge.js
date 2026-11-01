@@ -16,6 +16,7 @@
   const RULE_LABEL = 'ルールベース（デモデータ）';
   const RULE_DIAG_LABEL = 'ルールベース（デモデータ・実端末の結果ではありません）';
   const AGENT_LABEL = '端末エージェント（実端末）';
+  const NOTICE_LABEL = '定型の案内';
   const DEMO_NOTICE = 'デモデータ（実端末の結果ではありません）';
   const DEMO_INLINE = 'デモデータ：実端末の結果ではありません';
   const DEMO_PREFIX = '【デモデータ】';
@@ -40,6 +41,7 @@
     if (/^deepseek-/.test(model)) return 'deepseek';
     if (model === 'fallback') return 'fallback';
     // サーバが案件へ追記した回答（provider を保存する前の分）は判定できないのでそのまま出す。
+    // （フォールバックだった回答も DeepSeek 表示のまま残る。docs/14 §2-11 の残課題）
     if (String(message.id || '').startsWith('case-ai-')) return 'pass';
     if (PASS_THROUGH_MODELS.has(model)) return 'pass';
     if (REAL_EXEC_HTML.test(String(message.html || ''))) return 'agent';
@@ -70,6 +72,8 @@
   /** 担当者画面・報告書で、発言者を「AI」と一括りにしない。 */
   function whoFor(message) {
     if (!message) return RULE_LABEL;
+    // 事故の初動・禁止操作・専用窓口の案内は実際の手順。固定データの診断と区別する。
+    if (message.kind === 'block') return NOTICE_LABEL;
     switch (sourceOf(message)) {
       case 'deepseek':
         return 'AI（DeepSeek）';
@@ -92,6 +96,15 @@
     );
   }
 
+  /** 報告書のモデル欄。実 AI > ナレッジ検索 > ルールの順に、実際に使ったものを書く。 */
+  function reportModel(chat) {
+    const messages = chat && Array.isArray(chat.messages) ? chat.messages : [];
+    const sources = messages.filter(Boolean).map(sourceOf);
+    if (sources.includes('deepseek')) return REAL_MODEL;
+    if (sources.includes('fallback')) return FALLBACK_LABEL;
+    return RULE_LABEL;
+  }
+
   /** 画面の pcSnapshot() が固定データから作った記録か（PCエージェント欄の「v0.3（模擬）」で判定）。 */
   function isDemoSnapshot(snap) {
     return Boolean(
@@ -106,8 +119,13 @@
   }
 
   /** 文言だけを置き換える。タグと class は変えない。 */
-  function applyDemoNotices(kind, html) {
+  function applyDemoNotices(kind, html, options) {
     let out = html;
+    // 端末エージェントへ実行を送った相談では「実端末は変更していません」と言い切らない。
+    const execNote =
+      options && options.realExec
+        ? 'デモ：このカードは模擬です。実端末での実行は下のメッセージを確認してください'
+        : 'デモ：実端末は変更していません';
     if (kind === 'diag') {
       out = replaceAll(out, '🔍 ', `🔍 ${DEMO_PREFIX}`);
       out = replaceAll(out, '<span class="r">端末 ', '<span class="r">デモ端末 ');
@@ -129,17 +147,13 @@
       out = replaceAll(out, '<dt>対象</dt>', '<dt>対象（デモ）</dt>');
     } else if (kind === 'exec') {
       out = replaceAll(out, '🏁 完了・結果の確認', `🏁 完了・結果の確認：${DEMO_NOTICE}`);
-      out = replaceAll(out, '⚙️ 実行', '⚙️ 実行（デモ：実端末は変更していません）');
+      out = replaceAll(out, '⚙️ 実行', `⚙️ 実行（${execNote}）`);
       out = replaceAll(
         out,
         'サーバ側の実行前検証',
         '実行前検証（デモ：サーバでは検証していません）',
       );
-      out = replaceAll(
-        out,
-        'PCエージェントの作業',
-        'PCエージェントの作業（デモ：実端末は変更していません）',
-      );
+      out = replaceAll(out, 'PCエージェントの作業', `PCエージェントの作業（${execNote}）`);
     }
     return out;
   }
@@ -160,17 +174,30 @@
     return String(snap.device) + (os && os.v ? '／' + String(os.v) : '');
   }
 
-  /** 引継ぎへ渡す端末。実取得した端末だけを使い、デモ端末（MRK-…）は渡さない。 */
-  function realDeviceLabel(targetCase, userId) {
-    const stored = targetCase && targetCase.pc ? deviceLabelFromSnapshot(targetCase.pc.snap) : '';
-    if (stored) return stored;
+  /**
+   * 引継ぎへ渡す端末。案件に記録された実取得だけを使う。
+   * pcSnapshot() は閲覧中のブラウザの端末を返すため使わない。使うと事前取得を断った案件や、
+   * 別の PC・担当者が開いた案件で、本人が確認していない端末を依頼者の端末として渡してしまう。
+   */
+  function realDeviceLabel(targetCase) {
+    const pc = targetCase && targetCase.pc;
+    const stored = pc && pc.state === 'done' ? deviceLabelFromSnapshot(pc.snap) : '';
+    return stored || NO_REAL_DEVICE;
+  }
+
+  /** 修正前の同意カードが持つ「デモ端末 ID／OS」か。実取得の端末名と混同しないよう利用者の割当で照合する。 */
+  function isDemoDeviceValue(value, userId) {
     try {
-      const current = deviceLabelFromSnapshot(window.pcSnapshot(S, userId));
-      if (current) return current;
+      const device = USERS[userId] && USERS[userId].device;
+      return Boolean(device) && String(value).startsWith(`${device}／`);
     } catch (error) {
-      // 取得できないときは未取得と明記する。
+      return false;
     }
-    return NO_REAL_DEVICE;
+  }
+
+  /** 本人が同意カードで見た値をそのまま共有する。デモ端末の値だけ未取得に直す。 */
+  function cleanDeviceValue(value, userId) {
+    return isDemoDeviceValue(value, userId) ? NO_REAL_DEVICE : value;
   }
 
   function markDiag(lines) {
@@ -190,11 +217,11 @@
     return `${DEMO_PREFIX}デモの修復提案に対する記録です（${DEMO_INLINE}）。${cleaned}`;
   }
 
-  function sanitizeShared(shared, targetCase, userId) {
+  function sanitizeShared(shared, userId) {
     if (!shared || typeof shared !== 'object') return shared;
     const out = Object.assign({}, shared);
     if ('AIの診断結果' in out) out['AIの診断結果'] = markDiag(out['AIの診断結果']);
-    if ('端末' in out) out['端末'] = realDeviceLabel(targetCase, userId);
+    if ('端末' in out) out['端末'] = cleanDeviceValue(out['端末'], userId);
     if ('対応案（未実行・失敗）' in out) {
       out['対応案（未実行・失敗）'] = markReason(out['対応案（未実行・失敗）']);
     }
@@ -208,9 +235,33 @@
 
   wrap('msgMeta', (original) => (message) => original(honestMeta(message)));
 
+  /** 実行カードより後に、端末エージェントへ送った記録があるか。 */
+  function realExecAfter(message, chat) {
+    if (!message || message.kind !== 'exec' || !chat || !Array.isArray(chat.messages)) return false;
+    const index = chat.messages.indexOf(message);
+    return (
+      index >= 0 &&
+      chat.messages
+        .slice(index + 1)
+        .some((item) => item && REAL_EXEC_HTML.test(String(item.html || '')))
+    );
+  }
+
+  /** 修正前に作られ、まだ送っていない同意カードも、表示と共有する値を同じ形に揃える。 */
+  function normalizeConsent(message, chat) {
+    if (!message || message.kind !== 'consent' || message.state !== 'pending' || !message.ctx) {
+      return;
+    }
+    message.ctx.device = cleanDeviceValue(message.ctx.device, chat && chat.userId);
+    message.ctx.diag = markDiag(message.ctx.diag);
+    if (message.reason) message.reason = markReason(message.reason);
+  }
+
   wrap('renderMsg', (original) => (message, chat) => {
+    normalizeConsent(message, chat);
     const html = original(message, chat);
-    return typeof html === 'string' && message ? applyDemoNotices(message.kind, html) : html;
+    if (typeof html !== 'string' || !message) return html;
+    return applyDemoNotices(message.kind, html, { realExec: realExecAfter(message, chat) });
   });
 
   // paneHtml は全体描画（wizHtml）と部分更新の両方から呼ばれるので、ここで文言を揃える。
@@ -226,7 +277,7 @@
     if (out.includes('<b>端末の番号・OS</b>')) {
       let device = NO_REAL_DEVICE;
       try {
-        const label = realDeviceLabel(target, target ? target.userId : S.ui.user);
+        const label = realDeviceLabel(target);
         device = typeof esc === 'function' ? esc(label) : label;
       } catch (error) {
         // 取得できないときは未取得と明記する。
@@ -253,25 +304,17 @@
     const message = original(chat, ...rest);
     if (message && message.ctx) {
       message.ctx.diag = markDiag(message.ctx.diag);
-      message.ctx.device = realDeviceLabel(findCaseOfChat(chat && chat.id), chat && chat.userId);
+      // 案件は同意カードの相談から特定する（S.ui.chat の開いている相談には頼らない）。
+      message.ctx.device = realDeviceLabel(findCaseOfChat(chat && chat.id));
     }
     if (message && message.reason) message.reason = markReason(message.reason);
     return message;
   });
 
-  // 保存済みの同意カード（この修正の前に作られたもの）も、ここで同じ値に揃える。
+  // 端末は再計算せず、同意カードの値を渡す。描画を経ずに送られた古いカードの値だけここで直す。
   wrap('createTicket', (original) => (state, options) => {
     if (!options || !options.shared) return original(state, options);
-    let targetCase = null;
-    try {
-      const list = Array.isArray(state.chats) ? state.chats : [];
-      const chats = list.filter((chat) => chat && chat.userId === options.userId);
-      const active = chats.find((chat) => chat.id === state.ui.chat) || null;
-      targetCase = active ? findCaseOfChat(active.id) : null;
-    } catch (error) {
-      targetCase = null;
-    }
-    const shared = sanitizeShared(options.shared, targetCase, options.userId);
+    const shared = sanitizeShared(options.shared, options.userId);
     return original(state, Object.assign({}, options, { shared }));
   });
 
@@ -326,6 +369,7 @@
     honestMeta,
     whoFor,
     usedRealAi,
+    reportModel,
     isDemoSnapshot,
     applyDemoNotices,
     markDiag,
