@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { authenticateUi } from '../auth/ui.js';
+import { config } from '../config.js';
 import { sql } from '../db.js';
 import {
   agentInputToInventory,
@@ -17,6 +18,7 @@ import {
 } from '../lib/device-inventory.js';
 import { jsonbValue } from '../lib/jsonb-value.js';
 import { checkRateLimit, clientAddress } from '../lib/rate-limit.js';
+import { executionSourceOf, mockResultAllowed } from '../resolve/execution-source.js';
 
 const Int = (min: number, max: number) => z.number().int().min(min).max(max);
 const Num = (min: number, max: number) => z.number().min(min).max(max);
@@ -458,6 +460,17 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
         'PRIVILEGE_MISMATCH',
         'このコマンドの要求権限とエージェントの権限が一致しません。',
       );
+    }
+    // 模擬の結果は本番へ入れない。結果を保存せず失敗として閉じ、案件は担当者へ回す。
+    if (executionSourceOf(input.result) === 'mock' && !mockResultAllowed(config.NODE_ENV)) {
+      await sql`
+        UPDATE device_commands
+        SET status = 'failed', result = NULL,
+            error = '模擬の結果は本番では受け付けません（実端末で実行されていません）。',
+            completed_at = now()
+        WHERE id = ${id} AND user_email = ${email} AND status = 'delivered'
+      `;
+      throw new ApiError(403, 'MOCK_RESULT_FORBIDDEN', '模擬の結果は本番では受け付けません。');
     }
     const rows = await sql<{ id: string }[]>`
       UPDATE device_commands

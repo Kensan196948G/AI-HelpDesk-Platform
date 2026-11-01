@@ -156,9 +156,10 @@ AI は Skill ID とパラメータだけを提案し、コマンド文字列は�
 | Method | Path | 権限 | 説明 |
 |---|---|---|---|
 | GET | `/api/resolve/skills` | Access 認証 | 承認済み Skill の一覧（読み取り専用の 5 件） |
+| GET | `/api/resolve/device-status?deviceId=` | 本人 | `{owned, agentConnected}`。導線の案内用の参考値（docs/25 §20） |
 | POST | `/api/resolve/sessions` | 本人 | `{caseId, deviceId}` でセッション開始＋初回提案。`step.approvalChallenge` を返す |
 | POST | `/api/resolve/steps/:id/approve` | 本人 | `{decision:'Y'|'N', approvalHash}`。Y は承認ハッシュ検証後 `device_commands` に登録 |
-| GET | `/api/resolve/steps/:id` | 本人 | 実行状態。`done` / `failed` を検知してセッションを更新 |
+| GET | `/api/resolve/steps/:id` | 本人 | 実行状態。`done` / `failed` を検知してセッションを更新。`step.executionSource` は結果の出所（`endpoint_agent` / `mock` / `unknown`） |
 | POST | `/api/resolve/steps/:id/continue` | 本人 | 結果後の Y/N。Y は次の提案、N は停止 |
 | POST | `/api/resolve/sessions/:id/stop` | 本人 | 中止 |
 | GET | `/api/resolve/sessions/:id` | 本人 | セッションとステップ概要 |

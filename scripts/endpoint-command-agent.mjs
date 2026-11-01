@@ -645,6 +645,8 @@ function executeSkill(command) {
 
   const output = mockMode ? runMockSkill(skillId, params) : runPowerShellSkill(skillId, params);
   return {
+    // 結果の出所。fixture を実端末の結果に見せない（サーバは本番で mock を拒否する）。
+    executionSource: mockMode ? 'mock' : 'endpoint_agent',
     normalized: output.normalized,
     stdoutSummary: truncate(output.stdoutSummary, SUMMARY_LIMIT_CHARS),
     stderrSummary: truncate(output.stderrSummary, SUMMARY_LIMIT_CHARS),

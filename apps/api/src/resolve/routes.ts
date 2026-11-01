@@ -21,6 +21,7 @@ import {
   computeApprovalHash,
   newNonce,
 } from './approval.js';
+import { type ExecutionSource, executionSourceOf, resultShapeOk } from './execution-source.js';
 import {
   escalationReasonForDecision,
   type Proposal,
@@ -68,6 +69,7 @@ const AdminApproveSchema = z.object({
   approvalHash: z.string().trim().max(128).optional(),
 });
 const ManualCloseSchema = z.object({ reason: z.string().trim().max(500).optional() }).default({});
+const DeviceStatusQuerySchema = z.object({ deviceId: z.string().trim().min(1).max(120) });
 
 interface SessionRow {
   id: string;
@@ -307,6 +309,20 @@ async function deviceLastSeenAt(email: string, deviceId: string): Promise<number
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+/** 読み取り Skill を受け取る standard エージェントの最終応答。admin だけでは実行できない。 */
+async function standardAgentLastSeenAt(email: string, deviceId: string): Promise<number | null> {
+  const rows = await sql<{ last_seen: Date | string | null }[]>`
+    SELECT max(last_used_at) AS last_seen
+    FROM device_tokens
+    WHERE user_email = ${email} AND device_id = ${deviceId}
+      AND revoked_at IS NULL AND privilege = 'standard'
+  `;
+  const raw = rows[0]?.last_seen ?? null;
+  if (!raw) return null;
+  const parsed = new Date(raw).getTime();
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 /** 設計 §4-3「端末オフライン（2 分応答なし）」。最終応答が無い端末は offline 扱い。 */
 function isDeviceOnline(lastSeenAt: number | null): boolean {
   if (lastSeenAt === null) return false;
@@ -381,6 +397,12 @@ async function loadLastVerifyResult(sessionId: string): Promise<unknown | null> 
   return effectiveVerifyForAi(row, { verify_result: row.parent_verify_result });
 }
 
+/** result_summary の出所。結果が無いステップは null、申告の無い古い結果は unknown。 */
+function resultExecutionSource(row: StepRow): ExecutionSource | null {
+  const summary = jsonObjectOrNull(row.result_summary);
+  return summary ? executionSourceOf(summary) : null;
+}
+
 function stepDto(row: StepRow, session: SessionRow) {
   const skill = skillFromStep(row);
   return {
@@ -415,6 +437,8 @@ function stepDto(row: StepRow, session: SessionRow) {
     approvalChallenge: approvalChallengeFor(row, session),
     commandId: row.command_id,
     resultSummary: jsonObjectOrNull(row.result_summary),
+    // 結果の出所（endpoint_agent / mock / unknown）。結果が無ければ null。
+    executionSource: resultExecutionSource(row),
     resultFull: jsonObjectOrNull(row.result_full),
     // fieldsToAi を適用した AI 入力用の結果（生ログは含めない）。
     resultAi: jsonObjectOrNull(row.result_ai),
@@ -444,6 +468,7 @@ function stepSummaryDto(row: StepRow) {
     status: row.status,
     commandId: row.command_id,
     resultSummary: jsonObjectOrNull(row.result_summary),
+    executionSource: resultExecutionSource(row),
     verifyResult: jsonObjectOrNull(row.verify_result),
     error: row.error,
     createdAt: toIso(row.created_at),
@@ -956,9 +981,10 @@ async function applyCommandOutcome(email: string, stepId: string): Promise<void>
           verify: unknown;
           rollback: unknown;
           risk_level: number;
+          result_schema: unknown;
         }[]
       >`
-        SELECT output_policy, content_hash, verify, rollback, risk_level FROM skills
+        SELECT output_policy, content_hash, verify, rollback, risk_level, result_schema FROM skills
         WHERE id = ${step.skill_id} AND version = ${step.skill_version} AND status = 'approved'
         LIMIT 1
       `;
@@ -972,6 +998,10 @@ async function applyCommandOutcome(email: string, stepId: string): Promise<void>
         true,
         policyMatches ? policyRow?.output_policy : null,
       );
+      // 結果の形の機械検証（下限）。解決の判定には使わない。
+      summary.resultShapeOk = policyMatches
+        ? resultShapeOk(normalizeJsonValue(policyRow?.result_schema), summary.normalized)
+        : null;
       // verify はサーバが決定的に評価する（AI には判定させない）。ok=null も「評価不能」の
       // 情報として必ず保存する。script 形態の verify は追加実行が要るため評価不能のまま。
       const verifyResult = evaluateVerify(
@@ -1215,6 +1245,7 @@ function buildResultPayload(
 } {
   const raw = normalizeJsonValue(result);
   const record = jsonObjectOrNull(raw);
+  const executionSource = executionSourceOf(record);
   const exitCode = typeof record?.exitCode === 'number' ? record.exitCode : null;
   const normalized = record?.normalized ?? null;
   const summaryText =
@@ -1227,6 +1258,7 @@ function buildResultPayload(
           : '';
   const redactedSummary = redactPII(summaryText).text.slice(0, 2000);
   const summary: Record<string, unknown> = {
+    executionSource,
     ok,
     exitCode,
     summary: redactedSummary,
@@ -1248,7 +1280,9 @@ function buildResultPayload(
     : isStructuredJsonText(summaryText)
       ? JSON.stringify(filteredNormalized ?? {}).slice(0, 2000)
       : redactedSummary;
+  // 出所は先頭に置く（次提案へ渡す際に 1000 字で切っても必ず残す）。
   const ai: Record<string, unknown> = {
+    executionSource,
     ok,
     exitCode,
     summary: aiSummary,
@@ -1468,6 +1502,17 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
         approvedAt: skill.approvedAt,
       })),
     };
+  });
+
+  // 相談者の導線の分岐に使う（docs/25 §20）。本人の端末だけを返し、トークンの情報は返さない。
+  // 実行の可否は承認時に改めて DEVICE_OFFLINE で判定する（ここは案内のための参考値）。
+  app.get('/resolve/device-status', { preHandler: authenticateUi }, async (request) => {
+    const email = requireEmail(request);
+    enforceRateLimit(`resolve-device-status:${email}`, 120, '端末の状態確認が多すぎます。');
+    const { deviceId } = DeviceStatusQuerySchema.parse(request.query);
+    const owned = await ownsDevice(email, deviceId);
+    const lastSeen = owned ? await standardAgentLastSeenAt(email, deviceId) : null;
+    return { ok: true, deviceId, owned, agentConnected: isDeviceOnline(lastSeen) };
   });
 
   // IT 管理者の承認待ち（リスク 4 以上）。管理者以外には存在を返さない。

@@ -295,6 +295,7 @@ async function proposeWithDeepSeek(context: ProposalContext): Promise<Proposal |
     '- これ以上 Skill で安全に進められない場合は {"skillId":"","decision":"escalate"} を返す（人手へ引き継ぐ）。',
     '- 直近の確認結果（lastVerify.ok が true）から解決したと判断できる場合だけ {"skillId":"","decision":"stop"} を返す。',
     '- 未検証のまま stop しない。decision は "stop" / "escalate" 以外を返さない（続行時は null）。',
+    '- lastResultSummary.executionSource が endpoint_agent 以外の結果は、実端末の結果と確認できていない。解決の根拠にせず stop しない。',
   ].join('\n');
 
   const response = await fetch(`${config.DEEPSEEK_BASE_URL.replace(/\/$/, '')}/chat/completions`, {
