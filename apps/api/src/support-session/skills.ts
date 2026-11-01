@@ -51,6 +51,8 @@ export interface AssistSkill {
   aiFields: string[];
   /** 確認操作専用（AI / ルールの提案に出さない）。 */
   verifyOnly?: boolean;
+  /** 検証用（docs/63 §11）。承認ツールは明示したときだけ対象にする。 */
+  verificationManifestOnly?: boolean;
 }
 
 const NO_ELEVATION = { userConfirm: true, adminApproval: false, elevation: false } as const;
@@ -212,6 +214,7 @@ export const ASSIST_SKILLS: AssistSkill[] = [
   },
   {
     definition: markerSet,
+    verificationManifestOnly: true,
     effect: 'modify',
     targetKind: 'none',
     purpose: '操作の流れを検証するため、合成の目印を設定します。',
@@ -235,6 +238,7 @@ export const ASSIST_SKILLS: AssistSkill[] = [
   },
   {
     definition: markerClear,
+    verificationManifestOnly: true,
     effect: 'modify',
     targetKind: 'none',
     purpose: '検証用の目印を消します。',
@@ -254,6 +258,7 @@ export const ASSIST_SKILLS: AssistSkill[] = [
   },
   {
     definition: markerStatus,
+    verificationManifestOnly: true,
     effect: 'read',
     targetKind: 'none',
     purpose: '検証用の目印を確認します。',
