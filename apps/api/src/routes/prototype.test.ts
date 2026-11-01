@@ -9,9 +9,9 @@ import { resetRateLimits } from '../lib/rate-limit.js';
 import { buildServer } from '../server.js';
 import {
   ENSURE_CASE_USERS,
+  KB_DRAFT_BODY_ORIGINAL,
   KB_LABEL_PATCHES,
   patchCaseUserResolution,
-  KB_DRAFT_BODY_ORIGINAL,
   patchKbDraftBody,
   patchKbLabels,
   patchStateLoad,
@@ -367,7 +367,6 @@ describe('画面の KB 表示の差し替え（DB で未承認を承認済みと
   });
 
   it('KB 下書きの症状は引継ぎ本文をそのまま使わない（配信時に差し替える）', () => {
-    const html = readFileSync(path.join(repoRoot, config.PROTOTYPE_HTML_PATH), 'utf8');
     const patched = patchKbDraftBody(html);
     expect(html).toContain(KB_DRAFT_BODY_ORIGINAL);
     expect(patched).not.toContain(KB_DRAFT_BODY_ORIGINAL);

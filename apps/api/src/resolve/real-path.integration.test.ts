@@ -394,6 +394,7 @@ describe('解決ループの提案と承認済み KB', () => {
   let authorId = '';
   let approverId = '';
   const originalKey = config.DEEPSEEK_API_KEY;
+  const originalProcessEnv = process.env.NODE_ENV;
   const originalFetch = globalThis.fetch;
   let sent: Array<Record<string, unknown>> = [];
   let aiReply: Record<string, unknown> = {};
@@ -430,12 +431,15 @@ describe('解決ループの提案と承認済み KB', () => {
     authorId = rows.find((row) => row.email === AUTHOR_EMAIL)?.id ?? '';
     approverId = rows.find((row) => row.email === APPROVER_EMAIL)?.id ?? '';
     config.DEEPSEEK_API_KEY = 'stub-key-not-real';
+    // proposer は NODE_ENV=test では AI を呼ばない。この節だけスタブへ向ける。
+    process.env.NODE_ENV = 'development';
     aiReply = { skillId: 'spooler.status', params: {}, rationale: 'スタブ', decision: null };
     stubAi();
   });
 
   afterEach(async () => {
     globalThis.fetch = originalFetch;
+    process.env.NODE_ENV = originalProcessEnv;
     config.DEEPSEEK_API_KEY = originalKey;
     await cleanupKb();
     await sql`DELETE FROM users WHERE email IN (${AUTHOR_EMAIL}, ${APPROVER_EMAIL})`;

@@ -349,7 +349,8 @@ describe('承認済み KB は全体で参照する（次の人へ）', () => {
     expect(result.answer).not.toContain('指示が含まれていました');
     expect(result.sources.map((source) => source.kbNo)).toEqual([published.kbNo]);
     const call = fetchStub.mock.calls.at(-1);
-    const body = JSON.parse(String((call?.[1] as { body: string }).body)) as {
+    if (!call) throw new Error('外部 AI のスタブが呼ばれていない');
+    const body = JSON.parse(String((call[1] as { body: string }).body)) as {
       messages: Array<{ role: string; content: string }>;
     };
     const system = body.messages.find((message) => message.role === 'system')?.content ?? '';
