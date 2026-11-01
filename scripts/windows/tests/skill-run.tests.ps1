@@ -645,6 +645,20 @@ $installMove = $installSource.IndexOf('Move-RevokedTokenToReportStore')
 $installFlag = $installSource.IndexOf("Remove-StateFile -Name 'revoked.flag'")
 $installRegister = $installSource.IndexOf('Invoke-HelperRegistration')
 Assert-True 'install: 失効済みの旧トークンを移してから登録する' ($installMove -ge 0 -and $installMove -lt $installFlag -and $installFlag -lt $installRegister)
+# 実行記録の掃除（判定）
+$cleanNow = [DateTimeOffset]::Parse('2026-11-10T00:00:00Z')
+$cleanRecent = $cleanNow.AddHours(-1)
+Assert-True 'cleanup: 期限 + 猶予を過ぎれば消す' (Test-RunRecordRemovable -ExpiresAt '2026-11-09T22:59:00.000Z' -RecordTime $cleanRecent -Now $cleanNow)
+Assert-False 'cleanup: 猶予の間は残す' (Test-RunRecordRemovable -ExpiresAt '2026-11-09T23:30:00.000Z' -RecordTime $cleanRecent -Now $cleanNow)
+Assert-False 'cleanup: 期限が読めなければ上限まで残す' (Test-RunRecordRemovable -ExpiresAt 'broken' -RecordTime $cleanRecent -Now $cleanNow)
+Assert-True 'cleanup: 期限が読めなくても上限で消す' (Test-RunRecordRemovable -ExpiresAt $null -RecordTime $cleanNow.AddHours(-168) -Now $cleanNow)
+Assert-True 'cleanup: 期限が遠くても上限で消す' (Test-RunRecordRemovable -ExpiresAt '2099-01-01T00:00:00.000Z' -RecordTime $cleanNow.AddHours(-168) -Now $cleanNow)
+Assert-Equal 'unsent: 一覧から求める' 'a-1,c-3' ((@(Get-UnsentIdsFromFileNames -Names @('a-1.run', 'a-1.res', 'b-2.run', 'b-2.sent', 'c-3.run', 'd-4.run', 'd-4.expired', 'e-5.run', 'e-5.rejected', 'f-6.run', 'f-6.abandoned', 'g-7.sent', 'bad!.run', 'noext'))) -join ',')
+Assert-Equal 'unsent: 空' 0 @(Get-UnsentIdsFromFileNames -Names @()).Count
+$unsentFn = $helperAst.Find({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -ceq 'Get-UnsentRunIds' }, $true).Extent.Text
+Assert-Equal 'unsent: 記録ごとに Test-Path しない（フォルダの有無だけ）' 1 ([regex]::Matches($unsentFn, 'Test-Path')).Count
+Assert-False 'unsent: 一覧の関数はファイルを開かない' ($helperAst.Find({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -ceq 'Get-UnsentIdsFromFileNames' }, $true).Extent.Text.Contains('Test-Path'))
+
 # 導入コードの静的な境界
 foreach ($case in @(@{ s = 403; b = '{"error":{"code":"ENROLL_CODE_INVALID"}}'; e = $true }, @{ s = 403; b = '{"error":{"code":"FORBIDDEN"}}'; e = $false }, @{ s = 403; b = ''; e = $false }, @{ s = 400; b = 'ENROLL_CODE_INVALID'; e = $false }, @{ s = 0; b = ''; e = $false })) {
   Assert-Equal ('enroll: 判定 ' + $case.s + ' ' + $case.b) $case.e (Test-EnrollCodeRejected -Status $case.s -Body $case.b)
@@ -1210,6 +1224,87 @@ if ($IsLinux -and (Test-Path -LiteralPath '/bin/sleep')) {
     Assert-True 'handoff: 枠が埋まっていれば前回分を諦めて記録' (Test-RunFile 'retry-1' 'abandoned' 'report-runs')
     Assert-Equal 'handoff: 枠は新しい失効' 'SECOND-TOKEN' (Read-HelperToken -Name 'report-token.dat').helperToken
     Assert-False 'handoff: 新しい記録は生きている' (Test-RunFile 'retry-2' 'abandoned' 'report-runs')
+
+    # 実行記録の掃除（実ファイル）
+    Reset-WireStore
+    function Add-CleanRun {
+      param([string]$Id, [string]$Store = 'runs', [string]$Expires = $wirePast, [string]$State = $null, [switch]$WithResult, [string]$RawRecord = $null, [double]$AgeHours = 1)
+      $dir = Get-RunStoreDirectory -Store $Store
+      if (-not (Test-Path -LiteralPath $dir)) { $null = New-Item -ItemType Directory -Path $dir }
+      $record = if ($PSBoundParameters.ContainsKey('RawRecord')) { $RawRecord } else { New-RunRecordJson -Op (New-WireOp -OpId $Id -Over @{ expiresAt = $Expires }) -Effect 'read' -StartedAt 's' }
+      $paths = New-Object System.Collections.Generic.List[string]
+      $paths.Add((Get-RunFilePath -OpId $Id -Kind 'run' -Store $Store))
+      [IO.File]::WriteAllText($paths[0], $record)
+      if ($WithResult) { $p = Get-RunFilePath -OpId $Id -Kind 'res' -Store $Store; [IO.File]::WriteAllText($p, '{"output":"synthetic"}'); $paths.Add($p) }
+      if ($State) { $p = Get-RunFilePath -OpId $Id -Kind $State -Store $Store; [IO.File]::WriteAllText($p, $State); $paths.Add($p) }
+      foreach ($p in $paths) { [IO.File]::SetLastWriteTimeUtc($p, [DateTime]::UtcNow.AddHours(-$AgeHours)) }
+    }
+    # ファイルの更新日時は実時計なので、判定の時刻も実時計に揃える。
+    $wireNow = [DateTimeOffset]::UtcNow
+    $wireIso = { param($minutes) $wireNow.AddMinutes($minutes).ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", [Globalization.CultureInfo]::InvariantCulture) }
+    $wirePast = & $wireIso -120
+    Add-WireRun -Id 'res-1'
+    Save-RunResult -OpId 'res-1' -Json '{"output":"synthetic"}'
+    Set-RunState -OpId 'res-1' -Kind 'sent'
+    Assert-False 'cleanup: 報告が確定したら結果を即座に消す' (Test-RunFile 'res-1' 'res')
+    Assert-True 'cleanup: 再実行防止の記録は残す' (Test-RunFile 'res-1' 'run')
+    foreach ($kind in 'expired', 'rejected', 'abandoned') {
+      Add-WireRun -Id ('res-' + $kind)
+      Save-RunResult -OpId ('res-' + $kind) -Json '{"output":"synthetic"}'
+      Set-RunState -OpId ('res-' + $kind) -Kind $kind
+      Assert-False ('cleanup: ' + $kind + ' でも結果を消す') (Test-RunFile ('res-' + $kind) 'res')
+    }
+    Reset-WireStore
+    $script:WireResultStatus = 503
+    Add-WireRun -Id 'res-retry'
+    Save-RunResult -OpId 'res-retry' -Json '{"output":"synthetic"}'
+    Invoke-PendingSkillReports -ServerBase $wireServer -Token 'T' -Identity $wireIdentity
+    Assert-True 'cleanup: 未報告の結果は消さない' (Test-RunFile 'res-retry' 'res')
+    $script:WireResultStatus = 200
+
+    Reset-WireStore
+    Add-CleanRun -Id 'gone-1' -State 'sent'
+    Add-CleanRun -Id 'gone-2' -State 'expired' -Store 'report-runs'
+    Add-CleanRun -Id 'keep-grace' -State 'sent' -Expires (& $wireIso -30)
+    Add-CleanRun -Id 'keep-unsent' -Expires '2020-01-01T00:00:00.000Z' -AgeHours 100000
+    Add-CleanRun -Id 'keep-unsent-res' -Store 'report-runs' -Expires '2020-01-01T00:00:00.000Z' -WithResult -AgeHours 100000
+    Add-CleanRun -Id 'keep-broken' -State 'sent' -RawRecord 'broken'
+    Add-CleanRun -Id 'gone-res' -State 'sent' -WithResult
+    Assert-Equal 'cleanup: 消した数' 3 (Invoke-RunRecordCleanup -Now $wireNow)
+    foreach ($id in 'gone-1', 'gone-res') {
+      Assert-False ('cleanup: 記録を消す ' + $id) (Test-RunFile $id 'run')
+      Assert-False ('cleanup: 状態も消す ' + $id) (Test-RunFile $id 'sent')
+    }
+    Assert-False 'cleanup: 報告専用の記録も消す' (Test-RunFile 'gone-2' 'run' 'report-runs')
+    Assert-True 'cleanup: 猶予の間は残す' (Test-RunFile 'keep-grace' 'run')
+    Assert-True 'cleanup: 未報告は古くても消さない' (Test-RunFile 'keep-unsent' 'run')
+    Assert-True 'cleanup: 報告専用の未報告も消さない' (Test-RunFile 'keep-unsent-res' 'run' 'report-runs')
+    Assert-True 'cleanup: 報告専用の未報告の結果も消さない' (Test-RunFile 'keep-unsent-res' 'res' 'report-runs')
+    Assert-True 'cleanup: 期限が読めない記録は上限まで残す' (Test-RunFile 'keep-broken' 'run')
+    Add-CleanRun -Id 'late-res' -State 'sent' -WithResult -Expires '2099-01-01T00:00:00.000Z'
+    $null = Invoke-RunRecordCleanup -Now $wireNow
+    Assert-False 'cleanup: 落ちて残った結果は期限前でも消す' (Test-RunFile 'late-res' 'res')
+    Assert-True 'cleanup: そのとき記録は残す' (Test-RunFile 'late-res' 'run')
+    # 孤立した状態ファイルは上限で消す
+    Reset-WireStore
+    Add-CleanRun -Id 'orphan' -State 'sent'
+    [IO.File]::Delete((Get-RunFilePath -OpId 'orphan' -Kind 'run'))
+    $null = Invoke-RunRecordCleanup -Now ([DateTimeOffset]::UtcNow)
+    Assert-True 'cleanup: 孤立は上限まで残す' (Test-RunFile 'orphan' 'sent')
+    $null = Invoke-RunRecordCleanup -Now ([DateTimeOffset]::UtcNow.AddHours(200))
+    Assert-False 'cleanup: 孤立は上限で消す' (Test-RunFile 'orphan' 'sent')
+    # 間隔の判定
+    Reset-WireStore
+    $script:RunCleanupLast = $null
+    Add-CleanRun -Id 'due-1' -State 'sent'
+    Invoke-RunRecordCleanupIfDue -Now $wireNow
+    Assert-False 'cleanup: 初回は走査する' (Test-RunFile 'due-1' 'run')
+    Add-CleanRun -Id 'due-2' -State 'sent'
+    Invoke-RunRecordCleanupIfDue -Now $wireNow.AddMinutes(30)
+    Assert-True 'cleanup: 間隔の内は走査しない' (Test-RunFile 'due-2' 'run')
+    Invoke-RunRecordCleanupIfDue -Now $wireNow.AddMinutes(60)
+    Assert-False 'cleanup: 間隔の後は走査する' (Test-RunFile 'due-2' 'run')
+    $script:RunCleanupLast = $null
 
     # 導入コード: 本文にだけ入れる
     Reset-WireStore

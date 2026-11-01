@@ -50,6 +50,12 @@ $script:AllowedRoots = @('Desktop', 'Documents', 'Downloads', 'Pictures', 'Music
 $script:RestrictedSids = @('S-1-5-18', 'S-1-5-19', 'S-1-5-20')
 $script:ApiBasePath = '/api/device/agent/folder-helper'
 $script:SkillRunCapability = 'skill_run/1'
+# 確定した実行記録の保持。op の期限の後は /start も署名検証も通らないので、再実行防止の役目を終える。
+$script:RunRecordGraceMinutes = 60
+$script:RunRecordMaxRetentionHours = 168
+$script:RunRecordCleanupIntervalMinutes = 60
+$script:RunClosedKinds = @('sent', 'expired', 'rejected', 'abandoned')
+$script:RunCleanupLast = $null
 
 # 16 進リテラルは PowerShell では符号付き Int32 になるので、上位ビットの立つ値は文字列から変換する。
 $script:AttrHidden = [uint32]2
@@ -1251,6 +1257,36 @@ function Get-ReportDisposition {
   if ($Status -eq 408 -or $Status -eq 429) { return 'retry' }
   if ($Status -ge 400 -and $Status -lt 500) { return 'rejected' }
   return 'retry'
+}
+
+function Get-UnsentIdsFromFileNames {
+  # フォルダの一覧だけから未報告を求める。記録ごとにファイルを確かめない。
+  param([AllowNull()][AllowEmptyCollection()][string[]]$Names)
+  $runs = New-Object System.Collections.Generic.List[string]
+  $closed = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
+  foreach ($name in @($Names)) {
+    if ([string]::IsNullOrEmpty($name)) { continue }
+    $dot = $name.LastIndexOf('.')
+    if ($dot -le 0) { continue }
+    $id = $name.Substring(0, $dot)
+    $kind = $name.Substring($dot + 1)
+    if (-not (Test-SafeOpId -OpId $id)) { continue }
+    if ($kind -ceq 'run') { $runs.Add($id); continue }
+    foreach ($closedKind in $script:RunClosedKinds) { if ($kind -ceq $closedKind) { [void]$closed.Add($id) } }
+  }
+  $unsent = New-Object System.Collections.Generic.List[string]
+  foreach ($id in $runs) { if (-not $closed.Contains($id)) { $unsent.Add($id) } }
+  return $unsent.ToArray()
+}
+
+function Test-RunRecordRemovable {
+  # 確定した記録を消してよいか。op の期限 + 猶予を過ぎたら消す。期限が読めなくても保持の上限で消す。
+  # 未報告には使わない（呼び出し側で除く）。
+  param([AllowNull()][object]$ExpiresAt, [Parameter(Mandatory)][DateTimeOffset]$RecordTime, [Parameter(Mandatory)][DateTimeOffset]$Now)
+  if ($Now -ge $RecordTime.AddHours($script:RunRecordMaxRetentionHours)) { return $true }
+  $expires = ConvertFrom-IsoUtc -Value $ExpiresAt
+  if ($null -eq $expires) { return $false }
+  return ($Now -ge $expires.AddMinutes($script:RunRecordGraceMinutes))
 }
 
 function Test-ReportFinal {
@@ -2513,12 +2549,14 @@ function Save-RunResult {
 
 function Set-RunState {
   # 終端の状態ファイルを置く。sent（報告済み）と expired（410）を区別して残す。
+  # 確定した結果（Skill の出力）は端末に残さない。状態を先に書くので、途中で落ちても再報告しない。
   param(
     [Parameter(Mandatory)][string]$OpId,
     [Parameter(Mandatory)][ValidateSet('sent', 'expired', 'rejected', 'abandoned')][string]$Kind,
     [ValidateSet('runs', 'report-runs')][string]$Store = 'runs'
   )
   [IO.File]::WriteAllText((Get-RunFilePath -OpId $OpId -Kind $Kind -Store $Store), $Kind)
+  [IO.File]::Delete((Get-RunFilePath -OpId $OpId -Kind 'res' -Store $Store))
   if ($Kind -cne 'sent') { Write-HelperLog -EventName ('report_' + $Kind) -Fields @{ opId = $OpId } }
 }
 
@@ -2526,18 +2564,70 @@ function Get-UnsentRunIds {
   param([ValidateSet('runs', 'report-runs')][string]$Store = 'runs')
   $dir = Get-RunStoreDirectory -Store $Store
   if (-not (Test-Path -LiteralPath $dir)) { return @() }
-  $ids = New-Object System.Collections.Generic.List[string]
-  foreach ($file in [IO.Directory]::GetFiles($dir, '*.run')) {
-    $name = [IO.Path]::GetFileNameWithoutExtension($file)
-    if (-not (Test-SafeOpId -OpId $name)) { continue }
-    $closed = $false
-    foreach ($kind in 'sent', 'expired', 'rejected', 'abandoned') {
-      if (Test-Path -LiteralPath (Get-RunFilePath -OpId $name -Kind $kind -Store $Store)) { $closed = $true }
-    }
-    if (-not $closed) { $ids.Add($name) }
-  }
   # 呼び出し側は @() で受ける。配列のまま 1 要素として返さない。
-  return $ids.ToArray()
+  return (Get-UnsentIdsFromFileNames -Names ([string[]]@([IO.Directory]::GetFiles($dir) | ForEach-Object { [IO.Path]::GetFileName($_) })))
+}
+
+function Invoke-RunRecordCleanup {
+  # 確定した記録を期限の後に消す。未報告は消さない。戻り値は消した記録の数。
+  param([Parameter(Mandatory)][DateTimeOffset]$Now)
+  $removed = 0
+  foreach ($store in 'runs', 'report-runs') {
+    $dir = Get-RunStoreDirectory -Store $store
+    if (-not (Test-Path -LiteralPath $dir)) { continue }
+    $byId = @{}
+    foreach ($file in (New-Object IO.DirectoryInfo -ArgumentList $dir).GetFiles()) {
+      $dot = $file.Name.LastIndexOf('.')
+      if ($dot -le 0) { continue }
+      $id = $file.Name.Substring(0, $dot)
+      if (-not (Test-SafeOpId -OpId $id)) { continue }
+      if (-not $byId.ContainsKey($id)) { $byId[$id] = @{} }
+      $byId[$id][$file.Name.Substring($dot + 1)] = $file
+    }
+    foreach ($id in @($byId.Keys)) {
+      $files = $byId[$id]
+      $closed = $false
+      foreach ($kind in $script:RunClosedKinds) { if ($files.ContainsKey($kind)) { $closed = $true } }
+      $hasRun = $files.ContainsKey('run')
+      if ($hasRun -and -not $closed) { continue }
+      try {
+        # 状態を書いた直後に落ちた場合の結果も残さない。
+        if ($closed -and $files.ContainsKey('res')) { $files['res'].Delete(); $files.Remove('res') }
+        $expiresAt = $null
+        $newest = [DateTimeOffset]::MinValue
+        foreach ($file in $files.Values) {
+          $time = [DateTimeOffset]$file.LastWriteTimeUtc
+          if ($time -gt $newest) { $newest = $time }
+        }
+        if ($hasRun) {
+          try {
+            $expiresAt = Get-OpField -Op (ConvertFrom-HelperJson -Json ([IO.File]::ReadAllText($files['run'].FullName, [Text.Encoding]::UTF8))) -Name 'expiresAt'
+          } catch {
+            $expiresAt = $null
+          }
+        }
+        if ($files.Count -eq 0 -or -not (Test-RunRecordRemovable -ExpiresAt $expiresAt -RecordTime $newest -Now $Now)) { continue }
+        foreach ($file in $files.Values) { $file.Delete() }
+        $removed++
+      } catch {
+        Write-HelperLog -EventName 'run_cleanup_failed' -Fields @{ opId = $id; errorType = (Get-ExceptionTypeName -ErrorRecord $_) }
+      }
+    }
+  }
+  return $removed
+}
+
+function Invoke-RunRecordCleanupIfDue {
+  # 起動時と一定の間隔でだけ走査する。掃除の失敗で常駐を止めない。
+  param([Parameter(Mandatory)][DateTimeOffset]$Now)
+  if ($null -ne $script:RunCleanupLast -and $Now -lt $script:RunCleanupLast.AddMinutes($script:RunRecordCleanupIntervalMinutes)) { return }
+  $script:RunCleanupLast = $Now
+  try {
+    $count = Invoke-RunRecordCleanup -Now $Now
+    if ($count -gt 0) { Write-HelperLog -EventName 'run_records_removed' -Fields @{ count = $count } }
+  } catch {
+    Write-HelperLog -EventName 'run_cleanup_failed' -Fields @{ errorType = (Get-ExceptionTypeName -ErrorRecord $_) }
+  }
 }
 
 function Read-RunReport {
@@ -2959,11 +3049,13 @@ function Invoke-HelperMain {
       }
     }
     Invoke-ReportOnlyFlushSafe -ServerBase $serverBase -Identity $identity
+    Invoke-RunRecordCleanupIfDue -Now ([DateTimeOffset]::UtcNow)
     if (-not $Background) { Write-Host 'このヘルパーは失効済みです。install-folder-helper.ps1 で再登録してください。' }
     return 0
   }
 
   Invoke-ReportOnlyFlushSafe -ServerBase $serverBase -Identity $identity
+  Invoke-RunRecordCleanupIfDue -Now ([DateTimeOffset]::UtcNow)
   $failures = 0
   $retryAfter = 0
   $tokenInfo = Read-HelperToken
@@ -3017,6 +3109,7 @@ function Invoke-HelperMain {
       Write-HelperLog -EventName 'report_failed' -Fields @{ errorType = (Get-ExceptionTypeName -ErrorRecord $_) }
     }
     Invoke-ReportOnlyFlushSafe -ServerBase $serverBase -Identity $identity
+    Invoke-RunRecordCleanupIfDue -Now ([DateTimeOffset]::UtcNow)
     while ($state.Queue.Count -gt 0) {
       $op = $state.Queue.Dequeue()
       try {
