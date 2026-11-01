@@ -714,8 +714,40 @@ try {
     'Move-Item（改名）の拒否', '別ファイルの移動による置換の拒否', '親フォルダの改名の可否',
     'powershell.exe -File（5.1）がハンドルを持ったまま開ける'
   )
-  foreach ($name in $windowsOnly) {
-    Write-Skip $name 'Windows 実機が要る（scripts/windows/tests/script-identity-windows.ps1）'
+  $identityScript = Join-Path $PSScriptRoot 'script-identity-windows.ps1'
+  if (Test-IsWindowsHost) {
+    $report = & (Get-PowerShellExecutable) -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $identityScript | ConvertFrom-Json
+    Assert-True 'windows: 共有モードの拒否と子プロセスの実行' ($report.ok -eq $true)
+  } else {
+    foreach ($name in $windowsOnly) {
+      Write-Skip $name 'Windows 実機が要る（scripts/windows/tests/script-identity-windows.ps1）'
+    }
+  }
+
+  # 実機用スクリプトの手順の確認。実機の確認に数えられない結果を ok にしないことを確かめる。
+  if (-not (Test-IsWindowsHost)) {
+    $self = Get-PowerShellExecutable
+    # 専用の一時フォルダで動かす。並行して動く別の試験のフォルダと混ざらない。
+    $identityTemp = Join-Path $root 'identity-tmp'
+    New-Item -ItemType Directory -Path $identityTemp | Out-Null
+    $savedTmpDir = $env:TMPDIR
+    $env:TMPDIR = $identityTemp
+    $text = & $self -NoProfile -NonInteractive -File $identityScript
+    Assert-Equal 'identity: Windows 以外は終了コード 2' 2 $LASTEXITCODE
+    $report = $text | ConvertFrom-Json
+    Assert-True 'identity: Windows 以外は ok にしない' ($report.ok -eq $false -and $report.platformValid -eq $false -and $report.reason -ceq 'not-windows')
+    $text = & $self -NoProfile -NonInteractive -File $identityScript -ProbeOnNonWindows
+    Assert-Equal 'identity: 手順の確認でも成功の終了コードにしない' 1 $LASTEXITCODE
+    Assert-Equal 'identity: 標準出力は JSON 1 行' 1 @($text).Count
+    $report = $text | ConvertFrom-Json
+    Assert-True 'identity: 手順の確認でも ok にしない' ($report.ok -eq $false -and $report.platformValid -eq $false)
+    Assert-Equal 'identity: 検査の件数' 17 @($report.checks).Count
+    Assert-True 'identity: 致命的な失敗なしで最後まで動く' (@($report.checks | Where-Object { $_.name -ceq 'fatal' }).Count -eq 0 -and $report.reason -ceq '')
+    Assert-Equal 'identity: 子プロセスの実行' 'PASS' (@($report.checks | Where-Object { $_.name -ceq 'child_opens_while_handle_held' })[0].status)
+    $env:TMPDIR = $savedTmpDir
+    Assert-True 'identity: パスとユーザー名を出さない' (-not ([string]$text).Contains($identityTemp) -and -not ([string]$text).Contains([string]$env:HOME))
+    # pwsh 自身が診断用のソケットを置くので、スクリプトのフォルダだけを数える。
+    Assert-Equal 'identity: 一時フォルダを残さない' 0 @(Get-ChildItem -LiteralPath $identityTemp -Filter 'script identity*').Count
   }
 
   # リポジトリの本物の Skill: 許可リストの全件がバイト列で approved.json と一致する（実行はしない）。
@@ -744,6 +776,16 @@ try {
   Assert-True 'source: BOM（5.1 が UTF-8 と解釈する）' ([IO.File]::ReadAllBytes($agentSource)[0] -eq 0xEF)
   foreach ($word in @('Invoke-Expression', 'iex ', 'cmd /c', 'cmd.exe', 'Start-Process', 'executionSource = ''endpoint_agent''')) {
     Assert-True ('source: 使わない ' + $word) (-not $source.Contains($word))
+  }
+  $identitySource = Join-Path $PSScriptRoot 'script-identity-windows.ps1'
+  $identityTokens = $null; $identityErrors = $null
+  [void][Management.Automation.Language.Parser]::ParseFile($identitySource, [ref]$identityTokens, [ref]$identityErrors)
+  Assert-Equal 'identity: 構文エラーなし' 0 @($identityErrors).Count
+  Assert-True 'identity: BOM（5.1 が UTF-8 と解釈する）' ([IO.File]::ReadAllBytes($identitySource)[0] -eq 0xEF)
+  foreach ($t in $identityTokens) {
+    if ($t.Kind -in @('QuestionQuestion', 'QuestionDot', 'QuestionLBracket', 'AndAnd', 'OrOr', 'QuestionMark')) {
+      Assert-True ('identity: 5.1 に無い構文 ' + $t.Text) $false
+    }
   }
   # 5.1 に無い構文を使わない。
   foreach ($t in $tokens) {

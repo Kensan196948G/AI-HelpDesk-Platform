@@ -72,7 +72,8 @@ describe('command-agent.ps1（pwsh）', () => {
       );
       expect(result.error, 'pwsh を起動できません').toBeUndefined();
       expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
-      expect(result.stdout).toMatch(/passed=\d+ failed=0/);
+      // SKIP（Windows 実機が要る検査）は PASS と分けて数える。
+      expect(result.stdout).toMatch(/passed=\d+ failed=0 skipped=\d+/);
     },
     420_000,
   );
