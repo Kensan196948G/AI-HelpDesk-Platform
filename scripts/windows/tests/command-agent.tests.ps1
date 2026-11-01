@@ -13,6 +13,9 @@
   - Windows の ACL（Get-Acl の読み取り。許可の評価は純粋関数で確認する）
   - SYSTEM の実トークンと taskkill によるプロセスツリーの停止
   - endpoint_agent の申告での実送信（Linux では mock を申告する。分岐は関数で確認する）
+  - Windows の共有モードによる書込み、削除、改名の拒否（Linux の FileShare は助言ロックで、拒否されるのは
+    FileShare.None を求める排他オープンだけ。WriteAllBytes、Set-Content、改名、削除は通る）。
+    SKIP と表示して件数を分け、PASS に数えない。実機は script-identity-windows.ps1 で確かめる。
 
 .EXAMPLE
   pwsh -NoProfile -NonInteractive -File scripts/windows/tests/command-agent.tests.ps1
@@ -24,6 +27,7 @@ $windowsDir = Split-Path -Parent $PSScriptRoot
 $agentSource = Join-Path $windowsDir 'command-agent.ps1'
 $script:Passed = 0
 $script:Failed = 0
+$script:Skipped = 0
 $Token = 'aihd_test-token-not-a-secret-0123456789'
 $CfSecret = 'cf-secret-not-a-secret-0123456789'
 $DeviceId = 'stub-device-0001'
@@ -39,6 +43,12 @@ function Assert-Equal {
   param([string]$Name, [object]$Expected, [object]$Actual)
   if ([string]$Expected -ceq [string]$Actual) { $script:Passed++ }
   else { $script:Failed++; Write-Output ('FAIL ' + $Name + ' : expected [' + [string]$Expected + '] got [' + [string]$Actual + ']') }
+}
+
+function Write-Skip {
+  param([string]$Name, [string]$Reason)
+  $script:Skipped++
+  Write-Output ('SKIP ' + $Name + ' : ' + $Reason)
 }
 
 function Get-Sha256Hex {
@@ -86,7 +96,16 @@ function Write-Manifest {
 
 $okBody = "Write-Output '{""name"":""Spooler"",""status"":""Running"",""stub"":""模擬""}'"
 Write-Stub 'spooler-status.ps1' $okBody
-Write-Stub 'os-info.ps1' "Write-Output '{""a"":1}'"
+# 実行された自分のバイト列と、子の実行中に親がハンドルを持っているかを報告するスタブ。
+$identityBody = @'
+$self = [IO.File]::ReadAllBytes($PSCommandPath)
+$sha = [Security.Cryptography.SHA256]::Create()
+$hex = ([BitConverter]::ToString($sha.ComputeHash($self))).Replace('-', '').ToLowerInvariant()
+$locked = $false
+try { $probe = [IO.File]::Open($PSCommandPath, 'Open', 'Write', 'None'); $probe.Dispose() } catch { $locked = $true }
+Write-Output ('{"variant":"approved","selfHash":"sha256:' + $hex + '","lockedDuringRun":' + $locked.ToString().ToLowerInvariant() + '}')
+'@
+Write-Stub 'os-info.ps1' $identityBody
 Write-Stub 'service-status.ps1' "Write-Output ('{""service"":""' + `$Service + '""}')"
 Write-Stub 'temp-cleanup.ps1' "Write-Output ('{""days"":""' + `$OlderThanDays + '""}')"
 Write-Stub 'disk-space.ps1' "Start-Sleep -Seconds 300; Write-Output '{}'"
@@ -475,6 +494,230 @@ try {
   Assert-Equal 'spooler: platform' 'win32' $spooler.result.platform
   Assert-True 'spooler: 出所を足さない' ($null -eq $spooler.result.PSObject.Properties['executionSource'])
 
+  # ── 検査と実行の同一性（TOCTOU。docs/66 §8） ─────────────────────
+  # ここより後ろで $agentSource を読み込むと本物の Skill を指す。差替えは一時配置だけに行う。
+  if (-not (Get-SkillsRoot).StartsWith($root)) { throw '試験の配置が一時フォルダを指していません' }
+  $probePath = Join-Path $skillsDir 'os-info.ps1'
+  $probeOriginal = [IO.File]::ReadAllBytes($probePath)
+  $probeHash = Get-Sha256Hex -Path $probePath
+  $probeText = [Text.Encoding]::UTF8.GetString($probeOriginal)
+  $probeCommand = [pscustomobject]@{ skill_id = 'os.info'; skill_version = '1.0.0'; skill_content_hash = $ContentHash }
+  function Write-AgentLog { param([string]$Message) [void]$script:AllLogs.Append((Protect-Text $Message)) }
+
+  function Test-ExclusiveOpenDenied {
+    param([string]$Path)
+    try {
+      $handle = [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::Write, [IO.FileShare]::None)
+    } catch {
+      return $true
+    }
+    $handle.Dispose()
+    return $false
+  }
+
+  # 排他オープンで上書きする。Linux で親のハンドルに拒否されるのはこの形の書込みだけ。
+  function Invoke-ExclusiveOverwrite {
+    param([string]$Path, [byte[]]$Bytes)
+    try {
+      $handle = [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::Write, [IO.FileShare]::None)
+    } catch {
+      return 'denied'
+    }
+    try {
+      $handle.SetLength(0)
+      $handle.Write($Bytes, 0, $Bytes.Length)
+    } finally {
+      $handle.Dispose()
+    }
+    return 'written'
+  }
+
+  # 継ぎ目。本番の経路に分岐を足さず、検査の直後と子の終了の直後に割り込む。
+  $script:RealInvokeSkillProcess = ${function:Invoke-SkillProcess}
+  $script:BeforeChild = $null
+  $script:AfterChild = $null
+  function Invoke-SkillProcess {
+    param([string]$ScriptPath, [string[]]$Arguments)
+    if ($script:BeforeChild) { & $script:BeforeChild $ScriptPath }
+    $run = & $script:RealInvokeSkillProcess -ScriptPath $ScriptPath -Arguments $Arguments
+    if ($script:AfterChild) { & $script:AfterChild $ScriptPath }
+    return $run
+  }
+  $script:RealOpenStream = $null
+  if (Test-Path -LiteralPath 'function:Open-SkillScriptStream') { $script:RealOpenStream = ${function:Open-SkillScriptStream} }
+  $script:OpenHook = $null
+  $script:OpenCalls = 0
+  function Open-SkillScriptStream {
+    param([string]$Path)
+    $script:OpenCalls++
+    if ($script:OpenHook) { return (& $script:OpenHook $Path) }
+    return (& $script:RealOpenStream -Path $Path)
+  }
+
+  function Invoke-TickCase {
+    param([object]$Command, [string]$Marker = '')
+    Get-ChildItem -LiteralPath $markerDir | Remove-Item -Force
+    $state.Results.Clear()
+    $state.Command = $Command
+    $script:HeldAtChildEnd = $null
+    Invoke-CommandTick
+    $body = $null
+    if ($state.Results.Count -gt 0) { $body = $state.Results[0].body | ConvertFrom-Json }
+    $normalized = Get-JsonProperty (Get-JsonProperty $body 'result') 'normalized'
+    return @{
+      Ok = (Get-JsonProperty $body 'ok'); Error = [string](Get-JsonProperty $body 'error'); Normalized = $normalized
+      Ran = ($Marker -and (Test-Path -LiteralPath (Join-Path $markerDir ($Marker + '.ran'))))
+    }
+  }
+
+  # 子の終了の時点でハンドルを持っているか、終わった後に閉じたか。
+  $script:AfterChild = { param($path) $script:HeldAtChildEnd = (Test-ExclusiveOpenDenied -Path $path) }
+
+  $swaps = [ordered]@{
+    '差替え（別の内容）' = [Text.Encoding]::UTF8.GetBytes($probeText.Replace('"variant":"approved"', '"variant":"evil"'))
+    '改行変更（LF→CRLF）' = [Text.Encoding]::UTF8.GetBytes($probeText.Replace("`n", "`r`n"))
+    '配布更新（新版への上書き）' = [Text.Encoding]::UTF8.GetBytes($probeText.Replace('"variant":"approved"', '"variant":"v2"'))
+  }
+  foreach ($name in $swaps.Keys) {
+    $script:SwapBytes = $swaps[$name]
+    $script:SwapResult = ''
+    $script:BeforeChild = { param($path) $script:SwapResult = Invoke-ExclusiveOverwrite -Path $path -Bytes $script:SwapBytes }
+    $case = Invoke-TickCase (New-TestCommand 'os.info') 'os-info.ps1'
+    $script:BeforeChild = $null
+    $label = 'swap(Linux は排他オープンの書込み) ' + $name
+    Assert-Equal ($label + ': 書込みを拒否') 'denied' $script:SwapResult
+    Assert-Equal ($label + ': 承認の版を実行') 'approved' (Get-JsonProperty $case.Normalized 'variant')
+    Assert-Equal ($label + ': 実行したバイト列') $probeHash (Get-JsonProperty $case.Normalized 'selfHash')
+    Assert-Equal ($label + ': ファイルは変わらない') $probeHash (Get-Sha256Hex -Path $probePath)
+    Assert-Equal ($label + ': 子の実行中はハンドルが開いている') 'True' ([string](Get-JsonProperty $case.Normalized 'lockedDuringRun'))
+    Assert-Equal ($label + ': 子の終了時点でハンドルが開いている') 'True' ([string]$script:HeldAtChildEnd)
+    Assert-True ($label + ': 終わったら閉じる') (-not (Test-ExclusiveOpenDenied -Path $probePath))
+    [IO.File]::WriteAllBytes($probePath, $probeOriginal)
+  }
+
+  # ハッシュはパスではなくハンドルから読んだバイト列で計算する。パスとハンドルの中身を食い違わせて確かめる。
+  $evilBytes = $swaps['差替え（別の内容）']
+  $script:OpenBytes = $evilBytes
+  $script:OpenHook = { param($path) New-Object IO.MemoryStream -ArgumentList @(,[byte[]]$script:OpenBytes) }
+  $threw = ''
+  $resolved = $null
+  try { $resolved = Resolve-ApprovedSkillScript -Command $probeCommand } catch { $threw = $_.Exception.Message }
+  Assert-True 'handle: ハンドルの中身が承認外なら、パスが正しくても拒否' ($threw -like '*スクリプトのハッシュ*') $threw
+  if ($resolved -is [hashtable]) { $resolved.Stream.Dispose() }
+
+  $script:OpenBytes = $probeOriginal
+  [IO.File]::WriteAllBytes($probePath, $evilBytes)
+  $threw = ''
+  $resolved = $null
+  try { $resolved = Resolve-ApprovedSkillScript -Command $probeCommand } catch { $threw = $_.Exception.Message }
+  Assert-True 'handle: 照合の対象はハンドルの中身（パスの中身は見ない）' ($threw -eq '' -and $resolved -is [hashtable]) $threw
+  if ($resolved -is [hashtable]) { $resolved.Stream.Dispose() }
+  [IO.File]::WriteAllBytes($probePath, $probeOriginal)
+  $script:OpenHook = $null
+
+  # 他者が排他で開いていれば fail-closed（Windows では書込み中の相手もここへ来る）。
+  $holder = [IO.File]::Open($probePath, [IO.FileMode]::Open, [IO.FileAccess]::Write, [IO.FileShare]::None)
+  try {
+    $case = Invoke-TickCase (New-TestCommand 'os.info') 'os-info.ps1'
+  } finally {
+    $holder.Dispose()
+  }
+  Assert-True 'fail-closed: 開けなければ実行しない' (-not $case.Ran)
+  Assert-True 'fail-closed: 同じ形で失敗を報告' ($case.Ok -eq $false -and $case.Error -like '*Skill スクリプトを開けません*') $case.Error
+  Assert-True 'fail-closed: パスを報告に出さない' (-not $case.Error.Contains($root))
+
+  # シンボリックリンクはハンドルで固定できない（リンク自体を張り替えられる）ので実行しない。
+  $moved = $probePath + '.real'
+  [IO.File]::Move($probePath, $moved)
+  New-Item -ItemType SymbolicLink -Path $probePath -Target $moved | Out-Null
+  $case = Invoke-TickCase (New-TestCommand 'os.info') 'os-info.ps1'
+  Remove-Item -LiteralPath $probePath -Force
+  [IO.File]::Move($moved, $probePath)
+  Assert-True 'reparse: ファイルがリンクなら実行しない' (-not $case.Ran -and $case.Ok -eq $false) $case.Error
+  $movedDir = $skillsDir + '.real'
+  [IO.Directory]::Move($skillsDir, $movedDir)
+  New-Item -ItemType SymbolicLink -Path $skillsDir -Target $movedDir | Out-Null
+  $case = Invoke-TickCase (New-TestCommand 'os.info') 'os-info.ps1'
+  Remove-Item -LiteralPath $skillsDir -Force
+  [IO.Directory]::Move($movedDir, $skillsDir)
+  Assert-True 'reparse: フォルダがリンクなら実行しない' (-not $case.Ran -and $case.Ok -eq $false) $case.Error
+
+  # 昇格。Skill は実行しない。SPOOLER_RESTART は従来どおり（Windows 以外の Test-IsElevated は偽のまま）。
+  Assert-True 'elevated: Windows 以外は昇格と判定しない' (-not (Test-IsElevated))
+  $savedElevated = ${function:Test-IsElevated}
+  ${function:Test-IsElevated} = { return $true }
+  $script:OpenCalls = 0
+  $case = Invoke-TickCase (New-TestCommand 'os.info') 'os-info.ps1'
+  Assert-True 'elevated: Skill を実行しない' (-not $case.Ran)
+  Assert-True 'elevated: 失敗を報告' ($case.Ok -eq $false -and $case.Error -like '*昇格*') $case.Error
+  Assert-Equal 'elevated: ファイルを開く前に止める' 0 $script:OpenCalls
+  $script:RestartArgs = $null
+  $state.Results.Clear()
+  $state.Command = @{ id = [Guid]::NewGuid().ToString(); op_id = 'SPOOLER_RESTART'; params = @{} }
+  Invoke-CommandTick
+  Assert-Equal 'elevated: SPOOLER_RESTART は従来どおり実行' 'Spooler/True' $script:RestartArgs
+  Assert-True 'elevated: SPOOLER_RESTART の報告は成功' (($state.Results[0].body | ConvertFrom-Json).ok -eq $true)
+  ${function:Test-IsElevated} = { throw '判定できない' }
+  $case = Invoke-TickCase (New-TestCommand 'os.info') 'os-info.ps1'
+  Assert-True 'elevated: 判定に失敗したら Skill を実行しない' (-not $case.Ran -and $case.Ok -eq $false) $case.Error
+  ${function:Test-IsElevated} = $savedElevated
+
+  # タイムアウト、出力超過、例外の経路でもハンドルを閉じる。「開いていた」も確かめて、素通りを合格にしない。
+  $diskPath = Join-Path $skillsDir 'disk-space.ps1'
+  $savedTimeout = $script:SkillTimeoutSeconds
+  $script:SkillTimeoutSeconds = 2
+  $case = Invoke-TickCase (New-TestCommand 'disk.space') 'disk-space.ps1'
+  $script:SkillTimeoutSeconds = $savedTimeout
+  Assert-True 'close: タイムアウトを報告' ($case.Ok -eq $false -and $case.Error -like '*タイムアウト*') $case.Error
+  Assert-Equal 'close: タイムアウトの停止までハンドルが開いている' 'True' ([string]$script:HeldAtChildEnd)
+  Assert-True 'close: タイムアウトの後に閉じる' (-not (Test-ExclusiveOpenDenied -Path $diskPath))
+
+  $dnsPath = Join-Path $skillsDir 'dns-flush.ps1'
+  Write-Stub 'dns-flush.ps1' "[Console]::Out.Write('x' * 4096); [Console]::Out.Flush(); Start-Sleep -Seconds 30; Write-Output '{}'"
+  Write-Manifest
+  $savedKill = $script:OutputKillBytes
+  $script:OutputKillBytes = 1024
+  $case = Invoke-TickCase (New-TestCommand 'dns.flush') 'dns-flush.ps1'
+  $script:OutputKillBytes = $savedKill
+  Assert-True 'close: 出力超過を報告' ($case.Ok -eq $false -and $case.Error -like '*出力が上限*') $case.Error
+  Assert-Equal 'close: 出力超過の停止までハンドルが開いている' 'True' ([string]$script:HeldAtChildEnd)
+  Assert-True 'close: 出力超過の後に閉じる' (-not (Test-ExclusiveOpenDenied -Path $dnsPath))
+
+  $statusPath = Join-Path $skillsDir 'service-status.ps1'
+  $case = Invoke-TickCase (New-TestCommand 'service.status' @{ params = @{ service = 'NotAllowed' } }) 'service-status.ps1'
+  Assert-True 'close: 引数の拒否を報告' (-not $case.Ran -and $case.Ok -eq $false -and $case.Error -like '*許可されていません*') $case.Error
+  Assert-True 'close: 引数の拒否の後に閉じる' (-not (Test-ExclusiveOpenDenied -Path $statusPath))
+
+  $script:HeldBeforeThrow = $null
+  $script:BeforeChild = {
+    param($path)
+    $script:HeldBeforeThrow = (Test-ExclusiveOpenDenied -Path $path)
+    throw '子を起動する前の例外'
+  }
+  $case = Invoke-TickCase (New-TestCommand 'os.info') 'os-info.ps1'
+  $script:BeforeChild = $null
+  Assert-True 'close: 例外を報告' (-not $case.Ran -and $case.Ok -eq $false) $case.Error
+  Assert-Equal 'close: 例外の時点ではハンドルが開いている' 'True' ([string]$script:HeldBeforeThrow)
+  Assert-True 'close: 例外の後に閉じる' (-not (Test-ExclusiveOpenDenied -Path $probePath))
+
+  $savedExecutable = ${function:Get-PowerShellExecutable}
+  ${function:Get-PowerShellExecutable} = { return (Join-Path $root 'no-such-powershell') }
+  $case = Invoke-TickCase (New-TestCommand 'os.info') 'os-info.ps1'
+  ${function:Get-PowerShellExecutable} = $savedExecutable
+  Assert-True 'close: 子を起動できない失敗を報告' (-not $case.Ran -and $case.Ok -eq $false) $case.Error
+  Assert-True 'close: 子を起動できない失敗の後に閉じる' (-not (Test-ExclusiveOpenDenied -Path $probePath))
+  $script:AfterChild = $null
+
+  # Windows の共有モードでだけ意味を持つ検査。Linux では確かめられないので PASS に数えない。
+  $windowsOnly = @(
+    'Set-Content の拒否', '[IO.File]::WriteAllBytes の拒否', 'Copy-Item の上書きの拒否', 'Remove-Item の拒否',
+    'Move-Item（改名）の拒否', '別ファイルの移動による置換の拒否', '親フォルダの改名の可否',
+    'powershell.exe -File（5.1）がハンドルを持ったまま開ける'
+  )
+  foreach ($name in $windowsOnly) {
+    Write-Skip $name 'Windows 実機が要る（scripts/windows/tests/script-identity-windows.ps1）'
+  }
+
   # リポジトリの本物の Skill: 許可リストの全件がバイト列で approved.json と一致する（実行はしない）。
   . $agentSource -NoMain -ConfigPath $configPath
   $realManifest = [IO.File]::ReadAllText((Join-Path (Split-Path -Parent $windowsDir) 'skills/approved.json')) | ConvertFrom-Json
@@ -495,6 +738,8 @@ try {
   [void][Management.Automation.Language.Parser]::ParseFile($agentSource, [ref]$tokens, [ref]$errors)
   Assert-Equal 'source: 構文エラーなし' 0 @($errors).Count
   Assert-True 'source: Set-StrictMode' ($source -match 'Set-StrictMode -Version Latest')
+  Assert-True 'source: パスからの読み直しで照合しない' (-not ($source -match 'ReadAllBytes\(\$scriptPath\)'))
+  Assert-True 'source: 共有は読み取りだけ' ($source -match '\[IO\.FileShare\]::Read\)' -and $source -notmatch 'FileShare\]::(ReadWrite|Write|Delete)')
   Assert-True 'source: BOM（5.1 が UTF-8 と解釈する）' ([IO.File]::ReadAllBytes($agentSource)[0] -eq 0xEF)
   foreach ($word in @('Invoke-Expression', 'iex ', 'cmd /c', 'cmd.exe', 'Start-Process', 'executionSource = ''endpoint_agent''')) {
     Assert-True ('source: 使わない ' + $word) (-not $source.Contains($word))
@@ -512,6 +757,6 @@ try {
   Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-Write-Output ('passed=' + $script:Passed + ' failed=' + $script:Failed)
+Write-Output ('passed=' + $script:Passed + ' failed=' + $script:Failed + ' skipped=' + $script:Skipped)
 if ($script:Failed -gt 0) { exit 1 }
 exit 0

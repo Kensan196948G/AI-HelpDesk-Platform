@@ -68,12 +68,12 @@ describe('command-agent.ps1（pwsh）', () => {
       const result = spawnSync(
         'pwsh',
         ['-NoProfile', '-NonInteractive', '-File', path.join(here, 'command-agent.tests.ps1')],
-        { encoding: 'utf8', timeout: 170_000 },
+        { encoding: 'utf8', timeout: 400_000 },
       );
       expect(result.error, 'pwsh を起動できません').toBeUndefined();
       expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
       expect(result.stdout).toMatch(/passed=\d+ failed=0/);
     },
-    180_000,
+    420_000,
   );
 });
