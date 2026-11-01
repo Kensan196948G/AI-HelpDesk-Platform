@@ -82,8 +82,14 @@ export const ASSIGNEE_ORIGINAL = "<option value=\"${s.name}\" ${s.name===t.sugge
 const ASSIGNEE_PATCH =
   "<option value=\"${s.name}\" ${(typeof __AIHD_ASSIGNEE__==='function'?__AIHD_ASSIGNEE__(s.name,t.suggest):s.name===t.suggest)?'selected':''}>";
 
+const ASSIGNEE_SELECT_ORIGINAL = '<select id="q_as">${STAFF.filter';
+const ASSIGNEE_SELECT_PATCH =
+  "<select id=\"q_as\">${typeof __AIHD_ASSIGNEE_BLANK__==='function'?__AIHD_ASSIGNEE_BLANK__():''}${STAFF.filter";
+
 export function patchKbDraftBody(html: string): string {
   return html
+    .split(ASSIGNEE_SELECT_ORIGINAL)
+    .join(ASSIGNEE_SELECT_PATCH)
     .split(KB_DRAFT_BODY_ORIGINAL)
     .join(KB_DRAFT_BODY_PATCH)
     .split(ASSIGNEE_ORIGINAL)

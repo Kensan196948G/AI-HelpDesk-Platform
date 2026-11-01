@@ -494,6 +494,17 @@ try {
   Assert-Equal 'spooler: platform' 'win32' $spooler.result.platform
   Assert-True 'spooler: 出所を足さない' ($null -eq $spooler.result.PSObject.Properties['executionSource'])
 
+  # 報告の失敗を実行の失敗として送り直さない（済んだ変更を失敗と記録しない）。
+  $originalSend = ${function:Send-CommandResult}
+  $script:SendCount = 0
+  $script:LastOutcome = $null
+  function Send-CommandResult { param($Id, $Outcome) $script:SendCount += 1; $script:LastOutcome = $Outcome; throw 'network' }
+  $state.Command = @{ id = [Guid]::NewGuid().ToString(); op_id = 'SPOOLER_RESTART'; params = @{} }
+  Invoke-CommandTick
+  Assert-Equal 'report: 報告の失敗で送り直さない' 1 $script:SendCount
+  Assert-True 'report: 送った結果は成功のまま' ($script:LastOutcome.ok -eq $true)
+  ${function:Send-CommandResult} = $originalSend
+
   # ── 検査と実行の同一性（TOCTOU。docs/66 §8） ─────────────────────
   # ここより後ろで $agentSource を読み込むと本物の Skill を指す。差替えは一時配置だけに行う。
   if (-not (Get-SkillsRoot).StartsWith($root)) { throw '試験の配置が一時フォルダを指していません' }

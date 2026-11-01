@@ -3,6 +3,7 @@
 README の図と記述の各線を、実際の経路と証跡に対応づける。README の「いまの状態」はこの表に合わせる。
 
 - 作成: 2026-11-01。対象は `verify/dataflow-integration`（検証用の統合。#125 と #126 を含む）。
+- この PR の head での通しは流していない。通しの最終確認は #128 の統合先で行う（結果は #128 の docs/evidence/assist-integration-20261101/e2e/）。
 - 通しの E2E: `scripts/e2e/dataflow-integration.mjs`、結果は [docs/evidence/dataflow-20261101/](evidence/dataflow-20261101/)。`stub/`、`real-ai/` が修正後、`before-fix/` が修正前の再現、`round1-*/` が最初の通しの記録。
 
 ## 0. 実機で確かめた範囲（2026-11-01）

@@ -11,6 +11,7 @@ import { jsonbValue } from '../lib/jsonb-value.js';
 import { resetRateLimits } from '../lib/rate-limit.js';
 import { buildServer } from '../server.js';
 import { computeApprovalHash } from './approval.js';
+import { sweepResolveTimeouts } from './routes.js';
 
 const EMAIL = 'resolve-realpath@example.com';
 const OTHER_EMAIL = 'resolve-realpath-other@example.com';
@@ -230,6 +231,36 @@ describe('結果の出所', () => {
     const commands =
       await sql`SELECT id FROM device_commands WHERE session_id = ${started.session.id}`;
     expect(commands).toHaveLength(1);
+  });
+});
+
+describe('結果を見る画面が無くても実行の結果を失わない（docs/65 §0-1）', () => {
+  it('実行が終わっていれば、期限の処理は失敗にせず結果を取り込む', async () => {
+    const started = await startSession();
+    await approveY(started);
+    const command = await deliver();
+    const reported = await report(command.id, {
+      executionSource: 'endpoint_agent',
+      deviceId: DEVICE,
+      exitCode: 0,
+      durationMs: 1,
+      normalized: {
+        name: 'Spooler',
+        status: 'Running',
+        startType: 'Auto',
+        displayName: 'Print Spooler',
+      },
+    });
+    expect(reported.statusCode, reported.body).toBe(200);
+    await sql`UPDATE resolution_steps SET deadline_at = now() - interval '1 minute' WHERE id = ${started.step.id}`;
+    await sweepResolveTimeouts();
+    const [row] = await sql<{ status: string; error: string | null; source: string | null }[]>`
+      SELECT status, error, result_summary->>'executionSource' AS source
+      FROM resolution_steps WHERE id = ${started.step.id}
+    `;
+    expect(row?.error).toBeNull();
+    expect(row?.status).not.toBe('failed');
+    expect(row?.source).toBe('endpoint_agent');
   });
 });
 
