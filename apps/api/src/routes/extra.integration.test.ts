@@ -153,6 +153,7 @@ describe('追加の API integration', () => {
 
     const approveRes = await call(approver, 'POST', `/api/knowledge/${knowledgeId}/review`, {
       decision: 'approved',
+      contentHash: resubmit.json().knowledge.contentHash,
       comment: '修正を確認しました。',
       checklist: {
         reproducible: true,

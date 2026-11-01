@@ -13,6 +13,7 @@ import {
 import { clearUiRoleCache } from '../auth/ui.js';
 import { config } from '../config.js';
 import { sql } from '../db.js';
+import { knowledgeContentHash } from '../domain/knowledge-content.js';
 import { resetRateLimits } from '../lib/rate-limit.js';
 import { buildServer } from '../server.js';
 
@@ -75,9 +76,19 @@ function kbBody(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/** 承認者が画面で読んだ内容の指紋を、保存済みの行から取る（一覧の contentHash と同じ値）。 */
+async function withReviewedHash(payload: Record<string, unknown>) {
+  if (payload.status !== 'approved' || payload.contentHash) return payload;
+  const rows = await sql<
+    any[]
+  >`SELECT * FROM knowledge WHERE client_ref = ${String(payload.clientRef)}`;
+  return rows[0] ? { ...payload, contentHash: knowledgeContentHash(rows[0]) } : payload;
+}
+
 async function sync(email: string, payload: Record<string, unknown>) {
+  const body = await withReviewedHash(payload);
   as(email);
-  return app.inject({ method: 'POST', url: '/api/knowledge/ui-sync', payload });
+  return app.inject({ method: 'POST', url: '/api/knowledge/ui-sync', payload: body });
 }
 
 /** 作成者が申請し、別の承認者が承認する（正規の経路）。 */

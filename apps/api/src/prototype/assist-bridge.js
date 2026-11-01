@@ -1442,14 +1442,51 @@
     };
     if (extra && extra.comment) payload.comment = String(extra.comment).slice(0, 2000);
     if (extra && extra.checklist) payload.checklist = extra.checklist;
+    if (extra && extra.contentHash) payload.contentHash = extra.contentHash;
+    if (draft.sourceHandoverId) payload.sourceHandoverId = String(draft.sourceHandoverId);
     return payload;
   }
 
-  function ahSyncKnowledge(draft, status, extra) {
+  /**
+   * 画面に表示した下書きと同じ本文がサーバにあるときだけ、その指紋を返す（docs/64 §10）。
+   * 別の本文なら返さない（サーバが承認を拒否する）。自分の新しい下書きは行が無いので不要。
+   */
+  async function ahReviewedHash(draft) {
+    const data = await ahJsonFetch('/api/knowledge/pending');
+    const items = Array.isArray(data && data.items) ? data.items : [];
+    const payload = ahKnowledgeSyncPayload(draft, 'approved');
+    const row = items.find((item) => item.clientRef === payload.clientRef);
+    if (!row) return '';
+    const same =
+      row.title === payload.title &&
+      row.symptom === payload.symptom.trim() &&
+      row.cause === payload.cause.trim() &&
+      row.steps === payload.steps.trim();
+    return same ? String(row.contentHash || '') : '';
+  }
+
+  /** 引き受けた引継ぎの下書きなら、元の引継ぎを本文と一緒に送る（KB から案件へたどるため）。 */
+  function ahWithSourceHandover(draft) {
+    if (!draft || !draft.id) return draft;
+    try {
+      const target = ahSharedCaseForDraft(draft.id);
+      return target && target.handoverId
+        ? Object.assign({}, draft, { sourceHandoverId: target.handoverId })
+        : draft;
+    } catch (error) {
+      return draft;
+    }
+  }
+
+  async function ahSyncKnowledge(draft, status, extra) {
+    const options = Object.assign({}, extra);
+    if (status === 'approved' && !options.contentHash) {
+      options.contentHash = await ahReviewedHash(draft);
+    }
     return ahJsonFetch('/api/knowledge/ui-sync', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(ahKnowledgeSyncPayload(draft, status, extra)),
+      body: JSON.stringify(ahKnowledgeSyncPayload(ahWithSourceHandover(draft), status, options)),
     });
   }
 
@@ -1633,6 +1670,8 @@
       keywords: Array.isArray(source.keywords)
         ? source.keywords.map((keyword) => String(keyword)).slice(0, 12)
         : [],
+      // 承認者が読んだ内容の指紋。確認の後に本文が変わればサーバが 409 で止める（docs/64 §10）。
+      contentHash: source.contentHash || undefined,
       checklist: {
         reproducible: Boolean(checklist && checklist.reproducible),
         noSecrets: Boolean(checklist && checklist.noSecrets),

@@ -50,6 +50,11 @@ function parseData(data) {
 }
 
 /** DB の 1 行が AI の根拠に使えるか（knowledge-search.ts の条件と同じ）。使えない理由を返す。 */
+/** keywords は本文と別に数える（既存行は書き換えない。docs/64 §11）。 */
+export function keywordsHaveDeviceInfo(row) {
+  return (row.keywords ?? []).some((keyword) => containsDeviceInfo(String(keyword)));
+}
+
 export function dbRowBlocker(row) {
   if (row.status !== 'approved') return 'notApproved';
   if (!row.approver_id || !row.approved_at) return 'missingApprovalRecord';
@@ -132,6 +137,13 @@ export function summarize(states, knowledge, demoKeys, sharedGroups = []) {
       editedAfterApproval: 0,
       missingApprovalRecord: 0,
       usableWithoutKeywords: 0,
+      // 束縛（docs/64 §10）の導入前に公開された行。確認した本文の記録が無い。
+      approvedWithoutReviewedHash: 0,
+      // 公開された版の本文が、確認した本文の記録と一致するかは報告しない（版を含む指紋で別に照合する）。
+      approvedKeywordsWithDeviceInfo: 0,
+      notApprovedKeywordsWithDeviceInfo: 0,
+      // 元の引継ぎをたどれない画面経路の行。
+      uiRowsWithoutSource: 0,
       draftsWithoutClientRef: 0,
       approvedWithDeviceInfo: 0,
       notApprovedWithDeviceInfo: 0,
@@ -163,6 +175,12 @@ export function summarize(states, knowledge, demoKeys, sharedGroups = []) {
   }
 
   for (const row of knowledge) {
+    if (keywordsHaveDeviceInfo(row)) {
+      if (row.status === 'approved') report.db.approvedKeywordsWithDeviceInfo += 1;
+      else report.db.notApprovedKeywordsWithDeviceInfo += 1;
+    }
+    if (row.status === 'approved' && !row.reviewed_hash) report.db.approvedWithoutReviewedHash += 1;
+    if (row.client_ref && !row.source_handover_id) report.db.uiRowsWithoutSource += 1;
     if (rowHasDeviceInfo(row)) {
       if (row.status === 'approved') report.db.approvedWithDeviceInfo += 1;
       else report.db.notApprovedWithDeviceInfo += 1;
@@ -216,7 +234,11 @@ async function main() {
       states: await tx`SELECT data FROM prototype_states WHERE name = 'helpdesk'`,
       knowledge: await tx`
         SELECT k.status, k.client_ref, k.author_id, k.approver_id, k.approved_at, k.updated_at,
-               k.keywords, k.title, k.symptom, k.cause, k.steps, au.email AS author_email, pu.email AS approver_email
+               k.keywords, k.title, k.symptom, k.cause, k.steps, k.source_handover_id,
+               au.email AS author_email, pu.email AS approver_email,
+               (SELECT r.content_hash FROM knowledge_reviews r
+                 WHERE r.knowledge_id = k.id AND r.decision = 'approved'
+                 ORDER BY r.created_at DESC LIMIT 1) AS reviewed_hash
         FROM knowledge k
         LEFT JOIN users au ON au.id = k.author_id
         LEFT JOIN users pu ON pu.id = k.approver_id

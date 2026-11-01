@@ -186,3 +186,59 @@ AUDIT_DATABASE_URL=<接続先> SHARED_IDENTITY_GROUPS=<本番と同じ値> \
 
 B と D を同時に選ぶと、別の人物が画面で承認できるようになるまで本番の AI の根拠は 0 件になる。
 
+## 10. 承認を確認した本文へ束縛する
+
+| 項目 | 内容 |
+|---|---|
+| 修正前の失敗 | `POST /knowledge/:id/review` は本文も版も受け取らない。承認者が読んだ後に作成者が `ui-sync` で書き換えると、**未確認の本文がそのまま公開された**（`docs/evidence/kb-binding-20261101/vitest-red.txt`）。`ui-sync` は 4 項目を比べるが keywords を見ない |
+| 指紋 | `knowledgeContentHash`：ID、`version`、title、symptom、cause、steps、keywords の SHA-256。`version` は承認のときだけ増えるので、版だけでは束縛にならない |
+| 取得 | `GET /knowledge/pending`、`GET /knowledge/:id`（未公開の行のみ）、`ui-sync` の応答 |
+| 承認 | 両 API とも、トランザクションの中で `SELECT ... FOR UPDATE` の後の行で状態、端末情報、指紋を判定する。トランザクションの前に読んだ値を信用しない |
+| 不一致 | `409 KB_CONTENT_CHANGED`。行は変わらず、`knowledge_reviews` も増えない |
+| 省略 | `/review` の承認は常に、`ui-sync` は他人の KB の承認で必須（400）。省略で抜けられない。自分の KB の承認（`ALLOW_SELF_APPROVAL`）は同じトランザクションで保存する本文を指紋に記録するが、AI の根拠にはならない |
+| 記録 | `knowledge_reviews.content_hash`、`reviewed_version`、`published_version`。監査の `detail.contentHash`、`detail.publishedVersion`。既存行は NULL のまま |
+| 画面 | 承認者の一覧は一覧の指紋を送る。引継ぎの承認と下書きの承認は、押した時点の一覧を読み、**画面の本文と同じときだけ**指紋を送る |
+
+試験: `knowledge-approval-binding.integration.test.ts`。競合は sleep を使わず、別接続の未コミット更新で承認を行ロック待ちにして（`pg_stat_activity` で確認）から COMMIT する。待ちに入らなければ試験を失敗にする。
+
+## 11. keywords の保護
+
+keywords は本文の検査の対象外で、端末情報をそのまま保存し、AI の照合と閲覧の応答へ渡していた。**外部 AI のプロンプトには keywords を入れていない**（照合のスコアだけに使う）。
+
+| 段階 | 対策 |
+|---|---|
+| 保存（`PATCH`、`ui-sync`） | 端末情報や個人情報を含む語を除く（置き換えない。検索の語なので） |
+| 承認（両 API） | 保存済みの keywords に残っていれば `409 KB_CONTAINS_DEVICE_INFO` |
+| 閲覧、AI の照合 | 公開済みの行は応答と照合の前に除く。行は書き換えない |
+| 既存行 | **自動で更新しない。** 下の検出と移行案に分ける |
+
+#120 の `symptom_tags`（035）は固定の語彙で自由文ではないが、統合の後に同じ検査の対象か確かめる（未実施）。
+
+### 検出（読み取り専用）
+
+`scripts/report-state-kb-provenance.mjs` の件数。**本番 DB への実行はユーザーの判断で、この作業では実行していない。**
+
+| 出力 | 意味 |
+|---|---|
+| `db.approvedKeywordsWithDeviceInfo` | 公開済みで keywords に端末情報がある行 |
+| `db.notApprovedKeywordsWithDeviceInfo` | 未公開で同じ状態の行（承認時に 409 になる） |
+| `db.approvedWithoutReviewedHash` | 束縛の導入前に公開された行。確認した本文の記録が無い |
+| `db.uiRowsWithoutSource` | 元の引継ぎをたどれない画面経路の行 |
+
+### 移行案（未実施、判断が必要）
+
+1. 検出の件数を取る。0 件なら何もしない。
+2. keywords に端末情報のある行は、DB を直接書き換えず、担当者が起票し直して承認を取り直す。閲覧と AI の照合では既に除かれるので急がない。
+3. `content_hash` の無い公開行は「確認の記録なし」のまま残す。**過去の承認を確認済みと書き換えない。** 必要なら再承認する。
+
+## 12. KB から元の案件へたどる
+
+`knowledge.case_id` は `/review` の完了処理（案件の完了と起票のクローズ）に使っており、画面経路で設定すると案件が閉じる。そこで別の列にした。
+
+| 項目 | 内容 |
+|---|---|
+| 列 | `knowledge.source_handover_id`、`knowledge.source_case_ref`（migration 037） |
+| 設定 | 下書きを保存するとき、`sourceHandoverId` を**引き受けた本人の引継ぎに限って**受け付ける。案件は `case_handovers.case_id` を写し、クライアントの値を使わない。一致しなければ空のまま |
+| 公開 | `knowledgeDto` と `/knowledge/pending` では返さない。相談者へ案件番号を見せない |
+| 追跡 | KB → `source_handover_id` → `case_handovers.snapshot` と `case_id` → `resolution_sessions` → `resolution_steps` → `device_commands`。KB → `knowledge_reviews`（承認者、指紋、公開版） |
+

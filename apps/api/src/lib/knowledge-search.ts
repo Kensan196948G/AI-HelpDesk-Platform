@@ -1,7 +1,7 @@
 import { config } from '../config.js';
 import { type KnowledgeLike, keywordForms } from '../domain/ai.js';
 import { approvalOriginOf } from '../domain/approval-origin.js';
-import { redactKnowledgeText } from '../domain/pii.js';
+import { redactKnowledgeKeywords, redactKnowledgeText } from '../domain/pii.js';
 
 /**
  * これ未満の一致は根拠にしない。原因欄に意図語が 1 回出るだけの KB まで外部 AI へ送らない。
@@ -75,6 +75,11 @@ export function scoreKnowledge(
  *   同じトランザクションなので、updated_at（トリガ）は approved_at と一致する。
  * - 本文は DB の行から取り、外へ出す前に改めて伏せ字にする（端末情報も除く。既存の行は書き換えない）。
  */
+function usableKeywords(row: { keywords?: string[] | null; title: string }): string[] {
+  const keywords = redactKnowledgeKeywords(row.keywords);
+  return keywords.length > 0 ? keywords : keywordsFromTitle(redactKnowledgeText(row.title).text);
+}
+
 export async function findApprovedKnowledge(
   tx: any,
   text: string,
@@ -103,7 +108,8 @@ export async function findApprovedKnowledge(
     symptom: redactKnowledgeText(row.symptom).text,
     cause: redactKnowledgeText(row.cause).text,
     steps: redactKnowledgeText(row.steps).text,
-    keywords: row.keywords?.length ? row.keywords : keywordsFromTitle(row.title),
+    // 検索の語にも保存済みの端末情報を使わない（行は書き換えない）。
+    keywords: usableKeywords(row),
     version: row.version,
     // 根拠に使うかの判定は上の条件のまま。出所は事実として付ける。
     approvalOrigin: approvalOriginOf(
@@ -140,6 +146,9 @@ export async function listAiUsableRefs(
     count: rows.length,
     items: rows
       .filter((row) => row.client_ref)
-      .map((row) => ({ clientRef: String(row.client_ref), title: row.title })),
+      .map((row) => ({
+        clientRef: String(row.client_ref),
+        title: redactKnowledgeText(row.title).text,
+      })),
   };
 }

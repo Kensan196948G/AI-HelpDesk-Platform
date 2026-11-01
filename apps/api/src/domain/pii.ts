@@ -157,6 +157,15 @@ export function containsDeviceInfo(input: string): boolean {
 }
 
 /**
+ * keywords は検索の語なので、端末情報や個人情報を含む語は置き換えずに除く（docs/64 §11）。
+ * 既存の行は書き換えない。保存時と、閲覧・AI へ渡すときに通す。
+ */
+export function redactKnowledgeKeywords(keywords: readonly string[] | null | undefined): string[] {
+  if (!Array.isArray(keywords)) return [];
+  return keywords.filter((keyword) => !containsDeviceInfo(String(keyword)));
+}
+
+/**
  * 相談者へ見せない、入力の指示についての言及を AI の回答から除く。
  * 実 AI が、入力に指示が無くてもこの定型文を出した（docs/65 §7）。
  */

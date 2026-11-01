@@ -398,8 +398,8 @@ describe('assist-bridge: 引継ぎの承認と KB 公開を分ける', () => {
   function withFetch(status: number, body: unknown) {
     const calls: Array<{ url: string; body: Record<string, unknown> }> = [];
     const bridge = loadBridge({}, () => false, {
-      fetch: async (url: string, options: { body: string }) => {
-        calls.push({ url, body: JSON.parse(options.body) });
+      fetch: async (url: string, options?: { body?: string }) => {
+        calls.push({ url, body: options?.body ? JSON.parse(options.body) : {} });
         return new Response(JSON.stringify(body), { status });
       },
     });
@@ -410,8 +410,9 @@ describe('assist-bridge: 引継ぎの承認と KB 公開を分ける', () => {
     const { bridge, calls } = withFetch(200, { aiUsable: true });
     const result = await bridge.publishKnowledgeAfterHandover(full, checklist, 'ok');
     expect(result).toEqual({ published: true, aiUsable: true });
-    expect(calls[0]?.url).toBe('/api/knowledge/ui-sync');
-    expect(calls[0]?.body).toMatchObject({ clientRef: 'ui-DR-1', status: 'approved', checklist });
+    expect(calls[0]?.url).toBe('/api/knowledge/pending');
+    expect(calls[1]?.url).toBe('/api/knowledge/ui-sync');
+    expect(calls[1]?.body).toMatchObject({ clientRef: 'ui-DR-1', status: 'approved', checklist });
   });
 
   it('公開に失敗しても例外にせず、未公開として返す', async () => {

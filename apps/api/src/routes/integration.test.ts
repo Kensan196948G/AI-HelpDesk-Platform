@@ -137,6 +137,7 @@ describe('主要3 Flow（API integration）', () => {
 
     const approveRes = await call(approver, 'POST', `/api/knowledge/${knowledgeId}/review`, {
       decision: 'approved',
+      contentHash: submitRes.json().knowledge.contentHash,
       comment: '確認しました。',
       checklist: {
         reproducible: true,

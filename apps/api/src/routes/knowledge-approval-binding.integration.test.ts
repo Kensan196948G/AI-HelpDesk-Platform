@@ -283,7 +283,7 @@ describe('本文の束縛: POST /knowledge/:id/review', () => {
     expect(reviews[0]?.content_hash).toBe(item.contentHash);
     expect(reviews[0]?.published_version).toBe(2);
     const audit = await sql<any[]>`
-      SELECT detail FROM audit_logs
+      SELECT detail FROM audit_log
       WHERE target_id = ${id} AND action = 'knowledge.approve'
     `;
     const detail =
@@ -411,7 +411,11 @@ describe('メタデータの保護: keywords', () => {
       checklist: FULL_CHECKLIST,
       contentHash: item.contentHash,
     });
-    await sql`UPDATE knowledge SET keywords = ${['プリンタ', DEVICE_WORD]}::text[] WHERE id = ${id}`;
+    // 修正前に公開された行を作る（更新時刻で根拠から外れないよう承認時刻も揃える）。
+    await sql`
+      UPDATE knowledge SET keywords = ${['プリンタ', DEVICE_WORD]}::text[], approved_at = now()
+      WHERE id = ${id}
+    `;
     const res = await app.inject({
       method: 'GET',
       url: `/api/knowledge/${id}`,

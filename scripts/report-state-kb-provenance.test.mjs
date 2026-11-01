@@ -94,6 +94,10 @@ describe('report-state-kb-provenance', () => {
       editedAfterApproval: 0,
       missingApprovalRecord: 0,
       usableWithoutKeywords: 1,
+      approvedWithoutReviewedHash: expect.any(Number),
+      approvedKeywordsWithDeviceInfo: 0,
+      notApprovedKeywordsWithDeviceInfo: 0,
+      uiRowsWithoutSource: expect.any(Number),
       draftsWithoutClientRef: 0,
       approvedWithDeviceInfo: 0,
       notApprovedWithDeviceInfo: 0,
@@ -161,5 +165,27 @@ describe('承認の出所の件数（docs/64 §9）', () => {
   it('シードの利用者の ID はサーバの判定と同じ', async () => {
     const domain = await import('../apps/api/src/domain/approval-origin.ts');
     expect([...SEED_USER_IDS].sort()).toEqual(Object.values(domain.SEED_USER_IDS).sort());
+  });
+});
+
+describe('keywords と束縛の検出（docs/64 §10、§11）', () => {
+  it('keywords の端末情報と、確認の記録の無い公開行を数える', () => {
+    const row = {
+      status: 'approved',
+      client_ref: 'ui-DR-9',
+      author_id: 'a',
+      approver_id: 'b',
+      approved_at: new Date('2026-11-01T00:00:00Z'),
+      updated_at: new Date('2026-11-01T00:00:00Z'),
+      keywords: ['DESKTOP-ABC1234'],
+      title: 't',
+      symptom: 's',
+      cause: 'c',
+      steps: 'x',
+    };
+    const report = summarize([], [row], new Set(), []);
+    expect(report.db.approvedKeywordsWithDeviceInfo).toBe(1);
+    expect(report.db.approvedWithoutReviewedHash).toBe(1);
+    expect(report.db.uiRowsWithoutSource).toBe(1);
   });
 });
