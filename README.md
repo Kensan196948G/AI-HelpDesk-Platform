@@ -350,6 +350,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\windows\install-collector-tas
 - [受入照合](docs/11-acceptance.md) / [Round Log](docs/12-round-log.md) / [Blocker 報告](docs/13-blocked-report.md)
 - [既存 UI の適用](docs/14-prototype-ui-integration.md) / [AI 修復フロー](docs/16-ai-repair-flow.md) / [端末コマンド実行](docs/19-device-command-execution.md) / [社員名簿](docs/20-employee-directory.md)
 - [最終報告書](docs/21-final-report-export.md) / [STEP5 引継ぎと遠隔支援](docs/22-remote-assist-handover.md) / [RSP / MeshCentral 連携設計](docs/23-rsp-meshcentral-integration.md)
+- [本人同意付きフォルダ一覧](docs/62-consented-folder-access.md)
 
 ### 既知の制約
 
@@ -360,6 +361,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\windows\install-collector-tas
 - 遠隔支援（案内文の送信）は同じログイン内のデモです。画面共有（MeshCentral 等）は未実装です。
 - 最終報告書は画面の状態から生成します。サーバー側の案件台帳との突合・電子署名は未実装です（[docs/21](docs/21-final-report-export.md) §7-1）。
 - 添付実体・端末修復実行・外部ヘルプデスク基盤連携・SSO は対象外です。
+- 本人同意付きフォルダ一覧（[docs/62](docs/62-consented-folder-access.md)）は開発中で、既定で無効です（`FOLDER_ACCESS_ENABLED=false`。全 API が 404、画面の導線も出ません）。読み取り専用で、選んだフォルダ直下の名前と属性だけを扱います。Mirai-Info の貸与情報 API が `generatedAt` と鮮度の根拠 `dataAsOf.employeeDirectoryLastSeenAt` を返すまでは、検証環境の `FOLDER_ACCESS_ALLOW_UNVERIFIED_LEASE=true` でしか先へ進めません（本番では起動を拒否します）。
 - アクセス制御の正本は [docs/MailAddress.txt](docs/MailAddress.txt)。空・不存在の場合は **全拒否**（fail-closed）です。
   Cloudflare Access の allow ポリシーと同じ内容に保ち、変更時は両方を更新して API を再起動してください。
 
