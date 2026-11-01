@@ -6,6 +6,8 @@ README の図と記述の各線を、実際の経路と証跡に対応づける�
 - 追記: 2026-11-01。`verify/dataflow-assist-integration` で #120（`abb9a38`。#117 を含む。merge は `48cbff3`）を統合した。**この表の E2E の証跡は #120 の統合の前の記録で、統合の後に通しの E2E は流していない。** 統合の後の結果は vitest と pwsh の試験で、[docs/evidence/assist-integration-20261101/](evidence/assist-integration-20261101/) にある。3 経路の責任範囲は [docs/67](67-execution-paths.md)。
 - 通しの E2E: `scripts/e2e/dataflow-integration.mjs`、結果は [docs/evidence/dataflow-20261101/](evidence/dataflow-20261101/)。`stub/`、`real-ai/` が修正後、`before-fix/` が修正前の再現、`round1-*/` が最初の通しの記録。
 
+- 統合の後の通し E2E: `727bd13` で 88 項目、失敗 0（スタブ AI、模擬の実行器）。結果は [docs/evidence/assist-integration-20261101/e2e/result.json](evidence/assist-integration-20261101/e2e/result.json)。
+
 ## 0-1. 同じ実端末の結果から次の相談まで（2026-11-01、`ae9bcce`）
 
 **判定: 検証の条件で一本つながった。受入の完了ではない。** 実機の結果と mock の通しを継ぎ合わせず、同じ DB、同じ案件で連続して進めた。証跡は [docs/evidence/real-chain-20261101/](evidence/real-chain-20261101/)、手順は `scripts/e2e/real-device-chain.mjs`。
