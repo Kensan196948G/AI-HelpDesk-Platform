@@ -8,7 +8,9 @@ import { resetAllowlistCache } from '../auth/allowlist.js';
 import { clearUiRoleCache } from '../auth/ui.js';
 import { config } from '../config.js';
 import { sql } from '../db.js';
+import { resetAddressLimits } from '../folder-access/address-limit.js';
 import { sweepFolderAccess } from '../folder-access/service.js';
+import { hashSid } from '../folder-access/sign.js';
 import { resetRateLimits } from '../lib/rate-limit.js';
 import { computeScriptHash, computeSkillDefinitionHash } from '../resolve/skills.js';
 import { buildServer } from '../server.js';
@@ -321,15 +323,18 @@ const folderBase = (id: string, suffix = '') => `/api/folder-access/requests/${i
 const base = (id: string, suffix = '') => `/api/support-sessions/${id}${suffix}`;
 
 /** フォルダ同意が active になるところまで（Mock の RSP / PII / 名簿）。 */
-async function activeFolderRequest() {
-  const handoverId = await makeHandover();
+async function activeFolderRequest(existingHandoverId?: string) {
+  const handoverId = existingHandoverId ?? (await makeHandover());
   const created = await call(ASSIGNEE, 'POST', '/api/folder-access/requests', { handoverId });
   expect(created.statusCode, created.body).toBe(200);
   const requestId = created.json().request.id as string;
+  const enrolled = await call(OWNER, 'POST', folderBase(requestId, '/enroll-code'), {});
+  expect(enrolled.statusCode, enrolled.body).toBe(200);
   const registered = await app.inject({
     method: 'POST',
     url: '/api/device/agent/folder-helper/register',
     payload: {
+      enrollCode: enrolled.json().enrollCode,
       machineGuid: MACHINE,
       sid: SID,
       userName: USER,
@@ -484,6 +489,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   resetRateLimits();
+  resetAddressLimits();
   world = { commands: [], aiBodies: [], aiReply: {}, unexpected: [] };
   synth.throwOnRead = false;
   vi.stubGlobal('fetch', vi.fn(fakeFetch));
@@ -717,10 +723,22 @@ describe('共通支援セッション（Mock: ヘルパー / RSP / 名簿 / PII 
       const session = await readySession();
       await approveFirst(session);
       const op = (await poll(session.token)).skillOps?.[0] as Op;
+      // 別の依頼の導入コードで登録した、別の端末のヘルパー。
+      const otherHandover = await makeHandover();
+      const otherRequest = await call(ASSIGNEE, 'POST', '/api/folder-access/requests', {
+        handoverId: otherHandover,
+      });
+      const otherEnroll = await call(
+        OWNER,
+        'POST',
+        folderBase(otherRequest.json().request.id, '/enroll-code'),
+        {},
+      );
       const registered = await app.inject({
         method: 'POST',
         url: '/api/device/agent/folder-helper/register',
         payload: {
+          enrollCode: otherEnroll.json().enrollCode,
           machineGuid: OTHER_MACHINE,
           sid: OTHER_SID,
           userName: 'other',
@@ -1512,6 +1530,86 @@ describe('共通支援セッション（Mock: ヘルパー / RSP / 名簿 / PII 
         expect(ids).not.toContain(session.id);
         expect((await sessionRow(session.id))?.status).toBe('ready');
       });
+    });
+  });
+
+  describe('導入コードとの合流（docs/62 の導入コード）', () => {
+    const beginRequest = async () => {
+      const handoverId = await makeHandover();
+      const created = await call(ASSIGNEE, 'POST', '/api/folder-access/requests', { handoverId });
+      expect(created.statusCode, created.body).toBe(200);
+      return { handoverId, requestId: created.json().request.id as string };
+    };
+    const enrollAndRegister = async (requestId: string) => {
+      const enrolled = await call(OWNER, 'POST', folderBase(requestId, '/enroll-code'), {});
+      expect(enrolled.statusCode, enrolled.body).toBe(200);
+      const registered = await app.inject({
+        method: 'POST',
+        url: '/api/device/agent/folder-helper/register',
+        payload: {
+          enrollCode: enrolled.json().enrollCode,
+          machineGuid: MACHINE,
+          sid: SID,
+          userName: USER,
+          sessionId: SESSION,
+          sessionState: 'active',
+          hostname: HOST,
+          helperVersion: '0.2.0',
+        },
+      });
+      expect(registered.statusCode, registered.body).toBe(200);
+      return registered.json() as { helperId: string; helperToken: string; pairingCode: string };
+    };
+
+    it('導入コードで登録しただけ（未ペア）ではセッションを開始できず、操作も配られない', async () => {
+      const { handoverId, requestId } = await beginRequest();
+      const helper = await enrollAndRegister(requestId);
+      const created = await call(ASSIGNEE, 'POST', '/api/support-sessions', { handoverId });
+      expect(created.statusCode).toBe(409);
+      expect(created.json().error.code).toBe('FOLDER_REQUEST_NOT_ACTIVE');
+      const polled = await poll(helper.helperToken);
+      expect(polled.skillOps ?? []).toEqual([]);
+    });
+
+    it('セッションの最中に導入コードを発行してヘルパーを差し替えられない', async () => {
+      const session = await readySession();
+      const issued = await call(OWNER, 'POST', folderBase(session.requestId, '/enroll-code'), {});
+      expect(issued.statusCode).toBe(409);
+      const rows = await sql<{ helper_id: string }[]>`
+        SELECT helper_id FROM support_sessions WHERE id = ${session.id}
+      `;
+      expect(rows[0]?.helper_id).toBe(session.helperId);
+    });
+
+    it('終了の後の再導入は新しい依頼と新しいコードで行い、古いトークンは新しい操作を受けない', async () => {
+      const first = await readySession();
+      await call(OWNER, 'POST', base(first.id, '/revoke'), {});
+
+      const again = await activeFolderRequest(first.handoverId);
+      expect(again.helperId).not.toBe(first.helperId);
+      expect(again.requestId).not.toBe(first.requestId);
+      const created = await call(ASSIGNEE, 'POST', '/api/support-sessions', {
+        handoverId: first.handoverId,
+      });
+      expect(created.statusCode, created.body).toBe(200);
+      const id = created.json().session.id as string;
+      expect(id).not.toBe(first.id);
+      const consent = await call(OWNER, 'POST', base(id, '/consents/operation'), {
+        scope: 'read_only',
+        version: 'operation-consent/1',
+        ttlMinutes: 30,
+      });
+      expect(consent.statusCode, consent.body).toBe(200);
+      const proposal = await approveFirst({ id });
+      expect(proposal.skillId).toBe('folder.summary');
+
+      const stale = await poll(first.token);
+      expect(stale.revoked).toBe(true);
+      expect(stale.skillOps ?? []).toEqual([]);
+      const op = (await poll(again.token)).skillOps?.[0] as Op;
+      expect(op).toBeDefined();
+      expect((await start(first.token, op)).statusCode).toBe(404);
+      expect((await start(again.token, op)).statusCode).toBe(200);
     });
   });
 
@@ -2317,7 +2415,8 @@ describe('共通支援セッション（Mock: ヘルパー / RSP / 名簿 / PII 
       ]) {
         expect(text).not.toContain(canary);
       }
-      expect(text).toContain(createHash('sha256').update(SID).digest('hex'));
+      expect(text).toContain(hashSid(SID));
+      expect(text).not.toContain(createHash('sha256').update(SID).digest('hex'));
     });
   });
 

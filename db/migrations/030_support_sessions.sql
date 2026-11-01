@@ -1,4 +1,4 @@
--- 028: 共通支援セッションと AI 操作ループ（docs/63-assist-session.md）
+-- 030: 共通支援セッションと AI 操作ループ（docs/63-assist-session.md）
 --
 -- フラグ ASSIST_SESSION_ENABLED（既定 false）の裏で使う専用テーブル。追加のみ・冪等。
 --   - 既存テーブルを変更しない。device_commands / resolution_steps を参照しない（§6）。
