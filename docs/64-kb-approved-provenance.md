@@ -242,3 +242,7 @@ keywords は本文の検査の対象外で、端末情報をそのまま保存�
 | 公開 | `knowledgeDto` と `/knowledge/pending` では返さない。相談者へ案件番号を見せない |
 | 追跡 | KB → `source_handover_id` → `case_handovers.snapshot` と `case_id` → `resolution_sessions` → `resolution_steps` → `device_commands`。KB → `knowledge_reviews`（承認者、指紋、公開版） |
 
+## 13. 根拠の方針の判断（2026-11-01、ユーザー）
+
+選択肢 A と C を選んだ。**初期登録の KB と同一人物の別アカウントが承認した KB を、出所を表示したまま AI の根拠に使い続ける。** 判定の条件は変えない。別人物が画面で承認できるようになったら見直す。
+

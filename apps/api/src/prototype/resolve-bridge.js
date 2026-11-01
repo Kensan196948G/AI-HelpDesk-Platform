@@ -1277,6 +1277,8 @@
 
   try {
     if (typeof CONFIRM_INTENTS === 'object' && CONFIRM_INTENTS) delete CONFIRM_INTENTS.print;
+    // 画面から端末コマンドを作る経路は閉じた（docs/67）。原本の実行ボタンを出さない。
+    if (typeof REAL_EXEC_OPS === 'object' && REAL_EXEC_OPS) delete REAL_EXEC_OPS.SPOOLER_RESTART;
     if (typeof H === 'object' && H && typeof H.print === 'function') {
       H.print = (chat) => {
         void routePrintToRealDiagnosis(chat);
