@@ -84,7 +84,10 @@ systemctl --user list-timers ai-helpdesk-backup.timer
 | 保持 | 14 日（`AIHD_BACKUP_KEEP_DAYS`）。対象 DB 名の dump だけを削除 |
 | ログ | `~/backups/ai-helpdesk/backup.log`。成功は `OK`（DB 名・ファイル名・サイズ・SHA-256）、失敗は `FAIL stage=... exit=...`。接続文字列は出さない |
 | 認証 | `~/.config/ai-helpdesk/api.conf`（0600）から `DATABASE_URL` だけを読む。**シェルとして読み込まない**（systemd の EnvironmentFile 形式で、値の `|` などをシェルが解釈するため）。接続情報は libpq の環境変数で渡し、プロセス引数へ出さない |
-| 失敗時 | systemd の `ai-helpdesk-backup.service` が failed になる。`journalctl --user -u ai-helpdesk-backup.service` を確認 |
+| 失敗時 | systemd の `ai-helpdesk-backup.service` が failed になり、メールで通知する（下記）。`journalctl --user -u ai-helpdesk-backup.service` を確認 |
+| 通知 | 毎回の実行後に `ExecStopPost` で `scripts/backup-alert.mjs` が動き、バックアップの失敗か `/` の使用率 90% 超があるときだけメールを送る。両方なら 1 通にまとめる。何も無ければ送らない |
+| 通知の宛先 | `api.conf` の `OPS_ALERT_EMAIL`（カンマ区切り）。空なら `HANDOVER_NOTIFY_EMAIL`。送信は `SMTP_*` / `MAIL_FROM` を使う（SMTP のみ。`MAIL_TRANSPORT=disabled` / `sendmail` では送らず、`not-sent` を記録する） |
+| 通知の記録 | `backup.log` に `NOTIFY ... sent recipients=N` / `NOTIFY ... not-sent reason=...`、journal にも同じ結果。本文とログに秘密・接続文字列・メールアドレスを入れない |
 
 - 復元は従来どおり**新規 DB**に対して行う（`pg_restore -d aihd_restore <dump>`）。既存 DB へは上書きしない。
 - disk 使用量は 1 回あたり約 85KB（2026-10-25 実測）。保持 14 日でも数 MB。
@@ -98,11 +101,50 @@ systemctl --user list-timers ai-helpdesk-backup.timer
 3. テーブル一覧、列数、制約、インデックス、関数、トリガ、全テーブルの件数、`schema_migrations`、未検証の外部キー、監査チェーン（`verifyAuditChain`）を元 DB と照合する。
 4. 自分が作った DB だけを名前で確認して削除する。
 
-**失敗の検知**: `systemctl --user status ai-helpdesk-backup.service` が failed、`backup.log` に `FAIL`、または最新の `OK` が 26 時間以上前。**通知の仕組みはない**ので、自動で気づくことはできない。
+**失敗の検知**: バックアップが失敗するとメールで通知する（§4-1）。手動では `systemctl --user status ai-helpdesk-backup.service` が failed、`backup.log` に `FAIL`、または最新の `OK` が 26 時間以上前を確認する。
+
+**通知が届かない場合**: 通知はバックアップの実行に続けて動くので、次の場合は届かない。最新の `OK` の時刻で確認する。
+
+- timer が止まっている、サーバーが動いていない（実行自体が起きない）。
+- `WorkingDirectory` のチェックアウトまたは unit の node が無い（通知スクリプトも起動できない）。
+- SMTP の認証失敗など送信の失敗（`backup.log` に `not-sent` が残る）。
 
 ### 4-3. 障害記録（2026-10-29〜31）
 
-`api.conf` への `SHARED_IDENTITY_GROUPS=a|b` の追加（2026-10-28）以降、`backup-db.sh` が設定をシェルとして読み込んだ際に `|` をパイプと解釈し、終了コード 127 で失敗し続けた。最後の成功は 2026-10-28 02:30。失敗の間、誰にも通知されなかった。
+`api.conf` への `SHARED_IDENTITY_GROUPS=a|b` の追加（2026-10-28）以降、`backup-db.sh` が設定をシェルとして読み込んだ際に `|` をパイプと解釈し、終了コード 127 で失敗し続けた。最後の成功は 2026-10-28 02:30。失敗の間、誰にも通知されなかった。再発防止として通知を追加した（§4-4）。
+
+`set-smtp-password.sh` にも同じ読み込みがあり修正済み。`set -a; . ~/.config/ai-helpdesk/api.conf` と書いた手順（本書 §6-1、`docs/08-deployment.md`、`docs/22-remote-assist-handover.md`、`README.md`）は、同じ理由で今の `api.conf` では失敗する（未修正）。
+
+### 4-4. 通知の反映手順
+
+リポジトリの変更だけでは動かない。unit は `~/.config/systemd/user/` の複製を使い、`WorkingDirectory` はメイン作業ツリーなので、マージ後に次の順で反映する。サービスの再起動は要らない（oneshot は次回の timer から新しい定義で動く）。
+
+```bash
+# 1) メイン作業ツリーをマージ済みの main へ進める（nodemailer を使うので有無も確かめる）
+cd ~/Projects/Mirai-Admin-Platform/AI-HelpDesk-Platform
+git status --short
+git pull --ff-only origin main
+test -f node_modules/nodemailer/package.json
+
+# 2) 本文を確認する（送らない）
+SERVICE_RESULT=exit-code EXIT_CODE=exited EXIT_STATUS=1 node scripts/backup-alert.mjs --dry-run
+
+# 3) unit を置いて読み直す
+install -m 0644 ops/systemd/ai-helpdesk-backup.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user cat ai-helpdesk-backup.service | grep ExecStopPost
+systemctl --user list-timers ai-helpdesk-backup.timer --no-pager
+
+# 4) 配送を確認する（宛先へ実際に 1 通送る。件名に「配送確認の試験」と入る）
+node scripts/backup-alert.mjs --test
+tail -n 1 ~/backups/ai-helpdesk/backup.log
+```
+
+- 1) を 3) より先に行う。逆順でも `ExecStopPost` の `-` によりバックアップは失敗しないが、通知は出ない。
+- `scripts/install-backup-timer.sh` でも 3) の配置と読み直しを行う（`enable --now` も実行する）。
+- 宛先を分ける場合は 4) の前に `api.conf` へ `OPS_ALERT_EMAIL` を追加する。API は読まないので再起動は要らない。
+- node の版を上げたら、`ai-helpdesk-backup.service` の `ExecStopPost` の絶対パスも更新する（`ai-helpdesk-proxy.service` と同じ）。
+- 戻すとき: `git show <反映前の commit>:ops/systemd/ai-helpdesk-backup.service` の内容を `~/.config/systemd/user/` へ置いて `systemctl --user daemon-reload`。
 
 
 ## 5. インシデント対応（個人利用 MVP）
