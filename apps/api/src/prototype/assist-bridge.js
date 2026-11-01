@@ -37,6 +37,7 @@
       ahPendingApprovePayload(item, checklist, comment),
     pendingRejectPayload: (item, reason) => ahPendingRejectPayload(item, reason),
     pendingSectionHtml: (items, errorCode) => ahPendingSectionHtml(items, errorCode),
+    kbConsultText: (ticket) => ahKbConsultText(ticket),
     // 相談者の画面が受信箱を呼ばないことの単体テスト用（staff-access.test.ts）。
     fetchHandoverInbox: () => ahFetchHandoverInbox(),
     // 報告書へ渡す内容の確認用（scripts/e2e/wizard-real-path.mjs）。
@@ -1631,6 +1632,20 @@
     return payload;
   }
 
+  /**
+   * KB 下書きの症状の元（原本の createDraft が配信時の差し替えで呼ぶ）。
+   * 引継ぎ本文には本人が担当者への共有に同意した端末・PC 基本情報が入るが、KB は別の相談者と
+   * 外部 AI へ渡るので使わない。相談内容の節だけを取り、無ければ件名にする（docs/64 §8）。
+   */
+  function ahKbConsultText(ticket) {
+    const body = String((ticket && ticket.body) || '');
+    const consult = /【相談内容】([\s\S]*?)(?=\n?【|$)/.exec(body);
+    if (consult && consult[1].trim()) return consult[1].trim();
+    if (body.includes('【')) return String((ticket && ticket.subject) || '');
+    return body;
+  }
+  window.__AIHD_KB_CONSULT__ = ahKbConsultText;
+
   /** 承認者ビューに差し込む「サーバ下書き」セクションの HTML（純粋関数・テスト対象）。 */
   function ahPendingSectionHtml(items, errorCode) {
     const list = Array.isArray(items) ? items : [];
@@ -1697,6 +1712,14 @@
           ahEsc(status || '-') +
           (item.createdAt ? '／作成 ' + ahEsc(String(item.createdAt)) : '') +
           '</div>' +
+          // 承認者が本文を確認できるように出す（端末情報が残っていないかの確認を含む）。
+          '<dl class="kv" style="margin:6px 0"><dt>症状</dt><dd>' +
+          ahEsc(item.symptom || '-') +
+          '</dd><dt>原因</dt><dd>' +
+          ahEsc(item.cause || '-') +
+          '</dd><dt>手順</dt><dd style="white-space:pre-wrap">' +
+          ahEsc(item.steps || '-') +
+          '</dd></dl>' +
           checks +
           actions +
           '</li>'

@@ -1,5 +1,5 @@
 import { type KnowledgeLike, keywordForms } from '../domain/ai.js';
-import { redactPII } from '../domain/pii.js';
+import { redactKnowledgeText } from '../domain/pii.js';
 
 /**
  * これ未満の一致は根拠にしない。原因欄に意図語が 1 回出るだけの KB まで外部 AI へ送らない。
@@ -71,7 +71,7 @@ export function scoreKnowledge(
  * - 承認者 ≠ 作成者（職務分離。docs/58 のとおりアカウント単位）。
  * - 承認時の版のまま（approved_at より後に行が更新されていない）。承認と version 加算は
  *   同じトランザクションなので、updated_at（トリガ）は approved_at と一致する。
- * - 本文は DB の行から取り、外へ出す前に改めて伏せ字にする。
+ * - 本文は DB の行から取り、外へ出す前に改めて伏せ字にする（端末情報も除く。既存の行は書き換えない）。
  */
 export async function findApprovedKnowledge(
   tx: any,
@@ -94,10 +94,10 @@ export async function findApprovedKnowledge(
   const candidates: KnowledgeLike[] = rows.map((row) => ({
     id: row.id,
     kbNo: row.kb_no,
-    title: redactPII(row.title).text,
-    symptom: redactPII(row.symptom).text,
-    cause: redactPII(row.cause).text,
-    steps: redactPII(row.steps).text,
+    title: redactKnowledgeText(row.title).text,
+    symptom: redactKnowledgeText(row.symptom).text,
+    cause: redactKnowledgeText(row.cause).text,
+    steps: redactKnowledgeText(row.steps).text,
     keywords: row.keywords?.length ? row.keywords : keywordsFromTitle(row.title),
     version: row.version,
   }));

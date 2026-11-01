@@ -69,6 +69,30 @@ function isSharedIdentity(row, sharedGroups) {
   );
 }
 
+/** apps/api/src/domain/pii.ts の KNOWLEDGE_RULES と redactPII の一部と同じ判定（試験で一致を確かめる）。 */
+const DEVICE_INFO_PATTERNS = [
+  /【(?:端末|PC基本情報[^】]*|実診断の結果|AIの診断結果|対応案[^】]*|添付[^】]*)】/,
+  /(?:コンピュータ名|コンピューター名|ホスト名|hostname|シリアル番号|シリアル|serial(?: ?number)?|MACアドレス|取得日時)\s*[:：=]\s*[^\s、。／/]+/i,
+  /WEB-[0-9A-F]{8}(?![0-9A-F])/i,
+  /(?<![0-9a-f-])[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?![0-9a-f-])/i,
+  /MRK-[A-Z0-9-]+/i,
+  /(?<![A-Z0-9])MK\d{4,6}(?!\d)/i,
+  /(?<![A-Z0-9-])(?:DESKTOP|LAPTOP|WIN|WORKSTATION)-[A-Z0-9]{3,}(?![A-Z0-9-])/i,
+  /(?<![\w.-])[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.(?:local|lan|corp|internal|intranet)(?![\w.-])/i,
+  /(?<![0-9A-F:-])[0-9A-F]{2}(?:[:-][0-9A-F]{2}){5}(?![0-9A-F:-])/i,
+  /[A-Z0-9._%+-]+[@＠][A-Z0-9.-]+\.[A-Z]{2,}/i,
+  /(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.])/,
+];
+
+/** 本文に端末情報が含まれるか。 */
+export function countsDeviceInfo(text) {
+  return DEVICE_INFO_PATTERNS.some((pattern) => pattern.test(String(text ?? '')));
+}
+
+function rowHasDeviceInfo(row) {
+  return [row.title, row.symptom, row.cause, row.steps].some(countsDeviceInfo);
+}
+
 /** 件数を集計する（純粋関数）。 */
 export function summarize(states, knowledge, demoKeys, sharedGroups = []) {
   const byRef = new Map(
@@ -93,6 +117,8 @@ export function summarize(states, knowledge, demoKeys, sharedGroups = []) {
       missingApprovalRecord: 0,
       usableWithoutKeywords: 0,
       draftsWithoutClientRef: 0,
+      approvedWithDeviceInfo: 0,
+      notApprovedWithDeviceInfo: 0,
     },
   };
 
@@ -119,6 +145,10 @@ export function summarize(states, knowledge, demoKeys, sharedGroups = []) {
   }
 
   for (const row of knowledge) {
+    if (rowHasDeviceInfo(row)) {
+      if (row.status === 'approved') report.db.approvedWithDeviceInfo += 1;
+      else report.db.notApprovedWithDeviceInfo += 1;
+    }
     if (row.status !== 'approved') {
       if (!row.client_ref && row.status !== 'rejected') report.db.draftsWithoutClientRef += 1;
       continue;
@@ -165,7 +195,7 @@ async function main() {
       states: await tx`SELECT data FROM prototype_states WHERE name = 'helpdesk'`,
       knowledge: await tx`
         SELECT k.status, k.client_ref, k.author_id, k.approver_id, k.approved_at, k.updated_at,
-               k.keywords, au.email AS author_email, pu.email AS approver_email
+               k.keywords, k.title, k.symptom, k.cause, k.steps, au.email AS author_email, pu.email AS approver_email
         FROM knowledge k
         LEFT JOIN users au ON au.id = k.author_id
         LEFT JOIN users pu ON pu.id = k.approver_id

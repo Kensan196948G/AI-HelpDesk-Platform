@@ -10,7 +10,7 @@ import { sameHuman } from '../auth/shared-identity.js';
 import { authenticateUi } from '../auth/ui.js';
 import { config } from '../config.js';
 import { sql } from '../db.js';
-import { redactPII } from '../domain/pii.js';
+import { containsDeviceInfo, redactKnowledgeText } from '../domain/pii.js';
 import { ApiError, badRequest, conflict, notFound } from '../errors.js';
 import { appendAudit } from '../lib/audit-log.js';
 import { jsonbValue } from '../lib/jsonb-value.js';
@@ -84,6 +84,34 @@ async function loadKnowledge(id: string) {
   return rows[0] ?? null;
 }
 
+/** 公開済みの行を相談者へ返すときも、保存済みの端末情報を見せない（行は書き換えない）。 */
+function publicKnowledge(row: any): any {
+  if (row.status !== 'approved') return row;
+  return {
+    ...row,
+    title: redactKnowledgeText(row.title).text,
+    symptom: redactKnowledgeText(row.symptom).text,
+    cause: redactKnowledgeText(row.cause).text,
+    steps: redactKnowledgeText(row.steps).text,
+  };
+}
+
+/** 承認の前に、保存済みの本文に端末情報が無いことを確かめる。 */
+function assertNoDeviceInfo(row: {
+  title: string;
+  symptom: string;
+  cause: string;
+  steps: string;
+}): void {
+  if ([row.title, row.symptom, row.cause, row.steps].some(containsDeviceInfo)) {
+    throw new ApiError(
+      409,
+      'KB_CONTAINS_DEVICE_INFO',
+      '本文に端末情報が含まれているため承認できません。差し戻して起票し直してください。',
+    );
+  }
+}
+
 export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
   app.get('/knowledge', { preHandler: authenticate }, async (request) => {
     const user = request.authUser!;
@@ -100,7 +128,7 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
         k.updated_at DESC
       LIMIT ${query.limit}
     `;
-    return { knowledge: rows.map(knowledgeDto) };
+    return { knowledge: rows.map(publicKnowledge).map(knowledgeDto) };
   });
 
   /**
@@ -183,7 +211,7 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
       ORDER BY r.created_at DESC
     `;
     return {
-      knowledge: knowledgeDto(row),
+      knowledge: knowledgeDto(publicKnowledge(row)),
       reviews: reviews.map((review) => ({
         id: review.id,
         decision: review.decision,
@@ -207,10 +235,10 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
       throw conflict('承認待ち・公開済みのナレッジは編集できません。');
     }
 
-    const title = input.title !== undefined ? redactPII(input.title) : null;
-    const symptom = input.symptom !== undefined ? redactPII(input.symptom) : null;
-    const cause = input.cause !== undefined ? redactPII(input.cause) : null;
-    const steps = input.steps !== undefined ? redactPII(input.steps) : null;
+    const title = input.title !== undefined ? redactKnowledgeText(input.title) : null;
+    const symptom = input.symptom !== undefined ? redactKnowledgeText(input.symptom) : null;
+    const cause = input.cause !== undefined ? redactKnowledgeText(input.cause) : null;
+    const steps = input.steps !== undefined ? redactKnowledgeText(input.steps) : null;
 
     await sql.begin(async (tx) => {
       // 確認と更新の間に申請・承認されていたら更新しない。
@@ -283,6 +311,7 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
     }
 
     if (input.decision === 'approved') {
+      assertNoDeviceInfo(row);
       const checklist = input.checklist;
       if (
         !checklist.reproducible ||
@@ -402,10 +431,10 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
           ? await requireApproverActor(email, request.uiRoles)
           : await requireHelpdeskActor(email);
 
-      const title = redactPII(input.title);
-      const symptom = redactPII(input.symptom);
-      const cause = redactPII(input.cause);
-      const steps = redactPII(input.steps);
+      const title = redactKnowledgeText(input.title);
+      const symptom = redactKnowledgeText(input.symptom);
+      const cause = redactKnowledgeText(input.cause);
+      const steps = redactKnowledgeText(input.steps);
 
       const authorId = await ensureAuthorUser(email, actor.name ?? email);
 
@@ -450,6 +479,8 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
       if (isDecision && existing && !decidableStatuses.includes(existing.status)) {
         throw conflict('承認待ちのナレッジではありません。');
       }
+      // 修正前に保存された行に端末情報が残っていれば公開しない（理由を返して起票し直してもらう）。
+      if (input.status === 'approved' && lockContent) assertNoDeviceInfo(existing);
       // 承認者が確認した本文と保存済みの本文が違えば公開しない（確認後の更新を見逃さない）。
       if (
         input.status === 'approved' &&

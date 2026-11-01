@@ -1,6 +1,6 @@
 import { sameHuman } from '../auth/shared-identity.js';
 import { type FinalReport, FinalReportSchema } from '../domain/final-report.js';
-import { redactPII } from '../domain/pii.js';
+import { redactKnowledgeText, redactPII } from '../domain/pii.js';
 import { type CaseSnapshot, normalizeState } from '../lib/case-handover.js';
 import type { HandoverRow } from '../routes/case-handovers.js';
 import type { OutputSource, TerminalSessionRow, TerminalStepRow } from './session.js';
@@ -361,14 +361,14 @@ export function buildKnowledgeDraft(input: KnowledgeDraftInput): KnowledgeDraftC
   const snapshot = normalizeState(input.handover.snapshot) as CaseSnapshot | null;
   const caseRecord = record(snapshot?.case) ?? {};
   const subject = text(caseRecord.subject, 160) || text(input.handover.case_id, 160);
-  const title = redactPII(
+  const title = redactKnowledgeText(
     text(input.title, 160) || (subject.includes('手順') ? subject : `${subject}の確認手順`),
   ).text;
-  const symptom = redactPII(text(caseRecord.body, 4000)).text;
+  const symptom = redactKnowledgeText(text(caseRecord.body, 4000)).text;
 
   const recorded = input.steps.filter((step) => step.recorded_at);
   const last = recorded.at(-1);
-  const cause = redactPII(
+  const cause = redactKnowledgeText(
     text(input.cause, 4000) ||
       text(last?.note, 4000) ||
       '（原因は記録されていません。担当者の補足を追記してください）',
@@ -385,7 +385,7 @@ export function buildKnowledgeDraft(input: KnowledgeDraftInput): KnowledgeDraftC
       .filter(Boolean)
       .join('\n');
   });
-  const steps = redactPII(clipped(lines.join('\n'), 8000)).text;
+  const steps = redactKnowledgeText(clipped(lines.join('\n'), 8000)).text;
 
   const category = text(caseRecord.cat, 40);
   const keywords = Array.from(

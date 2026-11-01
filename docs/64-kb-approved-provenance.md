@@ -101,3 +101,42 @@ AUDIT_DATABASE_URL=<接続先> SHARED_IDENTITY_GROUPS=<本番と同じ値> \
 - `findApprovedKnowledge` は更新順に 100 件までを照合する。承認済みが 100 件を超えると古い KB は候補から外れる。
 - 職務分離はアカウント単位である。[docs/61](./61-approvers-and-owners-20261031.md) §7 のとおり、画面から承認できるのは現在人物 A の 2 アカウントだけなので、同一人物の承認を除くと新しい KB が AI に届かなくなる。別の人物が画面で承認できるようになった時点で、除外を検討する。
 - `MIN_SCORE` は案件診断（`cases.ts`）が示す KB にも適用される。`scripts/eval` は実行していない。
+
+## 8. KB に相談者の端末情報を入れない（2026-11-01、通しの E2E で発見）
+
+### 問題
+
+原本の `createDraft` は引継ぎ本文（`t.body`）を 180 字で切って症状欄にする。引継ぎ本文には本人が**担当者への共有**に同意した「端末」「PC 基本情報」「実診断の結果」が入る。既定の共有では `【端末】WEB-…／…【PC基本情報（事前取得）】取得日時…` が症状になり、承認後は全相談者の相談の AI 入力、つまり外部 AI へ渡っていた（`docs/evidence/dataflow-20261101/before-fix/`）。実行 ID が入らなかったのは 180 字で切れたからにすぎない。
+
+### 多層の対策
+
+| 層 | 対策 | 場所 |
+|---|---|---|
+| 下書きの作成（画面） | 症状の元を引継ぎ本文の「相談内容」の節だけにする。節が無ければ件名。節の無い本文（代行受付など）はそのまま | `prototype.ts` の `patchKbDraftBody` + `assist-bridge.js` の `ahKbConsultText` |
+| 下書きの保存 | `redactKnowledgeText` で除去（`ui-sync`、`PATCH /knowledge/:id`、`/cases/:id/knowledge-draft`、端末記録の下書き） | `domain/pii.ts`、`routes/knowledge.ts`、`routes/desk.ts`、`terminal/report.ts` |
+| 承認 | 別人の承認の前に保存済みの本文を検査し、残っていれば `409 KB_CONTAINS_DEVICE_INFO`（`ui-sync`、`/knowledge/:id/review`）。自動で書き換えて公開しない | `routes/knowledge.ts` |
+| AI 入力の構築 | `findApprovedKnowledge` で除去（`/api/ai/answer`、案件診断、解決ループの提案）。行は書き換えない | `lib/knowledge-search.ts` |
+| 公開済みの閲覧 | `GET /knowledge`、`GET /knowledge/:id` の公開済みの行でも除去して返す | `routes/knowledge.ts` |
+| 承認者の確認 | ⑥ の「サーバ下書き」は題名と作成者だけで本文が出ず、確認しないまま承認していた。症状・原因・手順を表示する | `assist-bridge.js` |
+
+### `redactKnowledgeText` が除くもの
+
+`redactPII` の対象（メール、電話、IP、カード、資産番号、パスワード）に加えて次を除く。
+
+- 引継ぎ本文の節: 【端末】【PC基本情報…】【実診断の結果】【AIの診断結果】【対応案…】【添付…】
+- ラベル付きの値: コンピュータ名、ホスト名、シリアル番号、MAC アドレス、取得日時
+- 形で分かるもの: `WEB-XXXXXXXX`、UUID（端末 ID と実行 ID）、`MRK-…`、`MK` + 数字（社員番号）、`DESKTOP-` / `LAPTOP-` / `WIN-` / `WORKSTATION-`、`*.local` / `.lan` / `.corp` / `.internal` / `.intranet`、MAC アドレス
+
+**限界:** 任意のホスト名（ラベルの無い `FINANCE7` など）は形から判別できない。氏名は対象外（原本の `maskPII` が担当者名と依頼者名を伏せる）。**残る防御は承認者の確認である。**
+
+### 既存データと移行案
+
+既存の行は書き換えない。件数は読み取り専用スクリプトで確認する（§4 の手順と同じ。出力は件数だけ）。
+
+| 出力 | 意味 | 移行案 |
+|---|---|---|
+| `db.approvedWithDeviceInfo` | 公開済みの行に端末情報が残る | AI 入力と閲覧では除去済みなので緊急性は下がるが、行には残る。担当者が内容を確認し、新しい下書きとして起票し直して別人が承認する。古い行の扱い（残す、取り下げ）はユーザーが判断する |
+| `db.notApprovedWithDeviceInfo` | 下書き・申請中の行に残る | 別人の承認は `KB_CONTAINS_DEVICE_INFO` で止まる。差し戻すと、作成者の次の保存で除去される |
+
+**本番 DB への実行はユーザーの判断で行う。この PR の作業では実行していない。**
+

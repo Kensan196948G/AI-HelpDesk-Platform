@@ -4,7 +4,7 @@ import { requireRole } from '../auth/session.js';
 import { sql } from '../db.js';
 import { detectIntent } from '../domain/ai.js';
 import { CATEGORY_META } from '../domain/constants.js';
-import { redactPII } from '../domain/pii.js';
+import { redactKnowledgeText, redactPII } from '../domain/pii.js';
 import { signalAfterResolution } from '../domain/signal.js';
 import { conflict, notFound } from '../errors.js';
 import { appendAudit } from '../lib/audit-log.js';
@@ -223,12 +223,12 @@ export async function deskRoutes(app: FastifyInstance): Promise<void> {
 
       const meta = CATEGORY_META[found.category as keyof typeof CATEGORY_META];
       const intent = detectIntent(found.subject, found.body);
-      const title = redactPII(
+      const title = redactKnowledgeText(
         found.subject.includes('手順') ? found.subject : `${found.subject}の確認手順`,
       );
-      const symptom = redactPII(found.body);
-      const cause = redactPII(resolution.cause);
-      const steps = redactPII(resolution.steps);
+      const symptom = redactKnowledgeText(found.body);
+      const cause = redactKnowledgeText(resolution.cause);
+      const steps = redactKnowledgeText(resolution.steps);
       const keywords = Array.from(
         new Set([...intent.keywords, meta.shortLabel, found.subject].filter(Boolean)),
       ).slice(0, 12);

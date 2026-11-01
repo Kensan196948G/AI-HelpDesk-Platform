@@ -71,6 +71,26 @@ export function patchKbLabels(html: string): string {
 }
 
 /**
+ * 原本の createDraft は引継ぎ本文をそのまま KB の症状にする。引継ぎ本文には相談者の端末 ID と
+ * PC 基本情報が入り、KB は承認後に別の相談者と外部 AI へ渡るので、相談内容だけを使う（docs/64 §8）。
+ * 原本の「③ 引継ぎ」の担当者欄の既定値も本人にする（docs/14 §2-15）。
+ */
+export const KB_DRAFT_BODY_ORIGINAL = 'const body=t.body+((t.extra&&t.extra.length)';
+const KB_DRAFT_BODY_PATCH =
+  "const body=(typeof __AIHD_KB_CONSULT__==='function'?__AIHD_KB_CONSULT__(t):String(t.subject||''))+((t.extra&&t.extra.length)";
+const ASSIGNEE_ORIGINAL = "<option value=\"${s.name}\" ${s.name===t.suggest?'selected':''}>";
+const ASSIGNEE_PATCH =
+  "<option value=\"${s.name}\" ${(typeof __AIHD_ASSIGNEE__==='function'?__AIHD_ASSIGNEE__(s.name,t.suggest):s.name===t.suggest)?'selected':''}>";
+
+export function patchKbDraftBody(html: string): string {
+  return html
+    .split(KB_DRAFT_BODY_ORIGINAL)
+    .join(KB_DRAFT_BODY_PATCH)
+    .split(ASSIGNEE_ORIGINAL)
+    .join(ASSIGNEE_PATCH);
+}
+
+/**
  * 依頼者以外の「操作する人」で案件を開くと、画面が `USERS[c.userId]` を解決できず
  * `asideHtml` で TypeError になる（2026-10-25 に実ブラウザで再現）。
  * 社員名簿から案件の依頼者を解決し、解決できない場合も表示を壊さないようにする。
@@ -263,6 +283,7 @@ function renderPrototype(boot: {
   html = patchStateLoad(html);
   html = patchCaseUserResolution(html);
   html = patchKbLabels(html);
+  html = patchKbDraftBody(html);
   // 最初のアプリ <script> の直前に、サーバー保持の状態を localStorage へ入れる。
   // 置換文字列は `$'` `$&` `$$` を特殊パターンとして解釈するため、利用者データを含む文字列は関数で渡す。
   html = html.replace('<script>', () => `${bootScript}<script>`);
