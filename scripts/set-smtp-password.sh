@@ -2,7 +2,7 @@
 # Google アプリパスワード（SMTP）を設定する。
 #
 #   bash scripts/set-smtp-password.sh
-#   bash scripts/set-smtp-password.sh --test-to k-aritoh@mirai-const.co.jp
+#   bash scripts/set-smtp-password.sh --test-to user@example.com
 #   bash scripts/set-smtp-password.sh --file ~/新パスワード.txt
 #
 # やること:
@@ -13,6 +13,8 @@
 #   5) --test-to があれば、そのアドレスへテスト送信する
 #
 # 秘密はログ・画面・引数履歴に残さない（履歴に残る --password は用意していない）。
+# api.conf は systemd の EnvironmentFile 形式なので、シェルとして読み込まない
+# （値の `|` などをシェルが解釈して失敗する。backup-db.sh と同じ理由）。
 set -euo pipefail
 
 CONF="${HOME}/.config/ai-helpdesk/api.conf"
@@ -23,7 +25,7 @@ SKIP_VERIFY=0
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 usage() {
-  sed -n '2,16p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  sed -n '2,15p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
   exit 0
 }
 
@@ -40,6 +42,8 @@ while [ $# -gt 0 ]; do
 done
 
 [ -f "$CONF" ] || { echo "設定ファイルがありません: $CONF" >&2; exit 1; }
+# 後の処理は REPO_ROOT へ移動してから読むので、相対パスのまま渡さない。
+CONF="$(realpath -- "$CONF")"
 
 # ---- 1) パスワードの受け取り ------------------------------------------------
 PW=""
@@ -68,8 +72,9 @@ chmod 600 "$BK"
 
 TMP="$(mktemp)"
 chmod 600 "$TMP"
-awk -v key="SMTP_PASS" -v val="$PW" '
-  BEGIN { done = 0 }
+# 新しいパスワードをプロセス引数へ出さないよう、環境変数で awk へ渡す。
+AIHD_NEW_SMTP_PASS="$PW" awk -v key="SMTP_PASS" '
+  BEGIN { done = 0; val = ENVIRON["AIHD_NEW_SMTP_PASS"] }
   $0 ~ "^" key "=" { print key "=" val; done = 1; next }
   { print }
   END { if (!done) print key "=" val }
@@ -79,23 +84,14 @@ chmod 600 "$CONF"
 
 echo "✅ SMTP_PASS を更新しました（バックアップ: $(basename "$BK")）"
 
-set -a
-# shellcheck source=/dev/null
-. "$CONF"
-set +a
-
 # ---- 3) 認証だけ確認（メールは送らない） -----------------------------------
 if [ "$SKIP_VERIFY" -eq 0 ]; then
   echo "… SMTP の認証を確認しています（送信はしません）"
-  ( cd "$REPO_ROOT" && node --input-type=module -e '
-    import nodemailer from "nodemailer";
-    const t = nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: Number(process.env.SMTP_PORT),
-      secure: process.env.SMTP_SECURE === "true",
-      auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-    });
-    try { await t.verify(); console.log("✅ 認証 OK:", process.env.SMTP_USER); }
+  ( cd "$REPO_ROOT" && AIHD_ENV_FILE="$CONF" node --input-type=module -e '
+    import { createSmtpTransport, readEnvFile } from "./scripts/lib/ops-mail.mjs";
+    const env = readEnvFile(process.env.AIHD_ENV_FILE);
+    const t = createSmtpTransport(env);
+    try { await t.verify(); console.log("✅ 認証 OK:", env.SMTP_USER); }
     catch (e) { console.error("❌ 認証 NG:", String(e.message).slice(0, 140)); process.exit(1); }
   ' ) || { echo "認証に失敗しました。設定は更新済みですが、サービスは再起動していません。" >&2; exit 1; }
 fi
@@ -115,16 +111,12 @@ fi
 # ---- 5) テスト送信（任意） -------------------------------------------------
 if [ -n "$TEST_TO" ]; then
   echo "… テスト送信: ${TEST_TO}"
-  ( cd "$REPO_ROOT" && TEST_TO="$TEST_TO" node --input-type=module -e '
-    import nodemailer from "nodemailer";
-    const t = nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: Number(process.env.SMTP_PORT),
-      secure: process.env.SMTP_SECURE === "true",
-      auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-    });
+  ( cd "$REPO_ROOT" && AIHD_ENV_FILE="$CONF" TEST_TO="$TEST_TO" node --input-type=module -e '
+    import { createSmtpTransport, fromAddress, readEnvFile } from "./scripts/lib/ops-mail.mjs";
+    const env = readEnvFile(process.env.AIHD_ENV_FILE);
+    const t = createSmtpTransport(env);
     const info = await t.sendMail({
-      from: process.env.MAIL_FROM,
+      from: fromAddress(env),
       to: process.env.TEST_TO,
       subject: "[AIヘルプデスク] アプリパスワード更新テスト",
       text: "新しいアプリパスワードでの送信テストです。このメールが届けば設定完了です。",

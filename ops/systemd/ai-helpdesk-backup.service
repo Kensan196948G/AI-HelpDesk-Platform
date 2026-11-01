@@ -9,5 +9,9 @@ WorkingDirectory=/home/kensan/Projects/Mirai-Admin-Platform/AI-HelpDesk-Platform
 Environment=AIHD_ENV_FILE=%h/.config/ai-helpdesk/api.conf
 Environment=AIHD_BACKUP_KEEP_DAYS=14
 ExecStart=/bin/bash scripts/backup-db.sh
+# 成否に関わらず実行し、失敗とディスク残量の警告をメールで知らせる（SERVICE_RESULT で判定）。
+# systemd の PATH に nvm の node は無いので絶対パスで指定する（ai-helpdesk-proxy.service と同じ）。
+# 先頭の - により、送信の失敗でバックアップの結果を変えない。
+ExecStopPost=-/home/kensan/.nvm/versions/node/v22.22.3/bin/node scripts/backup-alert.mjs
 NoNewPrivileges=true
 PrivateTmp=true
