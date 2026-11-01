@@ -574,8 +574,8 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
       });
 
       const updated = await loadKnowledge(savedId);
-      // AI の根拠に使われるか（findApprovedKnowledge と同じ職務分離の条件）。画面の案内に使う。
-      const aiUsable = updated?.status === 'approved' && !selfApproved && !sharedIdentity;
+      // AI の根拠に使われるか（findApprovedKnowledge と同じ、アカウント単位の職務分離）。画面の案内に使う。
+      const aiUsable = updated?.status === 'approved' && !selfApproved;
       return { knowledge: knowledgeDto(updated), selfApproved, sharedIdentity, aiUsable };
     },
   );

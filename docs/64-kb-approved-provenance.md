@@ -15,7 +15,7 @@
 | 条件 | 内容 |
 |---|---|
 | 承認 | `status='approved'`、`approver_id` と `approved_at` がある |
-| 職務分離 | `approver_id <> author_id`。別アカウントでも `SHARED_IDENTITY_GROUPS` で同一人物なら除く |
+| 職務分離 | `approver_id <> author_id`（[docs/58](./58-phase-c-applied-20261028.md) のとおりアカウント単位）。同一人物の別アカウント（`SHARED_IDENTITY_GROUPS`）は除かず、`sharedIdentity` として応答と監査に残す |
 | 版 | `updated_at <= approved_at`（承認後に行が更新されていない）。版は出典（`sources[].version`）とプロンプト（`[KB-… v2]`）に出す |
 
 - 承認と `version` 加算は同じトランザクションで、`updated_at` はトリガの `now()` なので `approved_at` と一致する。
@@ -52,7 +52,8 @@ AUDIT_DATABASE_URL=<接続先> SHARED_IDENTITY_GROUPS=<本番と同じ値> \
 | `state.noDraftLink` | 下書きと結びつかない active KB（デモでない）。JSON 読込や不正入力の可能性 | 内容を担当者が確認し、必要なら新しい下書きにする。自動取り込みしない |
 | `state.linkedNoDbRow` | 下書きはあるが DB に行がない。引継ぎ経路の承認で起きる（§5） | 担当者が再度下書きを申請し、別人が承認する |
 | `state.linkedNotUsable` | DB に行はあるが使えない（承認待ち、自己承認など） | 別の承認者が承認する。自己承認の行は次の行を参照 |
-| `db.selfApproved` / `db.sharedIdentity` | 承認済みだが作成者本人または同一人物の承認 | 別の人物が内容を確認して再承認する手順を決める（下記） |
+| `db.selfApproved` | 承認済みだが作成者本人の承認 | 別のアカウントが内容を確認して再承認する手順を決める（下記） |
+| `db.usableSharedIdentity` | 使えるが、承認者と作成者が同一人物の別アカウント | 記録のみ。別の人物が画面で承認できるようになったら、除外するか判断する（§7） |
 | `db.editedAfterApproval` | 承認後に行が更新された | 差分を確認して再承認する |
 | `db.usableWithoutKeywords` | 使えるがキーワードが空 | 題名で照合されるため必須ではない。精度が足りなければ別途補う |
 
@@ -86,3 +87,6 @@ AUDIT_DATABASE_URL=<接続先> SHARED_IDENTITY_GROUPS=<本番と同じ値> \
 - 画面内の決定ルールと `HD.kb()`（ブラウザ内の検索、API 障害時の `originalKb`）は引き続き state の KB を使う。本人のブラウザだけで完結し、サーバーの根拠にはならない。
 - `findApprovedKnowledge` は更新順に 100 件までを照合する。承認済みが 100 件を超えると古い KB は候補から外れる。
 - `ui-sync` の本文比較と承認の更新は別の文で行う。比較の直後に作成者が更新すると未確認の本文が承認される窓が残る。
+- 職務分離はアカウント単位である。[docs/61](./61-approvers-and-owners-20261031.md) §7 のとおり、画面から承認できるのは現在人物 A の 2 アカウントだけなので、同一人物の承認を除くと新しい KB が AI に届かなくなる。別の人物が画面で承認できるようになった時点で、除外を検討する。
+- 引継ぎワークスペースの「ナレッジ下書きを作成」（`POST /api/terminal/sessions/:id/knowledge-draft`）は `client_ref` なしで行を作る。`/knowledge/pending` は `client_ref` のある行だけを返し、画面のブリッジは `/knowledge/:id/submit`・`/review` を呼ばない。そのためこの下書きは画面から承認できず、AI の根拠にならない。
+- `MIN_SCORE` は案件診断（`cases.ts`）が示す KB にも適用される。`scripts/eval` は実行していない。

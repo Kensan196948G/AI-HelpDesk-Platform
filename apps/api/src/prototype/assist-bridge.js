@@ -20,6 +20,10 @@
     version: 2,
     at: new Date().toISOString(),
     rspDeepLink: (c) => ahRspDeepLink(c),
+    // 引継ぎの承認と KB 公開を分ける処理の単体テスト用。
+    handoverApprovalNotice: (approved, kb) => ahHandoverApprovalNotice(approved, kb),
+    publishKnowledgeAfterHandover: (full, checklist, comment) =>
+      ahPublishKnowledgeAfterHandover(full, checklist, comment),
     // F-13 の単体テスト用（DOM に依存しない純粋関数）。
     applyHandoverStatus: (c, handover) => ahApplyHandoverStatus(c, handover),
     linkWithHandover: (c, L) => ahLinkWithHandover(c, L),
@@ -30,10 +34,6 @@
       ahPendingApprovePayload(item, checklist, comment),
     pendingRejectPayload: (item, reason) => ahPendingRejectPayload(item, reason),
     pendingSectionHtml: (items, errorCode) => ahPendingSectionHtml(items, errorCode),
-    // 引継ぎの承認と KB 公開を分ける処理の単体テスト用。
-    handoverApprovalNotice: (approved, kb) => ahHandoverApprovalNotice(approved, kb),
-    publishKnowledgeAfterHandover: (full, checklist, comment) =>
-      ahPublishKnowledgeAfterHandover(full, checklist, comment),
   };
 
   const AH = {
@@ -1374,7 +1374,7 @@
   }
 
   const AH_KB_NOT_FOR_AI =
-    '作成者本人または同一人物の承認のため、AI の根拠には使いません（別の承認者の承認が必要です）';
+    '作成者本人の承認のため、AI の根拠には使いません（別の承認者の承認が必要です）';
 
   /**
    * 原本の完了モーダルは「次回から AI の根拠に使う」と固定で表示する。

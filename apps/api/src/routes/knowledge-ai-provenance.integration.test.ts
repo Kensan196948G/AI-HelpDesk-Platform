@@ -306,7 +306,7 @@ describe('職務分離と版', () => {
     expect(sentPrompt()).not.toContain('台帳アプリの索引を再構築する');
   });
 
-  it('別アカウントでも同一人物の承認は AI の根拠にしない（SHARED_IDENTITY_GROUPS）', async () => {
+  it('別アカウントの同一人物の承認は使い、sharedIdentity=true を記録する（docs/58: アカウント単位）', async () => {
     config.SHARED_IDENTITY_GROUPS = `${AUTHOR}|${APPROVER}`;
     const body = kbBody();
     expect((await sync(AUTHOR, body)).statusCode).toBe(200);
@@ -317,10 +317,10 @@ describe('職務分離と版', () => {
     });
     expect(approved.statusCode, approved.body).toBe(200);
     expect(approved.json().sharedIdentity).toBe(true);
-    expect(approved.json().aiUsable).toBe(false);
+    expect(approved.json().aiUsable).toBe(true);
 
     await ask(ASKER, '工事写真台帳が起動しません');
-    expect(sentPrompt()).not.toContain('台帳アプリの索引を再構築する');
+    expect(sentPrompt()).toContain('台帳アプリの索引を再構築する');
   });
 
   it('別人の承認は aiUsable=true を返す', async () => {

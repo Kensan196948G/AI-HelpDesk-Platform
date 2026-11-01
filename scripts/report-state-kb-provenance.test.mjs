@@ -45,7 +45,6 @@ describe('report-state-kb-provenance', () => {
     expect(dbRowBlocker(row({ approver_id: null }))).toBe('missingApprovalRecord');
     expect(dbRowBlocker(row({ approver_id: 'a' }))).toBe('selfApproved');
     expect(dbRowBlocker(row({ updated_at: later }))).toBe('editedAfterApproval');
-    expect(dbRowBlocker(row(), [['a@example.com', 'b@example.com']])).toBe('sharedIdentity');
   });
 
   it('state の active KB を分類し、件数だけを返す', () => {
@@ -74,6 +73,7 @@ describe('report-state-kb-provenance', () => {
         row({ client_ref: 'other', status: 'pending' }),
       ],
       demo,
+      [['a@example.com', 'b@example.com']],
     );
     expect(report.state).toEqual({
       users: 1,
@@ -87,8 +87,8 @@ describe('report-state-kb-provenance', () => {
     expect(report.db).toEqual({
       approved: 3,
       usable: 2,
+      usableSharedIdentity: 2,
       selfApproved: 1,
-      sharedIdentity: 0,
       editedAfterApproval: 0,
       missingApprovalRecord: 0,
       usableWithoutKeywords: 1,

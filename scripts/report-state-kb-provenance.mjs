@@ -50,21 +50,23 @@ function parseData(data) {
 }
 
 /** DB の 1 行が AI の根拠に使えるか（knowledge-search.ts の条件と同じ）。使えない理由を返す。 */
-export function dbRowBlocker(row, sharedGroups = []) {
+export function dbRowBlocker(row) {
   if (row.status !== 'approved') return 'notApproved';
   if (!row.approver_id || !row.approved_at) return 'missingApprovalRecord';
   if (row.approver_id === row.author_id) return 'selfApproved';
-  const author = String(row.author_email ?? '').toLowerCase();
-  const approver = String(row.approver_email ?? '').toLowerCase();
-  if (
-    author &&
-    author !== approver &&
-    sharedGroups.some((group) => group.includes(author) && group.includes(approver))
-  ) {
-    return 'sharedIdentity';
-  }
   if (new Date(row.updated_at) > new Date(row.approved_at)) return 'editedAfterApproval';
   return null;
+}
+
+/** 別アカウントだが同一人物の承認か（記録のみ。AI の根拠からは除かない）。 */
+function isSharedIdentity(row, sharedGroups) {
+  const author = String(row.author_email ?? '').toLowerCase();
+  const approver = String(row.approver_email ?? '').toLowerCase();
+  return (
+    Boolean(author && approver) &&
+    author !== approver &&
+    sharedGroups.some((group) => group.includes(author) && group.includes(approver))
+  );
 }
 
 /** 件数を集計する（純粋関数）。 */
@@ -85,8 +87,8 @@ export function summarize(states, knowledge, demoKeys, sharedGroups = []) {
     db: {
       approved: 0,
       usable: 0,
+      usableSharedIdentity: 0,
       selfApproved: 0,
-      sharedIdentity: 0,
       editedAfterApproval: 0,
       missingApprovalRecord: 0,
       usableWithoutKeywords: 0,
@@ -110,7 +112,7 @@ export function summarize(states, knowledge, demoKeys, sharedGroups = []) {
       }
       const row = byRef.get(`ui-${draft.id}`);
       if (!row) report.state.linkedNoDbRow += 1;
-      else if (dbRowBlocker(row, sharedGroups)) report.state.linkedNotUsable += 1;
+      else if (dbRowBlocker(row)) report.state.linkedNotUsable += 1;
       else report.state.linkedUsable += 1;
     }
   }
@@ -118,10 +120,11 @@ export function summarize(states, knowledge, demoKeys, sharedGroups = []) {
   for (const row of knowledge) {
     if (row.status !== 'approved') continue;
     report.db.approved += 1;
-    const blocker = dbRowBlocker(row, sharedGroups);
+    const blocker = dbRowBlocker(row);
     if (blocker) report.db[blocker] += 1;
     else {
       report.db.usable += 1;
+      if (isSharedIdentity(row, sharedGroups)) report.db.usableSharedIdentity += 1;
       if (!row.keywords?.length) report.db.usableWithoutKeywords += 1;
     }
   }

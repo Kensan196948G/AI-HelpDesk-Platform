@@ -1,4 +1,3 @@
-import { sameHuman } from '../auth/shared-identity.js';
 import { type KnowledgeLike, keywordForms } from '../domain/ai.js';
 import { redactPII } from '../domain/pii.js';
 
@@ -68,7 +67,7 @@ export function scoreKnowledge(
  * AI の根拠にしてよい DB のナレッジを検索する。ブラウザが送る state は読まない。
  *
  * - status = 'approved' で、承認者と承認時刻が記録されている。
- * - 承認者 ≠ 作成者（職務分離）。別アカウントでも同一人物（SHARED_IDENTITY_GROUPS）は除く。
+ * - 承認者 ≠ 作成者（職務分離。docs/58 のとおりアカウント単位）。
  * - 承認時の版のまま（approved_at より後に行が更新されていない）。承認と version 加算は
  *   同じトランザクションなので、updated_at（トリガ）は approved_at と一致する。
  * - 本文は DB の行から取り、外へ出す前に改めて伏せ字にする。
@@ -79,11 +78,8 @@ export async function findApprovedKnowledge(
   intentKeywords: string[],
 ): Promise<KnowledgeLike[]> {
   const rows: any[] = await tx`
-    SELECT k.id, k.kb_no, k.title, k.symptom, k.cause, k.steps, k.keywords, k.version,
-           au.email AS author_email, pu.email AS approver_email
+    SELECT k.id, k.kb_no, k.title, k.symptom, k.cause, k.steps, k.keywords, k.version
     FROM knowledge k
-    LEFT JOIN users au ON au.id = k.author_id
-    LEFT JOIN users pu ON pu.id = k.approver_id
     WHERE k.status = 'approved'
       AND k.approver_id IS NOT NULL
       AND k.approved_at IS NOT NULL
@@ -94,17 +90,15 @@ export async function findApprovedKnowledge(
     LIMIT 100
   `;
 
-  const candidates: KnowledgeLike[] = rows
-    .filter((row) => !sameHuman(row.author_email, row.approver_email))
-    .map((row) => ({
-      id: row.id,
-      kbNo: row.kb_no,
-      title: redactPII(row.title).text,
-      symptom: redactPII(row.symptom).text,
-      cause: redactPII(row.cause).text,
-      steps: redactPII(row.steps).text,
-      keywords: row.keywords?.length ? row.keywords : keywordsFromTitle(row.title),
-      version: row.version,
-    }));
+  const candidates: KnowledgeLike[] = rows.map((row) => ({
+    id: row.id,
+    kbNo: row.kb_no,
+    title: redactPII(row.title).text,
+    symptom: redactPII(row.symptom).text,
+    cause: redactPII(row.cause).text,
+    steps: redactPII(row.steps).text,
+    keywords: row.keywords?.length ? row.keywords : keywordsFromTitle(row.title),
+    version: row.version,
+  }));
   return scoreKnowledge(candidates, text, intentKeywords);
 }
