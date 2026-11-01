@@ -386,6 +386,7 @@ describe('本人パネル（Mock: DOM / fetch）', () => {
           role: 'main',
           skillId: 'user.marker.set',
           executionMode: 'mock',
+          phase: 'completed',
           resultCode: 'MARKER_SET',
           verifyOk: null,
           output: { applied: true },
@@ -497,6 +498,158 @@ describe('本人パネル（Mock: DOM / fetch）', () => {
       current = { ...session, proposalCount: 2 };
       await agree(page);
       expect(box(page).checked).toBe(true);
+    });
+  });
+
+  describe('状態の文言（実行前拒否・開始・完了・検証・停止未確認）', () => {
+    const run = (fields: Record<string, unknown>) => ({
+      role: 'main',
+      stepSeq: 1,
+      skillId: 'folder.summary',
+      executionMode: 'real',
+      resultCode: null,
+      verifyOk: null,
+      output: null,
+      lateResult: false,
+      stopRequestedAt: null,
+      stopOutcome: null,
+      partialEffect: null,
+      ...fields,
+    });
+    const panelText = async (session: Record<string, unknown>) => {
+      const page = harness((url) =>
+        url.endsWith('/support-sessions/mine')
+          ? { status: 200, body: { sessions: [session] } }
+          : { status: 200, body: { requests: [] } },
+      );
+      await page.start();
+      return (page.panel() as FakeElement).text;
+    };
+    const stoppedWith = (executions: unknown[], fields: Record<string, unknown> = {}) => ({
+      ...BASE,
+      status: 'stopped',
+      proposals: [],
+      executions,
+      ...fields,
+    });
+
+    it('execution_mode が real でも、実行前の拒否を実行したと表示しない', async () => {
+      const text = await panelText(
+        stoppedWith([
+          run({
+            phase: 'rejected_before_start',
+            verification: 'not_applicable',
+            resultCode: 'SIGNATURE_INVALID',
+            stopOutcome: 'not_running',
+          }),
+        ]),
+      );
+      expect(text).toContain('開始前に拒否');
+      expect(text).toContain('実行していません');
+      expect(text).not.toContain('端末で実行');
+      expect(text).not.toContain('ヘルパーの報告');
+      expect(text).not.toContain('未確認');
+    });
+
+    it('開始と完了を分け、完了と検証を分ける', async () => {
+      const started = await panelText(
+        stoppedWith([run({ phase: 'started', verification: 'unverified' })], {
+          status: 'executing',
+        }),
+      );
+      expect(started).toContain('端末で開始（結果待ち）');
+      expect(started).not.toContain('完了');
+
+      const completed = await panelText(
+        stoppedWith([
+          run({
+            phase: 'completed',
+            verification: 'failed',
+            verifyOk: false,
+            resultCode: 'FOLDER_SUMMARY_OK',
+          }),
+        ]),
+      );
+      expect(completed).toContain('完了の報告あり');
+      expect(completed).toContain('ヘルパーの報告');
+      expect(completed).toContain('条件を満たしませんでした');
+
+      const passed = await panelText(
+        stoppedWith([run({ phase: 'completed', verification: 'passed', verifyOk: true })]),
+      );
+      expect(passed).toContain('条件を満たしました');
+      expect(passed).not.toMatch(/解決しました|解決済|修復/);
+    });
+
+    it('報告の期限切れを停止未確認として表示し、成功や停止済みにしない', async () => {
+      const text = await panelText(
+        stoppedWith([
+          run({
+            phase: 'stop_unconfirmed',
+            verification: 'unverified',
+            stopRequestedAt: '2026-11-01T00:00:00.000Z',
+            stopOutcome: 'stop_unconfirmed',
+            reportExpiredAt: '2026-11-02T00:00:00.000Z',
+          }),
+        ]),
+      );
+      expect(text).toContain('停止未確認');
+      expect(text).toContain('結果の報告期限を過ぎました');
+      expect(text).not.toContain('完了');
+      expect(text).not.toContain('停止しました');
+    });
+
+    it('N の後に、過去の実行まで「何も実行していない」と説明しない', async () => {
+      const text = await panelText(
+        stoppedWith([run({ phase: 'completed', verification: 'passed', verifyOk: true })], {
+          endReason: 'requester_declined',
+          executionSummary: {
+            started: 1,
+            reported: 1,
+            stopConfirmed: 0,
+            stopUnconfirmed: 0,
+            notRun: 0,
+          },
+        }),
+      );
+      expect(text).not.toContain('何も実行していません');
+      expect(text).toContain('この提案は実行していません');
+      expect(text).toContain('これまでに端末で開始した操作: 1 件');
+    });
+
+    it('実行が 1 件もなければ、そのことを示す', async () => {
+      const text = await panelText(
+        stoppedWith([], {
+          endReason: 'requester_declined',
+          executionSummary: {
+            started: 0,
+            reported: 0,
+            stopConfirmed: 0,
+            stopUnconfirmed: 0,
+            notRun: 0,
+          },
+        }),
+      );
+      expect(text).toContain('この提案は実行していません');
+      expect(text).toContain('端末で開始した操作はありません');
+    });
+
+    it('確認の期限切れも、この提案についてだけ述べる', () => {
+      const block = /const END_LABEL = \{([\s\S]*?)\n {2}\};/.exec(source)?.[1] ?? '';
+      expect(block).toContain(
+        "approval_expired: '確認の期限（5 分）が切れました。この提案は実行していません。'",
+      );
+      expect(block).not.toContain('何も実行していません');
+    });
+
+    it('解決の確認の前に、実行の成功を解決と表現しない', async () => {
+      const text = await panelText(
+        stoppedWith([run({ phase: 'completed', verification: 'passed', verifyOk: true })], {
+          status: 'resolve_confirm',
+        }),
+      );
+      expect(text).toContain('操作の成功は、困りごとの解決を意味しません');
+      expect(text).toContain('困りごとは解決しましたか');
     });
   });
 
@@ -792,12 +945,12 @@ describe('本人パネル（Mock: DOM / fetch）', () => {
       const ref = caseRef();
       const page = harness(route({ ...BASE, status: 'executing' }), undefined, ref);
       await page.start();
-      expect((page.staff() as FakeElement).text).toContain('実行中');
+      expect((page.staff() as FakeElement).text).toContain('端末で開始');
       ref.current = { id: 'CASE-2', handoverId: '22222222-2222-4222-8222-222222222222' };
       const staff = page.staff() as FakeElement;
       // 応答を待たない（タイマーの直後、まだ await の前）。
       page.tickSync();
-      expect(staff.text).not.toContain('実行中');
+      expect(staff.text).not.toContain('端末で開始');
     });
   });
 

@@ -17,11 +17,11 @@
     proposing: '提案を作成中',
     awaiting_approval: '確認待ち（Y/N）',
     approved: '実行待ち',
-    executing: '実行中',
+    executing: '端末で開始（結果待ち）',
     verifying: '確認中',
     awaiting_next: '次の操作を確認',
     resolve_confirm: '解決の確認待ち',
-    resolved: '解決',
+    resolved: '解決（ご本人の確認）',
     stopped: '停止',
     escalated: '担当者へ引継ぎ',
     expired: '期限切れ',
@@ -30,11 +30,11 @@
   const END_LABEL = {
     resolved: 'ご本人の確認で解決としました。',
     requester_revoked: 'ご本人が取り消しました。',
-    requester_declined: 'ご本人が「いいえ」を選びました。何も実行していません。',
+    requester_declined: 'ご本人が「いいえ」を選びました。この提案は実行していません。',
     operator_stop: '担当者が中止しました。',
     expired: '期限が切れました。',
-    approval_expired: '確認の期限（5 分）が切れました。実行していません。',
-    execution_expired: '実行の期限が切れました。',
+    approval_expired: '確認の期限（5 分）が切れました。この提案は実行していません。',
+    execution_expired: '実行を開始する期限が切れました。',
     execution_timeout: '時間内に結果が届きませんでした。成功とは扱いません。',
     proposing_timeout: '提案を作成できないまま時間が過ぎたため停止しました。',
     ai_consent_changed: 'AI 入力の同意が変わったため停止しました。提案は使っていません。',
@@ -51,7 +51,7 @@
     duplicate_proposal: '同じ操作の提案になったため停止しました。',
     no_progress: '結果が変わらないため停止しました。',
     no_candidate: '提案できる操作がありません。',
-    execution_failed: '実行に失敗しました。',
+    execution_failed: '実行できなかったか、失敗しました。下の記録を確認してください。',
     verify_failed: '成功条件を満たしませんでした。',
     unverifiable: '結果を確認できないため、成功とは扱いません。',
     result_mismatch: '結果の報告が実行内容と一致しないため、成功とは扱いません。',
@@ -60,8 +60,25 @@
   };
   const EFFECT_LABEL = { read: '読み取り', modify: '変更（元に戻せる範囲）' };
   const SOURCE_LABEL = { deepseek: 'AI の提案', rule: 'ルールベースの提案' };
+  // 実行の段階はサーバが返す（execution_mode だけで「実行した」と表示しない）。
+  const PHASE_LABEL = {
+    not_started: '開始前',
+    rejected_before_start: '開始前に拒否（実行していません）',
+    cancelled_before_start: '開始前に取消（実行していません）',
+    expired_before_start: '開始前に期限切れ（実行していません）',
+    started: '端末で開始（結果待ち）',
+    completed: '完了の報告あり',
+    failed: '開始後に失敗または中断の報告あり',
+    stop_unconfirmed: '開始後に結果が届いていません（停止未確認）',
+  };
+  const VERIFICATION_LABEL = {
+    passed: '条件を満たしました',
+    failed: '条件を満たしませんでした',
+    unverified: '条件は未確認',
+  };
+  // 報告の出所。実行の有無ではない。
   const MODE_LABEL = {
-    real: '端末で実行',
+    real: 'ヘルパーの報告',
     mock: 'デモ（証拠にしません）',
     manual: '手動記録（証拠にしません）',
   };
@@ -458,22 +475,25 @@
   }
 
   function executionLine(execution) {
+    const reported = execution.phase === 'completed' || execution.phase === 'failed';
     const parts = [
       execution.role === 'verify'
         ? '確認（提案に含まれる）'
         : `提案 ${execution.stepSeq ?? ''} の実行`,
       execution.skillId,
-      MODE_LABEL[execution.executionMode] ?? '結果待ち',
+      PHASE_LABEL[execution.phase] ?? '',
+      reported ? (MODE_LABEL[execution.executionMode] ?? '') : '',
       execution.resultCode ?? '',
-      execution.verifyOk === true
-        ? '条件を満たしました'
-        : execution.verifyOk === false
-          ? '条件を満たしませんでした'
-          : '未確認',
+      execution.phase === 'completed' ? (VERIFICATION_LABEL[execution.verification] ?? '') : '',
     ];
     const lines = [small(parts.filter(Boolean).join(' / '))];
     if (execution.output) lines.push(small(outputText(execution.output)));
     if (execution.lateResult) lines.push(small('遅れて届いた結果です。次へ進めません。'));
+    if (execution.reportExpiredAt) {
+      lines.push(
+        small('結果の報告期限を過ぎました。停止は確認できていません。成功とは扱いません。'),
+      );
+    }
     if (execution.stopOutcome === 'not_running' && !execution.partialEffect?.length) {
       // 実行していない。停止や変更の話を出さない。
       lines.push(small(STOP_LABEL.not_running));
@@ -497,9 +517,30 @@
     return lines;
   }
 
+  /** 終了の理由と、それまでの実行。この提案の説明を過去の実行へ広げない。 */
+  function endLines(session) {
+    if (!session.endReason) return [];
+    const lines = [small(END_LABEL[session.endReason] ?? '')];
+    const summary = session.executionSummary;
+    if (summary) {
+      lines.push(
+        small(
+          summary.started > 0
+            ? `これまでに端末で開始した操作: ${summary.started} 件（確認を含む）`
+            : '端末で開始した操作はありません。',
+        ),
+      );
+      if (summary.stopUnconfirmed > 0) {
+        lines.push(
+          small(`停止を確認できていない操作: ${summary.stopUnconfirmed} 件`, 'color:#b42318'),
+        );
+      }
+    }
+    return lines;
+  }
+
   function sessionBody(session) {
-    const nodes = [];
-    if (session.endReason) nodes.push(small(END_LABEL[session.endReason] ?? ''));
+    const nodes = [...endLines(session)];
     if (session.device) {
       nodes.push(small(`端末名: ${session.device.hostname || '（未確定）'}`));
       nodes.push(small(`Windows ユーザー: ${session.device.windowsUser || '（未確定）'}`));
@@ -559,6 +600,7 @@
     }
     if (['awaiting_next', 'resolve_confirm'].includes(session.status)) {
       nodes.push(
+        small('操作の成功は、困りごとの解決を意味しません。'),
         small('困りごとは解決しましたか。ご本人の確認で解決とします。'),
         h(
           'div',
@@ -772,7 +814,7 @@
     const nodes = [];
     if (session) {
       nodes.push(small(`状態: ${STATUS_LABEL[session.status] ?? ''}`));
-      if (session.endReason) nodes.push(small(END_LABEL[session.endReason] ?? ''));
+      nodes.push(...endLines(session));
       nodes.push(small(`提案 ${session.proposalCount} / ${session.maxProposals}`));
     }
     if (open) {

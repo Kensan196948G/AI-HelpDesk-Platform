@@ -316,6 +316,20 @@ describe('AI の説明の採用', () => {
     });
   });
 
+  it.each([
+    '解決しました',
+    '問題は解決済みです',
+    '直りました',
+    '修復しました',
+    '復旧しました',
+    '解消しました',
+    'これで解決します',
+    '成功しました',
+    'The issue is resolved',
+  ])('読み取りや目印の成功の後でも、断定的な解決の表現は使わない: %s', (text) => {
+    expect(acceptAiExplanation(text, 'unknown', true)).toEqual({ text: null, rejected: true });
+  });
+
   it('確かめた後の説明と、解決を示さない説明は推測として残す', () => {
     expect(acceptAiExplanation('解決した可能性', 'resolved', true).text).toBe('解決した可能性');
     expect(acceptAiExplanation('確認します', 'unknown', false).text).toBe('確認します');

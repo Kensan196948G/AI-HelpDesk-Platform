@@ -390,16 +390,20 @@ export const REASON_CODES = [
 export type ReasonCode = (typeof REASON_CODES)[number];
 
 const RESOLVED_CLAIM = /解決|直りました|復旧しました|修復しました|成功しました|resolved|fixed/i;
+/** 断定の表現。解決は本人の確認で決めるので、読み取りや目印の成功の後でも使わない。 */
+const RESOLVED_ASSERTION =
+  /(?:解決|解消|復旧|修復|回復)(?:しました|します|できました|済|いたしました)|これで(?:解決|直)|直り(?:ました|ます)|治りました|直っています|成功しました|\b(?:resolved|fixed)\b/i;
 
 /**
- * AI の説明を採用するか。固定条件で確かめていないのに解決を示す説明は使わない。
- * 説明は常に推測として扱い、判定には使わない。
+ * AI の説明を採用するか。解決を断定する説明は使わない。固定条件で確かめていないのに
+ * 解決を示す説明も使わない。説明は常に推測として扱い、判定には使わない。
  */
 export function acceptAiExplanation(
   rationale: string,
   assessment: unknown,
   lastVerified: boolean,
 ): { text: string | null; rejected: boolean } {
+  if (RESOLVED_ASSERTION.test(rationale)) return { text: null, rejected: true };
   const claimsResolved = assessment === 'resolved' || RESOLVED_CLAIM.test(rationale);
   if (claimsResolved && !lastVerified) return { text: null, rejected: true };
   return { text: rationale || null, rejected: false };

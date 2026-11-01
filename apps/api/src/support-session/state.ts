@@ -163,3 +163,91 @@ export function progressFingerprint(skillId: string, params: unknown, output: un
 export function isNoProgress(previous: readonly string[], current: string): boolean {
   return previous.includes(current);
 }
+
+/**
+ * 実行の段階（docs/63 §12）。execution_mode は報告の出所であって「実行した」の根拠にならない。
+ * 実行前の拒否の報告にも real が付くので、画面はこの段階で表示する。
+ */
+export type ExecutionPhase =
+  | 'not_started'
+  | 'rejected_before_start'
+  | 'cancelled_before_start'
+  | 'expired_before_start'
+  | 'started'
+  | 'completed'
+  | 'failed'
+  | 'stop_unconfirmed';
+
+export interface ExecutionFacts {
+  status: string;
+  started_at: Date | null;
+  result_received_at: Date | null;
+  result_status: string | null;
+  stop_outcome: string | null;
+  report_expired_at: Date | null;
+  verify_ok: boolean | null;
+}
+
+const NOT_RUN_PHASES: readonly ExecutionPhase[] = [
+  'rejected_before_start',
+  'cancelled_before_start',
+  'expired_before_start',
+];
+
+export function executionPhase(row: ExecutionFacts): ExecutionPhase {
+  // /start の応答を失うとサーバには started_at が残るが、ヘルパーは実行していないと報告している。
+  if (row.status === 'rejected_by_helper' || row.status === 'rejected_at_start') {
+    return 'rejected_before_start';
+  }
+  if (!row.started_at) {
+    if (row.status === 'cancelled') return 'cancelled_before_start';
+    if (row.status === 'expired') return 'expired_before_start';
+    return row.status === 'queued' || row.status === 'delivered'
+      ? 'not_started'
+      : 'rejected_before_start';
+  }
+  if (row.result_received_at) return row.result_status === 'ok' ? 'completed' : 'failed';
+  // 結果が来ていない。期限切れや時間切れは、止まったことも成功したことも示さない。
+  if (
+    row.report_expired_at ||
+    row.stop_outcome === 'stop_unconfirmed' ||
+    row.status === 'timed_out'
+  ) {
+    return 'stop_unconfirmed';
+  }
+  return 'started';
+}
+
+/** 検証の結果。完了の報告とは別物で、実行していないものは対象外。 */
+export function executionVerification(
+  row: ExecutionFacts,
+): 'passed' | 'failed' | 'unverified' | 'not_applicable' {
+  const phase = executionPhase(row);
+  if (phase === 'not_started' || NOT_RUN_PHASES.includes(phase)) return 'not_applicable';
+  if (row.verify_ok === true) return 'passed';
+  if (row.verify_ok === false) return 'failed';
+  return 'unverified';
+}
+
+/**
+ * 実行の集計。報告の期限切れは reported にも stopConfirmed にも入れない（§10）。
+ * stopConfirmed はヘルパーが停止を報告した実行だけ。
+ */
+export function summarizeExecutions(rows: readonly ExecutionFacts[]) {
+  const summary = { started: 0, reported: 0, stopConfirmed: 0, stopUnconfirmed: 0, notRun: 0 };
+  for (const row of rows) {
+    const phase = executionPhase(row);
+    if (NOT_RUN_PHASES.includes(phase)) {
+      summary.notRun += 1;
+      continue;
+    }
+    if (phase === 'not_started') continue;
+    summary.started += 1;
+    if (row.result_received_at) summary.reported += 1;
+    if (row.stop_outcome === 'stopped') summary.stopConfirmed += 1;
+    if (row.stop_outcome === 'stop_unconfirmed' || phase === 'stop_unconfirmed') {
+      summary.stopUnconfirmed += 1;
+    }
+  }
+  return summary;
+}

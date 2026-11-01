@@ -62,8 +62,9 @@
     SESSION_UNRESOLVED: 'Windows のセッションを 1 つに特定できません。',
   };
   const END_LABEL = {
-    operator_end: '担当者が終了しました。',
-    requester_revoked: '相談者が取り消しました。',
+    // 支援セッションの終了（解決・「いいえ」・停止条件）でも同じ理由で終わるので、原因を断定しない。
+    operator_end: '担当者の操作、または支援の終了によりフォルダの確認を終えました。',
+    requester_revoked: '相談者の取消、または「いいえ」によりフォルダの確認を終えました。',
     expired: '期限が切れました。',
     assignee_changed: '担当者または案件の状態が変わりました。',
     session_changed: 'Windows のセッションが変わりました。',

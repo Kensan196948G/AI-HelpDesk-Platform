@@ -667,7 +667,7 @@ describe('フォルダ一覧ブリッジ（Mock DOM）', () => {
     dto = requestDto('revoked', { endReason: 'requester_revoked' });
     for (const timer of h.timers) timer();
     await h.settle();
-    expect(mine?.text).toContain('取り消しました');
+    expect(mine?.text).toContain('相談者の取消');
     expect(mine?.text).not.toContain('今すぐ取り消す');
   });
 

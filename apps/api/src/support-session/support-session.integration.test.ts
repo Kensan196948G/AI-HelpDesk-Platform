@@ -1671,6 +1671,13 @@ describe('共通支援セッション（Mock: ヘルパー / RSP / 名簿 / PII 
       expect(execution?.stop_outcome).toBe('not_running');
       expect(execution?.evidence).toBe(false);
       expect(execution?.partial_effect).toBeNull();
+      // execution_mode は real でも、実行したとは返さない。
+      const view = (await call(OWNER, 'GET', base(session.id))).json().session;
+      const shown = view.executions.find((item: { id: string }) => item.id === op.opId);
+      expect(shown.executionMode).toBe('real');
+      expect(shown.phase).toBe('rejected_before_start');
+      expect(shown.verification).toBe('not_applicable');
+      expect(view.executionSummary.notRun).toBeGreaterThanOrEqual(1);
       expect((await sessionRow(session.id))?.end_reason).toBe('execution_failed');
     });
 

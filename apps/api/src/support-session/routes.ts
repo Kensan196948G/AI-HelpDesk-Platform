@@ -61,6 +61,8 @@ import {
 import {
   AI_INPUT_CONSENT_VERSION,
   ASSIST_LIMITS,
+  executionPhase,
+  executionVerification,
   FOLDER_CONSENT_VERSION,
   isOpenSession,
   OPEN_SESSION_STATUSES,
@@ -68,6 +70,7 @@ import {
   OPERATION_SCOPES,
   type OperationScope,
   proposingSeconds,
+  summarizeExecutions,
 } from './state.js';
 
 /**
@@ -194,6 +197,9 @@ function executionDto(row: ExecutionRow) {
     role: row.role,
     skillId: row.skill_id,
     status: row.status,
+    phase: executionPhase(row),
+    verification: executionVerification(row),
+    startedAt: row.started_at?.toISOString() ?? null,
     executionMode: row.execution_mode,
     resultSource: row.result_source,
     resultCode: row.result_code,
@@ -288,6 +294,7 @@ function buildSessionDto(
     },
     proposals: proposals.map(proposalDto),
     executions: executions.map(executionDto),
+    executionSummary: summarizeExecutions(executions),
     // サーバの固定条件で確かめた事実（AI の推測とは別）。
     verifiedFacts: executions
       .filter((row) => row.evidence && row.verify_ok !== null)
