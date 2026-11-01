@@ -868,9 +868,20 @@ async function main(browser) {
   const outsideCanSelect = outsideOptions.includes(`emp:approver:${EMP.outsideApprover}`);
   check(
     'U1',
-    'DX 推進部以外の承認者は画面で承認者を選べない（docs/61 §7 の制約を実ブラウザで確認）',
+    'DX 推進部以外の承認者は原本の役割の選択には出ない（docs/61 §7。入口は U2 の承認者パネル）',
     !outsideCanSelect,
   );
+  // 所属外の承認者も、画面の操作で承認の一覧へ届く（docs/14 §2-17）。
+  await outside.page.waitForSelector('#ahApproverEntry', { timeout: 15_000 });
+  await outside.page.click('#ahApproverEntry');
+  await outside.page.waitForSelector('#ahApproverKnowledge', { timeout: 15_000 });
+  const outsidePanel = await outside.page.locator('#ahApproverPanel').innerText();
+  check(
+    'U2',
+    '所属外の承認者が画面のボタンで承認者のパネルを開ける（完了承認と公開承認が別の見出し）',
+    outsidePanel.includes('① 引継ぎの完了承認') && outsidePanel.includes('② ナレッジの公開承認'),
+  );
+  await outside.page.screenshot({ path: path.join(outDir, '5a-outside-approver-panel.png'), fullPage: true });
   report.apiLog.outside_all = summarizeLog(outside.log);
   await outside.context.close();
 
@@ -1106,9 +1117,30 @@ async function main(browser) {
   report.apiLog.B_printConsult_noAgent = summarizeLog(B.log, sinceBPrint);
   const noAgentChat = await chatText(B.page);
   report.ids.printNoAgentShowsKb = noAgentChat.includes(approvedRow.kb_no);
-  finding(
+  const noAgentHandover = await B.page.locator('[data-aihd-kb-guide]').count();
+  const noAgentSessions = await sql`
+    SELECT count(*)::int AS n FROM resolution_sessions WHERE user_email = ${EMAIL.requesterB}
+  `;
+  check(
     'N0',
-    `端末エージェント未接続の印刷の相談は解決ループへ進まないので、承認済み KB は案内されない（画面に KB 番号: ${report.ids.printNoAgentShowsKb}）。`,
+    'エージェント未接続でも、端末を操作せず承認済み KB を画面で案内する',
+    report.ids.printNoAgentShowsKb && noAgentHandover > 0 && noAgentSessions[0].n === 0,
+    `kb=${report.ids.printNoAgentShowsKb} sessions=${noAgentSessions[0].n}`,
+  );
+  check(
+    'N0b',
+    '案内の外部 AI 呼び出しなし（/api/ai/answer を呼ばない）',
+    !JSON.stringify(report.apiLog.B_printConsult_noAgent).includes('/api/ai/answer'),
+  );
+  check(
+    'N0c',
+    'エージェント未接続でも担当者へ引き継ぐ導線が残る',
+    noAgentChat.includes('担当者へ引き継'),
+  );
+  await B.page.screenshot({ path: path.join(outDir, '11a-b-print-no-agent-kb.png'), fullPage: true });
+  finding(
+    'N0-old',
+    `（修正前）端末エージェント未接続の印刷の相談は解決ループへ進まないので、承認済み KB は案内されない（画面に KB 番号: ${report.ids.printNoAgentShowsKb}）。`,
   );
 
   // 8-2. 接続あり: 提案の AI 入力に KB の参照が入り、結果の後に出典付きで案内する。
@@ -1244,20 +1276,29 @@ async function main(browser) {
   );
   check(
     'C1',
-    '別人の承認者の画面には案件が無く、引継ぎの完了承認の導線が無い（未接続の確認）',
+    '別人の承認者の状態に案件が無くても、完了承認の導線が画面にある',
     !approverHasCase,
     `staffHasDraft=${staffHasDraft}`,
   );
-  finding(
-    'C1',
-    '引継ぎの完了（POST /api/case-handovers/:id/approve）は、案件を引き受けた本人の状態に下書きがある画面からしか呼ばれない。別人の承認者は画面から完了にできないので、この試験では API を直接呼んだ。',
+  // API の直接呼び出しではなく、承認者のパネルのボタンを押す（docs/14 §2-17）。
+  await approver.page.reload({ waitUntil: 'load' });
+  await waitAfterReload(approver.page);
+  await approver.page.waitForSelector('#ahApproverEntry', { timeout: 15_000 });
+  await approver.page.click('#ahApproverEntry');
+  const handoverButton = approver.page.locator(`[data-ahd="ho-approve"][data-id="${handover.id}"]`);
+  await handoverButton.waitFor({ timeout: 15_000 });
+  await approver.page.screenshot({ path: path.join(outDir, '10a-approver-panel-handover.png'), fullPage: true });
+  await handoverButton.click();
+  const completedRow = await waitUntil(
+    async () => {
+      const rows =
+        await sql`SELECT status, approved_by FROM case_handovers WHERE id = ${handover.id}`;
+      return rows[0]?.status === 'completed' ? rows[0] : null;
+    },
+    'handover completed',
+    15_000,
   );
-  const completed = await browserFetch(
-    approver.page,
-    `/api/case-handovers/${handover.id}/approve`,
-    {},
-  );
-  check('C2', '完了承認（API 直接。画面経路ではない）', completed.status === 200, completed.status);
+  check('C2', '完了承認を画面のボタンで行う（API 直接ではない）', Boolean(completedRow));
   await A.page.reload({ waitUntil: 'load' });
   await waitAfterReload(A.page);
   await A.page.evaluate((id) => {

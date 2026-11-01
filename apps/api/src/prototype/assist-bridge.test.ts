@@ -426,6 +426,38 @@ describe('assist-bridge: 引継ぎの承認と KB 公開を分ける', () => {
     });
   });
 
+  it('承認者のパネルは完了承認と KB の公開承認を別の操作として出す', () => {
+    const { bridge } = withFetch(200, {});
+    const html = bridge.approverPanelHtml(
+      [
+        {
+          id: 'H1',
+          caseId: 'CASE-1',
+          status: 'claimed',
+          subject: '<b>件名</b>',
+          claimedByName: 'x',
+        },
+      ],
+      [],
+      {},
+      false,
+    );
+    expect(html).toContain('① 引継ぎの完了承認');
+    expect(html).toContain('案件を閉じます。ナレッジは公開しません。');
+    expect(html).toContain('② ナレッジの公開承認');
+    expect(html).toContain('次の相談の AI の根拠になります。案件は閉じません。');
+    expect(html).toContain('data-ahd="ho-approve"');
+    expect(html).not.toContain('<b>件名</b>');
+    const own = bridge.approverPanelHtml(
+      [{ id: 'H2', caseId: 'CASE-2', status: 'claimed', subject: 's', claimedByMe: true }],
+      [],
+      {},
+      false,
+    );
+    expect(own).not.toContain('data-ahd="ho-approve"');
+    expect(own).toContain('職務分離');
+  });
+
   it('文言は引継ぎの承認と KB の公開を別々に伝える', () => {
     const { bridge } = withFetch(200, {});
     const approved = { approvedByName: '承認者' };

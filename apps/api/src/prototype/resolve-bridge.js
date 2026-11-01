@@ -1170,7 +1170,46 @@
    * 固定データの確認カード（confirmHearing）と診断（H.print）へ進めない。
    * 他の相談の導線は変えない。
    */
-  function printGuideHtml(connected, c) {
+  /** 承認済み KB の案内（端末は操作しない）。出所をそのまま出し、解決とは言わない。 */
+  function knowledgeGuideHtml(items) {
+    if (!Array.isArray(items) || items.length === 0) {
+      return '<p class="u-small u-muted" data-aihd-kb-guide="0">この相談に一致するナレッジはありません。</p>';
+    }
+    return (
+      '<div data-aihd-kb-guide="' +
+      items.length +
+      '"><p>次のナレッジをご自身で試せます。<b>端末の読み取りや操作はしていません。</b>試しても直らないときは担当者へ引き継げます。</p>' +
+      items
+        .map(
+          (item) =>
+            `<div class="u-small" style="margin-top:6px"><b>${esc(item.title)}</b>（${esc(item.kbNo)} v${esc(item.version)}、${esc(item.approvalOriginLabel)}）<ol style="margin:4px 0 0 18px;padding:0">${(
+              item.steps || []
+            )
+              .map((step) => `<li>${esc(step)}</li>`)
+              .join('')}</ol></div>`,
+        )
+        .join('') +
+      '</div>'
+    );
+  }
+
+  /** 案内を取れなくても引継ぎの導線は止めない。 */
+  async function fetchKnowledgeGuide(c) {
+    if (!c?.id) return [];
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const data = await api('/api/resolve/knowledge-guide', { caseId: c.id });
+        return data?.items ?? [];
+      } catch (error) {
+        // 画面の状態保存が届く前は 404 になることがあるため、少し待って 1 回だけ再試行する。
+        if (error.status !== 404 || attempt === 1) return [];
+        await new Promise((resolve) => setTimeout(resolve, 700));
+      }
+    }
+    return [];
+  }
+
+  function printGuideHtml(connected, c, guide) {
     if (connected) {
       return (
         '<p>この端末は端末エージェントに接続されています。下の「解決ループ（読み取り診断）」で実際の状態を読み取れます。実行の前に必ず確認します。</p>' +
@@ -1179,7 +1218,7 @@
         '">読み取り診断を開始</button></div>'
       );
     }
-    return `<p>${esc(NO_AGENT_NOTICE)}</p><div class="btns">${
+    return `<p>${esc(NO_AGENT_NOTICE)}</p>${knowledgeGuideHtml(guide)}<div class="btns">${
       typeof escBtn === 'function' ? escBtn('IT端末', '通常', '担当者へ引き継ぐ') : ''
     }</div>`;
   }
@@ -1193,6 +1232,7 @@
       // 初期化前は表示なしで続行する。
     }
     const connected = c ? await refreshDeviceStatus() : false;
+    const guide = c && !connected ? await fetchKnowledgeGuide(c) : [];
     try {
       UI.typing = false;
     } catch (error) {
@@ -1223,7 +1263,7 @@
       text: connected
         ? '端末エージェントが接続されています。読み取り診断へ案内しました。'
         : NO_AGENT_NOTICE,
-      html: printGuideHtml(connected, c),
+      html: printGuideHtml(connected, c, guide),
     });
     persist();
     // STEP 3 の説明は部分更新（wizSoft）では描き直されないので全体を描き直す。

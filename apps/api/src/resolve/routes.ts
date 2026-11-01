@@ -22,7 +22,7 @@ import {
   newNonce,
 } from './approval.js';
 import { type ExecutionSource, executionSourceOf, resultShapeOk } from './execution-source.js';
-import { knowledgeRefsForCase } from './knowledge-refs.js';
+import { knowledgeGuideForCase, knowledgeRefsForCase } from './knowledge-refs.js';
 import {
   escalationReasonForDecision,
   type Proposal,
@@ -70,6 +70,7 @@ const AdminApproveSchema = z.object({
   approvalHash: z.string().trim().max(128).optional(),
 });
 const ManualCloseSchema = z.object({ reason: z.string().trim().max(500).optional() }).default({});
+const KnowledgeGuideSchema = z.object({ caseId: z.string().trim().min(1).max(120) });
 const DeviceStatusQuerySchema = z.object({ deviceId: z.string().trim().min(1).max(120) });
 
 interface SessionRow {
@@ -1507,6 +1508,17 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
         approvedAt: skill.approvedAt,
       })),
     };
+  });
+
+  // 端末エージェントが無い相談者への案内（docs/14 §2-16）。外部 AI へ送らず、端末も操作しない。
+  // 本文は本人の案件からサーバが読み、クライアントの文字列を使わない。
+  app.post('/resolve/knowledge-guide', { preHandler: authenticateUi }, async (request) => {
+    const email = requireEmail(request);
+    enforceRateLimit(`resolve-kb-guide:${email}`, 30, 'ナレッジの案内の取得が多すぎます。');
+    const { caseId } = KnowledgeGuideSchema.parse(request.body);
+    const ownedCase = await findOwnedCase(email, caseId);
+    if (!ownedCase) throw notFound('案件が見つかりません。');
+    return { ok: true, items: await knowledgeGuideForCase(caseText(ownedCase)) };
   });
 
   // 相談者の導線の分岐に使う（docs/25 §20）。本人の端末だけを返し、トークンの情報は返さない。

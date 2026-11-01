@@ -37,6 +37,8 @@
       ahPendingApprovePayload(item, checklist, comment),
     pendingRejectPayload: (item, reason) => ahPendingRejectPayload(item, reason),
     pendingSectionHtml: (items, errorCode) => ahPendingSectionHtml(items, errorCode),
+    approverPanelHtml: (handovers, pending, errors, allowSelf) =>
+      ahApproverPanelHtml(handovers, pending, errors, allowSelf),
     kbConsultText: (ticket) => ahKbConsultText(ticket),
     reportSources: (chat) => ahSources(chat),
     // 相談者の画面が受信箱を呼ばないことの単体テスト用（staff-access.test.ts）。
@@ -1859,6 +1861,7 @@
       AH.pendingLoaded = true;
       AH.pendingLoadedAt = now;
       ahSyncPendingSection();
+      void ahRenderApproverPanel();
     }
   }
 
@@ -1942,13 +1945,146 @@
     }
   }
 
+  /**
+   * 承認者の入口（docs/14 §2-17）。承認者は所属を問わず画面の役割が一般社員のままなので、
+   * 原本の画面を変えずに入口を重ねる。出す判断は /api/me の roles で、権限の正本はサーバ。
+   * 案件を閉じる承認と KB を公開する承認を、同じ操作に見せない（純粋関数）。
+   */
+  function ahApproverPanelHtml(handovers, pending, errors, allowSelf) {
+    const list = Array.isArray(handovers) ? handovers : [];
+    const failed = errors || {};
+    const rows = list
+      .map((item) => {
+        const own = Boolean(item.claimedByMe);
+        const blocked = own && !allowSelf;
+        return (
+          '<div class="u-small" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--line,#ddd)">' +
+          '<b>' +
+          ahEsc(String(item.subject || '')) +
+          '</b><br>案件 ' +
+          ahEsc(String(item.caseId || '')) +
+          '／状態 ' +
+          ahEsc(String(item.status || '')) +
+          '／担当 ' +
+          ahEsc(String(item.claimedByName || '')) +
+          (blocked
+            ? '<div class="hint">自分が引き受けた案件は承認できません（職務分離）。</div>'
+            : '<div class="btns"><button class="btn sm" data-ahd="ho-approve" data-id="' +
+              ahEsc(String(item.id || '')) +
+              '">引継ぎの完了を承認</button></div>') +
+          '</div>'
+        );
+      })
+      .join('');
+    return (
+      '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>承認者の確認</b>' +
+      '<button class="btn ghost sm" data-ahd="ap-close">閉じる</button></div>' +
+      '<div id="ahApproverHandovers" style="margin-top:10px"><b>① 引継ぎの完了承認</b>' +
+      '<div class="hint">案件を閉じます。ナレッジは公開しません。</div>' +
+      (failed.handover
+        ? '<div class="note n-warn">一覧を取得できませんでした（' +
+          ahEsc(failed.handover) +
+          '）。</div>'
+        : '') +
+      (rows ||
+        '<div class="empty" style="margin-top:6px">完了の承認を待つ引継ぎはありません</div>') +
+      '</div><div id="ahApproverKnowledge" style="margin-top:14px"><b>② ナレッジの公開承認</b>' +
+      '<div class="hint">次の相談の AI の根拠になります。案件は閉じません。本文を読んでから承認してください。</div>' +
+      ahPendingSectionHtml(pending, failed.knowledge) +
+      '</div>'
+    );
+  }
+
+  async function ahRenderApproverPanel() {
+    const panel = document.getElementById('ahApproverPanel');
+    if (!panel || panel.hasAttribute('hidden')) return;
+    const errors = { handover: '', knowledge: AH.pendingError || '' };
+    let handovers = [];
+    let allowSelf = false;
+    try {
+      const data = await ahJsonFetch('/api/case-handovers/awaiting-approval');
+      handovers = Array.isArray(data && data.items) ? data.items : [];
+      allowSelf = Boolean(data && data.allowSelfApproval);
+    } catch (error) {
+      errors.handover = ahUiSyncErrorLabel(error);
+    }
+    panel.innerHTML = ahApproverPanelHtml(handovers, AH.pending, errors, allowSelf);
+  }
+
+  async function ahOpenApproverPanel() {
+    const panel = document.getElementById('ahApproverPanel');
+    if (!panel) return;
+    panel.removeAttribute('hidden');
+    await ahRefreshPending(true);
+  }
+
+  async function ahApproveHandoverFromPanel(id) {
+    if (!id || AH.pendingBusy) return;
+    AH.pendingBusy = true;
+    try {
+      const data = await ahJsonFetch('/api/case-handovers/' + encodeURIComponent(id) + '/approve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+      if (typeof toast === 'function') {
+        const self = data && data.handover && data.handover.selfApproved;
+        toast(
+          (self ? '自分の対応した案件を自己承認しました' : '引継ぎの完了を承認しました') +
+            '（ナレッジは公開していません）',
+          self ? 'bad' : 'ok',
+        );
+      }
+    } catch (error) {
+      if (typeof toast === 'function') {
+        toast('承認できません：' + ahUiSyncErrorLabel(error), 'bad');
+      }
+    } finally {
+      AH.pendingBusy = false;
+    }
+    await ahRenderApproverPanel();
+  }
+
+  /** 入口は承認者だけに出す。/api/me が取れなければ出さない（担当者の ⑥ はそのまま使える）。 */
+  async function ahMountApproverEntry() {
+    if (document.getElementById('ahApproverEntry')) return;
+    let me = null;
+    try {
+      me = await ahJsonFetch('/api/me');
+    } catch (error) {
+      return;
+    }
+    if (!me || !Array.isArray(me.roles) || !me.roles.includes('approver')) return;
+    const entry = document.createElement('button');
+    entry.id = 'ahApproverEntry';
+    entry.className = 'btn sm';
+    entry.type = 'button';
+    entry.setAttribute('data-ahd', 'ap-open');
+    entry.textContent = '承認者の確認';
+    entry.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:60';
+    const panel = document.createElement('div');
+    panel.id = 'ahApproverPanel';
+    panel.className = 'card';
+    panel.setAttribute('hidden', '');
+    panel.style.cssText =
+      'position:fixed;right:16px;bottom:60px;z-index:60;width:min(560px,calc(100vw - 32px));max-height:75vh;overflow:auto';
+    document.body.appendChild(panel);
+    document.body.appendChild(entry);
+  }
+
   function ahHandlePendingClick(event) {
     const target = event && event.target;
     const trigger = target && target.closest ? target.closest('[data-ahd]') : null;
     if (!trigger) return;
     const action = trigger.getAttribute('data-ahd');
     const id = trigger.getAttribute('data-id');
-    if (action === 'pd-refresh') {
+    if (action === 'ap-open') {
+      void ahOpenApproverPanel();
+    } else if (action === 'ap-close') {
+      document.getElementById('ahApproverPanel')?.setAttribute('hidden', '');
+    } else if (action === 'ho-approve') {
+      void ahApproveHandoverFromPanel(id);
+    } else if (action === 'pd-refresh') {
       void ahRefreshPending(true);
     } else if (action === 'pd-approve') {
       void ahApprovePending(ahFindPending(id));
@@ -2924,6 +3060,7 @@
       pendingObserver.observe(hdMainElement, { childList: true });
     }
     setTimeout(ahSyncPendingSection, 800);
+    void ahMountApproverEntry();
 
     const page = document.getElementById('uxPage');
     if (page && typeof MutationObserver === 'function') {

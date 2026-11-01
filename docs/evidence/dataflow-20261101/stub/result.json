@@ -13,7 +13,7 @@
       "id": "A1",
       "title": "印刷の相談は /api/ai/answer を呼ばない（固定ルールでも AI でもなく解決ループへ）",
       "ok": true,
-      "note": "GET /api/me 200 / GET /api/resolve/device-status 200 / PUT /api/state/cowork 200 / PUT /api/state/helpdesk 200"
+      "note": "PUT /api/state/cowork 200 / GET /api/me 200 / GET /api/resolve/device-status 200 / PUT /api/state/helpdesk 200"
     },
     {
       "id": "A2",
@@ -185,7 +185,13 @@
     },
     {
       "id": "U1",
-      "title": "DX 推進部以外の承認者は画面で承認者を選べない（docs/61 §7 の制約を実ブラウザで確認）",
+      "title": "DX 推進部以外の承認者は原本の役割の選択には出ない（docs/61 §7。入口は U2 の承認者パネル）",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "U2",
+      "title": "所属外の承認者が画面のボタンで承認者のパネルを開ける（完了承認と公開承認が別の見出し）",
       "ok": true,
       "note": ""
     },
@@ -193,7 +199,7 @@
       "id": "K19",
       "title": "承認者の画面に症状・原因・手順が出る（確認しないまま承認させない）",
       "ok": true,
-      "note": "KB-2026-0101 印刷ができませんときの対処\n作成者 synth.staff@example.test／状態 pending／作成 2026-11-01T08:18:19.386Z\n症状\n印刷ができません\n原因\n印刷スプーラの待機ジ"
+      "note": "KB-2026-0101 印刷ができませんときの対処\n作成者 synth.staff@example.test／状態 pending／作成 2026-11-01T11:40:50.557Z\n症状\n印刷ができません\n原因\n印刷スプーラの待機ジ"
     },
     {
       "id": "K7",
@@ -235,7 +241,7 @@
       "id": "K14",
       "title": "B の AI 入力の KB に A の端末 ID が入らない",
       "ok": true,
-      "note": "WEB-EBB31B3E"
+      "note": "WEB-9B8FCA35"
     },
     {
       "id": "K15",
@@ -298,6 +304,24 @@
       "note": "{\"owner\":\"画面内の資料（DB で未承認）\",\"src\":\"local\"}"
     },
     {
+      "id": "N0",
+      "title": "エージェント未接続でも、端末を操作せず承認済み KB を画面で案内する",
+      "ok": true,
+      "note": "kb=true sessions=0"
+    },
+    {
+      "id": "N0b",
+      "title": "案内の外部 AI 呼び出しなし（/api/ai/answer を呼ばない）",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "N0c",
+      "title": "エージェント未接続でも担当者へ引き継ぐ導線が残る",
+      "ok": true,
+      "note": ""
+    },
+    {
       "id": "N1",
       "title": "印刷の相談の提案の AI 入力に [KB-2026-0101 v2] の参照が入る",
       "ok": true,
@@ -341,15 +365,15 @@
     },
     {
       "id": "C1",
-      "title": "別人の承認者の画面には案件が無く、引継ぎの完了承認の導線が無い（未接続の確認）",
+      "title": "別人の承認者の状態に案件が無くても、完了承認の導線が画面にある",
       "ok": true,
       "note": "staffHasDraft=true"
     },
     {
       "id": "C2",
-      "title": "完了承認（API 直接。画面経路ではない）",
+      "title": "完了承認を画面のボタンで行う（API 直接ではない）",
       "ok": true,
-      "note": "200"
+      "note": ""
     },
     {
       "id": "R1",
@@ -499,6 +523,12 @@
   "apiLog": {
     "A_consult": [
       {
+        "method": "PUT",
+        "path": "/api/state/cowork",
+        "status": 200,
+        "count": 13
+      },
+      {
         "method": "GET",
         "path": "/api/me",
         "status": 200,
@@ -509,12 +539,6 @@
         "path": "/api/resolve/device-status",
         "status": 200,
         "count": 2
-      },
-      {
-        "method": "PUT",
-        "path": "/api/state/cowork",
-        "status": 200,
-        "count": 12
       },
       {
         "method": "PUT",
@@ -592,7 +616,7 @@
         "method": "GET",
         "path": "/api/me",
         "status": 200,
-        "count": 2
+        "count": 3
       },
       {
         "method": "GET",
@@ -623,6 +647,18 @@
         "path": "/api/device/browser",
         "status": 200,
         "count": 1
+      },
+      {
+        "method": "GET",
+        "path": "/api/knowledge/pending",
+        "status": 200,
+        "count": 1
+      },
+      {
+        "method": "GET",
+        "path": "/api/case-handovers/awaiting-approval",
+        "status": 200,
+        "count": 1
       }
     ],
     "B_consult": [
@@ -630,11 +666,17 @@
         "method": "PUT",
         "path": "/api/state/cowork",
         "status": 200,
-        "count": 11
+        "count": 12
       },
       {
         "method": "POST",
         "path": "/api/ai/answer",
+        "status": 200,
+        "count": 1
+      },
+      {
+        "method": "GET",
+        "path": "/api/resolve/device-status",
         "status": 200,
         "count": 1
       }
@@ -653,14 +695,20 @@
         "count": 1
       },
       {
+        "method": "GET",
+        "path": "/api/me",
+        "status": 200,
+        "count": 3
+      },
+      {
         "method": "PUT",
         "path": "/api/state/cowork",
         "status": 200,
-        "count": 14
+        "count": 16
       },
       {
         "method": "GET",
-        "path": "/api/me",
+        "path": "/api/resolve/device-status",
         "status": 200,
         "count": 2
       },
@@ -671,30 +719,30 @@
         "count": 4
       },
       {
-        "method": "GET",
-        "path": "/api/resolve/device-status",
+        "method": "POST",
+        "path": "/api/device/browser",
         "status": 200,
-        "count": 2
+        "count": 1
       },
       {
         "method": "POST",
-        "path": "/api/device/browser",
+        "path": "/api/resolve/knowledge-guide",
         "status": 200,
         "count": 1
       }
     ],
     "B_printConsult_agent": [
       {
-        "method": "GET",
-        "path": "/api/resolve/device-status",
-        "status": 200,
-        "count": 2
-      },
-      {
         "method": "PUT",
         "path": "/api/state/cowork",
         "status": 200,
-        "count": 15
+        "count": 14
+      },
+      {
+        "method": "GET",
+        "path": "/api/resolve/device-status",
+        "status": 200,
+        "count": 1
       },
       {
         "method": "POST",
@@ -726,7 +774,7 @@
         "method": "GET",
         "path": "/api/me",
         "status": 200,
-        "count": 5
+        "count": 8
       },
       {
         "method": "GET",
@@ -742,15 +790,15 @@
       },
       {
         "method": "PUT",
-        "path": "/api/state/cowork",
-        "status": 200,
-        "count": 20
-      },
-      {
-        "method": "PUT",
         "path": "/api/state/helpdesk",
         "status": 200,
         "count": 14
+      },
+      {
+        "method": "PUT",
+        "path": "/api/state/cowork",
+        "status": 200,
+        "count": 20
       },
       {
         "method": "GET",
@@ -804,7 +852,7 @@
         "method": "GET",
         "path": "/api/knowledge/pending",
         "status": 200,
-        "count": 1
+        "count": 2
       },
       {
         "method": "POST",
@@ -836,31 +884,31 @@
         "method": "GET",
         "path": "/api/me",
         "status": 200,
-        "count": 3
+        "count": 5
       },
       {
         "method": "GET",
         "path": "/api/employees",
         "status": 200,
-        "count": 1
+        "count": 2
       },
       {
         "method": "GET",
         "path": "/api/knowledge/approved-refs",
         "status": 200,
-        "count": 3
-      },
-      {
-        "method": "PUT",
-        "path": "/api/state/cowork",
-        "status": 200,
-        "count": 8
+        "count": 4
       },
       {
         "method": "PUT",
         "path": "/api/state/helpdesk",
         "status": 200,
-        "count": 5
+        "count": 9
+      },
+      {
+        "method": "PUT",
+        "path": "/api/state/cowork",
+        "status": 200,
+        "count": 12
       },
       {
         "method": "GET",
@@ -872,19 +920,25 @@
         "method": "POST",
         "path": "/api/device/browser",
         "status": 200,
-        "count": 1
+        "count": 2
       },
       {
         "method": "GET",
         "path": "/api/knowledge/pending",
         "status": 200,
-        "count": 2
+        "count": 4
       },
       {
         "method": "POST",
         "path": "/api/knowledge/ui-sync",
         "status": 200,
         "count": 3
+      },
+      {
+        "method": "GET",
+        "path": "/api/case-handovers/awaiting-approval",
+        "status": 200,
+        "count": 2
       },
       {
         "method": "POST",
@@ -898,7 +952,7 @@
         "method": "GET",
         "path": "/api/me",
         "status": 200,
-        "count": 7
+        "count": 10
       },
       {
         "method": "GET",
@@ -914,15 +968,15 @@
       },
       {
         "method": "PUT",
-        "path": "/api/state/helpdesk",
+        "path": "/api/state/cowork",
         "status": 200,
-        "count": 13
+        "count": 45
       },
       {
         "method": "PUT",
-        "path": "/api/state/cowork",
+        "path": "/api/state/helpdesk",
         "status": 200,
-        "count": 42
+        "count": 13
       },
       {
         "method": "POST",
@@ -1020,7 +1074,7 @@
         "method": "GET",
         "path": "/api/me",
         "status": 200,
-        "count": 7
+        "count": 10
       },
       {
         "method": "GET",
@@ -1056,7 +1110,7 @@
         "method": "GET",
         "path": "/api/resolve/device-status",
         "status": 200,
-        "count": 7
+        "count": 8
       },
       {
         "method": "POST",
@@ -1068,6 +1122,12 @@
         "method": "POST",
         "path": "/api/knowledge/ui-sync",
         "status": 403,
+        "count": 1
+      },
+      {
+        "method": "POST",
+        "path": "/api/resolve/knowledge-guide",
+        "status": 200,
         "count": 1
       },
       {
@@ -1113,17 +1173,17 @@
     "handoverStatusAfterStaffResolve": "resolved",
     "handoverStatusAfterKbApproval": "resolved",
     "knowledgeSegmentHead": "[KB-2026-0101 v2] 印刷ができませんときの対処\n出所: 別の担当者が承認\n症状: 印刷ができません\n原因: 印刷スプーラの待機ジョブが滞留していた（検証用の記録）\n手順:\nスプーラの状態を読み取って確認する\n待機ジョブの有無を担当者が確認する",
-    "printNoAgentShowsKb": false,
+    "printNoAgentShowsKb": true,
     "cardOrigins": {
       "KB-2026-0003": "seed",
       "KB-2026-0101": "other_person"
     },
     "flow": {
       "caseId": "CASE-0001",
-      "sessionId": "003e170e-1d0a-47d2-bf1e-97a50bfb1bd8",
-      "proposalStepId": "6e4c3b07-fd90-41e8-ad67-1b192a2ca412",
-      "commandId": "140ca1dd-5c1a-4267-96cb-f1acd3280e75",
-      "deviceId": "ebb31b3e-c493-4344-9dea-d7b3f744c778",
+      "sessionId": "6ea77163-5ddd-4a4c-84c6-d0dd3ccef8e7",
+      "proposalStepId": "64b8bff2-c516-4c65-821d-1b81c2d52d74",
+      "commandId": "605b2167-7cd3-4b8e-aa8c-8501c97d5f13",
+      "deviceId": "9b8fca35-b7fe-4006-be54-a257f5cc0550",
       "source": "mock",
       "ui": true,
       "api": true,
@@ -1131,9 +1191,9 @@
       "agent": true,
       "handoverSnapshot": true
     },
-    "handoverId": "4a0ec725-8198-4e18-8ecf-176ba664f586",
+    "handoverId": "4009c85f-59b0-4c41-a2f0-a592376a478f",
     "knowledge": {
-      "id": "f9ad2343-70a7-42b7-a29b-71bf03a9b3d3",
+      "id": "228c9964-32d2-4b56-ae51-129210b97b6a",
       "kbNo": "KB-2026-0101",
       "version": 2,
       "approverIsNotAuthor": true,
@@ -1181,12 +1241,8 @@
   },
   "findings": [
     {
-      "id": "N0",
-      "text": "端末エージェント未接続の印刷の相談は解決ループへ進まないので、承認済み KB は案内されない（画面に KB 番号: false）。"
-    },
-    {
-      "id": "C1",
-      "text": "引継ぎの完了（POST /api/case-handovers/:id/approve）は、案件を引き受けた本人の状態に下書きがある画面からしか呼ばれない。別人の承認者は画面から完了にできないので、この試験では API を直接呼んだ。"
+      "id": "N0-old",
+      "text": "（修正前）端末エージェント未接続の印刷の相談は解決ループへ進まないので、承認済み KB は案内されない（画面に KB 番号: true）。"
     }
   ],
   "realAi": {
