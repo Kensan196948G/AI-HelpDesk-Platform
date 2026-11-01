@@ -188,6 +188,16 @@ async function fakeFetch(input: unknown, init?: RequestInit) {
   throw new Error(`unexpected fetch: ${url}`);
 }
 
+/** 承認者が一覧で確認した本文の指紋（画面の ahReviewedHash と同じ値。#127 の束縛）。 */
+async function reviewedHash(clientRef: string): Promise<string> {
+  const list = await call(APPROVER_ONLY, 'GET', '/api/knowledge/pending');
+  expect(list.statusCode, list.body).toBe(200);
+  const items = list.json().items as { clientRef: string; contentHash: string }[];
+  const item = items.find((entry) => entry.clientRef === clientRef);
+  if (!item) throw new Error(`一覧にない: ${clientRef}`);
+  return item.contentHash;
+}
+
 function call(
   email: string | null,
   method: 'GET' | 'POST',
@@ -1453,6 +1463,7 @@ describe('共通支援セッション（Mock: ヘルパー / RSP / 名簿 / PII 
           const approved = await call(APPROVER_ONLY, 'POST', '/api/knowledge/ui-sync', {
             ...payload,
             status: 'approved',
+            contentHash: await reviewedHash(clientRef),
             checklist: { reproducible: true, noSecrets: true, noBlame: true, scopeClear: true },
           });
           expect(approved.statusCode, approved.body).toBe(200);
@@ -3524,6 +3535,7 @@ describe('共通支援セッション（Mock: ヘルパー / RSP / 名簿 / PII 
           const approved = await call(APPROVER_ONLY, 'POST', '/api/knowledge/ui-sync', {
             ...payload,
             status: 'approved',
+            contentHash: await reviewedHash(ref),
             checklist: FULL_CHECKLIST,
           });
           expect(approved.statusCode, approved.body).toBe(200);

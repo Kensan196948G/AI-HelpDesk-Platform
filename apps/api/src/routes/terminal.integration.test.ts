@@ -255,6 +255,7 @@ describe('RSP実行セッション API', () => {
           cause: item?.cause,
           steps: item?.steps,
           keywords: item?.keywords,
+          contentHash: item?.contentHash,
           comment: '',
           checklist: { reproducible: true, noSecrets: true, noBlame: true, scopeClear: true },
         },
