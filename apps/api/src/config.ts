@@ -187,6 +187,11 @@ if (isProduction && parsed.data.FOLDER_ACCESS_ALLOW_UNVERIFIED_LEASE) {
   process.exit(1);
 }
 // 出所を確認できない実行結果を本番で受け付けない（fail-closed。API 側でも拒否する。docs/63 §7）。
+// 検証用 Skill の承認を本番へ持ち込まない。
+if (isProduction && process.env.ASSIST_VERIFICATION_MANIFEST?.trim()) {
+  console.error('[config] NODE_ENV=production では ASSIST_VERIFICATION_MANIFEST を使えません。');
+  process.exit(1);
+}
 if (isProduction && parsed.data.ASSIST_ALLOW_MOCK_EXECUTION) {
   console.error(
     '[config] NODE_ENV=production では ASSIST_ALLOW_MOCK_EXECUTION=true を使えません。',

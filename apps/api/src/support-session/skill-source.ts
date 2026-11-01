@@ -18,9 +18,15 @@ const manifestCache = new Map<string, { key: string; manifest: ApprovalManifest 
  * 承認の manifest。変更が無ければ読み直さない（size と mtime / ctime で変更を検知する）。
  * 無い・壊れたファイルは空（未承認として扱う。fail-closed）。
  */
-export function loadApprovalManifest(
-  file: string = path.join(repoRoot, APPROVAL_MANIFEST_PATH),
-): ApprovalManifest {
+export function loadApprovalManifest(file?: string): ApprovalManifest {
+  const main = readManifestFile(file ?? path.join(repoRoot, APPROVAL_MANIFEST_PATH));
+  // 検証用 manifest（人が --include-verification で承認したもの）。本番では使わない。
+  const extra = process.env.ASSIST_VERIFICATION_MANIFEST?.trim();
+  if (file !== undefined || !extra || process.env.NODE_ENV === 'production') return main;
+  return { ...main, skills: [...main.skills, ...readManifestFile(extra).skills] };
+}
+
+function readManifestFile(file: string): ApprovalManifest {
   try {
     const stat = statSync(file);
     const key = `${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`;

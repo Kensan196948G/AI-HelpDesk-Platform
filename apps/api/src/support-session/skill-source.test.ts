@@ -69,4 +69,28 @@ describe('スクリプトのハッシュ（実ファイル）', () => {
       expect(loadApprovalManifest(manifestFile).skills).toEqual([]);
     });
   });
+
+  it('検証用 manifest は明示したときだけ追加し、本番では読まない', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'aihd-verify-manifest-'));
+    const extra = path.join(dir, 'extra.json');
+    writeFileSync(extra, JSON.stringify({ version: 1, skills: [{ id: 'synth.only' }] }));
+    const original = {
+      manifest: process.env.ASSIST_VERIFICATION_MANIFEST,
+      env: process.env.NODE_ENV,
+    };
+    const has = () => loadApprovalManifest().skills.some((skill) => skill.id === 'synth.only');
+    try {
+      delete process.env.ASSIST_VERIFICATION_MANIFEST;
+      expect(has()).toBe(false);
+      process.env.ASSIST_VERIFICATION_MANIFEST = extra;
+      expect(has()).toBe(true);
+      process.env.NODE_ENV = 'production';
+      expect(has()).toBe(false);
+    } finally {
+      if (original.manifest === undefined) delete process.env.ASSIST_VERIFICATION_MANIFEST;
+      else process.env.ASSIST_VERIFICATION_MANIFEST = original.manifest;
+      process.env.NODE_ENV = original.env;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
