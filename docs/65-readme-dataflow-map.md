@@ -6,7 +6,7 @@ README の図と記述の各線を、実際の経路と証跡に対応づける�
 - 追記: 2026-11-01。`verify/dataflow-assist-integration` で #120（`abb9a38`。#117 を含む。merge は `48cbff3`）を統合した。**この表の E2E の証跡は #120 の統合の前の記録で、統合の後に通しの E2E は流していない。** 統合の後の結果は vitest と pwsh の試験で、[docs/evidence/assist-integration-20261101/](evidence/assist-integration-20261101/) にある。3 経路の責任範囲は [docs/67](67-execution-paths.md)。
 - 通しの E2E: `scripts/e2e/dataflow-integration.mjs`、結果は [docs/evidence/dataflow-20261101/](evidence/dataflow-20261101/)。`stub/`、`real-ai/` が修正後、`before-fix/` が修正前の再現、`round1-*/` が最初の通しの記録。
 
-- 統合の後の通し E2E: `727bd13` で 88 項目、失敗 0（スタブ AI、模擬の実行器）。結果は [docs/evidence/assist-integration-20261101/e2e/result.json](evidence/assist-integration-20261101/e2e/result.json)。
+- 統合の後の通し E2E: `bdc01cb` で 88 項目、失敗 0（スタブ AI、模擬の実行器）。結果は [docs/evidence/assist-integration-20261101/e2e/result.json](evidence/assist-integration-20261101/e2e/result.json)。
 
 ## 0-1. 同じ実端末の結果から次の相談まで（2026-11-01、`ae9bcce`）
 
@@ -65,9 +65,9 @@ README の図と記述の各線を、実際の経路と証跡に対応づける�
 
 実機の実行は `ae9bcce`。その後のレビューの修正（KB の行の選択、keywords、画面の指紋、UUID、承認者の一覧を解決済みに限定、`command-agent.ps1` の報告の分離と `ConfigPath` の既定）は試験で確認した。実機では流し直していない。
 
-### この実行で見つけた欠陥（未修正）
+### この実行で見つけた欠陥（`6b070be` で修正。試験のみで実機では未確認）
 
-- **結果を見る画面が無いと、実行が済んでいても `RESULT_TIMEOUT` になる。** 二重 Y の回はコマンドが `done`、結果は `endpoint_agent` だったが、API だけで操作して画面を開いていなかったので、ステップは後で `failed`、セッションは `escalated` になった。実行の事実と状態が食い違う。
+- **結果を見る画面が無いと、実行が済んでいても `RESULT_TIMEOUT` になっていた。** 二重 Y の回はコマンドが `done`、結果は `endpoint_agent` だったが、API だけで操作して画面を開いていなかったので、ステップは後で `failed`、セッションは `escalated` になった。実行の事実と状態が食い違う。
 
 ## 0. 実機で確かめた範囲（2026-11-01）
 
