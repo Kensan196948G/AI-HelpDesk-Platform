@@ -91,6 +91,8 @@ const configKey = randomBytes(24).toString('hex');
 const deviceId = randomUUID();
 const deviceToken = randomBytes(32).toString('hex');
 let configServed = false;
+// 結果へ書かない（docs/65 §0）。
+let publicUrl = '';
 let deviceRouteOpen = true;
 
 const FILES = [
@@ -228,7 +230,7 @@ function startDeviceProxy() {
       response.setHeader('Content-Type', 'application/json');
       response.end(
         JSON.stringify({
-          url: `${process.env.RDC_PUBLIC_URL ?? results.publicUrl}/api/device/agent`,
+          url: `${process.env.RDC_PUBLIC_URL ?? publicUrl}/api/device/agent`,
           deviceToken,
           browserDeviceId: deviceId,
           commandIntervalSeconds: 3,
@@ -389,13 +391,13 @@ const STATE = { mainCase: null, handoverId: null, kbId: null };
 const STEPS_API = {
   /** 導入に必要な値をファイルに書く。値は標準出力へ出さない。 */
   async bootstrap(url) {
-    results.publicUrl = url.searchParams.get('public') ?? '';
+    publicUrl = url.searchParams.get('public') ?? '';
     writeFileSync(
       process.env.RDC_BOOTSTRAP,
       JSON.stringify({ dlKey, configKey, deviceId, files: FILES }),
       { mode: 0o600 },
     );
-    return { ok: Boolean(results.publicUrl) };
+    return { ok: Boolean(publicUrl) };
   },
   async status() {
     const [row] = await sql`
