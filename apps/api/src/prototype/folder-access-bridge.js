@@ -42,6 +42,7 @@
     RSP_DEVICE_NONE: 'RSP に該当する端末がありません。',
     RSP_DEVICE_MULTIPLE: 'RSP に該当する端末が複数あります。',
     RSP_AGENT_NOT_INSTALLED: '端末に MeshAgent が導入されていません。',
+    RSP_AGENT_OFFLINE: '対象の端末がオフラインです。端末が接続されてから再確認してください。',
     RSP_NOT_CONFIGURED: 'RSP 連携が未設定です。',
     RSP_UNAVAILABLE: 'RSP に接続できません。',
     RSP_PROBE_UNAVAILABLE: 'RSP から端末の確認結果を取得できません。再確認します。',

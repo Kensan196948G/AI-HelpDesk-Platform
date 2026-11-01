@@ -312,6 +312,8 @@ async function determineDevice(
       return { kind: 'pending', code: 'LEASE_CONFLICT' };
     }
     if (!match.agent_installed) return { kind: 'pending', code: 'RSP_AGENT_NOT_INSTALLED' };
+    // オフラインの端末へ固定テンプレートを積まない（復帰時に承認なしで実行されるのを防ぐ）。
+    if (match.agent_online !== true) return { kind: 'pending', code: 'RSP_AGENT_OFFLINE' };
     const enqueued = await enqueueDeviceIdentityProbe(match.hostname, ctx.id);
     // hostname だけを根拠にしない。キューへ積まれた端末が検索結果と同じことを確かめる。
     if (enqueued.deviceId !== match.device_id) return { kind: 'mismatch' };
