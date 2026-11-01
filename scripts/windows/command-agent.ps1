@@ -45,6 +45,13 @@ $script:Secrets = @()
 $script:Headers = @{}
 $script:CommandUrl = ''
 $script:ReportedDeviceId = ''
+# サーバと連絡できないままトークンを持ち続ける上限（folder-helper.ps1 と同じ値。docs/66 §7）。
+$script:LocalNoContactRetentionHours = 168
+$script:LocalClockSkewHours = 24
+$script:LastContactWriteIntervalMinutes = 60
+$script:LastContactWritten = $null
+# 保持期限で止めたときの終了コード。成功（0）とも通常の失敗（1）とも分ける。
+$script:ExitRetentionExpired = 3
 
 # 許可リスト（standard）。endpoint-command-agent.mjs の SKILL_SCRIPTS から昇格必須を除いたもの。
 # PowerShell の @{} は大文字小文字を区別しないので、序数比較の Dictionary を使う。
@@ -158,6 +165,61 @@ function Get-ConfigAclProblem {
   $mode = [string](& stat -c '%a' -- $Path)
   if ($mode -notmatch '^[0-7]?[0-7]00$') { return 'group / other に許可があります: ' + $mode }
   return ''
+}
+
+function Get-LastContactPath {
+  return "$ConfigPath.last-contact"
+}
+
+# 保持期限を過ぎたか。時計が戻って記録が未来になった場合は、期限を延ばさず過ぎたものとして扱う。
+function Test-LocalRetentionExpired {
+  param([DateTimeOffset]$RecordTime, [DateTimeOffset]$Now, [double]$Hours)
+  if ($RecordTime -gt $Now.AddHours($script:LocalClockSkewHours)) { return $true }
+  return ($Now -ge $RecordTime.AddHours($Hours))
+}
+
+# サーバと連絡できた時刻。poll のたびに書かない。内容ではなくファイルの時刻を使う（秘密を含まない）。
+function Update-LastContact {
+  $now = [DateTimeOffset]::UtcNow
+  if ($null -ne $script:LastContactWritten -and $now -lt $script:LastContactWritten.AddMinutes($script:LastContactWriteIntervalMinutes)) {
+    return
+  }
+  try {
+    [IO.File]::WriteAllText((Get-LastContactPath), 'contact')
+    $script:LastContactWritten = $now
+  } catch {
+    Write-AgentLog '最後の連絡の記録を書けませんでした'
+  }
+}
+
+# 通信なしで保持期限を適用する。期限切れなら $true（呼び出し側は通信せずに止まる）。
+# 期限切れは成功でも、サーバが認めた停止でもない。サーバ側のトークンは失効しない。
+function Invoke-LocalRetention {
+  param([DateTimeOffset]$Now = [DateTimeOffset]::UtcNow)
+  if (-not (Test-Path -LiteralPath $ConfigPath -PathType Leaf)) { return $false }
+  # 発行（設定ファイルの作成）と最後の連絡の新しいほう。発行し直した直後に古い記録で消さない。
+  $last = [DateTimeOffset][IO.File]::GetLastWriteTimeUtc($ConfigPath)
+  $contactPath = Get-LastContactPath
+  if (Test-Path -LiteralPath $contactPath) {
+    $contacted = [DateTimeOffset][IO.File]::GetLastWriteTimeUtc($contactPath)
+    if ($contacted -gt $last) { $last = $contacted }
+  }
+  if (-not (Test-LocalRetentionExpired -RecordTime $last -Now $Now -Hours $script:LocalNoContactRetentionHours)) {
+    return $false
+  }
+  $notice = "サーバと $($script:LocalNoContactRetentionHours) 時間連絡できていません。これは期限切れで、成功やサーバによる停止の確認ではありません。"
+  if ($DryRun) {
+    Write-AgentLog ($notice + 'dry-run のため設定ファイルは消しません')
+    return $true
+  }
+  try {
+    Remove-Item -LiteralPath $ConfigPath -Force
+    if (Test-Path -LiteralPath $contactPath) { Remove-Item -LiteralPath $contactPath -Force }
+    Write-AgentLog ($notice + '設定ファイル（トークン）を消しました。再開にはトークンの再発行が要ります')
+  } catch {
+    Write-AgentLog ($notice + '設定ファイルを消せませんでした。手動で消してください')
+  }
+  return $true
 }
 
 function Import-AgentConfig {
@@ -479,7 +541,10 @@ function Invoke-AgentRequest {
     $arguments.Body = [Text.Encoding]::UTF8.GetBytes(($Payload | ConvertTo-Json -Depth 20 -Compress))
     $arguments.ContentType = 'application/json; charset=utf-8'
   }
-  return Invoke-RestMethod @arguments
+  $response = Invoke-RestMethod @arguments
+  # 例外にならなかった応答だけを連絡と数える。5xx、401、通信の失敗は数えない。
+  Update-LastContact
+  return $response
 }
 
 function Send-CommandResult {
@@ -492,7 +557,10 @@ function Invoke-CommandTick {
     $response = Invoke-AgentRequest -Method 'Get' -Uri $script:CommandUrl -Payload $null
   } catch {
     if ($_.Exception.PSObject.Properties['Response'] -and $_.Exception.Response -and
-      [int]$_.Exception.Response.StatusCode -eq 204) { return }
+      [int]$_.Exception.Response.StatusCode -eq 204) {
+      Update-LastContact
+      return
+    }
     throw
   }
   $command = Get-JsonProperty $response 'command'
@@ -538,6 +606,7 @@ function Invoke-AgentMain {
   if (Test-IsForbiddenIdentity -Sid $sid) {
     throw 'SYSTEM などのサービスアカウントでは実行しません（本人権限の原則。docs/66）。'
   }
+  if (Invoke-LocalRetention) { return $script:ExitRetentionExpired }
   Import-AgentConfig -Path $ConfigPath
   if (Test-IsElevated) {
     Write-AgentLog '警告: 昇格したプロセスで動いています。本人の通常の権限で起動してください'
@@ -545,6 +614,7 @@ function Invoke-AgentMain {
   $interval = [Math]::Max(1, $IntervalSeconds)
   Write-AgentLog "command-agent start: $($script:CommandUrl) source=$(Get-ExecutionSource)"
   while ($true) {
+    if (Invoke-LocalRetention) { return $script:ExitRetentionExpired }
     try {
       Invoke-CommandTick
     } catch {
