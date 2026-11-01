@@ -976,7 +976,7 @@
         '</div>' +
         '<div class="ahd-row"><button class="u-btn pri" data-act="wRemoteRequest">本人に遠隔支援を依頼</button></div>' +
         ahRspLinks(c) +
-        '<div class="ahd-msg">実行が必要な操作は、既存の許可リスト（SPOOLER_RESTART）と本人の Y/N・管理者承認を通します。</div>' +
+        '<div class="ahd-msg">実行が必要な操作は、承認済みの Skill と本人の Y/N・管理者承認を通します。</div>' +
         '</div>'
       );
     }

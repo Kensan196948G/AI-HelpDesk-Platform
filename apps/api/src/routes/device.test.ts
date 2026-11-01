@@ -260,6 +260,16 @@ describe('device routes', () => {
   });
 });
 
+/** 閉じる前に作られて残っている行（Skill の情報なし）を再現する。 */
+async function queuedLegacyCommand(): Promise<string> {
+  const rows = await sql<{ id: string }[]>`
+    INSERT INTO device_commands (user_email, op_id, params)
+    VALUES (${EMAIL}, 'SPOOLER_RESTART', '{}'::jsonb)
+    RETURNING id
+  `;
+  return rows[0]?.id ?? '';
+}
+
 describe('device command channel', () => {
   let commandId = '';
 
@@ -268,17 +278,18 @@ describe('device command channel', () => {
     await sql`DELETE FROM device_inventories WHERE user_email = ${EMAIL}`;
   });
 
-  it('UI がコマンドを登録できる（許可リスト）', async () => {
+  it('画面からコマンドを作る経路は閉じている（行を作らない）', async () => {
+    const before = await sql`SELECT id FROM device_commands WHERE user_email = ${EMAIL}`;
     const res = await app.inject({
       method: 'POST',
       url: '/api/device/command',
       payload: { opId: 'SPOOLER_RESTART' },
     });
-    expect(res.statusCode, res.body).toBe(200);
-    const body = res.json();
-    expect(body.command.op_id).toBe('SPOOLER_RESTART');
-    expect(body.command.status).toBe('queued');
-    commandId = body.command.id;
+    expect(res.statusCode, res.body).toBe(410);
+    expect(res.json().error.code).toBe('DEVICE_COMMAND_CLOSED');
+    const after = await sql`SELECT id FROM device_commands WHERE user_email = ${EMAIL}`;
+    expect(after.length).toBe(before.length);
+    commandId = await queuedLegacyCommand();
   });
 
   it('端末エージェントが取得すると delivered になり、二重配信しない', async () => {
@@ -327,22 +338,8 @@ describe('device command channel', () => {
     expect(res.statusCode).toBe(401);
   });
 
-  it('許可リスト外の操作は 400', async () => {
-    const res = await app.inject({
-      method: 'POST',
-      url: '/api/device/command',
-      payload: { opId: 'REBOOT' },
-    });
-    expect(res.statusCode).toBe(400);
-  });
-
   it('配信前の結果報告は 404', async () => {
-    const created = await app.inject({
-      method: 'POST',
-      url: '/api/device/command',
-      payload: { opId: 'SPOOLER_RESTART' },
-    });
-    const id = created.json().command.id;
+    const id = await queuedLegacyCommand();
     const res = await app.inject({
       method: 'POST',
       url: `/api/device/command/${id}/result`,
@@ -420,12 +417,7 @@ describe('device command channel', () => {
   });
 
   it('別端末宛コマンドの結果報告は 403', async () => {
-    const created = await app.inject({
-      method: 'POST',
-      url: '/api/device/command',
-      payload: { opId: 'SPOOLER_RESTART' },
-    });
-    const id = created.json().command.id;
+    const id = await queuedLegacyCommand();
     await sql`
       UPDATE device_commands SET status = 'delivered', device_id = 'other-device' WHERE id = ${id}
     `;

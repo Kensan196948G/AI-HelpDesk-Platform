@@ -335,10 +335,6 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
   // ── 実端末コマンド（許可リストのみ） ─────────────────────────────
   // UI が提案の Y 承認後に登録し、端末エージェントが取りに来て実行する。
   // 端末エージェントの経路は Access のサービスドメイン + デバイストークンで守る。
-  const CommandBodySchema = z.object({
-    opId: z.enum(['SPOOLER_RESTART']),
-    params: z.record(z.string(), z.unknown()).optional(),
-  });
   const CommandResultSchema = z.object({
     ok: z.boolean(),
     result: z.unknown().optional(),
@@ -346,29 +342,15 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
   });
   const CommandIdSchema = z.object({ id: z.string().uuid() });
 
-  app.post(
-    '/device/command',
-    { preHandler: authenticateUi, bodyLimit: 8 * 1024 },
-    async (request) => {
-      if (!request.uiEmail) throw badRequest('UI の認証情報がありません。');
-      if (!checkRateLimit(`device-command:${request.uiEmail}`, 10, 60_000)) {
-        throw new ApiError(429, 'RATE_LIMITED', 'コマンドの要求が多すぎます。少し待ってください。');
-      }
-      const input = CommandBodySchema.parse(request.body);
-      const inventory = await loadClientInventory(request.uiEmail).catch(() => null);
-      const rows = await sql<{ id: string }[]>`
-      INSERT INTO device_commands (user_email, device_id, op_id, params)
-      VALUES (
-        ${request.uiEmail},
-        ${inventory?.deviceId ?? null},
-        ${input.opId},
-        ${jsonbValue(input.params ?? {})}
-      )
-      RETURNING id, op_id, status, device_id, created_at
-    `;
-      return { ok: true, command: rows[0] };
-    },
-  );
+  // 画面から端末コマンドを作る経路は閉じた（ユーザーの判断。docs/67）。Skill、本人の Y、承認のハッシュ、
+  // 期限のどれも通らずに端末へ届くため。端末の操作は解決ループの承認を通す。
+  app.post('/device/command', { preHandler: authenticateUi }, async () => {
+    throw new ApiError(
+      410,
+      'DEVICE_COMMAND_CLOSED',
+      'この経路は閉じました。端末の操作は本人の承認を通す経路で行います。',
+    );
+  });
 
   // 端末エージェントが次のコマンドを取得する（1件だけ・配信済みに更新）。
   //
