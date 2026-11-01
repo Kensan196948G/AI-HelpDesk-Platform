@@ -119,6 +119,17 @@
     return 'DeepSeek-V4.1-Flash';
   }
 
+  /** honest-labels-bridge.js の判定。読み込めない文脈では何もしない。 */
+  function ahHonest() {
+    return typeof window !== 'undefined' && window.__AIHD_HONEST__ ? window.__AIHD_HONEST__ : null;
+  }
+
+  /** 報告書のモデル欄。実 AI の回答が無い相談に DeepSeek と書かない。 */
+  function ahReportModel(chat) {
+    const honest = ahHonest();
+    return honest ? honest.reportModel(chat) : ahModel();
+  }
+
   function ahKindLabel(c) {
     try {
       const kind = kindOf(c.kind);
@@ -195,6 +206,10 @@
   function ahPcPayload(c) {
     const s = c.pc && c.pc.state === 'done' ? c.pc.snap : null;
     if (!s) return { available: false, itemCount: 0, flags: [], items: [] };
+    // 固定データのスナップショットは実端末の情報として報告書へ載せない。
+    if (ahHonest() && ahHonest().isDemoSnapshot(s)) {
+      return { available: false, itemCount: 0, flags: [], items: [] };
+    }
     let visible = false;
     try {
       visible = pcVisible(c);
@@ -250,12 +265,13 @@
         });
       } else if (message.kind === 'ai' || message.kind === 'block') {
         const text = ahMessageText(message).slice(0, 12000);
-        if (text) out.push({ at, role: 'ai', who: message.who || 'AI', text });
+        const who = message.who || (ahHonest() ? ahHonest().whoFor(message) : 'AI');
+        if (text) out.push({ at, role: 'ai', who, text });
       } else if (message.kind === 'kb') {
         out.push({
           at,
           role: 'ai',
-          who: 'AI',
+          who: ahHonest() ? ahHonest().whoFor(message) : 'AI',
           text: (message.aiText || '社内資料を提示しました。').slice(0, 12000),
           kbId: message.kbId,
           score: typeof message.score === 'number' ? message.score : undefined,
@@ -298,7 +314,10 @@
       .filter((message) => message.kind === 'diag')
       .slice(-50)
       .map((message) => ({
-        title: message.title || '端末の診断（読み取りのみ）',
+        // 診断は固定データ。報告書でも実端末の結果に見せない。
+        title:
+          (ahHonest() ? ahHonest().DEMO_PREFIX : '') +
+          (message.title || '端末の診断（読み取りのみ）'),
         rows: (message.steps || []).map((step) => ({
           k: String(step[0] || ''),
           v: String(step[1] || ''),
@@ -318,7 +337,10 @@
       const state = (typeof PST !== 'undefined' && PST[proposal.status]) || [];
       out.push({
         opId: proposal.opId,
-        name: String(op.name || proposal.opId).slice(0, 200),
+        name: ((ahHonest() ? ahHonest().DEMO_PREFIX : '') + (op.name || proposal.opId)).slice(
+          0,
+          200,
+        ),
         level: op.level,
         impact: op.impact ? String(op.impact).slice(0, 1000) : undefined,
         rollback: op.rollback ? String(op.rollback).slice(0, 1000) : undefined,
@@ -529,7 +551,7 @@
         subject: (c.subject || '(件名なし)').slice(0, 500),
         body: (c.body || '').slice(0, 12000),
         urgency: c.urg || '通常',
-        model: ahModel(),
+        model: ahReportModel(chat),
         step: c.step || 7,
       },
       pc: ahPcPayload(c),
@@ -543,7 +565,7 @@
           );
           return found ? found.provider : undefined;
         })(),
-        model: ahModel(),
+        model: ahReportModel(chat),
         messages: ahMessages(c, chat),
         diagnoses: ahDiagnoses(chat),
         proposals: ahProposals(chat),
@@ -2032,6 +2054,8 @@
         const html = '<p>' + ahEsc(data.answer || '').replace(/\n/g, '<br>') + '</p>';
         ai(chat, html, {
           model: data.model || 'DeepSeek-V4.1-Flash',
+          // 実 AI かフォールバックかを表示と報告書で判定する（honest-labels-bridge.js）。
+          provider: data.provider,
           conf: data.confidence || '—',
           src: (data.sources || []).map((source) => source.kbNo),
         });
