@@ -727,8 +727,9 @@ try {
     $resolved = Resolve-ApprovedSkillScript -Command ([pscustomobject]@{
         skill_id = $skillId; skill_version = $entry.version; skill_content_hash = $entry.contentHash
       })
-    Assert-True ('real: ハッシュ一致 ' + $skillId) ((Split-Path -Leaf $resolved) -ceq $script:SkillScripts[$skillId])
-    $bytes = [IO.File]::ReadAllBytes($resolved)
+    $resolved.Stream.Dispose()
+    Assert-True ('real: ハッシュ一致 ' + $skillId) ((Split-Path -Leaf $resolved.Path) -ceq $script:SkillScripts[$skillId])
+    $bytes = [IO.File]::ReadAllBytes($resolved.Path)
     Assert-True ('real: LF のまま ' + $skillId) (-not ([Text.Encoding]::UTF8.GetString($bytes).Contains("`r`n")))
   }
 
