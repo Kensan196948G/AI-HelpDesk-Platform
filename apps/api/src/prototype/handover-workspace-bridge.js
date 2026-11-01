@@ -811,13 +811,13 @@
     const items = (HW.ai[t.id] || []).slice(-5);
     const note = caseId
       ? 'Aさんが共有したPC情報と、ここまでのAI一次対応の履歴を根拠に回答します。引継ぎ記録がある場合は、質問と回答をその記録に保存します。'
-      : 'AI窓口から引き継がれた案件ではないため、承認済みナレッジを根拠に回答します。質問は案件記録に保存されません。';
+      : 'AI窓口から引き継がれた案件ではないため、社内ナレッジを根拠に回答します。質問は案件記録に保存されません。';
     return (
       '<section class="hw-action hw-ai"><div class="hw-action-h"><b>AI に聞く</b><span class="hw-tag input">入力</span><span class="hw-chip info">' +
       (caseId ? '案件コンテキスト' : 'ナレッジ検索') +
       '</span></div><p class="hw-ai-note">' +
       esc(note) +
-      '</p><p class="hw-ai-note">プロンプトには承認済みナレッジ本文と共有PC情報が含まれます。取扱いに注意してください。</p><div class="hw-form-row"><label>質問<textarea id="hw-ai-input" rows="2" placeholder="例：この状態で次に確認すべきことは？">' +
+      '</p><p class="hw-ai-note">プロンプトには社内ナレッジ本文と共有PC情報が含まれます。取扱いに注意してください。</p><div class="hw-form-row"><label>質問<textarea id="hw-ai-input" rows="2" placeholder="例：この状態で次に確認すべきことは？">' +
       esc(HW.aiDraft[t.id] || '') +
       '</textarea></label></div><div class="hw-form-row end"><button type="button" class="hw-btn pri" data-hw="ai"' +
       (busy ? ' disabled' : '') +

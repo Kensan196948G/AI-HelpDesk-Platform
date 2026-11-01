@@ -1,4 +1,6 @@
+import { config } from '../config.js';
 import { type KnowledgeLike, keywordForms } from '../domain/ai.js';
+import { approvalOriginOf } from '../domain/approval-origin.js';
 import { redactKnowledgeText } from '../domain/pii.js';
 
 /**
@@ -79,8 +81,11 @@ export async function findApprovedKnowledge(
   intentKeywords: string[],
 ): Promise<KnowledgeLike[]> {
   const rows: any[] = await tx`
-    SELECT k.id, k.kb_no, k.title, k.symptom, k.cause, k.steps, k.keywords, k.version
+    SELECT k.id, k.kb_no, k.title, k.symptom, k.cause, k.steps, k.keywords, k.version,
+           k.author_id, k.approver_id, au.email AS author_email, pu.email AS approver_email
     FROM knowledge k
+    LEFT JOIN users au ON au.id = k.author_id
+    LEFT JOIN users pu ON pu.id = k.approver_id
     WHERE k.status = 'approved'
       AND k.approver_id IS NOT NULL
       AND k.approved_at IS NOT NULL
@@ -100,6 +105,16 @@ export async function findApprovedKnowledge(
     steps: redactKnowledgeText(row.steps).text,
     keywords: row.keywords?.length ? row.keywords : keywordsFromTitle(row.title),
     version: row.version,
+    // 根拠に使うかの判定は上の条件のまま。出所は事実として付ける。
+    approvalOrigin: approvalOriginOf(
+      {
+        authorId: String(row.author_id),
+        approverId: String(row.approver_id),
+        authorEmail: row.author_email,
+        approverEmail: row.approver_email,
+      },
+      config.SHARED_IDENTITY_GROUPS,
+    ),
   }));
   return scoreKnowledge(candidates, text, intentKeywords);
 }

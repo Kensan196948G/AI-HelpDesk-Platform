@@ -69,6 +69,22 @@ function isSharedIdentity(row, sharedGroups) {
   );
 }
 
+/** scripts/seed.ts の利用者の固定 ID（domain/approval-origin.ts と同じ。試験で一致を確かめる）。 */
+export const SEED_USER_IDS = [
+  '11111111-1111-4111-8111-111111111111',
+  '22222222-2222-4222-8222-222222222222',
+  '33333333-3333-4333-8333-333333333333',
+  '44444444-4444-4444-8444-444444444444',
+  '55555555-5555-4555-8555-555555555555',
+  '66666666-6666-4666-8666-666666666666',
+];
+
+function isSeedRow(row) {
+  return (
+    SEED_USER_IDS.includes(String(row.author_id)) && SEED_USER_IDS.includes(String(row.approver_id))
+  );
+}
+
 /** apps/api/src/domain/pii.ts の KNOWLEDGE_RULES と redactPII の一部と同じ判定（試験で一致を確かめる）。 */
 const DEVICE_INFO_PATTERNS = [
   /【(?:端末|PC基本情報[^】]*|実診断の結果|AIの診断結果|対応案[^】]*|添付[^】]*)】/,
@@ -119,6 +135,8 @@ export function summarize(states, knowledge, demoKeys, sharedGroups = []) {
       draftsWithoutClientRef: 0,
       approvedWithDeviceInfo: 0,
       notApprovedWithDeviceInfo: 0,
+      usableOtherPerson: 0,
+      usableSeed: 0,
     },
   };
 
@@ -158,7 +176,10 @@ export function summarize(states, knowledge, demoKeys, sharedGroups = []) {
     if (blocker) report.db[blocker] += 1;
     else {
       report.db.usable += 1;
-      if (isSharedIdentity(row, sharedGroups)) report.db.usableSharedIdentity += 1;
+      // サーバの approvalOriginOf と同じ順: seed → shared_identity → other_person。
+      if (isSeedRow(row)) report.db.usableSeed += 1;
+      else if (isSharedIdentity(row, sharedGroups)) report.db.usableSharedIdentity += 1;
+      else report.db.usableOtherPerson += 1;
       if (!row.keywords?.length) report.db.usableWithoutKeywords += 1;
     }
   }

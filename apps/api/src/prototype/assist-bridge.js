@@ -38,6 +38,7 @@
     pendingRejectPayload: (item, reason) => ahPendingRejectPayload(item, reason),
     pendingSectionHtml: (items, errorCode) => ahPendingSectionHtml(items, errorCode),
     kbConsultText: (ticket) => ahKbConsultText(ticket),
+    reportSources: (chat) => ahSources(chat),
     // 相談者の画面が受信箱を呼ばないことの単体テスト用（staff-access.test.ts）。
     fetchHandoverInbox: () => ahFetchHandoverInbox(),
     // 報告書へ渡す内容の確認用（scripts/e2e/wizard-real-path.mjs）。
@@ -391,6 +392,18 @@
     if (!chat) return [];
     const map = new Map();
     for (const message of chat.messages) {
+      // サーバの回答（DB の KB）は出所をそのまま残す。
+      for (const source of message.sourceDetails || []) {
+        if (source && source.kbNo && !map.has(source.kbNo)) {
+          const entry = {
+            id: String(source.id || source.kbNo).slice(0, 60),
+            kbNo: String(source.kbNo).slice(0, 60),
+            title: String(source.title || '').slice(0, 300),
+          };
+          if (source.approvalOrigin) entry.approvalOrigin = source.approvalOrigin;
+          map.set(source.kbNo, entry);
+        }
+      }
       if (message.kind !== 'kb') continue;
       for (const id of message.hits || []) {
         if (map.has(id)) continue;
@@ -401,7 +414,13 @@
           kb = null;
         }
         if (kb)
-          map.set(id, { id: kb.id, kbNo: kb.id, title: String(kb.title || '').slice(0, 300) });
+          map.set(id, {
+            id: kb.id,
+            kbNo: kb.id,
+            title: String(kb.title || '').slice(0, 300),
+            // 画面内（state）の資料。DB の承認ではない。
+            approvalOrigin: 'local',
+          });
       }
     }
     return Array.from(map.values()).slice(0, 50);
@@ -2260,6 +2279,7 @@
           provider: data.provider,
           conf: data.confidence || '—',
           src: (data.sources || []).map((source) => source.kbNo),
+          sourceDetails: data.sources || [],
         });
       }
       save();

@@ -1,5 +1,6 @@
 import { sql } from '../db.js';
 import { detectIntent } from '../domain/ai.js';
+import { type ApprovalOrigin, approvalOriginLabel } from '../domain/approval-origin.js';
 import { redactPII } from '../domain/pii.js';
 import { findApprovedKnowledge } from '../lib/knowledge-search.js';
 
@@ -9,6 +10,9 @@ export interface KnowledgeRef {
   version: number;
   title: string;
   stepsSummary: string;
+  /** 承認の出所（docs/64 §9）。 */
+  approvalOrigin?: ApprovalOrigin;
+  approvalOriginLabel: string;
 }
 
 /** ステップに保存する参照。used は AI が使ったと答えたものだけ（照合しただけなら空）。 */
@@ -39,6 +43,8 @@ export async function knowledgeRefsForCase(text: string): Promise<KnowledgeRef[]
       version: row.version ?? 1,
       title: clip(row.title, TITLE_LIMIT),
       stepsSummary: clip(row.steps.replace(/\s*\n\s*/g, ' / '), STEPS_SUMMARY_LIMIT),
+      approvalOrigin: row.approvalOrigin,
+      approvalOriginLabel: approvalOriginLabel(row.approvalOrigin),
     }));
   } catch {
     return [];

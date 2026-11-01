@@ -2,10 +2,10 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   countsDeviceInfo,
-  SEED_USER_IDS,
   dbRowBlocker,
   demoKbKeys,
   refusalReason,
+  SEED_USER_IDS,
   summarize,
 } from './report-state-kb-provenance.mjs';
 
@@ -97,7 +97,7 @@ describe('report-state-kb-provenance', () => {
       draftsWithoutClientRef: 0,
       approvedWithDeviceInfo: 0,
       notApprovedWithDeviceInfo: 0,
-      usableOtherPerson: 1,
+      usableOtherPerson: 0,
       usableSeed: 0,
     });
     expect(JSON.stringify(report)).not.toContain('example.com');

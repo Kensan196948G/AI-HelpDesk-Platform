@@ -369,7 +369,7 @@ describe('報告書の出典の出所', () => {
       { id: 'c', kbNo: 'KB-I', title: '同一人物', approvalOrigin: 'shared_identity' },
       { id: 'd', kbNo: 'KB-L', title: '画面内', approvalOrigin: 'local' },
     ];
-    const html = renderFinalReportHtml(report);
+    const { html } = renderFinalReportHtml(report, { id: 'x', sha256: 'b'.repeat(64) });
     expect(html).toContain('初期登録の資料（人の承認記録なし）');
     expect(html).toContain('別の担当者が承認');
     expect(html).toContain('同一人物の別アカウントが承認');

@@ -218,7 +218,7 @@
   /** 結果を会話へ残す（1 ステップ 1 回）。報告書・担当者の AI 文脈はここを読む。 */
   /**
    * 相談に一致した承認済み KB の案内。AI が使ったと答えたものだけ「AI が参照」と書く。
-   * 照合はサーバ（DB、別人の承認）で、state の KB は含まれない。
+   * 照合はサーバ（DB）で、state の KB は含まれない。承認の出所は項目ごとにサーバの値を出す。
    */
   function knowledgeRefsHtml(step) {
     const refs = step?.knowledgeRefs;
@@ -231,14 +231,15 @@
           ? 'AI が参照しました'
           : 'AI の参照はありません（相談内容との照合で表示）';
         return (
-          `<div class="u-small" style="margin-top:6px" data-aihd-kb-ref="${esc(ref.kbNo)}">` +
+          `<div class="u-small" style="margin-top:6px" data-aihd-kb-ref="${esc(ref.kbNo)}" data-aihd-kb-origin="${esc(ref.approvalOrigin || 'unknown')}">` +
           `<b>${esc(ref.kbNo)} v${esc(ref.version)}</b> ${esc(ref.title)}` +
+          `<div class="u-muted">出所：${esc(ref.approvalOriginLabel || '出所を確認できません')}</div>` +
           `<div class="u-muted">${esc(ref.stepsSummary)}</div>` +
           `<div class="u-muted">${esc(note)}</div></div>`
         );
       })
       .join('');
-    return `<div style="margin-top:8px"><b class="u-small">出典：別の担当者が承認したナレッジ</b>${rows}</div>`;
+    return `<div style="margin-top:8px"><b class="u-small">出典：社内ナレッジ</b>${rows}</div>`;
   }
 
   function recordResult(step) {

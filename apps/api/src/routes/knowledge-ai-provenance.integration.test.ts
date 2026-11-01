@@ -677,7 +677,7 @@ describe('外部 AI へ送る内容', () => {
   it('無関係な相談には KB を送らない', async () => {
     await publishThroughTwoPeople();
     await ask(ASKER, '社員食堂の明日の献立を教えてください');
-    expect(sentPrompt()).toContain('該当する承認済みナレッジなし');
+    expect(sentPrompt()).toContain('該当するナレッジなし');
     expect(sentPrompt()).not.toContain('台帳アプリの索引を再構築する');
   });
 

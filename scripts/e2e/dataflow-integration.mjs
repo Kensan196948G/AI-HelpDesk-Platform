@@ -963,7 +963,7 @@ async function main(browser) {
   // 承認した KB の節だけを見る（B 自身の PC 情報や、他の KB と混ぜない）。
   const kbSegment =
     answerInput
-      .slice(answerInput.indexOf('承認済みナレッジ:'))
+      .slice(answerInput.indexOf('ナレッジ:'))
       .split('\n\n---\n\n')
       .find((part) => part.includes(kbLabel)) ?? '';
   const aWebId = `WEB-${deviceId.slice(0, 8).toUpperCase()}`;
@@ -1180,6 +1180,26 @@ async function main(browser) {
     'N4',
     'AI が使っていないときに「AI が参照」と表示しない',
     !/AI が参照しました/.test(notUsedCard) && /AI の参照はありません/.test(notUsedCard),
+  );
+  const origins = await B.page.evaluate(
+    (selector) =>
+      Object.fromEntries(
+        [...document.querySelectorAll(`${selector} [data-aihd-kb-ref]`)].map((el) => [
+          el.getAttribute('data-aihd-kb-ref'),
+          el.getAttribute('data-aihd-kb-origin'),
+        ]),
+      ),
+    panel,
+  );
+  report.ids.cardOrigins = origins;
+  check(
+    'N7',
+    '結果カードの出所: この流れの KB は別の担当者、シードは初期登録と区別する',
+    origins[approvedRow.kb_no] === 'other_person' &&
+      origins['KB-2026-0003'] === 'seed' &&
+      /初期登録の資料（人の承認記録なし）/.test(notUsedCard) &&
+      !/別の担当者が承認したナレッジ/.test(notUsedCard),
+    JSON.stringify(origins),
   );
   stubUsesKnowledge = true;
   await B.page.click(`${panel} [data-aihd-resolve="continue"][data-decision="Y"]`);
@@ -1654,7 +1674,7 @@ async function realAi(browser, kbLabel, requesterDeviceId) {
         kbLabelsInInput: [...new Set(input.match(/\[KB-[^\]]+\]/g) ?? [])],
         kbSegmentHead:
           input
-            .slice(input.indexOf('承認済みナレッジ:'))
+            .slice(input.indexOf('ナレッジ:'))
             .split('\n\n---\n\n')
             .find((part) => part.includes(kbLabel))
             ?.slice(0, 240) ?? '',
