@@ -100,9 +100,20 @@ device_pending → helper_pending → consent_pending → active → ended
    - ログオン無しは `NOT_LOGGED_ON`。quser で同じユーザーのセッションが複数ある、またはヘルパーのセッションと一致しない場合は
      どの画面でコードを見たか確定できないので `SESSION_UNRESOLVED` で留まる。担当者の再確認で固定テンプレートを投入し直す。
 
+### 4-1. 導入コード（2026-11-01、ユーザー判断）
+
+ヘルパーの登録に**導入コードを必須**とする。匿名でトークンを発行しない（`AGENTS.md` §6 との不一致の解消）。
+
+1. 本人が Access 認証済みの画面で導入コードを発行する（一回限り、10 分。再発行で旧コードは無効）。
+2. 本人が PC で `install-folder-helper.ps1 -ServerUrl <url> -EnrollCode <code>` を実行する。無効なコードは `403 ENROLL_CODE_INVALID`。
+3. ヘルパーが表示したペアリングコードを本人が画面へ入力する（従来どおり。「端末の前の人」と本人を結び付ける確認）。
+
+全体の上限と短い保持期間も多層防御として残す。**残存リスク**: 導入コードは install の引数としてプロセス一覧に見える（一回限り・10 分で緩和）。
+
 ## 5. API（`/api`）
 
 **相談者（Access、案件の `owner_email` 本人のみ）**
+- `POST /folder-access/requests/:id/enroll-code` 導入コードの発行
 - `GET /folder-access/mine?handoverId=` 状態 → `{ok, requests:[...], request}`。`handoverId` を省くと、自分の進行中の依頼すべてと直近 10 分以内に終了した依頼を返す（古い同意も確認・取消できるように 1 件に絞らない）。指定すると、その引継ぎの最新 1 件。`request` は `requests` の先頭
 - `POST /folder-access/requests/:id/pair` `{code}` ペアリング
 - `POST /folder-access/requests/:id/consent` `{root, segments, ttlMinutes}`
@@ -117,7 +128,7 @@ device_pending → helper_pending → consent_pending → active → ended
 - `POST /folder-access/requests/:id/end`
 
 **ヘルパー（`/api/device/agent/folder-helper/*`。既存の Access bypass 配下。Access の変更は不要）**
-- `POST /register` `{machineGuid, sid, userName, sessionId, sessionState, hostname, helperVersion}`
+- `POST /register` `{enrollCode, machineGuid, sid, userName, sessionId, sessionState, hostname, helperVersion}`
   → `{helperId, helperToken, pairingCode, pairingExpiresAt}`（レート制限あり。未ペアのトークンは poll 以外に使えない）
 - `POST /poll` ヘッダ `x-folder-helper-token`。ボディは heartbeat（`sid, sessionId, sessionState`）。
   応答 `{ops:[{opId, requestId, sid, sessionId, root, segments, operation:'list_metadata', expiresAt, maxEntries, maxBytes, maxSeconds, sig}], cancel:[opId...], revoked:bool, paired:bool}`
@@ -159,7 +170,7 @@ ACL 拒否は `ACCESS_DENIED` を返し、昇格で回避しない。
 ## 7. 監査（`appendAudit`）
 
 `folder_access.request / pair / consent / list_requested / list_result / result_discarded / end / revoke / expire / deny`。
-`detail` には案件、担当者、端末、SID のハッシュ、セッション、同意 ID、操作種別、開始・終了、結果、件数を入れる。
+`detail` には案件、担当者、端末（HMAC の参照）、SID の HMAC、セッション、同意 ID、操作種別、開始・終了、結果、件数を入れる。
 パス、ファイル名、トークンは入れない（ルートの種別とサブフォルダも入れない）。SID はハッシュのみ。
 
 ### 7-1. 保持
