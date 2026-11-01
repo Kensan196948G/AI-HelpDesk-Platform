@@ -753,7 +753,7 @@ describe('貸与情報と端末の照合（Mock: PII API / RSP）', () => {
     [
       '複数',
       [
-        { device_id: RSP_DEVICE, hostname: HOST, agent_installed: true },
+        { device_id: RSP_DEVICE, hostname: HOST, agent_installed: true, agent_online: true },
         {
           device_id: '44444444-4444-4444-8444-444444444444',
           hostname: HOST,
@@ -766,6 +766,16 @@ describe('貸与情報と端末の照合（Mock: PII API / RSP）', () => {
       '未導入',
       [{ device_id: RSP_DEVICE, hostname: HOST, agent_installed: false }],
       'RSP_AGENT_NOT_INSTALLED',
+    ],
+    [
+      'オフライン',
+      [{ device_id: RSP_DEVICE, hostname: HOST, agent_installed: true, agent_online: false }],
+      'RSP_AGENT_OFFLINE',
+    ],
+    [
+      'オンライン状態が不明',
+      [{ device_id: RSP_DEVICE, hostname: HOST, agent_installed: true }],
+      'RSP_AGENT_OFFLINE',
     ],
   ])('RSP 候補が %s は確定しない', async (_name, matches, code) => {
     world.matches = matches;
