@@ -163,7 +163,7 @@ const BASE = {
   device: { hostname: 'SYNTH-PC', windowsUser: 'synth-user' },
   operationConsent: { scope: 'user_reversible', version: 'v', expiresAt: null },
   aiInputConsent: null,
-  consentVersions: { operation: 'operation-consent/1', aiInput: 'ai-input-consent/1' },
+  consentVersions: { operation: 'operation-consent/1', aiInput: 'ai-input-consent/2' },
   proposals: [
     {
       id: '22222222-2222-4222-8222-222222222222',

@@ -5,6 +5,7 @@ import {
   type SkillDefinition,
   type SkillRecord,
 } from '../resolve/skills.js';
+import type { SymptomTag } from './case-facts.js';
 import { ASSIST_SKILL_OUTPUTS, type OutputFieldType } from './contract.js';
 import { loadApprovalManifest, readSkillScriptHash } from './skill-source.js';
 import { ASSIST_LIMITS, type OperationScope } from './state.js';
@@ -49,6 +50,8 @@ export interface AssistSkill {
   verifyOps: (params: Record<string, unknown>) => VerifyOpSpec[];
   /** AI へ渡してよい出力（数値と真偽値のみ。§4）。 */
   aiFields: string[];
+  /** この Skill が対応する症状。null は症状によらない検証用。根拠の判定に使う。 */
+  symptomTags: readonly SymptomTag[] | null;
   /** 確認操作専用（AI / ルールの提案に出さない）。 */
   verifyOnly?: boolean;
   /** 検証用（docs/63 §11）。承認ツールは明示したときだけ対象にする。 */
@@ -180,6 +183,7 @@ function existingDefinition(id: string): SkillDefinition {
 export const ASSIST_SKILLS: AssistSkill[] = [
   {
     definition: folderSummary,
+    symptomTags: ['folder_missing', 'file_missing', 'storage_full', 'save_failed'],
     effect: 'read',
     targetKind: 'folder',
     purpose: '同意したフォルダの状態を件数で確認します。',
@@ -197,6 +201,7 @@ export const ASSIST_SKILLS: AssistSkill[] = [
   },
   {
     definition: existingDefinition('disk.space'),
+    symptomTags: ['storage_full', 'save_failed', 'slow'],
     effect: 'read',
     targetKind: 'none',
     purpose: 'ディスクの空き容量を確認します。',
@@ -214,6 +219,7 @@ export const ASSIST_SKILLS: AssistSkill[] = [
   },
   {
     definition: markerSet,
+    symptomTags: null,
     verificationManifestOnly: true,
     effect: 'modify',
     targetKind: 'none',
@@ -238,6 +244,7 @@ export const ASSIST_SKILLS: AssistSkill[] = [
   },
   {
     definition: markerClear,
+    symptomTags: null,
     verificationManifestOnly: true,
     effect: 'modify',
     targetKind: 'none',
@@ -258,6 +265,7 @@ export const ASSIST_SKILLS: AssistSkill[] = [
   },
   {
     definition: markerStatus,
+    symptomTags: null,
     verificationManifestOnly: true,
     effect: 'read',
     targetKind: 'none',

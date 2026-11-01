@@ -116,6 +116,7 @@ export interface ProposalRow {
   failure_action: string;
   rollback_scope: string;
   rationale: string | null;
+  reason_codes: string[];
   proposal_source: 'deepseek' | 'rule';
   verify: AssistVerifyDefinition;
   approval_hash: string;

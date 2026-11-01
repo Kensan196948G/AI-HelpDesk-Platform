@@ -72,7 +72,7 @@ const OTHER_SID = 'S-1-5-21-2000000001-2000000002-2000000003-1205';
 const USER = 'CORP\\canary-user';
 const SESSION = 2;
 const CANARY_SEGMENT = 'CANARY-個人フォルダ';
-const CANARY_SUBJECT = 'CANARY-相談本文-給与';
+const CANARY_SUBJECT = 'CANARY-相談本文-給与 保存先のフォルダが見つからない 容量も不安';
 const LEASE_URL = 'https://lease.test.invalid/api/device-staff';
 const RSP_URL = 'https://rsp.test.invalid';
 const AI_URL = 'https://ai.test.invalid';
@@ -1386,7 +1386,7 @@ describe('共通支援セッション（Mock: ヘルパー / RSP / 名簿 / PII 
     it('6. proposing の期限は AI の応答待ちより長く、過ぎたら sweep で止める', async () => {
       const session = await readySession();
       await call(OWNER, 'POST', base(session.id, '/consents/ai-input'), {
-        version: 'ai-input-consent/1',
+        version: 'ai-input-consent/2',
         ttlMinutes: 30,
       });
       config.DEEPSEEK_API_KEY = 'synthetic-ai-key';
@@ -2225,9 +2225,13 @@ describe('共通支援セッション（Mock: ヘルパー / RSP / 名簿 / PII 
       config.DEEPSEEK_API_KEY = 'synthetic-ai-key';
       const session = await readySession();
       await call(OWNER, 'POST', base(session.id, '/consents/ai-input'), {
-        version: 'ai-input-consent/1',
+        version: 'ai-input-consent/2',
         ttlMinutes: 30,
       });
+      // 変更系の提案には、固定条件で確かめた読み取りが先に要る。
+      world.aiReply = { skillId: 'folder.summary', params: { target: 'T1' }, rationale: '確認' };
+      const { op } = await executing(session);
+      await report(session.token, op, resultBody(op, FOLDER_OUTPUT));
       return session;
     }
 
@@ -2306,7 +2310,7 @@ describe('共通支援セッション（Mock: ヘルパー / RSP / 名簿 / PII 
       config.DEEPSEEK_API_KEY = 'synthetic-ai-key';
       const session = await readySession();
       await call(OWNER, 'POST', base(session.id, '/consents/ai-input'), {
-        version: 'ai-input-consent/1',
+        version: 'ai-input-consent/2',
         ttlMinutes: 30,
       });
       world.aiReply = { skillId: 'folder.summary', params: { target: 'T1' }, rationale: '確認' };
@@ -2333,7 +2337,7 @@ describe('共通支援セッション（Mock: ヘルパー / RSP / 名簿 / PII 
       config.DEEPSEEK_API_KEY = 'synthetic-ai-key';
       const session = await readySession('read_only');
       await call(OWNER, 'POST', base(session.id, '/consents/ai-input'), {
-        version: 'ai-input-consent/1',
+        version: 'ai-input-consent/2',
         ttlMinutes: 30,
       });
       world.aiReply = { skillId: 'user.marker.set', params: { value: 'VERIFY_A' }, rationale: 'x' };
@@ -2351,10 +2355,13 @@ describe('共通支援セッション（Mock: ヘルパー / RSP / 名簿 / PII 
     });
 
     it('確認操作を実行できない変更系は提案しない', async () => {
-      setManifest(['user.marker.set']);
+      setManifest(['folder.summary', 'user.marker.set']);
       const session = await readySession();
+      const { op } = await executing(session);
+      await report(session.token, op, resultBody(op, FOLDER_OUTPUT));
       const { session: after } = await propose(session.id);
       expect(after.endReason).toBe('no_candidate');
+      expect(after.proposals).toHaveLength(1);
     });
   });
 
@@ -2378,7 +2385,7 @@ describe('共通支援セッション（Mock: ヘルパー / RSP / 名簿 / PII 
       config.DEEPSEEK_API_KEY = 'synthetic-ai-key';
       const session = await readySession(scope);
       const consent = await call(OWNER, 'POST', base(session.id, '/consents/ai-input'), {
-        version: 'ai-input-consent/1',
+        version: 'ai-input-consent/2',
         ttlMinutes: 30,
       });
       expect(consent.statusCode, consent.body).toBe(200);
@@ -2409,7 +2416,7 @@ describe('共通支援セッション（Mock: ヘルパー / RSP / 名簿 / PII 
         );
         expect(revoked.statusCode, revoked.body).toBe(200);
         const again = await call(OWNER, 'POST', base(session.id, '/consents/ai-input'), {
-          version: 'ai-input-consent/1',
+          version: 'ai-input-consent/2',
           ttlMinutes: 30,
         });
         expect(again.statusCode, again.body).toBe(200);
@@ -2435,7 +2442,7 @@ describe('共通支援セッション（Mock: ヘルパー / RSP / 名簿 / PII 
       const reconsentDuringAi = (id: string) => async () => {
         await revokeDuringAi(id)();
         const again = await call(OWNER, 'POST', base(id, '/consents/ai-input'), {
-          version: 'ai-input-consent/1',
+          version: 'ai-input-consent/2',
           ttlMinutes: 30,
         });
         expect(again.statusCode, again.body).toBe(200);
@@ -2581,8 +2588,24 @@ describe('共通支援セッション（Mock: ヘルパー / RSP / 名簿 / PII 
       }
       const request = JSON.parse(world.aiBodies[1] as string);
       const content = JSON.parse(request.messages[1].content);
-      expect(Object.keys(content).sort()).toEqual(['executed', 'facts', 'skillCatalog']);
-      expect(content.facts.schema).toBe('assist-ai-input/1');
+      expect(Object.keys(content).sort()).toEqual([
+        'executed',
+        'facts',
+        'skillCatalog',
+        'skillTags',
+      ]);
+      expect(content.facts.schema).toBe('assist-ai-input/2');
+      expect(content.facts.case).toEqual({
+        caseCategory: 'storage',
+        symptomTags: ['folder_missing', 'storage_full'],
+        purpose: 'repair',
+        confirmedFacts: ['FOLDER_ACCESSIBLE', 'FOLDER_HAS_ENTRIES'],
+        // ID と固定タグだけ（シードの承認済みナレッジが含まれる）。
+        knowledgeRefs: expect.any(Array),
+      });
+      for (const ref of content.facts.case.knowledgeRefs) {
+        expect(Object.keys(ref).sort()).toEqual(['id', 'tags']);
+      }
       expect(content.facts.targets).toEqual([{ ref: 'T1', rootKind: 'Documents' }]);
       expect(content.facts.steps[0]).toEqual({
         skillId: 'folder.summary',
@@ -2624,31 +2647,243 @@ describe('共通支援セッション（Mock: ヘルパー / RSP / 名簿 / PII 
         rationale: '連絡先 someone@example.com を確認',
       };
       const { proposal } = await propose(session.id);
-      expect(proposal.rationale).not.toContain('someone@example.com');
+      expect(proposal.rationale).toBeNull();
+      expect(proposal.aiGuess).toContain('確認');
+      expect(proposal.aiGuess).not.toContain('someone@example.com');
     });
 
-    it('AI の escalate は人手へ渡し、未検証の stop は解決にしない', async () => {
+    it('AI の引継ぎは担当者へ渡す。解決の宣言（stop）は受けない', async () => {
       const escalated = await withAi();
-      world.aiReply = { skillId: '', decision: 'escalate', rationale: '人手が必要' };
+      world.aiReply = { skillId: '', decision: 'handover', rationale: '人手が必要' };
       const after = await propose(escalated.id);
       expect(after.session.status).toBe('escalated');
 
       const stopped = await withAi();
-      world.aiReply = { skillId: '', decision: 'stop', rationale: '終了' };
+      world.aiReply = { skillId: '', decision: 'stop', rationale: '解決しました' };
       const afterStop = await propose(stopped.id);
-      expect(afterStop.session.status).toBe('stopped');
-      expect(afterStop.session.endReason).toBe('ai_stop');
+      expect(afterStop.session.status).toBe('awaiting_approval');
+      expect(afterStop.proposal.proposalSource).toBe('rule');
+      expect(afterStop.proposal.effect).toBe('read');
     });
 
-    it('検証済みの後の AI の stop は本人の解決確認へ進むだけで、解決にはしない', async () => {
+    it('検証済みの後の AI の stop でも解決にせず、本人の確認まで進めない', async () => {
       const session = await withAi();
       world.aiReply = { skillId: 'folder.summary', params: { target: 'T1' }, rationale: '確認' };
       const { op } = await executing(session);
       await report(session.token, op, resultBody(op, FOLDER_OUTPUT));
       world.aiReply = { skillId: '', decision: 'stop', rationale: '解決' };
-      const after = await propose(session.id);
-      expect(after.session.status).toBe('resolve_confirm');
-      expect(after.session.proposalCount).toBe(1);
+      const response = await call(OWNER, 'POST', base(session.id, '/proposals'), {});
+      expect(response.json().session.status).not.toBe('resolved');
+      expect(response.json().session.status).not.toBe('resolve_confirm');
+    });
+
+    describe('相談例（Mock: DeepSeek の応答。提案の検証は実物）', () => {
+      const setSubject = (handoverId: string, subject: string) => sql`
+        UPDATE case_handovers
+        SET snapshot = snapshot || ${sql.json({
+          case: { subject },
+          chat: { messages: [{ role: 'user', text: subject }] },
+        })}
+        WHERE id = ${handoverId}
+      `;
+      async function consultation(subject: string, scope?: 'read_only' | 'user_reversible') {
+        const session = await withAi(scope);
+        setManifest();
+        await setSubject(session.handoverId, subject);
+        return session;
+      }
+      const lastInput = () => {
+        const request = JSON.parse(world.aiBodies.at(-1) as string);
+        return JSON.parse(request.messages[1].content);
+      };
+
+      it('容量の相談: 症状に合う診断を選び、理由を固定コードで返す', async () => {
+        const session = await consultation('ディスクの容量が不足して保存できません');
+        world.aiReply = { skillId: 'disk.space', params: {}, rationale: '空き容量の確認が必要' };
+        const { proposal } = await propose(session.id);
+        expect(proposal.skillId).toBe('disk.space');
+        expect(proposal.proposalSource).toBe('deepseek');
+        expect(proposal.effect).toBe('read');
+        expect(proposal.reasonCodes).toEqual(
+          expect.arrayContaining(['AI_SELECTED', 'SYMPTOM_MATCH']),
+        );
+        expect(proposal.aiGuess).toBe('空き容量の確認が必要');
+        expect(lastInput().facts.case).toMatchObject({
+          caseCategory: 'storage',
+          symptomTags: ['storage_full', 'save_failed'],
+        });
+        expect(world.aiBodies.at(-1)).not.toContain('保存できません');
+      });
+
+      it('フォルダの相談: 対応する読取の診断を選べる', async () => {
+        const session = await consultation('共有のフォルダが見つかりません');
+        world.aiReply = { skillId: 'folder.summary', params: { target: 'T1' }, rationale: '確認' };
+        const { proposal } = await propose(session.id);
+        expect(proposal.skillId).toBe('folder.summary');
+        expect(proposal.reasonCodes).toContain('SYMPTOM_MATCH');
+      });
+
+      it('根拠不足: 症状が分からない相談では読取でも選ばず、担当者へ引き継ぐ', async () => {
+        const session = await consultation('よろしくお願いします');
+        world.aiReply = { skillId: 'disk.space', params: {}, rationale: '念のため' };
+        const { session: after } = await propose(session.id);
+        expect(after.status).toBe('escalated');
+        expect(after.proposals).toHaveLength(0);
+        expect(lastInput().facts.case.symptomTags).toEqual([]);
+        expect(lastInput().facts.case.caseCategory).toBe('other');
+      });
+
+      it('根拠不足: 確かめた読み取りが無ければ変更を提案しない', async () => {
+        const session = await consultation('保存できません');
+        world.aiReply = {
+          skillId: 'user.marker.set',
+          params: { value: 'VERIFY_A' },
+          rationale: 'x',
+        };
+        const { session: after } = await propose(session.id);
+        expect(after.status).toBe('escalated');
+        expect(after.proposals).toHaveLength(0);
+      });
+
+      it('非対応の相談: AI の引継ぎで担当者へ渡す', async () => {
+        const session = await consultation('プリンタで印刷できません');
+        world.aiReply = { skillId: '', decision: 'handover' };
+        const { session: after } = await propose(session.id);
+        expect(after.status).toBe('escalated');
+        expect(lastInput().facts.case.caseCategory).toBe('printing');
+      });
+
+      it('非対応の相談: AI が合わない診断を選んでも採用しない', async () => {
+        const session = await consultation('プリンタで印刷できません');
+        world.aiReply = { skillId: 'disk.space', params: {}, rationale: '容量かも' };
+        const { session: after } = await propose(session.id);
+        expect(after.status).toBe('escalated');
+        expect(after.proposals).toHaveLength(0);
+      });
+
+      it('非対応の相談: AI を使わないルールでも操作を提案せず、引き継ぐ', async () => {
+        config.DEEPSEEK_API_KEY = undefined;
+        const session = await readySession();
+        await setSubject(session.handoverId, 'プリンタで印刷できません');
+        const { session: after } = await propose(session.id);
+        expect(after.status).toBe('escalated');
+        expect(after.proposals).toHaveLength(0);
+      });
+
+      it('AI が使えない場合のルールは読取だけ（AI の失敗を変更の根拠にしない）', async () => {
+        const session = await consultation('フォルダが見つかりません');
+        setManifest(['folder.summary', 'user.marker.set', 'user.marker.status']);
+        world.aiReply = { skillId: 'folder.summary', params: { target: 'T1' }, rationale: '確認' };
+        const { op } = await executing(session);
+        await report(session.token, op, resultBody(op, FOLDER_OUTPUT));
+        world.aiReply = { skillId: 'system.shutdown', params: {} };
+        const { session: after } = await propose(session.id);
+        // 読取は実行済みなので候補が無く、変更系へ置き換えず引き継ぐ。
+        expect(after.status).toBe('escalated');
+        expect(after.proposals).toHaveLength(1);
+      });
+
+      it.each([
+        ['assessment が resolved', { assessment: 'resolved', rationale: '状況の確認' }],
+        ['説明文が解決を示す', { rationale: 'もう解決しました' }],
+      ])('検証結果と矛盾する説明は採用しない: %s', async (_name, reply) => {
+        const session = await consultation('フォルダが見つかりません');
+        await sql`
+          UPDATE assist_proposals SET verify_ok = NULL WHERE support_session_id = ${session.id}
+        `;
+        world.aiReply = { skillId: 'disk.space', params: {}, ...reply };
+        setManifest();
+        const subjectSession = await setSubject(session.handoverId, '容量が不足しています');
+        expect(subjectSession).toBeDefined();
+        const { proposal, session: after } = await propose(session.id);
+        expect(proposal.skillId).toBe('disk.space');
+        expect(proposal.aiGuess).toBeNull();
+        expect(proposal.reasonCodes).toContain('AI_EXPLANATION_REJECTED');
+        expect(after.status).toBe('awaiting_approval');
+        expect(after.verifiedFacts.every((fact: { ok: boolean }) => fact.ok === true)).toBe(true);
+      });
+
+      it('検証済みの事実と AI の推測を分けて返す', async () => {
+        const session = await consultation('容量が不足しています');
+        world.aiReply = { skillId: 'folder.summary', params: { target: 'T1' }, rationale: '確認' };
+        const { op } = await executing(session);
+        await report(session.token, op, resultBody(op, FOLDER_OUTPUT));
+        world.aiReply = { skillId: 'disk.space', params: {}, rationale: '次は容量を確認' };
+        const { proposal, session: after } = await propose(session.id);
+        expect(proposal.aiGuess).toBe('次は容量を確認');
+        expect(after.verifiedFacts).toEqual([
+          {
+            stepSeq: 1,
+            role: 'main',
+            skillId: 'folder.summary',
+            condition: 'フォルダへアクセスできた',
+            ok: true,
+          },
+        ]);
+      });
+
+      it('承認済みナレッジは ID と固定タグだけを渡す（本文・タイトル・下書きを渡さない）', async () => {
+        const users = await sql<{ id: string }[]>`SELECT id FROM users LIMIT 1`;
+        sequence += 1;
+        const rows = await sql<{ id: string }[]>`
+          INSERT INTO knowledge (kb_no, title, symptom, cause, steps, keywords, status, author_id)
+          VALUES
+            (${`KB-SS-A-${sequence}`}, 'CANARY-KB-TITLE', 'CANARY-KB-SYMPTOM', 'CANARY', 'CANARY',
+             ${['容量', 'CANARY-KEYWORD']}, 'approved', ${users[0]?.id ?? ''}),
+            (${`KB-SS-D-${sequence}`}, 'CANARY-DRAFT', 'x', 'x', 'x', ${['容量']}, 'draft',
+             ${users[0]?.id ?? ''})
+          RETURNING id, status
+        `;
+        try {
+          const session = await consultation('容量が不足しています');
+          world.aiReply = { skillId: 'disk.space', params: {}, rationale: '確認' };
+          const { proposal } = await propose(session.id);
+          const body = world.aiBodies.at(-1) as string;
+          expect(body).not.toContain('CANARY');
+          const refs = lastInput().facts.case.knowledgeRefs;
+          expect(refs.some((ref: { id: string }) => ref.id === rows[0]?.id)).toBe(true);
+          expect(refs.some((ref: { id: string }) => ref.id === rows[1]?.id)).toBe(false);
+          expect(refs.find((ref: { id: string }) => ref.id === rows[0]?.id).tags).toEqual([
+            'storage_full',
+          ]);
+          expect(proposal.reasonCodes).toContain('KNOWLEDGE_REF');
+        } finally {
+          await sql`DELETE FROM knowledge WHERE id IN (${rows[0]?.id ?? ''}, ${rows[1]?.id ?? ''})`;
+        }
+      });
+
+      it('古い版の同意では案件の情報を渡さない', async () => {
+        const session = await consultation('容量が不足しています');
+        await sql`
+          UPDATE support_sessions SET ai_input_consent_version = 'ai-input-consent/1'
+          WHERE id = ${session.id}
+        `;
+        world.aiReply = { skillId: 'disk.space', params: {}, rationale: '確認' };
+        await propose(session.id);
+        const facts = lastInput().facts;
+        expect(facts.schema).toBe('assist-ai-input/1');
+        expect(facts).not.toHaveProperty('case');
+        expect(world.aiBodies.at(-1)).not.toContain('storage_full"]');
+      });
+
+      it('古い版の同意は新たに受け付けない', async () => {
+        const session = await readySession();
+        const response = await call(OWNER, 'POST', base(session.id, '/consents/ai-input'), {
+          version: 'ai-input-consent/1',
+          ttlMinutes: 30,
+        });
+        expect(response.statusCode).toBe(400);
+      });
+
+      it('別の案件のスナップショットの内容が混ざらない', async () => {
+        const session = await consultation('容量が不足しています');
+        const other = await makeHandover();
+        await setSubject(other, 'プリンタで印刷できません CANARY-他人の相談');
+        world.aiReply = { skillId: 'disk.space', params: {}, rationale: '確認' };
+        await propose(session.id);
+        expect(lastInput().facts.case.symptomTags).toEqual(['storage_full']);
+        expect(world.aiBodies.at(-1)).not.toContain('CANARY');
+      });
     });
   });
 

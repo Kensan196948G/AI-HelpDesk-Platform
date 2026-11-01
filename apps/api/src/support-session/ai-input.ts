@@ -6,6 +6,7 @@ import {
   proposalFromAiBody,
 } from '../resolve/proposer.js';
 import type { SkillRecord } from '../resolve/skills.js';
+import type { CaseFacts, ConfirmedFact, KnowledgeRef } from './case-facts.js';
 import { type ApprovedAssistSkill, toSkillRecord } from './skills.js';
 import { ASSIST_LIMITS, type OperationScope } from './state.js';
 
@@ -32,10 +33,18 @@ export interface AiInputFacts {
   rootKind: string | null;
   usedProposals: number;
   steps: AiStepFact[];
+  /** ai-input-consent/2 の同意があるときだけ渡す案件の要約。 */
+  caseSummary?: AiCaseSummary | null;
+}
+
+export interface AiCaseSummary extends CaseFacts {
+  confirmedFacts: ConfirmedFact[];
+  knowledgeRefs: KnowledgeRef[];
 }
 
 export interface AiStructuredInput {
-  schema: 'assist-ai-input/1';
+  schema: 'assist-ai-input/1' | 'assist-ai-input/2';
+  case?: AiCaseSummary;
   scope: OperationScope;
   targets: { ref: 'T1'; rootKind: string }[];
   remainingProposals: number;
@@ -51,7 +60,8 @@ export interface AiStructuredInput {
 /** 許可フィールドの数値と真偽値だけを残す。文字列は固定コードでも渡さない。 */
 export function buildAiInput(facts: AiInputFacts): AiStructuredInput {
   return {
-    schema: 'assist-ai-input/1',
+    schema: facts.caseSummary ? 'assist-ai-input/2' : 'assist-ai-input/1',
+    ...(facts.caseSummary ? { case: facts.caseSummary } : {}),
     scope: facts.scope,
     targets: facts.rootKind ? [{ ref: 'T1', rootKind: facts.rootKind }] : [],
     remainingProposals: Math.max(0, ASSIST_LIMITS.maxProposals - facts.usedProposals),
@@ -75,22 +85,29 @@ export function buildAiInput(facts: AiInputFacts): AiStructuredInput {
 }
 
 export type AiCandidate =
-  | { kind: 'proposal'; skillId: string; params: Record<string, unknown>; rationale: string }
-  | { kind: 'decision'; decision: 'stop' | 'escalate'; rationale: string }
+  | {
+      kind: 'proposal';
+      skillId: string;
+      params: Record<string, unknown>;
+      rationale: string;
+      assessment: unknown;
+    }
+  | { kind: 'handover' }
   | { kind: 'duplicate' }
   | { kind: 'none' };
 
 const SYSTEM_PROMPT = [
   'あなたは社内ITヘルプデスクの操作提案AIです。',
-  '次の入力は端末の状態を固定形式で要約したものです。承認済み Skill カタログから次の 1 つだけを選ぶか、終了を宣言し、厳格な JSON だけを返してください。',
-  '出力形式: {"skillId":"...","params":{},"rationale":"...","decision":null}',
+  '入力は相談と端末の状態を固定の語彙で要約したものです。承認済み Skill カタログから次の 1 つだけを選ぶか、人手への引継ぎを宣言し、厳格な JSON だけを返してください。',
+  '出力形式: {"skillId":"...","params":{},"rationale":"...","assessment":"unknown","decision":null}',
   '制約:',
   '- skillId はカタログにある id だけ。params はスキーマに合う値だけ。対象は参照 ID（T1）で指定する。',
   '- コマンド文字列・PowerShell・スクリプト・パスは生成しない。',
-  '- rationale は 100 文字以内。個人情報を含めない。',
+  '- rationale は推測として扱われる。100 文字以内。個人情報を含めない。',
   '- 既に実行済みの Skill + params は選ばない。',
-  '- これ以上進められない場合は {"skillId":"","decision":"escalate"} を返す。',
-  '- 直近の確認（verified が true）で足りると判断する場合だけ {"skillId":"","decision":"stop"} を返す。',
+  '- case.symptomTags に対応する Skill（skillTags）だけを選ぶ。根拠が足りない、または対応する Skill が無いときは無理に選ばない。',
+  '- その場合は {"skillId":"","decision":"handover"} を返す（担当者へ引き継ぐ）。',
+  '- 解決の判定はしない。assessment は "resolved" / "unresolved" / "unknown" のいずれかで、判定には使われない。',
 ].join('\n');
 
 export function aiConfigured(): boolean {
@@ -129,6 +146,12 @@ export async function askAiForCandidate(
                 facts: input,
                 executed: history,
                 skillCatalog: buildSkillCatalogForAi(records),
+                skillTags: Object.fromEntries(
+                  skills.map((approved) => [
+                    approved.skill.definition.id,
+                    approved.skill.symptomTags,
+                  ]),
+                ),
               }),
             },
           ],
@@ -142,15 +165,13 @@ export async function askAiForCandidate(
     };
     const content = body.choices?.[0]?.message?.content;
     if (!content) return { kind: 'none' };
+    const raw = JSON.parse(content) as Record<string, unknown> | null;
+    // AI の出力は Skill + 型付き params か、引継ぎだけ。解決の宣言（stop など）は受けない。
+    if (raw?.decision === 'handover' || raw?.decision === 'escalate') return { kind: 'handover' };
+    if (raw?.decision) return { kind: 'none' };
     // 重複は「停止」に使うので、ここでは履歴を渡さずに検証してから判定する。
-    const proposal = proposalFromAiBody(JSON.parse(content) as unknown, {
-      skills: records,
-      history: [],
-    });
-    if (!proposal) return { kind: 'none' };
-    if (proposal.decision) {
-      return { kind: 'decision', decision: proposal.decision, rationale: proposal.rationale };
-    }
+    const proposal = proposalFromAiBody(raw, { skills: records, history: [] });
+    if (!proposal || proposal.decision) return { kind: 'none' };
     if (isDuplicateProposal({ skillId: proposal.skillId, params: proposal.params }, history)) {
       return { kind: 'duplicate' };
     }
@@ -158,7 +179,9 @@ export async function askAiForCandidate(
       kind: 'proposal',
       skillId: proposal.skillId,
       params: proposal.params,
-      rationale: proposal.rationale,
+      // 既定の文言を AI の説明として見せない。
+      rationale: typeof raw?.rationale === 'string' ? proposal.rationale : '',
+      assessment: raw?.assessment,
     };
   } catch {
     return { kind: 'none' };

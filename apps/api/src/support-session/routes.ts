@@ -13,6 +13,7 @@ import type { ProposalHistoryEntry } from '../resolve/proposer.js';
 import { type ApprovalManifest, validateParams } from '../resolve/skills.js';
 import {
   type AiCandidate,
+  type AiCaseSummary,
   type AiStepFact,
   aiConfigured,
   askAiForCandidate,
@@ -20,6 +21,15 @@ import {
   rulePropose,
 } from './ai-input.js';
 import { type AssistVerifyDefinition, computeAssistApprovalHash } from './approval.js';
+import {
+  acceptAiExplanation,
+  buildCaseFacts,
+  type CaseFacts,
+  confirmedFacts,
+  knowledgeRefs,
+  type ReasonCode,
+  type SymptomTag,
+} from './case-facts.js';
 import {
   applyLiveness,
   assistEnabled,
@@ -149,7 +159,10 @@ function proposalDto(row: ProposalRow) {
     successCriteria: row.success_criteria,
     failureAction: row.failure_action,
     rollbackScope: row.rollback_scope,
-    rationale: row.rationale,
+    // ルールの固定の説明と、AI の推測（マスク済み）を分けて返す。判定には使わない。
+    rationale: row.proposal_source === 'rule' ? row.rationale : null,
+    aiGuess: row.proposal_source === 'deepseek' ? row.rationale : null,
+    reasonCodes: row.reason_codes,
     proposalSource: row.proposal_source,
     verifyOps: row.verify.ops.map((op) => ({
       skillId: op.skillId,
@@ -246,6 +259,16 @@ function buildSessionDto(
     },
     proposals: proposals.map(proposalDto),
     executions: executions.map(executionDto),
+    // サーバの固定条件で確かめた事実（AI の推測とは別）。
+    verifiedFacts: executions
+      .filter((row) => row.evidence && row.verify_ok !== null)
+      .map((row) => ({
+        stepSeq: row.step_seq,
+        role: row.role,
+        skillId: row.skill_id,
+        condition: (row.check_definition as { description?: string }).description ?? '',
+        ok: row.verify_ok,
+      })),
   };
 }
 
@@ -280,6 +303,11 @@ interface ProposingSnapshot {
   history: ProposalHistoryEntry[];
   steps: AiStepFact[];
   lastVerified: boolean;
+  anyVerified: boolean;
+  /** 対象案件だけから作った固定の語彙。根拠の判定に使う（DB の外へ自由文を持ち出さない）。 */
+  caseFacts: CaseFacts;
+  /** AI へ渡す案件の要約。最新の版の同意があるときだけ。 */
+  caseSummary: AiCaseSummary | null;
 }
 
 async function snapshotForProposing(
@@ -296,10 +324,37 @@ async function snapshotForProposing(
     ORDER BY step_seq
   `;
   const byProposal = new Map(mains.map((row) => [row.proposal_id, row]));
+  const handovers = await tx<{ snapshot: unknown }[]>`
+    SELECT snapshot FROM case_handovers WHERE id = ${session.handover_id}
+  `;
+  const caseFacts = buildCaseFacts(handovers[0]?.snapshot);
+  const useAi = session.ai_consent_live && aiConfigured();
+  const stepFacts = proposals.map((row) => ({
+    skillId: row.skill_id,
+    verified: row.verify_ok,
+    output: byProposal.get(row.id)?.normalized_output ?? null,
+  }));
+  let caseSummary: AiCaseSummary | null = null;
+  if (useAi && session.ai_input_consent_version === AI_INPUT_CONSENT_VERSION) {
+    const knowledge = await tx<{ id: string; keywords: string[] | null }[]>`
+      SELECT id, keywords FROM knowledge
+      WHERE status = 'approved'
+      ORDER BY updated_at DESC
+      LIMIT 200
+    `;
+    caseSummary = {
+      ...caseFacts,
+      confirmedFacts: confirmedFacts(stepFacts),
+      knowledgeRefs: knowledgeRefs(knowledge, caseFacts.symptomTags),
+    };
+  }
   return {
     scope: session.operation_consent_scope as OperationScope,
     rootKind: ctx.consent_root,
-    useAi: session.ai_consent_live && aiConfigured(),
+    useAi,
+    caseFacts,
+    caseSummary,
+    anyVerified: proposals.some((row) => row.verify_ok === true),
     aiConsentId: session.ai_input_consent_id,
     aiConsentExpiresAt: session.ai_input_consent_expires_at?.toISOString() ?? null,
     usedProposals: session.proposal_count,
@@ -324,40 +379,115 @@ type PickResult =
       kind: 'proposal';
       skillId: string;
       params: Record<string, unknown>;
-      rationale: string;
+      rationale: string | null;
       source: 'deepseek' | 'rule';
+      reasonCodes: ReasonCode[];
     }
-  | { kind: 'stop'; reason: 'duplicate_proposal' | 'no_candidate' | 'ai_stop' | 'escalated' }
-  | { kind: 'confirm' };
+  | { kind: 'stop'; reason: 'duplicate_proposal' | 'no_candidate' | 'escalated' };
+
+const overlaps = (skill: ApprovedAssistSkill, tags: readonly SymptomTag[]) =>
+  skill.skill.symptomTags?.some((tag) => tags.includes(tag)) === true;
+
+/**
+ * 候補に根拠があるか（サーバの固定条件）。無理に操作しないための判定で、AI の説明は使わない。
+ * - 症状の分かる相談は、その症状に対応する Skill だけ
+ * - 変更系は、固定条件で確かめた読み取りの後だけ
+ */
+function hasEvidence(
+  approved: ApprovedAssistSkill,
+  snapshot: ProposingSnapshot,
+  requireSymptom: boolean,
+): boolean {
+  if (approved.skill.effect === 'modify' && !snapshot.anyVerified) return false;
+  if (approved.skill.symptomTags === null) return true;
+  const tags = snapshot.caseFacts.symptomTags;
+  if (tags.length === 0) return !requireSymptom;
+  return overlaps(approved, tags);
+}
+
+function reasonCodesFor(
+  approved: ApprovedAssistSkill,
+  snapshot: ProposingSnapshot,
+  source: 'deepseek' | 'rule',
+): ReasonCode[] {
+  const codes: ReasonCode[] = [source === 'deepseek' ? 'AI_SELECTED' : 'RULE_BASED'];
+  const tags = snapshot.caseFacts.symptomTags;
+  if (overlaps(approved, tags)) codes.push('SYMPTOM_MATCH');
+  if (approved.skill.symptomTags === null) codes.push('VERIFICATION_SKILL');
+  if (snapshot.anyVerified) codes.push('FOLLOWS_VERIFIED_STEP');
+  const skillTags = approved.skill.symptomTags ?? [];
+  if (
+    snapshot.caseSummary?.knowledgeRefs.some((ref) => ref.tags.some((t) => skillTags.includes(t)))
+  ) {
+    codes.push('KNOWLEDGE_REF');
+  }
+  return codes;
+}
 
 /** 候補を選ぶ（DB の外。AI の応答を待つ間ロックを持たない）。 */
 async function pickCandidate(snapshot: ProposingSnapshot): Promise<PickResult> {
   const skills = proposableSkills(snapshot.scope);
+  // 同意の版が古いと案件の要約を渡していないので、症状の一致までは求めない。
+  const requireSymptom = snapshot.caseSummary !== null;
   let candidate: AiCandidate = { kind: 'none' };
-  if (snapshot.useAi && skills.length > 0) {
+  const askedAi = snapshot.useAi && skills.length > 0;
+  if (askedAi) {
     candidate = await askAiForCandidate(
       buildAiInput({
         scope: snapshot.scope,
         rootKind: snapshot.rootKind,
         usedProposals: snapshot.usedProposals,
         steps: snapshot.steps,
+        caseSummary: snapshot.caseSummary,
       }),
       skills,
       snapshot.history,
     );
   }
   if (candidate.kind === 'duplicate') return { kind: 'stop', reason: 'duplicate_proposal' };
+  if (candidate.kind === 'handover') return { kind: 'stop', reason: 'escalated' };
   if (candidate.kind === 'proposal') {
-    return { ...candidate, kind: 'proposal', source: 'deepseek' };
+    const { skillId } = candidate;
+    const approved = skills.find((item) => item.skill.definition.id === skillId);
+    // 根拠のない候補は使わず、担当者へ引き継ぐ（ルールで別の操作へ置き換えない）。
+    if (!approved || !hasEvidence(approved, snapshot, requireSymptom)) {
+      return { kind: 'stop', reason: 'escalated' };
+    }
+    const explanation = acceptAiExplanation(
+      candidate.rationale,
+      candidate.assessment,
+      snapshot.lastVerified,
+    );
+    return {
+      kind: 'proposal',
+      skillId,
+      params: candidate.params,
+      rationale: explanation.text,
+      source: 'deepseek',
+      reasonCodes: [
+        ...reasonCodesFor(approved, snapshot, 'deepseek'),
+        ...(explanation.rejected ? (['AI_EXPLANATION_REJECTED'] as const) : []),
+      ],
+    };
   }
-  if (candidate.kind === 'decision') {
-    if (candidate.decision === 'escalate') return { kind: 'stop', reason: 'escalated' };
-    // AI の判断で解決にしない。検証が通っている場合だけ本人の解決確認へ進める（§7）。
-    return snapshot.lastVerified ? { kind: 'confirm' } : { kind: 'stop', reason: 'ai_stop' };
+  // AI を使わない・使えない場合のルール。AI の失敗を変更の根拠にしないので、そのときは読取だけ。
+  const usable = skills.filter(
+    (item) => hasEvidence(item, snapshot, false) && (!askedAi || item.skill.effect === 'read'),
+  );
+  const rule = rulePropose(usable, snapshot.history);
+  if (!rule) {
+    const tags = snapshot.caseFacts.symptomTags;
+    const unsupported = tags.length > 0 && !skills.some((item) => overlaps(item, tags));
+    if (skills.length > 0 && (askedAi || unsupported)) return { kind: 'stop', reason: 'escalated' };
+    return { kind: 'stop', reason: 'no_candidate' };
   }
-  const rule = rulePropose(skills, snapshot.history);
-  if (!rule) return { kind: 'stop', reason: 'no_candidate' };
-  return { kind: 'proposal', ...rule, source: 'rule' };
+  const approved = skills.find((item) => item.skill.definition.id === rule.skillId);
+  return {
+    kind: 'proposal',
+    ...rule,
+    source: 'rule',
+    reasonCodes: approved ? reasonCodesFor(approved, snapshot, 'rule') : ['RULE_BASED'],
+  };
 }
 
 function buildVerifyDefinition(
@@ -894,10 +1024,6 @@ async function sharedRoutes(app: FastifyInstance): Promise<void> {
             await stopSessionTx(tx, ctx, session, pick.reason, email);
             return { kind: 'stopped' as const, reason: pick.reason };
           }
-          if (pick.kind === 'confirm') {
-            await setSessionStatus(tx, session, 'resolve_confirm');
-            return { kind: 'ok' as const };
-          }
           // AI の候補も含め、この場で登録・型・範囲を再検証する（§5）。
           const manifest = loadApprovalManifest();
           const approved = resolveApprovedSkill(pick.skillId, manifest);
@@ -951,15 +1077,17 @@ async function sharedRoutes(app: FastifyInstance): Promise<void> {
           id, support_session_id, step_seq, skill_id, skill_version, content_hash, script_hash,
           params, effect, required_privilege, risk_level, target_ref, title, purpose, impact,
           success_criteria, failure_action, rollback_scope, rationale, proposal_source, verify,
-          approval_hash, nonce, approval_expires_at
+          approval_hash, nonce, approval_expires_at, reason_codes
         ) VALUES (
           ${proposalId}, ${id}, ${stepSeq}, ${pick.skillId}, ${approved.version},
           ${approved.contentHash}, ${approved.scriptHash}, ${jsonbValue(pick.params)},
           ${skill.effect}, ${REQUIRED_PRIVILEGE}, ${skill.definition.riskLevel},
           ${skill.targetKind === 'folder' ? 'T1' : null}, ${skill.definition.title},
           ${skill.purpose}, ${skill.impact}, ${skill.successCriteria}, ${skill.failureAction},
-          ${skill.rollbackScope}, ${publicRationale(pick.rationale)}, ${pick.source},
-          ${jsonbValue(verify)}, ${hash}, ${nonce}, ${approvalExpiresAt}
+          ${skill.rollbackScope}, ${pick.rationale ? publicRationale(pick.rationale) : null},
+          ${pick.source},
+          ${jsonbValue(verify)}, ${hash}, ${nonce}, ${approvalExpiresAt},
+          ${jsonbValue(pick.reasonCodes)}
         )
       `;
           await tx`

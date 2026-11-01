@@ -27,7 +27,7 @@ export const ASSIST_LIMITS = {
 } as const;
 
 export const OPERATION_CONSENT_VERSION = 'operation-consent/1';
-export const AI_INPUT_CONSENT_VERSION = 'ai-input-consent/1';
+export const AI_INPUT_CONSENT_VERSION = 'ai-input-consent/2';
 /** フォルダ同意（docs/62）には版の列が無いので、同意文の版を固定値として束縛する。 */
 export const FOLDER_CONSENT_VERSION = 'folder-consent/1';
 
