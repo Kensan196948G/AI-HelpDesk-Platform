@@ -928,6 +928,26 @@ async function main(browser) {
       approvedRow.approver_id !== approvedRow.author_id,
   );
   check('K8', '承認で版が 1 以上になる', approvedRow.version >= 1, approvedRow.version);
+  // KB から元の案件へたどれる。承認した本文の指紋と公開版が残る（docs/64 §10、§12）。
+  const [trace] = await sql`
+    SELECT k.source_case_ref, k.source_handover_id, r.content_hash, r.reviewed_version,
+           r.published_version
+    FROM knowledge k
+    LEFT JOIN knowledge_reviews r ON r.knowledge_id = k.id AND r.decision = 'approved'
+    WHERE k.id = ${draftRow.id}
+  `;
+  check(
+    'K20',
+    'KB から元の案件と引継ぎをたどれる',
+    trace.source_case_ref === caseId && trace.source_handover_id === handover.id,
+    trace.source_case_ref,
+  );
+  check(
+    'K21',
+    '承認の記録に確認した本文の指紋と公開版が残る',
+    /^sha256:/.test(trace.content_hash ?? '') && trace.published_version === approvedRow.version,
+    `${trace.reviewed_version}->${trace.published_version}`,
+  );
   await sleep(500);
   await approver.page.screenshot({
     path: path.join(outDir, '10-approver-done.png'),
