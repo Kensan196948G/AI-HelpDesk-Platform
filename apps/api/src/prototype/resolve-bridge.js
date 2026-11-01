@@ -5,6 +5,9 @@
  * - 案件ウィザードの下に「解決ループ（読み取り診断）」カードを出す。
  * - サーバの /api/resolve/* と連携し、実行前 Y/N → 結果 → 継続 Y/N を繰り返す。
  * - 診断のみ（読み取り専用）。コマンド文字列の編集はできない。
+ * - 印刷の相談は固定データの診断（H.print）へ進めず、このカードへ誘導する。
+ *   端末エージェントが未接続なら、実診断できないことと引継ぎを案内する（docs/14 §2-12）。
+ * - 結果は出所（実端末 / 模擬 / 不明）を区別して表示し、会話・引継ぎへ同じ区別で渡す。
  *
  * 依存: curCase / S / USERS / toast 等（同じ classic script のグローバル lexical 環境）。
  */
@@ -33,7 +36,21 @@
     verifyWaitTicks: 0,
     verifyWaitStartedAt: 0,
     verifySkillTitle: '',
+    // 端末エージェントの接続状態（案内のための参考値。実行の可否は承認時にサーバが判定する）。
+    // null は未確認。
+    agentConnected: null,
+    lastMode: 'idle',
   };
+
+  // 結果の出所の表示。実端末と言えるのは endpoint_agent だけで、それ以外は言わない。
+  const SOURCE_LABEL = {
+    endpoint_agent: '端末エージェント（実端末）',
+    mock: '模擬（実端末の結果ではありません）',
+    unknown: '実行元を確認できません（実端末の結果と確認できていません）',
+  };
+  const NO_AGENT_NOTICE =
+    '端末エージェントが未接続のため実診断はできません。担当者へ引き継げます。';
+  const SHARE_KEY = '実診断の結果';
 
   // verify 追撃待ちのポーリング上限（1.5 秒間隔なので 30 回で約 45 秒。時間でも打ち切る）。
   const VERIFY_WAIT_MAX_TICKS = 30;
@@ -88,12 +105,120 @@
     return json;
   }
 
+  /** 実端末の ID だけを使う。デモ端末（USERS[..].device）へは落とさない。 */
   function deviceId() {
-    return (
-      window.__AIHD_DEVICE_ID__ ||
-      (typeof USERS !== 'undefined' && USERS[S?.ui?.user]?.device) ||
-      'WEB-UNKNOWN'
-    );
+    return window.__AIHD_DEVICE_ID__ || '';
+  }
+
+  function sourceOfStep(step) {
+    const source = step?.executionSource ?? step?.resultSummary?.executionSource;
+    return source === 'endpoint_agent' || source === 'mock' ? source : 'unknown';
+  }
+
+  /** 接続状態を取り直す。取得できなければ未接続と同じ扱いにする（fail-closed）。 */
+  async function refreshDeviceStatus() {
+    const id = deviceId();
+    let connected = false;
+    if (id) {
+      try {
+        const data = await api(`/api/resolve/device-status?deviceId=${encodeURIComponent(id)}`);
+        connected = data?.agentConnected === true;
+      } catch (error) {
+        connected = false;
+      }
+    }
+    STATE.agentConnected = connected;
+    return connected;
+  }
+
+  function isOwnerOf(c) {
+    try {
+      return Boolean(c) && c.userId === S.ui.user;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  function chatOfCase(c) {
+    try {
+      return c?.chatId ? S.chats.find((chat) => chat.id === c.chatId) || null : null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function caseOfChat(chat) {
+    try {
+      return (S.cases || []).find((item) => item && item.chatId === chat?.id) || null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function persist() {
+    try {
+      if (typeof save === 'function') save();
+      if (typeof refresh === 'function') refresh();
+    } catch (error) {
+      // 表示の更新に失敗しても解決ループ自体は止めない。
+    }
+  }
+
+  /** 読み取りの要点。AI へ渡してよい項目（fieldsToAi 適用後）だけを使う。 */
+  function resultFacts(step) {
+    const normalized = step?.resultAi?.normalized;
+    if (!normalized || typeof normalized !== 'object') return [];
+    return Object.entries(normalized).map(([key, value]) => [
+      key,
+      typeof value === 'string' ? value : JSON.stringify(value),
+    ]);
+  }
+
+  /** 結果を会話へ残す（1 ステップ 1 回）。報告書・担当者の AI 文脈はここを読む。 */
+  function recordResult(step) {
+    const c = currentCase();
+    const chat = chatOfCase(c);
+    if (!chat || !step?.id || step.status !== 'done') return;
+    if (chat.messages.some((message) => message?.resolveResult?.stepId === step.id)) return;
+    const source = sourceOfStep(step);
+    const title = String(step.skill?.title || step.skillId || '読み取り診断');
+    const facts = resultFacts(step);
+    const factText = facts.map(([key, value]) => `${key}=${value}`).join(', ');
+    const text = `【${SOURCE_LABEL[source]}】${title}：${factText || '結果の要点はありません'}（読み取りの結果です。解決の判定ではありません）`;
+    const html =
+      `<p><b>${esc(SOURCE_LABEL[source])}</b> ${esc(title)}</p>` +
+      `<p class="small">${esc(factText || '結果の要点はありません')}</p>` +
+      '<p class="small muted">読み取りの結果です。解決の判定ではありません。</p>';
+    addMsg(chat, {
+      kind: 'ai',
+      model: SOURCE_LABEL[source],
+      conf: '—',
+      text,
+      html,
+      resolveResult: {
+        source,
+        caseId: c.id,
+        sessionId: step.sessionId,
+        stepId: step.id,
+        commandId: step.commandId,
+        skillId: step.skillId,
+        title,
+        facts,
+      },
+    });
+    persist();
+  }
+
+  /** 引継ぎへ渡す行。会話に残した結果だけを、出所を付けて並べる。 */
+  function realResultLines(chat) {
+    const messages = Array.isArray(chat?.messages) ? chat.messages : [];
+    return messages
+      .filter((message) => message?.resolveResult)
+      .map((message) => {
+        const r = message.resolveResult;
+        const facts = (r.facts || []).map(([key, value]) => `${key}=${value}`).join(', ');
+        return `${SOURCE_LABEL[r.source] || SOURCE_LABEL.unknown}｜${r.title}：${facts || '要点なし'}｜実行ID ${r.commandId || '-'}`;
+      });
   }
 
   function currentCase() {
@@ -119,9 +244,12 @@
   async function start() {
     const c = currentCase();
     if (!c?.id || STATE.busy) return;
+    if (!isOwnerOf(c) || !c.chatId) return;
     STATE.busy = true;
     STATE.error = null;
     try {
+      if (!deviceId())
+        throw new Error('この端末の ID を取得できません。PC情報を取得してからやり直してください。');
       // 再読み込み後でも、最終判断待ちのまま残っているセッションへ復帰する。
       // 復帰できなければ（解決済み・期限切れ・他人のセッション等）通常の新規開始へ進む。
       const pendingId = pendingSessionId(c.id);
@@ -200,6 +328,18 @@
     } catch (error) {
       STATE.busy = false;
       STATE.error = String(error.message || error);
+      // 期限切れ・状態の変化はこの提案では進められない。古いカードの Y を残さず開始へ戻す。
+      if (['APPROVAL_EXPIRED', 'SESSION_EXPIRED', 'STEP_NOT_APPROVABLE'].includes(error.code)) {
+        STATE.mode = 'error';
+        STATE.step = null;
+        if (error.code === 'APPROVAL_EXPIRED' && STATE.session?.id) {
+          try {
+            await api(`/api/resolve/sessions/${STATE.session.id}/stop`, {});
+          } catch (stopError) {
+            // 停止できなくてもセッションは 30 分で期限切れになる。
+          }
+        }
+      }
       render(true);
       toast?.(`実行できませんでした: ${STATE.error}`, 'bad');
     }
@@ -247,6 +387,7 @@
         STATE.step = data.step;
         const status = data.step?.status;
         if (status === 'done') {
+          recordResult(data.step);
           // 追撃中は親ステップが done のままセッションだけ executing。ここで止めると
           // 「継続」が 409 STEP_NOT_CONTINUABLE になるため、executing が終わるまで待つ。
           if (data.session?.status === 'executing') {
@@ -339,12 +480,25 @@
       // 確定したので、再読み込み復帰用の控えは残さない。
       forgetPending(data.session?.id);
       stopPolling();
+      followToWizard(action);
     } catch (error) {
       STATE.error = String(error.message || error);
       toast?.(`操作できませんでした: ${STATE.error}`, 'bad');
     } finally {
       STATE.busy = false;
       render(true);
+    }
+  }
+
+  /** 本人の判断を案件へつなげる。担当者へは STEP 4 の同意画面、解決は完了画面へ進む。 */
+  function followToWizard(action) {
+    try {
+      const c = currentCase();
+      if (!isOwnerOf(c) || !c.chatId || typeof ACT !== 'object') return;
+      if (action === 'escalate' && typeof ACT.wHand === 'function') ACT.wHand();
+      if (action === 'resolve' && typeof ACT.wSolved === 'function') ACT.wSolved();
+    } catch (error) {
+      // 画面遷移に失敗しても、サーバ側の状態は確定している。
     }
   }
 
@@ -478,6 +632,7 @@
       }
       stopPolling();
       STATE.mode = action === 'resolve' ? 'resolved' : 'escalated';
+      followToWizard(action);
     } catch (error) {
       STATE.error = String(error.message || error);
       toast?.(`操作できませんでした: ${STATE.error}`, 'bad');
@@ -601,6 +756,9 @@
       verifyWait: STATE.verifyWait,
       verifyTimedOut: STATE.verifyTimedOut,
       verifySkillTitle: STATE.verifySkillTitle,
+      agent: STATE.agentConnected,
+      owner: isOwnerOf(c),
+      sent: Boolean(c?.chatId),
     });
     const panel = document.getElementById('aihdResolvePanel');
     if (!panel) return;
@@ -625,15 +783,42 @@
     // 確認待ちカードのボタンは押下中に無効化する（二重送信防止）。他モードの markup は変えない。
     const awaitingDisabled = STATE.busy ? ' disabled' : '';
     if (STATE.mode === 'idle') {
-      body =
-        '<div class="u-small u-muted" style="margin-top:6px">PCの状態を読み取るだけで、変更は行いません。実行のたびに Y/N を確認します。</div>' +
-        '<div style="margin-top:8px"><button class="u-btn pri" data-aihd-resolve="start">読み取り診断を開始</button></div>';
+      if (!isOwnerOf(c)) {
+        body =
+          '<div class="u-small u-muted" style="margin-top:6px">読み取り診断は相談した本人が行います。</div>';
+      } else if (!c.chatId) {
+        body =
+          '<div class="u-small u-muted" style="margin-top:6px">相談を送ると、この端末の状態を読み取って確認できます。</div>';
+      } else if (STATE.agentConnected !== true) {
+        body =
+          '<div class="u-small" style="margin-top:6px" data-aihd-no-agent>' +
+          esc(
+            STATE.agentConnected === null
+              ? '端末エージェントの接続を確認しています…'
+              : NO_AGENT_NOTICE,
+          ) +
+          '</div>' +
+          (STATE.agentConnected === null
+            ? ''
+            : `<div class="u-small u-muted" style="margin-top:4px">導入時に使う端末 ID（browserDeviceId）: <span class="u-mono">${esc(deviceId() || '不明')}</span></div>` +
+              '<div style="margin-top:8px"><button class="u-btn" data-aihd-resolve="handover">担当者へ引き継ぐ</button></div>');
+      } else {
+        body =
+          '<div class="u-small u-muted" style="margin-top:6px">まず PC の状態を読み取ります。実行のたびに内容を示して Y/N を確認します。</div>' +
+          '<div style="margin-top:8px"><button class="u-btn pri" data-aihd-resolve="start">読み取り診断を開始</button></div>';
+      }
     } else if (STATE.mode === 'proposed' && STATE.step) {
       const skill = STATE.step.skill || {};
+      // 「読み取りのみ」と言えるのはリスク 1 で戻し方の定義が無い Skill だけ。
+      const readOnly = Number(STATE.step.riskLevel) === 1 && !skill.rollback;
       body =
         '<div style="margin-top:8px"><b>' +
         esc(skill.title || STATE.step.skillId) +
-        '</b> <span class="u-sig g"><i></i>読み取りのみ</span></div>' +
+        '</b> ' +
+        (readOnly
+          ? '<span class="u-sig g"><i></i>読み取りのみ</span>'
+          : `<span class="u-sig y"><i></i>端末を変更します（リスク${esc(STATE.step.riskLevel)}）</span>`) +
+        '</div>' +
         '<div class="u-small" style="margin-top:4px">' +
         esc(skill.summary || '') +
         '</div>' +
@@ -660,7 +845,7 @@
         '<button class="u-btn" data-aihd-resolve="stop">中止</button></div>';
     } else if (STATE.mode === 'executing') {
       body =
-        '<div style="margin-top:8px">端末で読み取りを実行しています…</div>' +
+        '<div style="margin-top:8px">端末で実行しています…</div>' +
         '<div class="u-small u-muted" style="margin-top:4px">端末エージェントが応答すると結果が表示されます。2 分応答が無い場合は自動で失敗します。</div>' +
         '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">' +
         '<button class="u-btn" data-aihd-resolve="stop">中止</button>' +
@@ -670,8 +855,18 @@
       // 継続 Y/N と中止を無効化する（409 STEP_NOT_CONTINUABLE を押させる前に防ぐ）。
       const waitingVerify = STATE.verifyWait === true;
       const verifyHold = waitingVerify ? ' disabled' : '';
+      const source = sourceOfStep(STATE.step);
+      const shapeBad = STATE.step.resultSummary?.resultShapeOk === false;
       body =
-        '<div style="margin-top:8px"><b>結果</b></div>' +
+        '<div style="margin-top:8px" data-aihd-result-source="' +
+        esc(source) +
+        '"><b>結果：' +
+        esc(SOURCE_LABEL[source]) +
+        '</b></div>' +
+        '<div class="u-small" style="margin-top:4px">読み取りの結果です。まだ解決とは判定していません。解決したかどうかはご本人が確認してください。</div>' +
+        (shapeBad
+          ? '<div class="u-small" style="margin-top:4px;color:#b42318">結果の形式が想定と異なります。内容を担当者に確認してください。</div>'
+          : '') +
         '<pre class="u-small" style="white-space:pre-wrap;background:#f5f7fa;border:1px solid #d9e2ec;border-radius:6px;padding:8px;max-height:320px;overflow:auto">' +
         esc(resultText(STATE.step)) +
         '</pre>' +
@@ -693,7 +888,7 @@
       // 説明文そのものは innerHTML に入れず、描画後に textContent で差し込む（XSS 対策）。
       body =
         '<div style="margin-top:8px;padding:10px;border:1px solid #bfe3c6;background:#f3fbf5;border-radius:8px">' +
-        '<div><b>原因の対処まで完了しました</b></div>' +
+        '<div><b>対処後の確認が通りました</b></div>' +
         '<div class="u-small" style="margin-top:6px;white-space:pre-wrap" data-aihd-awaiting-desc></div>' +
         '<div style="margin-top:6px">解決しましたか？</div>' +
         '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">' +
@@ -720,7 +915,9 @@
             esc(STATE.step.error) +
             '</div>'
           : '') +
-        '<div style="margin-top:8px"><button class="u-btn" data-aihd-resolve="start">もう一度開始</button></div>';
+        '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">' +
+        '<button class="u-btn pri" data-aihd-resolve="handover">担当者へ引き継ぐ</button>' +
+        '<button class="u-btn" data-aihd-resolve="start">もう一度開始</button></div>';
     } else if (STATE.mode === 'error') {
       body =
         '<div style="margin-top:8px;color:#b42318">' +
@@ -729,9 +926,15 @@
         '<div style="margin-top:8px"><button class="u-btn" data-aihd-resolve="start">もう一度開始</button></div>';
     }
 
+    // カードは案件ウィザードの下にあるので、状態が変わったら見える位置へ動かす。
+    const modeChanged = STATE.lastMode !== STATE.mode;
+    STATE.lastMode = STATE.mode;
     panel.innerHTML =
       header +
       (body || '') +
+      (STATE.error && STATE.mode !== 'error'
+        ? `<div class="u-small" style="margin-top:6px;color:#b42318">${esc(STATE.error)}</div>`
+        : '') +
       adminPanelHtml() +
       (STATE.busy ? '<div class="u-small u-muted" style="margin-top:6px">処理中…</div>' : '');
 
@@ -739,6 +942,7 @@
     // 解釈させない）。確認待ち以外のモードでは該当要素が無いので何もしない。
     const awaitingDescNode = panel.querySelector?.('[data-aihd-awaiting-desc]');
     if (awaitingDescNode) awaitingDescNode.textContent = awaitingDescription();
+    if (modeChanged && STATE.mode !== 'idle') panel.scrollIntoView?.({ block: 'nearest' });
   }
 
   function adminPanelHtml() {
@@ -785,6 +989,7 @@
       STATE.lastKey = '';
       render(true);
       void loadAdminPending();
+      if (STATE.agentConnected === null) void refreshDeviceStatus().then(() => render(true));
       return;
     }
     render(false);
@@ -802,6 +1007,7 @@
     else if (action === 'resolve') void manualClose('resolve');
     else if (action === 'escalate') void manualClose('escalate');
     else if (action === 'decide') void decideAwaiting(decision);
+    else if (action === 'handover') followToWizard('escalate');
     else if (action === 'admin-approve')
       void adminApprove(Number(button.getAttribute('data-index') || '0'));
   });
@@ -811,6 +1017,170 @@
     STATE.adminLoaded = false;
     void loadAdminPending();
   }, 60_000);
+
+  /*
+   * 印刷の相談の導線（docs/14 §2-12）。
+   * 固定データの確認カード（confirmHearing）と診断（H.print）へ進めない。
+   * 他の相談の導線は変えない。
+   */
+  function printGuideHtml(connected) {
+    if (connected) {
+      return (
+        '<p>この端末は端末エージェントに接続されています。下の「解決ループ（読み取り診断）」で実際の状態を読み取れます。実行の前に必ず確認します。</p>' +
+        '<div class="btns"><button class="btn sm" data-aihd-resolve="start">読み取り診断を開始</button></div>'
+      );
+    }
+    return `<p>${esc(NO_AGENT_NOTICE)}</p><div class="btns">${
+      typeof escBtn === 'function' ? escBtn('IT端末', '通常', '担当者へ引き継ぐ') : ''
+    }</div>`;
+  }
+
+  async function routePrintToRealDiagnosis(chat) {
+    const c = caseOfChat(chat);
+    try {
+      UI.typing = true;
+      if (typeof refresh === 'function') refresh();
+    } catch (error) {
+      // 初期化前は表示なしで続行する。
+    }
+    const connected = c ? await refreshDeviceStatus() : false;
+    try {
+      UI.typing = false;
+    } catch (error) {
+      // 初期化前は何もしない。
+    }
+    if (c) c.realPath = connected ? 'agent' : 'no-agent';
+    addMsg(chat, {
+      kind: 'ai',
+      model: 'システム',
+      conf: '—',
+      resolveGuide: true,
+      text: connected
+        ? '端末エージェントが接続されています。読み取り診断へ案内しました。'
+        : NO_AGENT_NOTICE,
+      html: printGuideHtml(connected),
+    });
+    persist();
+    // STEP 3 の説明は部分更新（wizSoft）では描き直されないので全体を描き直す。
+    try {
+      if (typeof uxRender === 'function' && S.ui.screen === 'wizard') uxRender();
+    } catch (error) {
+      // 表示の更新に失敗しても案内は会話に残っている。
+    }
+    render(true);
+  }
+
+  try {
+    if (typeof CONFIRM_INTENTS === 'object' && CONFIRM_INTENTS) delete CONFIRM_INTENTS.print;
+    if (typeof H === 'object' && H && typeof H.print === 'function') {
+      H.print = (chat) => {
+        void routePrintToRealDiagnosis(chat);
+      };
+    }
+  } catch (error) {
+    // 導線の差し替えに失敗しても画面は止めない。
+  }
+
+  /** STEP 3 の説明と信号の理由は、固定データの案内のままにしない。 */
+  function wrapGlobal(name, build) {
+    if (typeof window[name] === 'function') window[name] = build(window[name]);
+  }
+
+  wrapGlobal('paneHtml', (original) => (target, ...rest) => {
+    const html = original(target, ...rest);
+    if (typeof html !== 'string' || !target) return html;
+    let out = html;
+    if (target.realPath && target.step === 3) {
+      out = out.replace(
+        /(<h3>AIの一次対応<\/h3><p class="lead">)[^<]*(<\/p>)/,
+        (_, head, tail) =>
+          `${head}印刷の相談は、端末エージェントが接続された端末の状態を読み取って確認します。実行のたびに、あなたが Y／N で答えます。${tail}`,
+      );
+    }
+    if (target.step === 4 && out.includes('class="w-share"')) {
+      const lines = realResultLines(chatOfCase(target));
+      if (lines.length) {
+        const checked = target.share?.realDiag !== false ? 'checked' : '';
+        const row =
+          `<label><input type="checkbox" data-w="share" data-k="realDiag" ${checked}>` +
+          `<span><b>${esc(SHARE_KEY)}</b><br><span class="u-small u-muted">${lines.map(esc).join('<br>')}</span></span></label>`;
+        out = out.replace('<div class="w-share">', `<div class="w-share">${row}`);
+      }
+    }
+    return out;
+  });
+
+  wrapGlobal('asideHtml', (original) => (target, ...rest) => {
+    const html = original(target, ...rest);
+    if (typeof html !== 'string' || !target?.realPath) return html;
+    return html.replace(
+      /定型の相談は[^<]*で対応しています/,
+      '印刷の相談は端末の読み取り結果をもとに本人が確認しています',
+    );
+  });
+
+  // 引継ぎ: 会話に残した結果だけを、固定データとは別の項目で本人の同意のもとに渡す。
+  wrapGlobal('consentCard', (original) => (chat, ...rest) => {
+    const message = original(chat, ...rest);
+    if (message?.ctx) {
+      const lines = realResultLines(chat);
+      if (lines.length) message.ctx.realDiag = lines;
+    }
+    return message;
+  });
+
+  wrapGlobal('renderConsent', (original) => (message) => {
+    const html = original(message);
+    const lines = message?.ctx?.realDiag;
+    if (typeof html !== 'string' || !Array.isArray(lines) || !lines.length) return html;
+    const row =
+      '<label style="display:block;margin:3px 0">' +
+      `<input type="checkbox" data-ck="realDiag" data-mid="${esc(message.id)}" ${message.sel?.realDiag !== false ? 'checked' : ''}> ` +
+      `${esc(SHARE_KEY)}（${lines.length}件）：${lines.map(esc).join(' / ')}</label>`;
+    return html.replace(
+      /<label style="display:block;margin:3px 0"><input type="checkbox" data-ck="device"/,
+      (match) => row + match,
+    );
+  });
+
+  let pendingShare = null;
+  wrapGlobal('createTicket', (original) => (state, options) => {
+    if (!pendingShare || !options?.shared) return original(state, options);
+    return original(
+      state,
+      Object.assign({}, options, {
+        shared: Object.assign({}, options.shared, { [SHARE_KEY]: pendingShare }),
+      }),
+    );
+  });
+  try {
+    if (typeof ACT === 'object' && ACT && typeof ACT.consentSend === 'function') {
+      const originalConsentSend = ACT.consentSend;
+      ACT.consentSend = (detail) => {
+        const found = typeof findMsg === 'function' ? findMsg(detail?.mid) : [null, null];
+        const message = found?.[1];
+        const lines = message?.ctx?.realDiag;
+        pendingShare =
+          Array.isArray(lines) && lines.length && message.sel?.realDiag !== false ? lines : null;
+        try {
+          return originalConsentSend(detail);
+        } finally {
+          pendingShare = null;
+        }
+      };
+    }
+  } catch (error) {
+    // 引継ぎ本体は止めない。
+  }
+
+  window.__AIHD_RESOLVE__ = { realResultLines, sourceOfStep, SOURCE_LABEL, NO_AGENT_NOTICE };
+
+  // 接続状態は開始待ちの間だけ取り直す（実行中は承認・ポーリングの結果で分かる）。
+  setInterval(() => {
+    const c = currentCase();
+    if (!c?.chatId || STATE.mode !== 'idle' || !document.getElementById('aihdResolvePanel')) return;
+    void refreshDeviceStatus().then(() => render(false));
+  }, 20_000);
 
   setInterval(ensurePanel, 800);
   window.addEventListener('load', ensurePanel, { once: true });

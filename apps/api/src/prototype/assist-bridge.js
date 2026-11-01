@@ -32,6 +32,8 @@
     pendingSectionHtml: (items, errorCode) => ahPendingSectionHtml(items, errorCode),
     // 相談者の画面が受信箱を呼ばないことの単体テスト用（staff-access.test.ts）。
     fetchHandoverInbox: () => ahFetchHandoverInbox(),
+    // 報告書へ渡す内容の確認用（scripts/e2e/wizard-real-path.mjs）。
+    reportPayload: (c, L) => ahReportPayload(c, L),
   };
 
   const AH = {
@@ -313,19 +315,33 @@
   function ahDiagnoses(chat) {
     if (!chat) return [];
     return chat.messages
-      .filter((message) => message.kind === 'diag')
+      .filter((message) => message.kind === 'diag' || message.resolveResult)
       .slice(-50)
-      .map((message) => ({
-        // 診断は固定データ。報告書でも実端末の結果に見せない。
-        title:
-          (ahHonest() ? ahHonest().DEMO_PREFIX : '') +
-          (message.title || '端末の診断（読み取りのみ）'),
-        rows: (message.steps || []).map((step) => ({
-          k: String(step[0] || ''),
-          v: String(step[1] || ''),
-          lv: step[2] === 'warn' || step[2] === 'ng' ? step[2] : 'ok',
-        })),
-      }));
+      .map((message) => {
+        // 解決ループの結果は出所（実端末 / 模擬 / 不明）を題名に付けて、そのまま載せる。
+        if (message.resolveResult) {
+          const result = message.resolveResult;
+          return {
+            title: `${message.model || ''}：${result.title || result.skillId || '読み取り診断'}`,
+            rows: (result.facts || []).map(([key, value]) => ({
+              k: String(key),
+              v: String(value),
+              lv: 'ok',
+            })),
+          };
+        }
+        return {
+          // 診断は固定データ。報告書でも実端末の結果に見せない。
+          title:
+            (ahHonest() ? ahHonest().DEMO_PREFIX : '') +
+            (message.title || '端末の診断（読み取りのみ）'),
+          rows: (message.steps || []).map((step) => ({
+            k: String(step[0] || ''),
+            v: String(step[1] || ''),
+            lv: step[2] === 'warn' || step[2] === 'ng' ? step[2] : 'ok',
+          })),
+        };
+      });
   }
 
   function ahProposals(chat) {
@@ -393,6 +409,13 @@
         if (!message || message.kind === 'welcome') continue;
         if (message.kind === 'diag')
           push(message.at, 'AI', '端末を診断（読み取りのみ）', message.title || '');
+        if (message.resolveResult)
+          push(
+            message.at,
+            message.model || '',
+            '端末の読み取り結果',
+            message.resolveResult.title || '',
+          );
         if (message.kind === 'kb')
           push(message.at, 'AI', '承認済みナレッジを提示', message.kbId || '');
         if (message.kind === 'proposal') push(message.at, 'AI', '修復を提案', message.propId || '');
