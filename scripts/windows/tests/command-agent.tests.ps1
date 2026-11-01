@@ -663,6 +663,18 @@ try {
   ${function:Test-IsElevated} = $savedElevated
 
   # タイムアウト、出力超過、例外の経路でもハンドルを閉じる。「開いていた」も確かめて、素通りを合格にしない。
+  # ハンドルを参照で持って直接確かめる。ロックの有無だけだと、閉じ忘れを GC が回収したときに合格してしまう。
+  $script:LastStream = $null
+  $script:OpenHook = {
+    param($path)
+    $script:LastStream = & $script:RealOpenStream -Path $path
+    $script:LastStream
+  }
+  function Test-LastStreamClosed {
+    param([string]$Path)
+    if ($null -eq $script:LastStream -or $script:LastStream.CanRead) { return $false }
+    return (-not (Test-ExclusiveOpenDenied -Path $Path))
+  }
   $diskPath = Join-Path $skillsDir 'disk-space.ps1'
   $savedTimeout = $script:SkillTimeoutSeconds
   $script:SkillTimeoutSeconds = 2
@@ -670,7 +682,7 @@ try {
   $script:SkillTimeoutSeconds = $savedTimeout
   Assert-True 'close: タイムアウトを報告' ($case.Ok -eq $false -and $case.Error -like '*タイムアウト*') $case.Error
   Assert-Equal 'close: タイムアウトの停止までハンドルが開いている' 'True' ([string]$script:HeldAtChildEnd)
-  Assert-True 'close: タイムアウトの後に閉じる' (-not (Test-ExclusiveOpenDenied -Path $diskPath))
+  Assert-True 'close: タイムアウトの後に閉じる' (Test-LastStreamClosed -Path $diskPath)
 
   $dnsPath = Join-Path $skillsDir 'dns-flush.ps1'
   Write-Stub 'dns-flush.ps1' "[Console]::Out.Write('x' * 4096); [Console]::Out.Flush(); Start-Sleep -Seconds 30; Write-Output '{}'"
@@ -681,12 +693,12 @@ try {
   $script:OutputKillBytes = $savedKill
   Assert-True 'close: 出力超過を報告' ($case.Ok -eq $false -and $case.Error -like '*出力が上限*') $case.Error
   Assert-Equal 'close: 出力超過の停止までハンドルが開いている' 'True' ([string]$script:HeldAtChildEnd)
-  Assert-True 'close: 出力超過の後に閉じる' (-not (Test-ExclusiveOpenDenied -Path $dnsPath))
+  Assert-True 'close: 出力超過の後に閉じる' (Test-LastStreamClosed -Path $dnsPath)
 
   $statusPath = Join-Path $skillsDir 'service-status.ps1'
   $case = Invoke-TickCase (New-TestCommand 'service.status' @{ params = @{ service = 'NotAllowed' } }) 'service-status.ps1'
   Assert-True 'close: 引数の拒否を報告' (-not $case.Ran -and $case.Ok -eq $false -and $case.Error -like '*許可されていません*') $case.Error
-  Assert-True 'close: 引数の拒否の後に閉じる' (-not (Test-ExclusiveOpenDenied -Path $statusPath))
+  Assert-True 'close: 引数の拒否の後に閉じる' (Test-LastStreamClosed -Path $statusPath)
 
   $script:HeldBeforeThrow = $null
   $script:BeforeChild = {
@@ -698,15 +710,18 @@ try {
   $script:BeforeChild = $null
   Assert-True 'close: 例外を報告' (-not $case.Ran -and $case.Ok -eq $false) $case.Error
   Assert-Equal 'close: 例外の時点ではハンドルが開いている' 'True' ([string]$script:HeldBeforeThrow)
-  Assert-True 'close: 例外の後に閉じる' (-not (Test-ExclusiveOpenDenied -Path $probePath))
+  Assert-True 'close: 例外の後に閉じる' (Test-LastStreamClosed -Path $probePath)
 
   $savedExecutable = ${function:Get-PowerShellExecutable}
   ${function:Get-PowerShellExecutable} = { return (Join-Path $root 'no-such-powershell') }
   $case = Invoke-TickCase (New-TestCommand 'os.info') 'os-info.ps1'
   ${function:Get-PowerShellExecutable} = $savedExecutable
   Assert-True 'close: 子を起動できない失敗を報告' (-not $case.Ran -and $case.Ok -eq $false) $case.Error
-  Assert-True 'close: 子を起動できない失敗の後に閉じる' (-not (Test-ExclusiveOpenDenied -Path $probePath))
+  Assert-True 'close: 子を起動できない失敗の後に閉じる' (Test-LastStreamClosed -Path $probePath)
+  $case = Invoke-TickCase (New-TestCommand 'os.info') 'os-info.ps1'
+  Assert-True 'close: 成功の後に閉じる' ($case.Ok -eq $true -and (Test-LastStreamClosed -Path $probePath)) $case.Error
   $script:AfterChild = $null
+  $script:OpenHook = $null
 
   # Windows の共有モードでだけ意味を持つ検査。Linux では確かめられないので PASS に数えない。
   $windowsOnly = @(
