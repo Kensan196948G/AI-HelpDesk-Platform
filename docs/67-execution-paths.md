@@ -77,7 +77,7 @@
 
 **②に効いていないまま:** `phase` / `verification`、`ASSIST_SESSION_MODE`、本人と Windows ユーザーの照合。
 
-**残る判断:** `ACT.realExec` の先の `/api/device/command` を閉じるか（未実施）。
+**閉じた（2026-11-01、ユーザーの判断）:** `ACT.realExec` の先の `POST /api/device/command` は 410 を返す。原本の実行ボタンも出さない。**main には入っていない。**
 
 **レビューで残した指摘（未修正）:**
 
