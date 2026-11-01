@@ -577,5 +577,45 @@ describe('固定症状タグの束縛（#120 の symptom_tags。docs/64 §11）'
     const res = await review(id, approveBody(offHash));
     expect(res.statusCode, res.body).toBe(200);
     expect((await rowOf(id)).symptom_tags).toBeNull();
+
+describe('承認者の画面の API（docs/14 §2-19）', () => {
+  const REQUESTER = 'kbbind-requester@example.com';
+
+  async function handover(status: string, claimedBy: string | null) {
+    const rows = await sql<{ id: string }[]>`
+      INSERT INTO case_handovers (case_id, owner_email, status, snapshot, claimed_by)
+      VALUES (${`KB-BIND-${++sequence}`}, ${REQUESTER}, ${status},
+        ${sql.json({
+          case: { subject: '印刷できない DESKTOP-ABC1234', body: '本文は返さない' },
+          inc: { requester: REQUESTER },
+        })}, ${claimedBy})
+      RETURNING id
+    `;
+    return rows[0]?.id ?? '';
+  }
+
+  afterEach(async () => {
+    await sql`DELETE FROM case_handovers WHERE case_id LIKE 'KB-BIND-%'`;
+  });
+
+  it('完了待ちだけを最小限の項目で返し、相談者と端末を返さない', async () => {
+    const claimed = await handover('claimed', AUTHOR);
+    const pending = await handover('pending', null);
+    as(APPROVER);
+    const res = await app.inject({ method: 'GET', url: '/api/case-handovers/awaiting-approval' });
+    expect(res.statusCode, res.body).toBe(200);
+    const ids = res.json().items.map((item: { id: string }) => item.id);
+    expect(ids).toContain(claimed);
+    expect(ids).not.toContain(pending);
+    const text = res.body;
+    expect(text).not.toContain(REQUESTER);
+    expect(text).not.toContain('DESKTOP-ABC1234');
+    expect(text).not.toContain('本文は返さない');
+  });
+
+  it('承認者でなければ一覧を見られない', async () => {
+    as(AUTHOR);
+    const res = await app.inject({ method: 'GET', url: '/api/case-handovers/awaiting-approval' });
+    expect(res.statusCode).toBe(403);
   });
 });

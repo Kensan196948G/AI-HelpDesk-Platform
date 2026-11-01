@@ -663,6 +663,18 @@ try {
   ${function:Test-IsElevated} = $savedElevated
 
   # タイムアウト、出力超過、例外の経路でもハンドルを閉じる。「開いていた」も確かめて、素通りを合格にしない。
+  # ハンドルを参照で持って直接確かめる。ロックの有無だけだと、閉じ忘れを GC が回収したときに合格してしまう。
+  $script:LastStream = $null
+  $script:OpenHook = {
+    param($path)
+    $script:LastStream = & $script:RealOpenStream -Path $path
+    $script:LastStream
+  }
+  function Test-LastStreamClosed {
+    param([string]$Path)
+    if ($null -eq $script:LastStream -or $script:LastStream.CanRead) { return $false }
+    return (-not (Test-ExclusiveOpenDenied -Path $Path))
+  }
   $diskPath = Join-Path $skillsDir 'disk-space.ps1'
   $savedTimeout = $script:SkillTimeoutSeconds
   $script:SkillTimeoutSeconds = 2
@@ -670,7 +682,7 @@ try {
   $script:SkillTimeoutSeconds = $savedTimeout
   Assert-True 'close: タイムアウトを報告' ($case.Ok -eq $false -and $case.Error -like '*タイムアウト*') $case.Error
   Assert-Equal 'close: タイムアウトの停止までハンドルが開いている' 'True' ([string]$script:HeldAtChildEnd)
-  Assert-True 'close: タイムアウトの後に閉じる' (-not (Test-ExclusiveOpenDenied -Path $diskPath))
+  Assert-True 'close: タイムアウトの後に閉じる' (Test-LastStreamClosed -Path $diskPath)
 
   $dnsPath = Join-Path $skillsDir 'dns-flush.ps1'
   Write-Stub 'dns-flush.ps1' "[Console]::Out.Write('x' * 4096); [Console]::Out.Flush(); Start-Sleep -Seconds 30; Write-Output '{}'"
@@ -681,12 +693,12 @@ try {
   $script:OutputKillBytes = $savedKill
   Assert-True 'close: 出力超過を報告' ($case.Ok -eq $false -and $case.Error -like '*出力が上限*') $case.Error
   Assert-Equal 'close: 出力超過の停止までハンドルが開いている' 'True' ([string]$script:HeldAtChildEnd)
-  Assert-True 'close: 出力超過の後に閉じる' (-not (Test-ExclusiveOpenDenied -Path $dnsPath))
+  Assert-True 'close: 出力超過の後に閉じる' (Test-LastStreamClosed -Path $dnsPath)
 
   $statusPath = Join-Path $skillsDir 'service-status.ps1'
   $case = Invoke-TickCase (New-TestCommand 'service.status' @{ params = @{ service = 'NotAllowed' } }) 'service-status.ps1'
   Assert-True 'close: 引数の拒否を報告' (-not $case.Ran -and $case.Ok -eq $false -and $case.Error -like '*許可されていません*') $case.Error
-  Assert-True 'close: 引数の拒否の後に閉じる' (-not (Test-ExclusiveOpenDenied -Path $statusPath))
+  Assert-True 'close: 引数の拒否の後に閉じる' (Test-LastStreamClosed -Path $statusPath)
 
   $script:HeldBeforeThrow = $null
   $script:BeforeChild = {
@@ -698,15 +710,18 @@ try {
   $script:BeforeChild = $null
   Assert-True 'close: 例外を報告' (-not $case.Ran -and $case.Ok -eq $false) $case.Error
   Assert-Equal 'close: 例外の時点ではハンドルが開いている' 'True' ([string]$script:HeldBeforeThrow)
-  Assert-True 'close: 例外の後に閉じる' (-not (Test-ExclusiveOpenDenied -Path $probePath))
+  Assert-True 'close: 例外の後に閉じる' (Test-LastStreamClosed -Path $probePath)
 
   $savedExecutable = ${function:Get-PowerShellExecutable}
   ${function:Get-PowerShellExecutable} = { return (Join-Path $root 'no-such-powershell') }
   $case = Invoke-TickCase (New-TestCommand 'os.info') 'os-info.ps1'
   ${function:Get-PowerShellExecutable} = $savedExecutable
   Assert-True 'close: 子を起動できない失敗を報告' (-not $case.Ran -and $case.Ok -eq $false) $case.Error
-  Assert-True 'close: 子を起動できない失敗の後に閉じる' (-not (Test-ExclusiveOpenDenied -Path $probePath))
+  Assert-True 'close: 子を起動できない失敗の後に閉じる' (Test-LastStreamClosed -Path $probePath)
+  $case = Invoke-TickCase (New-TestCommand 'os.info') 'os-info.ps1'
+  Assert-True 'close: 成功の後に閉じる' ($case.Ok -eq $true -and (Test-LastStreamClosed -Path $probePath)) $case.Error
   $script:AfterChild = $null
+  $script:OpenHook = $null
 
   # Windows の共有モードでだけ意味を持つ検査。Linux では確かめられないので PASS に数えない。
   $windowsOnly = @(
@@ -714,8 +729,40 @@ try {
     'Move-Item（改名）の拒否', '別ファイルの移動による置換の拒否', '親フォルダの改名の可否',
     'powershell.exe -File（5.1）がハンドルを持ったまま開ける'
   )
-  foreach ($name in $windowsOnly) {
-    Write-Skip $name 'Windows 実機が要る（scripts/windows/tests/script-identity-windows.ps1）'
+  $identityScript = Join-Path $PSScriptRoot 'script-identity-windows.ps1'
+  if (Test-IsWindowsHost) {
+    $report = & (Get-PowerShellExecutable) -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $identityScript | ConvertFrom-Json
+    Assert-True 'windows: 共有モードの拒否と子プロセスの実行' ($report.ok -eq $true)
+  } else {
+    foreach ($name in $windowsOnly) {
+      Write-Skip $name 'Windows 実機が要る（scripts/windows/tests/script-identity-windows.ps1）'
+    }
+  }
+
+  # 実機用スクリプトの手順の確認。実機の確認に数えられない結果を ok にしないことを確かめる。
+  if (-not (Test-IsWindowsHost)) {
+    $self = Get-PowerShellExecutable
+    # 専用の一時フォルダで動かす。並行して動く別の試験のフォルダと混ざらない。
+    $identityTemp = Join-Path $root 'identity-tmp'
+    New-Item -ItemType Directory -Path $identityTemp | Out-Null
+    $savedTmpDir = $env:TMPDIR
+    $env:TMPDIR = $identityTemp
+    $text = & $self -NoProfile -NonInteractive -File $identityScript
+    Assert-Equal 'identity: Windows 以外は終了コード 2' 2 $LASTEXITCODE
+    $report = $text | ConvertFrom-Json
+    Assert-True 'identity: Windows 以外は ok にしない' ($report.ok -eq $false -and $report.platformValid -eq $false -and $report.reason -ceq 'not-windows')
+    $text = & $self -NoProfile -NonInteractive -File $identityScript -ProbeOnNonWindows
+    Assert-Equal 'identity: 手順の確認でも成功の終了コードにしない' 1 $LASTEXITCODE
+    Assert-Equal 'identity: 標準出力は JSON 1 行' 1 @($text).Count
+    $report = $text | ConvertFrom-Json
+    Assert-True 'identity: 手順の確認でも ok にしない' ($report.ok -eq $false -and $report.platformValid -eq $false)
+    Assert-Equal 'identity: 検査の件数' 17 @($report.checks).Count
+    Assert-True 'identity: 致命的な失敗なしで最後まで動く' (@($report.checks | Where-Object { $_.name -ceq 'fatal' }).Count -eq 0 -and $report.reason -ceq '')
+    Assert-Equal 'identity: 子プロセスの実行' 'PASS' (@($report.checks | Where-Object { $_.name -ceq 'child_opens_while_handle_held' })[0].status)
+    $env:TMPDIR = $savedTmpDir
+    Assert-True 'identity: パスとユーザー名を出さない' (-not ([string]$text).Contains($identityTemp) -and -not ([string]$text).Contains([string]$env:HOME))
+    # pwsh 自身が診断用のソケットを置くので、スクリプトのフォルダだけを数える。
+    Assert-Equal 'identity: 一時フォルダを残さない' 0 @(Get-ChildItem -LiteralPath $identityTemp -Filter 'script identity*').Count
   }
 
   # リポジトリの本物の Skill: 許可リストの全件がバイト列で approved.json と一致する（実行はしない）。
@@ -727,8 +774,9 @@ try {
     $resolved = Resolve-ApprovedSkillScript -Command ([pscustomobject]@{
         skill_id = $skillId; skill_version = $entry.version; skill_content_hash = $entry.contentHash
       })
-    Assert-True ('real: ハッシュ一致 ' + $skillId) ((Split-Path -Leaf $resolved) -ceq $script:SkillScripts[$skillId])
-    $bytes = [IO.File]::ReadAllBytes($resolved)
+    $resolved.Stream.Dispose()
+    Assert-True ('real: ハッシュ一致 ' + $skillId) ((Split-Path -Leaf $resolved.Path) -ceq $script:SkillScripts[$skillId])
+    $bytes = [IO.File]::ReadAllBytes($resolved.Path)
     Assert-True ('real: LF のまま ' + $skillId) (-not ([Text.Encoding]::UTF8.GetString($bytes).Contains("`r`n")))
   }
 
@@ -743,6 +791,16 @@ try {
   Assert-True 'source: BOM（5.1 が UTF-8 と解釈する）' ([IO.File]::ReadAllBytes($agentSource)[0] -eq 0xEF)
   foreach ($word in @('Invoke-Expression', 'iex ', 'cmd /c', 'cmd.exe', 'Start-Process', 'executionSource = ''endpoint_agent''')) {
     Assert-True ('source: 使わない ' + $word) (-not $source.Contains($word))
+  }
+  $identitySource = Join-Path $PSScriptRoot 'script-identity-windows.ps1'
+  $identityTokens = $null; $identityErrors = $null
+  [void][Management.Automation.Language.Parser]::ParseFile($identitySource, [ref]$identityTokens, [ref]$identityErrors)
+  Assert-Equal 'identity: 構文エラーなし' 0 @($identityErrors).Count
+  Assert-True 'identity: BOM（5.1 が UTF-8 と解釈する）' ([IO.File]::ReadAllBytes($identitySource)[0] -eq 0xEF)
+  foreach ($t in $identityTokens) {
+    if ($t.Kind -in @('QuestionQuestion', 'QuestionDot', 'QuestionLBracket', 'AndAnd', 'OrOr', 'QuestionMark')) {
+      Assert-True ('identity: 5.1 に無い構文 ' + $t.Text) $false
+    }
   }
   # 5.1 に無い構文を使わない。
   foreach ($t in $tokens) {

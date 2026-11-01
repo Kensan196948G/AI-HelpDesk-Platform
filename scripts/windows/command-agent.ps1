@@ -10,9 +10,12 @@
   - skill_id 付きのコマンドは、固定の許可リストにあり、scripts/skills/approved.json の
     id@version、contentHash、scriptHash（ファイルのバイト列の SHA-256）が一致するものだけを実行する。
     CRLF に変わったファイルはハッシュが変わるので実行しない。
+    検査したハンドルを子プロセスの終了まで持ち続け、検査と実行の間の差替えを防ぐ（docs/66 §8）。
+    リンク経由のファイルと、開けないファイルは実行しない。
   - コマンド文字列は実行しない。引数は検証した値だけを配列で渡す。
   - 既定は standard（本人権限）。昇格必須の Skill と admin は対象外。SYSTEM などのサービス
-    アカウントでは起動しない。自分で昇格しない。
+    アカウントでは起動しない。自分で昇格しない。昇格したプロセスでは Skill を実行しない
+    （agentPrivilege=standard は設定の宣言で、OS の権限を保証しない）。
   - タイムアウト 60 秒。stdout / stderr は 64KB まで。報告は最大 2,000 字。
   - 結果の出所は Windows では endpoint_agent。Windows 以外（試験用）は mock と申告する。
     出所を設定や引数で変える手段は置かない（本番のサーバは mock を拒否する）。
@@ -312,7 +315,35 @@ function Get-ApprovedSkill {
   return $null
 }
 
-# 実行してよいかを確かめ、スクリプトのパスを返す。一致しなければ例外。
+# 書込み、削除を共有しないで開く。Windows では閉じるまで書込み、削除、改名が拒否される想定（docs/66 §8）。
+function Open-SkillScriptStream {
+  param([string]$Path)
+  return (New-Object IO.FileStream($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read))
+}
+
+# ハンドルで固定できないもの。リンクは張り替えられ、子プロセスは張り替え後のパスを開く。
+function Test-SkillPathHasReparsePoint {
+  param([string]$ScriptPath)
+  $folder = Split-Path -Parent $ScriptPath
+  foreach ($item in @($ScriptPath, $folder, (Split-Path -Parent $folder))) {
+    if (([IO.File]::GetAttributes($item) -band [IO.FileAttributes]::ReparsePoint) -ne 0) { return $true }
+  }
+  return $false
+}
+
+function Get-StreamBytes {
+  param([IO.Stream]$Stream)
+  $memory = New-Object IO.MemoryStream
+  try {
+    $Stream.CopyTo($memory)
+    return , $memory.ToArray()
+  } finally {
+    $memory.Dispose()
+  }
+}
+
+# 実行してよいかを確かめ、パスと開いたままのハンドルを返す。一致しなければ例外（ハンドルは閉じる）。
+# 呼び出し側は子プロセスの終了までハンドルを持ち、finally で閉じる。
 function Resolve-ApprovedSkillScript {
   param([object]$Command)
   $skillId = [string](Get-JsonProperty $Command 'skill_id')
@@ -331,12 +362,28 @@ function Resolve-ApprovedSkillScript {
   if (-not (Test-Path -LiteralPath $scriptPath -PathType Leaf)) {
     throw "Skill スクリプトのハッシュが一致しません: $key"
   }
-  # 文字列ではなくバイト列で照合する。改行を CRLF に変えたファイルは一致しない。
-  $localHash = Get-BytesSha256 -Bytes ([IO.File]::ReadAllBytes($scriptPath))
-  if ($localHash -cne [string](Get-JsonProperty $approved 'scriptHash')) {
-    throw "Skill スクリプトのハッシュが一致しません: $key"
+  try {
+    $stream = Open-SkillScriptStream -Path $scriptPath
+  } catch {
+    # 例外の文面にパス（ユーザー名を含む）が入るので報告に出さない。
+    throw "Skill スクリプトを開けません（他のプロセスが書込み中の可能性があります）: $key"
   }
-  return $scriptPath
+  $keep = $false
+  try {
+    if (Test-SkillPathHasReparsePoint -ScriptPath $scriptPath) {
+      throw "Skill スクリプトの配置にリンクがあるので実行しません: $key"
+    }
+    # 文字列ではなくバイト列で照合する。改行を CRLF に変えたファイルは一致しない。
+    # パスから読み直さず、子プロセスの終了まで持つハンドルから読む。
+    $localHash = Get-BytesSha256 -Bytes (Get-StreamBytes -Stream $stream)
+    if ($localHash -cne [string](Get-JsonProperty $approved 'scriptHash')) {
+      throw "Skill スクリプトのハッシュが一致しません: $key"
+    }
+    $keep = $true
+    return @{ Path = $scriptPath; Stream = $stream }
+  } finally {
+    if (-not $keep) { $stream.Dispose() }
+  }
 }
 
 # 型付きパラメータから引数配列への唯一の変換点。許可値と整数範囲だけを通す。
@@ -492,12 +539,20 @@ function Invoke-SkillProcess {
 
 function Invoke-SkillCommand {
   param([object]$Command)
-  $scriptPath = Resolve-ApprovedSkillScript -Command $Command
   $skillId = [string](Get-JsonProperty $Command 'skill_id')
-  $arguments = @(Get-SkillArguments -SkillId $skillId -Params (Get-JsonProperty $Command 'params'))
-  Write-AgentLog ('skill {0} {1} {2}' -f (Get-JsonProperty $Command 'id'), $skillId, (Get-JsonProperty $Command 'skill_version'))
-
-  $run = Invoke-SkillProcess -ScriptPath $scriptPath -Arguments $arguments
+  # agentPrivilege=standard は設定の宣言で、OS の権限を保証しない。昇格していれば実行しない。
+  if (Test-IsElevated) {
+    throw "昇格したプロセスでは Skill を実行しません。本人の通常の権限で起動してください（$skillId）"
+  }
+  $verified = Resolve-ApprovedSkillScript -Command $Command
+  try {
+    $arguments = @(Get-SkillArguments -SkillId $skillId -Params (Get-JsonProperty $Command 'params'))
+    Write-AgentLog ('skill {0} {1} {2}' -f (Get-JsonProperty $Command 'id'), $skillId, (Get-JsonProperty $Command 'skill_version'))
+    $run = Invoke-SkillProcess -ScriptPath $verified.Path -Arguments $arguments
+  } finally {
+    # タイムアウト、出力超過、例外のどの経路でも、子の終了（または停止）の後に閉じる。
+    $verified.Stream.Dispose()
+  }
   if ($run.TimedOut) {
     throw "Skill の実行がタイムアウトしました（$skillId, $($script:SkillTimeoutSeconds * 1000)ms）"
   }
@@ -609,7 +664,7 @@ function Invoke-AgentMain {
   if (Invoke-LocalRetention) { return $script:ExitRetentionExpired }
   Import-AgentConfig -Path $ConfigPath
   if (Test-IsElevated) {
-    Write-AgentLog '警告: 昇格したプロセスで動いています。本人の通常の権限で起動してください'
+    Write-AgentLog '警告: 昇格したプロセスで動いています。Skill は実行しません（SPOOLER_RESTART だけ従来どおり動きます）。本人の通常の権限で起動してください'
   }
   $interval = [Math]::Max(1, $IntervalSeconds)
   Write-AgentLog "command-agent start: $($script:CommandUrl) source=$(Get-ExecutionSource)"

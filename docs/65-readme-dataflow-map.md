@@ -97,16 +97,16 @@ README の図と記述の各線を、実際の経路と証跡に対応づける�
 | 解決 → 下書き | ワークスペースの「解決を記録」 | なし（state のみ） | 担当者の `prototype_states` | **実データ**。症状は相談内容だけ（修正 1）。M では端末情報が入る | I | E2E K2、K3、K18 |
 | 下書き → 申請 | 「承認申請」 | `POST /api/knowledge/ui-sync`（`pending`） | `knowledge` | **実データ** | M / I | E2E K1 |
 | 承認の出所の表示 | 結果カード、回答の出典、報告書 | `knowledgeRefs`、`sources` | - | `seed`、`shared_identity`、`other_person` を区別して表示（I のみ。M は「承認済み」と一括）。使うかの方針は変えていない。**本番の 9 件が `seed` と判定されるかは未確認**（[docs/64](64-kb-approved-provenance.md) §9） | I | E2E N7、`approval-origin.test.ts`、`knowledge-ai-provenance.integration.test.ts` |
-| 別人が承認（DX 推進部の承認者） | ⑥ の「サーバ下書き」（I は本文も表示） | `GET /api/knowledge/pending`、`POST /ui-sync`（`approved`） | `knowledge.approver_id`、`version` | **実データ（合成の構成）**。本番の人物構成では別人がいない（docs/61 §7） | M / I | E2E K7、K8、K19 |
-| 別人が承認（DX 推進部以外の承認者） | 画面の役割に承認者が出ない | API のみ | - | **未接続**。docs/61 §7 の制約を今回実ブラウザで確認した | M / I | E2E U1 |
+| 別人が承認（DX 推進部の承認者） | ⑥ の「サーバ下書き」（I は本文も表示） | `GET /api/knowledge/pending`、`POST /ui-sync`（`approved`） | `knowledge.approver_id`、`version` | **実データ（合成の構成）**。指紋で確認した本文へ束縛する（[docs/64](64-kb-approved-provenance.md) §10）。本番の人物構成では別人がいない（docs/61 §7） | M / I | E2E K7、K8、K19 |
+| 別人が承認（DX 推進部以外の承認者） | 右下の「承認者の確認」→ ② ナレッジの公開承認（[docs/14](14-prototype-ui-integration.md) §2-19） | `GET /api/knowledge/pending`、`POST /ui-sync`（指紋つき） | `knowledge`、`knowledge_reviews` | **接続済み（合成の構成、mock）**。パネルを開くところまで画面で確認。公開のクリックはこの役割では未確認。原本の役割の選択には出ない（docs/61 §7） | I | E2E U1、U2 |
 | 権限なしの承認の拒否 | - | `POST /ui-sync` | - | **実データ**（API 直接） | M / I | E2E K5、K6 |
 | 承認済み → 次の人の AI 入力（自由記述） | B の STEP 2 | `POST /api/ai/answer` | `knowledge` を読む | **実データ**（実 AI でも確認）。`[KB番号 v版]` が入る。実 AI の 2 回のうち、この流れの KB を根拠に挙げたのは 2 回目（§7 の確認 4） | **I のみ**。M では state の KB を根拠にする | E2E K10、Q3、Q5 |
 | 承認済み → 次の人（印刷の相談、エージェント接続あり） | 開始 → 本人 Y → 結果カード | `POST /api/resolve/sessions`、`/steps/:id/continue` | `resolution_steps.knowledge_refs` | **実データ（スタブ AI・mock まで）**。提案の AI 入力に参照が入り、結果カードに出典付きで出る。AI が示したときだけ「AI が参照」と出る。実 AI の提案では**未検証** | I | E2E N1〜N6、`real-path.integration.test.ts` |
-| 承認済み → 次の人（印刷の相談、エージェント未接続） | B の STEP 2 | なし | - | **未接続**。セッションを作らないので KB は案内されない | I | E2E N0 |
+| 承認済み → 次の人（印刷の相談、エージェント未接続） | B の STEP 2 の案内 | `POST /api/resolve/knowledge-guide`（外部 AI なし、端末操作なし） | `knowledge` を読む | **接続済み（合成の構成）**。KB の手順と出所、引継ぎのボタンを出す。案内が解決につながるかは未評価 | I | E2E N0、N0b、N0c |
 | 承認済み → 新ループの入力（新本人ヘルパー） | 既定無効。実画面は未操作 | `POST /api/knowledge/ui-sync`（作成と別アカウントの承認）→ 提案の AI 入力 | `knowledge.symptom_tags`、`knowledgeRefs` | **実データ（統合試験まで。API 直接、スタブ AI）**。AI へ渡すのは ID と固定タグだけ。統合で #125 と同じ条件に揃え、タグを承認の指紋に含めた（[docs/64](64-kb-approved-provenance.md) §11、[docs/67](67-execution-paths.md) §3）。実 AI、実画面は**未検証** | #120 | `support-session.integration.test.ts` の「画面で作って別人が承認したナレッジ」、[受入表](evidence/assist-integration-20261101/README.md) |
 | 承認前・自己承認は根拠にしない | B の STEP 2 | `/api/ai/answer` | - | **実データ** | I | E2E K4、K17、`knowledge-ai-provenance.integration.test.ts` |
 | 相談者の state の KB は根拠にしない | 注入 → 画面から相談 | `/api/ai/answer` | - | **実データ** | **I のみ**。M では根拠になる（#125 の修正対象） | E2E I1〜I6 |
-| 引継ぎの完了承認（別人） | 画面の導線なし | `POST /api/case-handovers/:id/approve` | `case_handovers` | **未接続**。別人の承認者の画面には案件が無い。今回は API を直接呼んだ | M / I | E2E C1、C2 |
+| 引継ぎの完了承認（別人） | 右下の「承認者の確認」→ ① 引継ぎの完了承認 | `GET /api/case-handovers/awaiting-approval`、`POST /api/case-handovers/:id/approve` | `case_handovers` | **接続済み（合成の構成、mock）**。画面のクリックで完了する。KB は公開しない | I | E2E C1、C2 |
 | 個人情報の自動伏せ字 | 下書き・承認 | サーバの `redactPII`、原本の `maskPII` | `knowledge` | **実データ**。端末 ID、ホスト名（形とラベルで分かるもの）、シリアル、社員番号形式の端末名も除く（I のみ）。任意のホスト名は判別できず、承認者の確認が残る | M / I | `domain/pii.test.ts`、`pii-knowledge.test.ts`、E2E K14、K15 |
 | 役に立った率 | 画面の評価 | なし | `prototype_states` | **デモ**（サーバの KB に戻らない。別の担当者・相談者へ集計されない） | M / I | 原本 HTML |
 
