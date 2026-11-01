@@ -1814,6 +1814,109 @@ describe('共通支援セッション（Mock: ヘルパー / RSP / 名簿 / PII 
     });
   });
 
+  describe('操作導線（API）', () => {
+    it('同時の Y でも実行は 1 件だけ', async () => {
+      const session = await readySession();
+      const { proposal } = await propose(session.id);
+      const y = { decision: 'Y', approvalHash: proposal.approvalHash };
+      const responses = await Promise.all(
+        Array.from({ length: 5 }, () => decide(session.id, proposal.id, y)),
+      );
+      const codes = responses.map((response) => response.statusCode).sort();
+      expect(codes).toEqual([200, 409, 409, 409, 409]);
+      expect(await executionRows(session.id)).toHaveLength(1);
+      expect((await poll(session.token)).skillOps).toHaveLength(1);
+    });
+
+    it('実行の後に同じ Y を再送しても（通信の再送）実行が増えない', async () => {
+      const session = await readySession();
+      const { proposal, op } = await executing(session);
+      await report(session.token, op, resultBody(op, FOLDER_OUTPUT));
+      const replay = await decide(session.id, proposal.id, {
+        decision: 'Y',
+        approvalHash: proposal.approvalHash,
+      });
+      expect(replay.statusCode).toBe(409);
+      expect(await executionRows(session.id)).toHaveLength(1);
+      expect((await poll(session.token)).skillOps).toEqual([]);
+      expect((await sessionRow(session.id))?.status).toBe('awaiting_next');
+    });
+
+    it('古い画面の Y（前の提案へ）は新しい提案を動かさず、止めもしない', async () => {
+      setManifest(ALL_BUT_DISK);
+      const session = await readySession();
+      const { proposal: old, op } = await executing(session);
+      await report(session.token, op, resultBody(op, FOLDER_OUTPUT));
+      const { proposal: fresh } = await propose(session.id);
+      expect(fresh.id).not.toBe(old.id);
+      const stale = await decide(session.id, old.id, {
+        decision: 'Y',
+        approvalHash: old.approvalHash,
+      });
+      expect(stale.statusCode).toBe(409);
+      const after = await sessionRow(session.id);
+      expect(after?.status).toBe('awaiting_approval');
+      expect(await executionRows(session.id)).toHaveLength(1);
+      // 表示中の提案の Y は有効なまま。
+      const ok = await decide(session.id, fresh.id, {
+        decision: 'Y',
+        approvalHash: fresh.approvalHash,
+      });
+      expect(ok.statusCode, ok.body).toBe(200);
+    });
+
+    it('前の提案のハッシュで新しい提案へ Y を送っても無効', async () => {
+      setManifest(ALL_BUT_DISK);
+      const session = await readySession();
+      const { proposal: old, op } = await executing(session);
+      await report(session.token, op, resultBody(op, FOLDER_OUTPUT));
+      const { proposal: fresh } = await propose(session.id);
+      const response = await decide(session.id, fresh.id, {
+        decision: 'Y',
+        approvalHash: old.approvalHash,
+      });
+      expect(response.statusCode).toBe(409);
+      expect(await executionRows(session.id)).toHaveLength(1);
+    });
+
+    it('担当者の参照: 引き受けた本人だけ。承認者だけ・他の担当者には見せない', async () => {
+      const session = await startSession();
+      const url = `/api/support-sessions?handoverId=${session.handoverId}`;
+      expect((await call(ASSIGNEE, 'GET', url)).json().session.id).toBe(session.id);
+      for (const email of [APPROVER_ONLY, OTHER_ASSIGNEE, OWNER]) {
+        expect((await call(email, 'GET', url)).statusCode, email).toBe(403);
+      }
+      const fresh = await makeHandover();
+      expect(
+        (await call(ASSIGNEE, 'GET', `/api/support-sessions?handoverId=${fresh}`)).json().session,
+      ).toBeNull();
+    });
+
+    it('本人の表示に対象 PC・ユーザー・許可範囲・期限があり、担当者には本人向けの情報を返さない', async () => {
+      const session = await readySession();
+      const mine = (await call(OWNER, 'GET', base(session.id))).json().session;
+      expect(mine.device).toEqual({ hostname: HOST, windowsUser: USER });
+      expect(mine.folderScope.root).toBe('Documents');
+      expect(mine.folderScope.segments).toEqual([CANARY_SEGMENT]);
+      expect(mine.folderScope.expiresAt).toBeTruthy();
+      expect(mine.operationConsent.expiresAt).toBeTruthy();
+      const staff = (await call(ASSIGNEE, 'GET', base(session.id))).json().session;
+      expect(staff.device).toBeNull();
+      expect(staff.folderScope).toBeNull();
+    });
+
+    it('承認済みの Skill の数を返し、0 件なら提案できないと分かる', async () => {
+      setManifest([]);
+      const none = await startSession();
+      const dto = (await call(OWNER, 'GET', base(none.id))).json().session;
+      expect(dto.skillAvailability).toEqual({ readOnly: 0, userReversible: 0 });
+      expect(dto.aiAvailable).toBe(false);
+      setManifest(['folder.summary']);
+      const read = (await call(OWNER, 'GET', base(none.id))).json().session;
+      expect(read.skillAvailability).toEqual({ readOnly: 1, userReversible: 1 });
+    });
+  });
+
   describe('失効済みトークンの報告期限（410 RESULT_REPORT_EXPIRED）', () => {
     async function revokedDuringRun() {
       const session = await readySession();

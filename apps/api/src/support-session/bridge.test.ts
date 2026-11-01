@@ -3,6 +3,7 @@ import path from 'node:path';
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { repoRoot } from '../config.js';
+import { REASON_CODES } from './case-facts.js';
 import { SESSION_END_REASONS } from './state.js';
 
 /**
@@ -18,7 +19,7 @@ class FakeElement {
   children: (FakeElement | { text: string })[] = [];
   attrs: Record<string, string> = {};
   listeners: Record<string, ((event: unknown) => void)[]> = {};
-  style = { cssText: '' };
+  style = { cssText: '', display: '' };
   id = '';
   value = '';
   disabled = false;
@@ -35,6 +36,13 @@ class FakeElement {
       this.children.push(node);
     }
   }
+  insertBefore(node: FakeElement) {
+    this.append(node);
+  }
+  get nextSibling() {
+    return null;
+  }
+  className = '';
   replaceChildren(...nodes: (FakeElement | { text: string })[]) {
     this.children = [];
     this.append(...nodes);
@@ -76,7 +84,12 @@ type Reply = { status: number; body: unknown };
 function harness(
   route: (url: string, init?: RequestInit) => Reply,
   clock: { offsetMs: number } = { offsetMs: 0 },
+  caseRef: { current: Record<string, unknown> | null } = { current: null },
 ) {
+  const wizParent = new FakeElement('div');
+  const wiz = new FakeElement('div');
+  wizParent.append(wiz);
+  const wzPane = new FakeElement('div');
   const timers: (() => void)[] = [];
   const body = new FakeElement('body');
   const created: FakeElement[] = [];
@@ -103,9 +116,12 @@ function harness(
       createTextNode: (text: string) => ({ text }),
       getElementById: (id: string) =>
         created.find((element) => element.id === id && element.parentNode) ?? null,
+      querySelector: (selector: string) =>
+        selector === '#wzPane' ? wzPane : selector === '.w-wiz' ? wiz : null,
     },
     localStorage: storage,
     sessionStorage: storage,
+    curCase: () => caseRef.current,
     setInterval: (callback: () => void) => timers.push(callback),
     encodeURIComponent,
     JSON,
@@ -142,12 +158,16 @@ function harness(
       for (const timer of timers) timer();
       await flush();
     },
+    tickSync: () => {
+      for (const timer of timers) timer();
+    },
     start: async () => {
       for (const listener of load) listener();
       await flush();
     },
     panel: () =>
       created.find((element) => element.id === 'aihdSupportSessionMinePanel' && element.parentNode),
+    staff: () => created.find((element) => element.id === 'aihdSupportSessionStaffPanel'),
   };
 }
 
@@ -176,7 +196,7 @@ const BASE = {
       successCriteria: '成功',
       failureAction: '失敗',
       rollbackScope: '戻せる範囲',
-      rationale: CANARY,
+      aiGuess: CANARY,
       verifyOps: [{ skillId: 'user.marker.status', title: '確認', description: '値を読む' }],
       approvalHash: 'a'.repeat(64),
       approvalExpiresAt: '2026-11-01T00:00:00.000Z',
@@ -482,6 +502,264 @@ describe('本人パネル（Mock: DOM / fetch）', () => {
     expect(block).not.toBe('');
     for (const reason of SESSION_END_REASONS) {
       expect(block, reason).toMatch(new RegExp(`\\b${reason}:`));
+    }
+  });
+
+  describe('提案の表示と Y', () => {
+    const yesButton = (page: ReturnType<typeof harness>) =>
+      (page.panel() as FakeElement)
+        .buttons()
+        .find((button) => button.text.includes('はい')) as FakeElement;
+    const decisions = (page: ReturnType<typeof harness>) =>
+      page.calls.filter((item) => item.url.endsWith('/decision'));
+    const withSession = (session: unknown) => (url: string) =>
+      url.endsWith('/support-sessions/mine')
+        ? { status: 200, body: { sessions: [session] } }
+        : url.includes('/folder-access/mine')
+          ? { status: 200, body: { requests: [] } }
+          : { status: 200, body: { session } };
+
+    it('目的・対象・影響・成功条件・確認・失敗時・推測と事実の区別を表示する', async () => {
+      const session = {
+        ...BASE,
+        verifiedFacts: [
+          { stepSeq: 1, role: 'main', skillId: 'x', condition: 'FACT-CONDITION', ok: true },
+        ],
+        proposals: [
+          {
+            ...BASE.proposals[0],
+            target: 'T1',
+            aiGuess: 'AI-GUESS-TEXT',
+            rationale: null,
+            reasonCodes: ['SYMPTOM_MATCH', 'AI_SELECTED'],
+          },
+        ],
+      };
+      const page = harness(withSession(session));
+      await page.start();
+      const text = (page.panel() as FakeElement).text;
+      for (const label of [
+        '目的',
+        '対象',
+        '影響',
+        '成功の条件',
+        '失敗したとき',
+        '元に戻せる範囲',
+      ]) {
+        expect(text, label).toContain(label);
+      }
+      expect(text).toContain('この提案に含まれる確認');
+      expect(text).toContain('新しい提案には数えません');
+      expect(text).toContain('AI の推測（確認された事実ではありません）: AI-GUESS-TEXT');
+      expect(text).toContain('確認された事実');
+      expect(text).toContain('FACT-CONDITION');
+      expect(text).toContain('相談の症状に対応する操作です。');
+    });
+
+    it('二重クリックでも Y は 1 回だけ送る', async () => {
+      const page = harness(withSession(BASE));
+      await page.start();
+      const yes = yesButton(page);
+      yes.listeners.click?.[0]?.({});
+      yes.listeners.click?.[0]?.({});
+      await page.flush();
+      yes.listeners.click?.[0]?.({});
+      await page.flush();
+      expect(decisions(page)).toHaveLength(1);
+      expect(decisions(page)[0]?.body).toEqual({ decision: 'Y', approvalHash: 'a'.repeat(64) });
+    });
+
+    it('古い画面のボタンからは Y を送らない（提案が変わった後）', async () => {
+      let current: Record<string, unknown> = BASE;
+      const page = harness((url) => withSession(current)(url));
+      await page.start();
+      const stale = yesButton(page);
+      current = {
+        ...BASE,
+        proposals: [{ ...BASE.proposals[0], id: 'other', approvalHash: 'b'.repeat(64) }],
+      };
+      await page.tick();
+      stale.listeners.click?.[0]?.({});
+      await page.flush();
+      expect(decisions(page)).toHaveLength(0);
+      expect((page.panel() as FakeElement).text).toContain('画面が古くなりました');
+    });
+
+    it('通信に失敗した Y は押し直せる（送るのは表示中のハッシュ）', async () => {
+      let failing = true;
+      const page = harness((url) => {
+        if (url.endsWith('/decision') && failing) {
+          return { status: 500, body: { error: { message: 'NETWORK' } } };
+        }
+        return withSession(BASE)(url);
+      });
+      await page.start();
+      yesButton(page).listeners.click?.[0]?.({});
+      await page.flush();
+      expect((page.panel() as FakeElement).text).toContain('NETWORK');
+      failing = false;
+      yesButton(page).listeners.click?.[0]?.({});
+      await page.flush();
+      expect(decisions(page)).toHaveLength(2);
+    });
+
+    it('承認済みの Skill が 0 件なら理由を表示し、提案のボタンを出さない', async () => {
+      const session = {
+        ...BASE,
+        status: 'ready',
+        proposals: [],
+        operationConsent: { scope: 'read_only', version: 'v', expiresAt: null },
+        skillAvailability: { readOnly: 0, userReversible: 0 },
+      };
+      const page = harness(withSession(session));
+      await page.start();
+      const panel = page.panel() as FakeElement;
+      expect(panel.text).toContain('承認済みの操作がないため');
+      expect(panel.buttons().some((button) => button.text.includes('提案してもらう'))).toBe(false);
+    });
+
+    it('変更系が承認されていなければ変更の範囲を選べず、AI が無ければ AI の同意を出さない', async () => {
+      const session = {
+        ...BASE,
+        status: 'consent_pending',
+        operationConsent: null,
+        proposals: [],
+        aiAvailable: false,
+        skillAvailability: { readOnly: 2, userReversible: 2 },
+      };
+      const page = harness(withSession(session));
+      await page.start();
+      const panel = page.panel() as FakeElement;
+      expect(panel.text).not.toContain('自分の設定の変更');
+      expect(panel.text).toContain('AI は利用できません');
+      expect(
+        ((panel.checkboxes()[0] as FakeElement).parentNode as FakeElement).style.cssText,
+      ).toContain('display:none');
+    });
+
+    it('導入から提案までの案内を一続きに出す（セッションの前から）', async () => {
+      const request = {
+        id: 'r',
+        handoverId: 'h',
+        caseId: 'CASE-9',
+        status: 'helper_pending',
+        paired: false,
+      };
+      const page = harness((url) =>
+        url.includes('/folder-access/mine')
+          ? { status: 200, body: { requests: [request] } }
+          : { status: 200, body: { sessions: [] } },
+      );
+      await page.start();
+      const text = (page.panel() as FakeElement).text;
+      expect(text).toContain('▶ 1. 導入コード');
+      expect(text).toContain('PC に表示されたコード');
+      expect(text).toContain('操作の範囲に同意');
+      expect(text).toContain('いつでも取り消せます');
+    });
+
+    it('本人の表示に対象 PC・ユーザー・許可範囲・期限を出す', async () => {
+      const session = {
+        ...BASE,
+        folderScope: {
+          root: 'Documents',
+          segments: ['資料'],
+          expiresAt: '2099-01-01T00:00:00.000Z',
+        },
+      };
+      const page = harness(withSession(session));
+      await page.start();
+      const text = (page.panel() as FakeElement).text;
+      for (const value of ['SYNTH-PC', 'synth-user', 'ドキュメント › 資料', '期限']) {
+        expect(text).toContain(value);
+      }
+    });
+  });
+
+  describe('担当者パネル', () => {
+    const caseRef = () => ({
+      current: { id: 'CASE-1', handoverId: '11111111-1111-4111-8111-111111111111' } as Record<
+        string,
+        unknown
+      > | null,
+    });
+    const route =
+      (session: unknown, status = 200) =>
+      (url: string, init?: RequestInit) => {
+        if (url.endsWith('/mine')) return { status: 200, body: { sessions: [], requests: [] } };
+        if (status !== 200) return { status, body: { error: { message: 'x' } } };
+        if (init?.method === 'POST') return { status: 200, body: { session } };
+        return { status: 200, body: { session } };
+      };
+    const buttons = (page: ReturnType<typeof harness>) => (page.staff() as FakeElement).buttons();
+
+    it('引き受けた本人には開始のボタンを出し、押すと開始する', async () => {
+      const page = harness(route(null), undefined, caseRef());
+      await page.start();
+      const start = buttons(page).find((button) => button.text.includes('開始')) as FakeElement;
+      start.listeners.click?.[0]?.({});
+      await page.flush();
+      expect(page.calls.find((item) => item.url === '/api/support-sessions')?.body).toEqual({
+        handoverId: '11111111-1111-4111-8111-111111111111',
+      });
+    });
+
+    it('進行中は中止のボタンを出し、Y や解決の操作を出さない', async () => {
+      const session = { ...BASE };
+      const page = harness(route(session), undefined, caseRef());
+      await page.start();
+      const staff = page.staff() as FakeElement;
+      expect(staff.text).toContain('相談者本人が決めます');
+      expect(buttons(page).map((button) => button.text)).toEqual(['中止']);
+      buttons(page)[0]?.listeners.click?.[0]?.({});
+      await page.flush();
+      expect(page.calls.some((item) => item.url.endsWith('/stop'))).toBe(true);
+    });
+
+    it.each([403, 404])('%i（承認者のみ、他の担当者、機能無効）なら表示しない', async (status) => {
+      const page = harness(route(null, status), undefined, caseRef());
+      await page.start();
+      const staff = page.staff() as FakeElement;
+      expect(staff.style.display).toBe('none');
+      expect(staff.buttons()).toEqual([]);
+    });
+
+    it('一時的な失敗ではエラーを見せ、中止を残す', async () => {
+      let failing = false;
+      const session = { ...BASE };
+      const page = harness(
+        (url, init) =>
+          failing && !url.endsWith('/mine')
+            ? { status: 503, body: { error: { message: 'TEMPORARY' } } }
+            : route(session)(url, init),
+        undefined,
+        caseRef(),
+      );
+      await page.start();
+      failing = true;
+      await page.tick();
+      const staff = page.staff() as FakeElement;
+      expect(staff.text).toContain('TEMPORARY');
+      expect(buttons(page).some((button) => button.text === '中止')).toBe(true);
+    });
+
+    it('案件を切り替えたら、応答を待たずに前の案件の状態を消す', async () => {
+      const ref = caseRef();
+      const page = harness(route({ ...BASE, status: 'executing' }), undefined, ref);
+      await page.start();
+      expect((page.staff() as FakeElement).text).toContain('実行中');
+      ref.current = { id: 'CASE-2', handoverId: '22222222-2222-4222-8222-222222222222' };
+      const staff = page.staff() as FakeElement;
+      // 応答を待たない（タイマーの直後、まだ await の前）。
+      page.tickSync();
+      expect(staff.text).not.toContain('実行中');
+    });
+  });
+
+  it('提案の理由コードのすべてに表示文言がある', () => {
+    const block = /const REASON_LABEL = \{([\s\S]*?)\n {2}\};/.exec(source)?.[1] ?? '';
+    for (const code of REASON_CODES) {
+      expect(block, code).toMatch(new RegExp(`\\b${code}:`));
     }
   });
 

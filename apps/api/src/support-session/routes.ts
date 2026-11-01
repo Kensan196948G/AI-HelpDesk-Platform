@@ -144,6 +144,9 @@ async function assertAssigneeBefore(request: FastifyRequest, id: string): Promis
   return email;
 }
 
+/** 利用できる Skill を見せる状態（同意の前と、次の提案を求める前）。 */
+const SHOWS_AVAILABILITY = ['awaiting_next', 'consent_pending', 'ready'];
+
 function proposalDto(row: ProposalRow) {
   return {
     id: row.id,
@@ -240,6 +243,23 @@ function buildSessionDto(
       view === 'requester' && ctx
         ? { hostname: ctx.helper_hostname, windowsUser: ctx.windows_user }
         : null,
+    // 本人が確認する許可範囲（同意が有効な間だけ）。
+    folderScope:
+      view === 'requester' && ctx?.status === 'active'
+        ? {
+            root: ctx.consent_root,
+            segments: ctx.consent_segments,
+            expiresAt: ctx.consent_expires_at?.toISOString() ?? null,
+          }
+        : null,
+    // 実行できないものを実行できるように見せないための情報。
+    aiAvailable: aiConfigured(),
+    skillAvailability: SHOWS_AVAILABILITY.includes(session.status)
+      ? {
+          readOnly: proposableSkills('read_only').length,
+          userReversible: proposableSkills('user_reversible').length,
+        }
+      : null,
     operationConsent: session.operation_consent_id
       ? {
           scope: session.operation_consent_scope,
@@ -634,6 +654,13 @@ async function assignRoutes(app: FastifyInstance): Promise<void> {
   app.get('/support-sessions', { preHandler: authenticateUi }, async (request) => {
     const email = await requireAssignee(request);
     const { handoverId } = HandoverQuery.parse(request.query);
+    // 開始の導線を出すかの判定を兼ねる。引き受けた本人以外には見せない。
+    const claims = await sql<{ claimed_by: string | null; status: string }[]>`
+      SELECT claimed_by, status FROM case_handovers WHERE id = ${handoverId}
+    `;
+    if (claims[0]?.claimed_by !== email) {
+      throw new ApiError(403, 'NOT_ASSIGNEE', '引継ぎを引き受けた担当者本人のみ参照できます。');
+    }
     const rows = await sql<{ id: string }[]>`
       SELECT id FROM support_sessions
       WHERE handover_id = ${handoverId} AND assignee_email = ${email}
