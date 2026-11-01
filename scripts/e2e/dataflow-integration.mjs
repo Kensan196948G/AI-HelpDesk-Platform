@@ -1188,11 +1188,9 @@ async function main(browser) {
     panel,
   );
   await B.page.click(`${panel} [data-aihd-resolve="approve"][data-decision="Y"]`);
+  // 実行中のカードにも「失敗」の語があるので、結果の表示だけを待つ。
   await waitUntil(
-    async () => {
-      const text = await B.page.innerText(panel);
-      return /AI が参照しました/.test(text) || /(失敗|エラー)/.test(text);
-    },
+    async () => /AI が参照しました/.test(await B.page.innerText(panel)),
     'kb used shown',
     20_000,
   ).catch(() => null);

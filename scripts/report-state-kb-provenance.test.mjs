@@ -94,6 +94,8 @@ describe('report-state-kb-provenance', () => {
       missingApprovalRecord: 0,
       usableWithoutKeywords: 1,
       draftsWithoutClientRef: 0,
+      approvedWithDeviceInfo: 0,
+      notApprovedWithDeviceInfo: 0,
     });
     expect(JSON.stringify(report)).not.toContain('example.com');
   });
