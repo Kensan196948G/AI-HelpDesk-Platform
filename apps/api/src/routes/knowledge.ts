@@ -17,6 +17,8 @@ import { jsonbValue } from '../lib/jsonb-value.js';
 import { nextKbNo } from '../lib/numbers.js';
 import { caseSummary, knowledgeDto } from '../lib/serializers.js';
 import { ensureAuthorUser } from '../lib/users.js';
+import { knowledgeTagsFromText } from '../support-session/case-facts.js';
+import { assistEnabled } from '../support-session/propagate.js';
 
 const ListQuerySchema = z.object({
   status: z.enum(['draft', 'pending', 'approved', 'rejected']).optional(),
@@ -81,6 +83,26 @@ async function loadKnowledge(id: string) {
     LIMIT 1
   `;
   return rows[0] ?? null;
+}
+
+/**
+ * 承認した本文から固定の症状タグを保存する（docs/63 §12）。入力ではなく保存済みの行から求める。
+ * 機能が無効の間は 035 が未適用でも承認を止めないよう書かない（読むときに本文から求める）。
+ */
+async function saveKnowledgeSymptomTags(
+  tx: Parameters<Parameters<typeof sql.begin>[1]>[0],
+  id: string,
+): Promise<void> {
+  if (!assistEnabled()) return;
+  const rows = await tx<{ title: string; symptom: string }[]>`
+    SELECT title, symptom FROM knowledge WHERE id = ${id}
+  `;
+  const row = rows[0];
+  if (!row) return;
+  await tx`
+    UPDATE knowledge SET symptom_tags = ${knowledgeTagsFromText(row.title, row.symptom)}
+    WHERE id = ${id}
+  `;
 }
 
 export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
@@ -300,6 +322,7 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
               version = version + 1
             WHERE id = ${id}
           `;
+        await saveKnowledgeSymptomTags(tx, id);
         if (row.case_id) {
           const caseRows = await tx<any[]>`
               SELECT case_no, signal FROM cases WHERE id = ${row.case_id} LIMIT 1
@@ -526,6 +549,7 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
               version = version + 1
             WHERE id = ${id}
           `;
+          await saveKnowledgeSymptomTags(tx, id);
           await appendAudit(tx, {
             actorId: authorId,
             action: 'knowledge.approve',

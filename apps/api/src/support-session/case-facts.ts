@@ -347,17 +347,29 @@ export interface KnowledgeRef {
   tags: SymptomTag[];
 }
 
-/** 承認済みナレッジの ID と固定タグ。本文・タイトルの自由文は使わない（キーワードだけを写像する）。 */
+export interface KnowledgeRow {
+  id: string;
+  keywords: readonly string[] | null;
+  /** 承認時に保存した固定のタグ。NULL はまだ求めていない行。 */
+  symptomTags?: readonly string[] | null;
+}
+
+/**
+ * 承認済みナレッジの ID と固定タグ。保存したタグとキーワードの写像だけを使い、
+ * 固定の語彙の外は捨てる（列を手で書き換えても自由文を AI へ渡さない）。
+ */
 export function knowledgeRefs(
-  rows: readonly { id: string; keywords: readonly string[] | null }[],
+  rows: readonly KnowledgeRow[],
   caseTags: readonly SymptomTag[],
   limit = 5,
 ): KnowledgeRef[] {
   const refs: KnowledgeRef[] = [];
   for (const row of rows) {
     const words = (row.keywords ?? []).join('\n');
+    const stored = row.symptomTags ?? [];
     const tags = SYMPTOM_RULES.filter(
-      (rule) => caseTags.includes(rule.tag) && rule.keyword.test(words),
+      (rule) =>
+        caseTags.includes(rule.tag) && (stored.includes(rule.tag) || rule.keyword.test(words)),
     ).map((rule) => rule.tag);
     if (tags.length > 0) refs.push({ id: row.id, tags });
     if (refs.length >= limit) break;

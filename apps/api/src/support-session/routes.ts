@@ -28,6 +28,7 @@ import {
   type CaseFacts,
   confirmedFacts,
   knowledgeRefs,
+  knowledgeTagsFromText,
   type ReasonCode,
   type SymptomTag,
 } from './case-facts.js';
@@ -364,8 +365,20 @@ async function snapshotForProposing(
   }));
   let caseSummary: AiCaseSummary | null = null;
   if (useAi && session.ai_input_consent_version === AI_INPUT_CONSENT_VERSION) {
-    const knowledge = await tx<{ id: string; keywords: string[] | null }[]>`
-      SELECT id, keywords FROM knowledge
+    const knowledge = await tx<
+      {
+        id: string;
+        keywords: string[] | null;
+        symptom_tags: string[] | null;
+        title: string | null;
+        symptom: string | null;
+      }[]
+    >`
+      SELECT id, keywords, symptom_tags,
+        -- 本文は未算出の行のタグを求めるときだけ読む。この関数の外へ持ち出さない。
+        CASE WHEN symptom_tags IS NULL THEN title END AS title,
+        CASE WHEN symptom_tags IS NULL THEN symptom END AS symptom
+      FROM knowledge
       WHERE status = 'approved'
       ORDER BY updated_at DESC
       LIMIT 200
@@ -373,7 +386,15 @@ async function snapshotForProposing(
     caseSummary = {
       ...caseFacts,
       confirmedFacts: confirmedFacts(stepFacts),
-      knowledgeRefs: knowledgeRefs(knowledge, caseFacts.symptomTags),
+      knowledgeRefs: knowledgeRefs(
+        knowledge.map((row) => ({
+          id: row.id,
+          keywords: row.keywords,
+          symptomTags:
+            row.symptom_tags ?? knowledgeTagsFromText(row.title ?? '', row.symptom ?? ''),
+        })),
+        caseFacts.symptomTags,
+      ),
     };
   }
   return {

@@ -6,6 +6,7 @@ import {
   CASE_PURPOSES,
   confirmedFacts,
   knowledgeRefs,
+  knowledgeTagsFromText,
   SYMPTOM_TAGS,
 } from './case-facts.js';
 
@@ -266,6 +267,27 @@ describe('案件の固定の語彙への写像', () => {
         },
       ]),
     ).toEqual(['FOLDER_ACCESSIBLE']);
+  });
+
+  it('保存したタグを使い、固定の語彙の外は捨てる', () => {
+    expect(
+      knowledgeRefs(
+        [
+          { id: 'a', keywords: [], symptomTags: ['print_failed', 'CANARY'] },
+          { id: 'b', keywords: [], symptomTags: ['vpn_failed'] },
+          { id: 'c', keywords: [], symptomTags: [] },
+        ],
+        ['print_failed'],
+      ),
+    ).toEqual([{ id: 'a', tags: ['print_failed'] }]);
+  });
+
+  it('ナレッジの本文からは、解決の記述があっても症状のタグを求める。打ち消しは除く', () => {
+    expect(
+      knowledgeTagsFromText('印刷できないときの対処', '印刷できません。再起動で直りました'),
+    ).toEqual(['print_failed']);
+    expect(knowledgeTagsFromText('印刷エラーはありません')).toEqual([]);
+    expect(knowledgeTagsFromText('CANARY-山田太郎')).toEqual([]);
   });
 
   it('ナレッジは案件の症状に合う ID と固定タグだけ', () => {

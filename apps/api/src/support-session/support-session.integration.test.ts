@@ -3215,6 +3215,127 @@ describe('共通支援セッション（Mock: ヘルパー / RSP / 名簿 / PII 
         }
       });
 
+      describe('画面で作って別人が承認したナレッジ', () => {
+        const FULL_CHECKLIST = {
+          reproducible: true,
+          noSecrets: true,
+          noBlame: true,
+          scopeClear: true,
+        };
+        const uiKnowledge = async (status: 'pending' | 'approved', ref: string) => {
+          const payload = {
+            clientRef: ref,
+            title: 'CANARY-UI-TITLE 容量が足りないときの対処',
+            symptom: 'CANARY-UI-SYMPTOM ディスクの容量が不足して保存できません',
+            cause: 'CANARY-UI-CAUSE',
+            steps: 'CANARY-UI-STEPS',
+            // 画面の同期は keywords を常に空で送る（assist-bridge.js の ahKnowledgeSyncPayload）。
+            keywords: [],
+          };
+          const drafted = await call(ASSIGNEE, 'POST', '/api/knowledge/ui-sync', {
+            ...payload,
+            status: 'pending',
+          });
+          expect(drafted.statusCode, drafted.body).toBe(200);
+          if (status === 'pending') return drafted.json().knowledge.id as string;
+          const approved = await call(APPROVER_ONLY, 'POST', '/api/knowledge/ui-sync', {
+            ...payload,
+            status: 'approved',
+            checklist: FULL_CHECKLIST,
+          });
+          expect(approved.statusCode, approved.body).toBe(200);
+          expect(approved.json().selfApproved).toBe(false);
+          return approved.json().knowledge.id as string;
+        };
+        const removeUiKnowledge = async (ref: string) => {
+          await sql`DELETE FROM knowledge WHERE client_ref = ${ref}`;
+        };
+
+        it('承認で固定のタグを保存し、参照に入る。自由文を AI へ渡さない', async () => {
+          sequence += 1;
+          const ref = `ui-ss-kb-${sequence}`;
+          try {
+            const id = await uiKnowledge('approved', ref);
+            const stored = await sql<{ symptom_tags: string[] | null; keywords: string[] }[]>`
+              SELECT symptom_tags, keywords FROM knowledge WHERE id = ${id}
+            `;
+            expect(stored[0]?.keywords).toEqual([]);
+            expect(stored[0]?.symptom_tags).toEqual(['storage_full', 'save_failed']);
+
+            const session = await consultation('容量が不足しています');
+            world.aiReply = { skillId: 'disk.space', params: {}, rationale: '確認' };
+            const { proposal } = await propose(session.id);
+            const body = world.aiBodies.at(-1) as string;
+            expect(body).not.toContain('CANARY-UI');
+            const refs = lastInput().facts.case.knowledgeRefs;
+            expect(refs).toContainEqual({ id, tags: ['storage_full'] });
+            expect(proposal.reasonCodes).toContain('KNOWLEDGE_REF');
+          } finally {
+            await removeUiKnowledge(ref);
+          }
+        });
+
+        it('承認待ちは参照に入らず、タグも保存しない', async () => {
+          sequence += 1;
+          const ref = `ui-ss-kb-${sequence}`;
+          try {
+            const id = await uiKnowledge('pending', ref);
+            const stored = await sql<{ symptom_tags: string[] | null }[]>`
+              SELECT symptom_tags FROM knowledge WHERE id = ${id}
+            `;
+            expect(stored[0]?.symptom_tags).toBeNull();
+            const session = await consultation('容量が不足しています');
+            world.aiReply = { skillId: 'disk.space', params: {}, rationale: '確認' };
+            await propose(session.id);
+            const refs = lastInput().facts.case.knowledgeRefs;
+            expect(refs.some((item: { id: string }) => item.id === id)).toBe(false);
+          } finally {
+            await removeUiKnowledge(ref);
+          }
+        });
+
+        it('タグの列を導入する前に承認された行は、本文から固定のタグだけを求める', async () => {
+          sequence += 1;
+          const ref = `ui-ss-kb-${sequence}`;
+          try {
+            const id = await uiKnowledge('approved', ref);
+            await sql`UPDATE knowledge SET symptom_tags = NULL WHERE id = ${id}`;
+            const session = await consultation('容量が不足しています');
+            world.aiReply = { skillId: 'disk.space', params: {}, rationale: '確認' };
+            await propose(session.id);
+            expect(world.aiBodies.at(-1)).not.toContain('CANARY-UI');
+            expect(lastInput().facts.case.knowledgeRefs).toContainEqual({
+              id,
+              tags: ['storage_full'],
+            });
+          } finally {
+            await removeUiKnowledge(ref);
+          }
+        });
+
+        it('列を手で書き換えても、固定の語彙の外は AI へ渡さない', async () => {
+          sequence += 1;
+          const ref = `ui-ss-kb-${sequence}`;
+          try {
+            const id = await uiKnowledge('approved', ref);
+            await sql`
+              UPDATE knowledge SET symptom_tags = ${['storage_full', 'CANARY-UI-TAG']}
+              WHERE id = ${id}
+            `;
+            const session = await consultation('容量が不足しています');
+            world.aiReply = { skillId: 'disk.space', params: {}, rationale: '確認' };
+            await propose(session.id);
+            expect(world.aiBodies.at(-1)).not.toContain('CANARY-UI');
+            expect(lastInput().facts.case.knowledgeRefs).toContainEqual({
+              id,
+              tags: ['storage_full'],
+            });
+          } finally {
+            await removeUiKnowledge(ref);
+          }
+        });
+      });
+
       it('古い版の同意では案件の情報を渡さない', async () => {
         const session = await consultation('容量が不足しています');
         await sql`
