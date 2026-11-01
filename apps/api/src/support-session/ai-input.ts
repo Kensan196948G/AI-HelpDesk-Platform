@@ -84,6 +84,9 @@ export function buildAiInput(facts: AiInputFacts): AiStructuredInput {
   };
 }
 
+/** AI から候補を得られなかった理由（監査用。障害と無効な応答を区別する）。 */
+export type AiNoneReason = 'not_asked' | 'ai_error' | 'ai_invalid';
+
 export type AiCandidate =
   | {
       kind: 'proposal';
@@ -94,7 +97,7 @@ export type AiCandidate =
     }
   | { kind: 'handover' }
   | { kind: 'duplicate' }
-  | { kind: 'none' };
+  | { kind: 'none'; why: AiNoneReason };
 
 const SYSTEM_PROMPT = [
   'あなたは社内ITヘルプデスクの操作提案AIです。',
@@ -124,7 +127,7 @@ export async function askAiForCandidate(
   history: ProposalHistoryEntry[],
 ): Promise<AiCandidate> {
   const apiKey = config.DEEPSEEK_API_KEY;
-  if (!apiKey) return { kind: 'none' };
+  if (!apiKey) return { kind: 'none', why: 'ai_error' };
   const records: SkillRecord[] = skills.map(toSkillRecord);
   try {
     const response = await fetch(
@@ -159,19 +162,19 @@ export async function askAiForCandidate(
         signal: AbortSignal.timeout(config.DEEPSEEK_TIMEOUT_MS),
       },
     );
-    if (!response.ok) return { kind: 'none' };
+    if (!response.ok) return { kind: 'none', why: 'ai_error' };
     const body = (await response.json()) as {
       choices?: { message?: { content?: string } }[];
     };
     const content = body.choices?.[0]?.message?.content;
-    if (!content) return { kind: 'none' };
+    if (!content) return { kind: 'none', why: 'ai_invalid' };
     const raw = JSON.parse(content) as Record<string, unknown> | null;
     // AI の出力は Skill + 型付き params か、引継ぎだけ。解決の宣言（stop など）は受けない。
     if (raw?.decision === 'handover' || raw?.decision === 'escalate') return { kind: 'handover' };
-    if (raw?.decision) return { kind: 'none' };
+    if (raw?.decision) return { kind: 'none', why: 'ai_invalid' };
     // 重複は「停止」に使うので、ここでは履歴を渡さずに検証してから判定する。
     const proposal = proposalFromAiBody(raw, { skills: records, history: [] });
-    if (!proposal || proposal.decision) return { kind: 'none' };
+    if (!proposal || proposal.decision) return { kind: 'none', why: 'ai_invalid' };
     if (isDuplicateProposal({ skillId: proposal.skillId, params: proposal.params }, history)) {
       return { kind: 'duplicate' };
     }
@@ -184,7 +187,7 @@ export async function askAiForCandidate(
       assessment: raw?.assessment,
     };
   } catch {
-    return { kind: 'none' };
+    return { kind: 'none', why: 'ai_error' };
   }
 }
 

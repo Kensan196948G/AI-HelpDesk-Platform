@@ -78,7 +78,20 @@ describe('scripts/approve-skills.ts', () => {
     expect(sha(manifest)).toBe(before);
   }, 60_000);
 
+  // 実物の manifest は承認が進むので、未承認の状態を一時ファイルに作る。
+  const withoutFolderSummary = () => {
+    const current = read();
+    writeFileSync(
+      manifest,
+      JSON.stringify({
+        ...current,
+        skills: current.skills.filter((entry) => entry.id !== 'folder.summary'),
+      }),
+    );
+  };
+
   it('--dry-run は差分だけ表示し、書き込まない', () => {
+    withoutFolderSummary();
     const before = sha(manifest);
     const result = run('--dry-run', '--manifest', manifest);
     expect(result.status, result.stderr).toBe(0);
@@ -89,6 +102,7 @@ describe('scripts/approve-skills.ts', () => {
   }, 60_000);
 
   it('新カタログを追加し、以前の承認者と時刻を残す', () => {
+    withoutFolderSummary();
     const before = read();
     const result = run('--by', 'reviewer@example.com', '--manifest', manifest);
     expect(result.status, result.stderr).toBe(0);

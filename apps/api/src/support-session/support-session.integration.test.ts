@@ -393,6 +393,16 @@ async function readySession(scope: 'read_only' | 'user_reversible' = 'user_rever
   return session;
 }
 
+/** 提案が出ずに終わった理由の監査（固定語彙のみ）。 */
+async function noProposalDetail(id: string) {
+  const rows = await sql<{ detail: Record<string, unknown> }[]>`
+    SELECT detail FROM audit_log
+    WHERE action = 'support_session.no_proposal' AND target_id = ${id}
+  `;
+  expect(rows).toHaveLength(1);
+  return rows[0]?.detail;
+}
+
 async function propose(id: string, as = ASSIGNEE) {
   const response = await call(as, 'POST', base(id, '/proposals'), {});
   expect(response.statusCode, response.body).toBe(200);
@@ -2618,6 +2628,7 @@ describe('共通支援セッション（Mock: ヘルパー / RSP / 名簿 / PII 
       world.aiReply = { skillId: 'user.marker.set', params: { value: 'VERIFY_A' }, rationale: 'x' };
       await call(OWNER, 'POST', base(session.id, '/proposals'), {});
       expect((await sessionRow(session.id))?.end_reason).toBe('duplicate_proposal');
+      expect(await noProposalDetail(session.id)).toMatchObject({ cause: 'ai_duplicate' });
     });
 
     it('同一操作の重複で止める（AI が同じ操作を再提案）', async () => {
@@ -2644,11 +2655,10 @@ describe('共通支援セッション（Mock: ヘルパー / RSP / 名簿 / PII 
       expect(after.status).toBe('stopped');
       expect(after.endReason).toBe('no_candidate');
       expect(after.proposals.length).toBe(1);
-      const audit = await sql<{ detail: Record<string, unknown> }[]>`
-        SELECT detail FROM audit_log
-        WHERE action = 'support_session.no_proposal' AND target_id = ${session.id}
-      `;
-      expect(audit[0]?.detail).toMatchObject({ reason: 'no_candidate', cause: 'no_rule' });
+      expect(await noProposalDetail(session.id)).toMatchObject({
+        reason: 'no_candidate',
+        cause: 'no_rule',
+      });
     });
 
     it('AI が操作範囲の外を選んでも採用しない', async () => {
@@ -3051,12 +3061,9 @@ describe('共通支援セッション（Mock: ヘルパー / RSP / 名簿 / PII 
         expect(lastInput().facts.case.symptomTags).toEqual([]);
         expect(lastInput().facts.case.caseCategory).toBe('other');
         // 実機では理由を追えなかった。監査に固定語彙だけで残す（AI の文面は残さない）。
-        const audit = await sql<{ detail: Record<string, unknown> }[]>`
-          SELECT detail FROM audit_log
-          WHERE action = 'support_session.no_proposal' AND target_id = ${session.id}
-        `;
-        expect(audit[0]?.detail).toMatchObject({ reason: 'escalated', cause: 'ai_no_evidence' });
-        expect(JSON.stringify(audit[0]?.detail)).not.toContain('念のため');
+        const detail = await noProposalDetail(session.id);
+        expect(detail).toMatchObject({ reason: 'escalated', cause: 'ai_no_symptom_match' });
+        expect(JSON.stringify(detail)).not.toContain('念のため');
       });
 
       it('根拠不足: 確かめた読み取りが無ければ変更を提案しない', async () => {
@@ -3069,6 +3076,9 @@ describe('共通支援セッション（Mock: ヘルパー / RSP / 名簿 / PII 
         const { session: after } = await propose(session.id);
         expect(after.status).toBe('escalated');
         expect(after.proposals).toHaveLength(0);
+        expect(await noProposalDetail(session.id)).toMatchObject({
+          cause: 'ai_modify_without_verified',
+        });
       });
 
       it('非対応の相談: AI の引継ぎで担当者へ渡す', async () => {
@@ -3077,6 +3087,30 @@ describe('共通支援セッション（Mock: ヘルパー / RSP / 名簿 / PII 
         const { session: after } = await propose(session.id);
         expect(after.status).toBe('escalated');
         expect(lastInput().facts.case.caseCategory).toBe('printing');
+        expect(await noProposalDetail(session.id)).toMatchObject({ cause: 'ai_handover' });
+      });
+
+      it('AI の障害と無効な応答を、監査で区別する', async () => {
+        const failed = await consultation('プリンタで印刷できません');
+        world.onAi = async () => {
+          throw new Error('synthetic outage');
+        };
+        const first = await propose(failed.id);
+        expect(first.session.status).toBe('escalated');
+        expect(await noProposalDetail(failed.id)).toMatchObject({
+          cause: 'unsupported_symptom',
+          aiOutcome: 'ai_error',
+        });
+        world.onAi = undefined;
+
+        const invalid = await consultation('プリンタで印刷できません');
+        world.aiReply = { skillId: '', decision: 'stop' };
+        const second = await propose(invalid.id);
+        expect(second.session.status).toBe('escalated');
+        expect(await noProposalDetail(invalid.id)).toMatchObject({
+          cause: 'unsupported_symptom',
+          aiOutcome: 'ai_invalid',
+        });
       });
 
       it('非対応の相談: AI が合わない診断を選んでも採用しない', async () => {
@@ -3094,6 +3128,9 @@ describe('共通支援セッション（Mock: ヘルパー / RSP / 名簿 / PII 
         const { session: after } = await propose(session.id);
         expect(after.status).toBe('escalated');
         expect(after.proposals).toHaveLength(0);
+        const detail = await noProposalDetail(session.id);
+        expect(detail).toMatchObject({ cause: 'unsupported_symptom' });
+        expect(detail).not.toHaveProperty('aiOutcome');
       });
 
       it('AI が使えない場合のルールは読取だけ（AI の失敗を変更の根拠にしない）', async () => {

@@ -14,6 +14,7 @@ import { type ApprovalManifest, validateParams } from '../resolve/skills.js';
 import {
   type AiCandidate,
   type AiCaseSummary,
+  type AiNoneReason,
   type AiStepFact,
   aiConfigured,
   askAiForCandidate,
@@ -401,6 +402,20 @@ async function snapshotForProposing(
   };
 }
 
+/** 提案が出なかった理由の分類（監査用。固定語彙のみで、AI の文面は残さない）。 */
+type NoProposalCause =
+  | 'ai_duplicate'
+  | 'ai_handover'
+  | 'ai_skill_not_proposable'
+  | 'ai_modify_without_verified'
+  | 'ai_no_symptom_match'
+  | 'ai_none_no_rule'
+  | 'unsupported_symptom'
+  | 'no_proposable_skill'
+  | 'no_rule'
+  | 'revalidation_failed'
+  | 'verify_unavailable';
+
 type PickResult =
   | {
       kind: 'proposal';
@@ -413,8 +428,9 @@ type PickResult =
   | {
       kind: 'stop';
       reason: 'duplicate_proposal' | 'no_candidate' | 'escalated';
-      /** 提案が出なかった理由の分類（監査用。固定語彙のみ。実機で追えなかったので追加）。 */
       cause: NoProposalCause;
+      /** AI に問い合わせて候補を得られなかったときの理由（障害と無効な応答を分ける）。 */
+      aiOutcome?: AiNoneReason;
     };
 
 const overlaps = (skill: ApprovedAssistSkill, tags: readonly SymptomTag[]) =>
@@ -425,15 +441,6 @@ const overlaps = (skill: ApprovedAssistSkill, tags: readonly SymptomTag[]) =>
  * - 症状の分かる相談は、その症状に対応する Skill だけ
  * - 変更系は、固定条件で確かめた読み取りの後だけ
  */
-type NoProposalCause =
-  | 'ai_duplicate'
-  | 'ai_handover'
-  | 'ai_skill_not_proposable'
-  | 'ai_no_evidence'
-  | 'ai_none_no_rule'
-  | 'unsupported_symptom'
-  | 'no_rule';
-
 function hasEvidence(
   approved: ApprovedAssistSkill,
   snapshot: ProposingSnapshot,
@@ -470,7 +477,7 @@ async function pickCandidate(snapshot: ProposingSnapshot): Promise<PickResult> {
   const skills = proposableSkills(snapshot.scope);
   // 同意の版が古いと案件の要約を渡していないので、症状の一致までは求めない。
   const requireSymptom = snapshot.caseSummary !== null;
-  let candidate: AiCandidate = { kind: 'none' };
+  let candidate: AiCandidate = { kind: 'none', why: 'not_asked' };
   const askedAi = snapshot.useAi && skills.length > 0;
   if (askedAi) {
     candidate = await askAiForCandidate(
@@ -495,9 +502,17 @@ async function pickCandidate(snapshot: ProposingSnapshot): Promise<PickResult> {
     const { skillId } = candidate;
     const approved = skills.find((item) => item.skill.definition.id === skillId);
     // 根拠のない候補は使わず、担当者へ引き継ぐ（ルールで別の操作へ置き換えない）。
+    // 通常は応答の検証で落ちるので到達しない（防御）。カタログ外の選択は ai_invalid になる。
     if (!approved) return { kind: 'stop', reason: 'escalated', cause: 'ai_skill_not_proposable' };
     if (!hasEvidence(approved, snapshot, requireSymptom)) {
-      return { kind: 'stop', reason: 'escalated', cause: 'ai_no_evidence' };
+      return {
+        kind: 'stop',
+        reason: 'escalated',
+        cause:
+          approved.skill.effect === 'modify' && !snapshot.anyVerified
+            ? 'ai_modify_without_verified'
+            : 'ai_no_symptom_match',
+      };
     }
     const explanation = acceptAiExplanation(
       candidate.rationale,
@@ -528,10 +543,15 @@ async function pickCandidate(snapshot: ProposingSnapshot): Promise<PickResult> {
       return {
         kind: 'stop',
         reason: 'escalated',
-        cause: askedAi ? 'ai_none_no_rule' : 'unsupported_symptom',
+        cause: unsupported ? 'unsupported_symptom' : 'ai_none_no_rule',
+        ...(askedAi && candidate.kind === 'none' ? { aiOutcome: candidate.why } : {}),
       };
     }
-    return { kind: 'stop', reason: 'no_candidate', cause: 'no_rule' };
+    return {
+      kind: 'stop',
+      reason: 'no_candidate',
+      cause: skills.length === 0 ? 'no_proposable_skill' : 'no_rule',
+    };
   }
   const approved = skills.find((item) => item.skill.definition.id === rule.skillId);
   return {
@@ -1085,6 +1105,7 @@ async function sharedRoutes(app: FastifyInstance): Promise<void> {
             await sessionAudit(tx, 'support_session.no_proposal', session, email, {
               reason: pick.reason,
               cause: pick.cause,
+              ...(pick.aiOutcome ? { aiOutcome: pick.aiOutcome } : {}),
             });
             await stopSessionTx(tx, ctx, session, pick.reason, email);
             return { kind: 'stopped' as const, reason: pick.reason };
@@ -1100,11 +1121,19 @@ async function sharedRoutes(app: FastifyInstance): Promise<void> {
             !isWithinScope(approved.skill, scope) ||
             !validateParams(approved.skill.definition.paramsSchema, pick.params).ok
           ) {
+            await sessionAudit(tx, 'support_session.no_proposal', session, email, {
+              reason: 'no_candidate',
+              cause: 'revalidation_failed' satisfies NoProposalCause,
+            });
             await stopSessionTx(tx, ctx, session, 'no_candidate', email);
             return { kind: 'stopped' as const, reason: 'no_candidate' };
           }
           const verify = buildVerifyDefinition(approved, pick.params, manifest);
           if (!verify) {
+            await sessionAudit(tx, 'support_session.no_proposal', session, email, {
+              reason: 'no_candidate',
+              cause: 'verify_unavailable' satisfies NoProposalCause,
+            });
             await stopSessionTx(tx, ctx, session, 'no_candidate', email);
             return { kind: 'stopped' as const, reason: 'no_candidate' };
           }
