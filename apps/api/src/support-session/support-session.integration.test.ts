@@ -12,10 +12,10 @@ import { resetAddressLimits } from '../folder-access/address-limit.js';
 import { sweepFolderAccess } from '../folder-access/service.js';
 import { hashSid } from '../folder-access/sign.js';
 import { resetRateLimits } from '../lib/rate-limit.js';
-import { computeScriptHash, computeSkillDefinitionHash } from '../resolve/skills.js';
+import { computeSkillDefinitionHash } from '../resolve/skills.js';
 import { buildServer } from '../server.js';
 import { SKILL_RUN_CAPABILITY, signSkillRun } from './contract.js';
-import { ASSIST_SKILLS } from './skills.js';
+import { ASSIST_SKILLS, proposableSkills } from './skills.js';
 import { ASSIST_LIMITS, OPEN_SESSION_STATUSES } from './state.js';
 import { sweepSupportSessions } from './sweep.js';
 
@@ -29,6 +29,7 @@ import { sweepSupportSessions } from './sweep.js';
 
 const directory = vi.hoisted(() => ({ byEmail: new Map<string, Record<string, unknown>>() }));
 const synth = vi.hoisted(() => ({
+  manifestLoads: 0,
   entries: [] as Record<string, string>[],
   scripts: new Map<string, string>(),
   throwOnRead: false,
@@ -43,11 +44,16 @@ vi.mock('../lib/mirai-info.js', () => ({
 }));
 
 vi.mock('./skill-source.js', () => ({
-  loadApprovalManifest: () => ({ version: 1, skills: synth.entries }),
-  readSkillScript: (scriptPath: string) => {
+  loadApprovalManifest: () => {
+    synth.manifestLoads += 1;
+    return { version: 1, skills: synth.entries };
+  },
+  readSkillScriptHash: (scriptPath: string) => {
     if (synth.throwOnRead) throw new Error('synthetic read failure');
     const content = synth.scripts.get(scriptPath);
-    return content === undefined ? null : Buffer.from(content);
+    return content === undefined
+      ? null
+      : `sha256:${createHash('sha256').update(content).digest('hex')}`;
   },
 }));
 
@@ -283,7 +289,7 @@ function setManifest(skillIds?: string[]) {
     const { definition } = skill;
     if (skillIds && !skillIds.includes(definition.id)) continue;
     const content = `# 合成スクリプト ${definition.id}`;
-    const scriptHash = computeScriptHash(content);
+    const scriptHash = `sha256:${createHash('sha256').update(content).digest('hex')}`;
     synth.scripts.set(definition.scriptPath, content);
     synth.entries.push({
       id: definition.id,
@@ -798,7 +804,11 @@ describe('共通支援セッション（Mock: ヘルパー / RSP / 名簿 / PII 
       expect((await sessionRow(session.id))?.end_reason).toBe('sid_mismatch');
       const execution = (await executionRows(session.id))[0];
       expect(execution?.evidence).toBe(false);
-      expect(execution?.normalized_output).toBeNull();
+      // 報告値は残すが、成功にしない。改ざんの可能性は固定コードで示す。
+      expect(execution?.normalized_output).toEqual(FOLDER_OUTPUT);
+      expect(execution?.actor_sid).toBe(OTHER_SID);
+      expect(execution?.result_code).toBe('RESULT_MISMATCH');
+      expect(execution?.verify_ok).toBeNull();
     });
   });
 
@@ -1206,7 +1216,8 @@ describe('共通支援セッション（Mock: ヘルパー / RSP / 名簿 / PII 
       const execution = (await executionRows(session.id))[0];
       expect(execution?.stop_outcome).toBe('stop_unconfirmed');
       expect(execution?.stopped_at).toBeNull();
-      expect(execution?.partial_effect).toContain('STOP_UNCONFIRMED');
+      // 読取の Skill なので、変更の可能性は出さない（変更系は「指摘 2 回目」で確認する）。
+      expect(execution?.partial_effect).toBeNull();
     });
 
     it('期限が過ぎた識別子を消す（状態は残す）', async () => {
@@ -1614,6 +1625,195 @@ describe('共通支援セッション（Mock: ヘルパー / RSP / 名簿 / PII 
     });
   });
 
+  describe('コードレビューの指摘 2 回目（#120）', () => {
+    async function modifyExecuting(session: { id: string; token: string }) {
+      const first = await executing(session);
+      await report(session.token, first.op, resultBody(first.op, FOLDER_OUTPUT));
+      const second = await propose(session.id);
+      await decide(session.id, second.proposal.id, {
+        decision: 'Y',
+        approvalHash: second.proposal.approvalHash,
+      });
+      const op = (await poll(session.token)).skillOps?.[0] as Op;
+      expect((await start(session.token, op)).statusCode).toBe(200);
+      return op;
+    }
+    const notRun = (op: Op) =>
+      resultBody(op, null, {
+        status: 'rejected',
+        resultCode: 'START_NO_RESPONSE',
+        exitCode: null,
+        startedAt: null,
+        finishedAt: null,
+      });
+    const row = async (id: string, opId: string) =>
+      (await executionRows(id)).find((item) => item.id === opId);
+
+    it('1. /start の応答を失った「実行していない」申告を保存し、変更の可能性を付けない', async () => {
+      setManifest(ALL_BUT_DISK);
+      const session = await readySession();
+      const op = await modifyExecuting(session);
+      const response = await report(session.token, op, notRun(op));
+      expect(response.json()).toEqual({ ok: true, accepted: false, reason: 'REJECTED_BY_HELPER' });
+      const execution = await row(session.id, op.opId);
+      expect(execution?.status).toBe('rejected_by_helper');
+      expect(execution?.result_code).toBe('START_NO_RESPONSE');
+      expect(execution?.stop_outcome).toBe('not_running');
+      expect(execution?.evidence).toBe(false);
+      expect(execution?.partial_effect).toBeNull();
+      expect((await sessionRow(session.id))?.end_reason).toBe('execution_failed');
+    });
+
+    it('1. 先に停止した後に届いても、実行していない申告で変更の可能性を取り消す', async () => {
+      setManifest(ALL_BUT_DISK);
+      const session = await readySession();
+      const op = await modifyExecuting(session);
+      await call(OWNER, 'POST', base(session.id, '/revoke'), {});
+      expect((await row(session.id, op.opId))?.partial_effect).toEqual(['POSSIBLE_CHANGE']);
+      await report(session.token, op, notRun(op));
+      const execution = await row(session.id, op.opId);
+      expect(execution?.partial_effect).toBeNull();
+      expect(execution?.stop_outcome).toBe('not_running');
+      expect(execution?.stopped_at).not.toBeNull();
+    });
+
+    it('1. 申告に partialEffect が付いていても未実行なら記録しない', async () => {
+      setManifest(ALL_BUT_DISK);
+      const session = await readySession();
+      const op = await modifyExecuting(session);
+      await report(session.token, op, { ...notRun(op), partialEffect: ['MARKER_WRITTEN'] });
+      expect((await row(session.id, op.opId))?.partial_effect).toBeNull();
+    });
+
+    it('2. 停止要求がなくても、ヘルパー自身の kill の結果を保存する', async () => {
+      for (const stopOutcome of ['stopped', 'stop_failed'] as const) {
+        const session = await readySession();
+        const { op } = await executing(session);
+        await report(
+          session.token,
+          op,
+          resultBody(op, null, {
+            status: 'timeout',
+            resultCode: 'TIMEOUT',
+            exitCode: null,
+            stopOutcome,
+          }),
+        );
+        const execution = await row(session.id, op.opId);
+        expect(execution?.stop_outcome).toBe(stopOutcome);
+        expect(execution?.stopped_at === null).toBe(stopOutcome === 'stop_failed');
+      }
+    });
+
+    it.each([
+      ['SID', { actorSid: OTHER_SID }, 'sid_mismatch'],
+      ['セッション', { sessionId: 7 }, 'session_changed'],
+    ])(
+      '3. %s の不一致でも報告値（停止・部分的な変更・終了コード）を残す',
+      async (_n, over, end) => {
+        setManifest(ALL_BUT_DISK);
+        const session = await readySession();
+        const op = await modifyExecuting(session);
+        await report(
+          session.token,
+          op,
+          resultBody(
+            op,
+            { applied: true, previousPresent: false, previousValue: null },
+            {
+              ...over,
+              status: 'error',
+              resultCode: 'EXEC_FAILED',
+              exitCode: 3,
+              stopOutcome: 'stop_failed',
+              partialEffect: ['MARKER_WRITTEN'],
+            },
+          ),
+        );
+        const execution = await row(session.id, op.opId);
+        expect(execution?.result_code).toBe('RESULT_MISMATCH');
+        expect(execution?.evidence).toBe(false);
+        expect(execution?.verify_ok).toBeNull();
+        expect(execution?.exit_code).toBe(3);
+        expect(execution?.stop_outcome).toBe('stop_failed');
+        expect(execution?.partial_effect.sort()).toEqual(['MARKER_WRITTEN', 'POSSIBLE_CHANGE']);
+        expect(execution?.result_source).toBe('helper_token');
+        expect((await sessionRow(session.id))?.end_reason).toBe(end);
+      },
+    );
+
+    const ageStop = (id: string) => sql`
+      UPDATE assist_executions SET stop_requested_at = now() - interval '1 hour'
+      WHERE support_session_id = ${id} AND stop_requested_at IS NOT NULL
+    `;
+
+    it('4. 読取の Skill の停止未確認に変更の可能性を出さない', async () => {
+      const session = await readySession();
+      await executing(session);
+      await call(OWNER, 'POST', base(session.id, '/revoke'), {});
+      await ageStop(session.id);
+      await sweepSupportSessions();
+      const execution = (await executionRows(session.id))[0];
+      expect(execution?.stop_outcome).toBe('stop_unconfirmed');
+      expect(execution?.partial_effect).toBeNull();
+      await sql`
+        UPDATE folder_access_helpers SET revoked_at = now() - interval '25 hours'
+        WHERE id = ${session.helperId}
+      `;
+      await sweepSupportSessions();
+      expect((await executionRows(session.id))[0]?.partial_effect).toBeNull();
+    });
+
+    it('4. 変更系の停止未確認は記録し、後から stopped が届けば未確認を解消する', async () => {
+      setManifest(ALL_BUT_DISK);
+      const session = await readySession();
+      const op = await modifyExecuting(session);
+      await call(OWNER, 'POST', base(session.id, '/revoke'), {});
+      await ageStop(session.id);
+      await sweepSupportSessions();
+      let execution = await row(session.id, op.opId);
+      expect(execution?.stop_outcome).toBe('stop_unconfirmed');
+      expect(execution?.partial_effect.sort()).toEqual(['POSSIBLE_CHANGE', 'STOP_UNCONFIRMED']);
+
+      await report(
+        session.token,
+        op,
+        resultBody(op, null, {
+          status: 'cancelled',
+          resultCode: 'CANCELLED',
+          exitCode: null,
+          stopOutcome: 'stopped',
+        }),
+      );
+      execution = await row(session.id, op.opId);
+      expect(execution?.stop_outcome).toBe('stopped');
+      expect(execution?.stopped_at).not.toBeNull();
+      // 動いていたので変更の可能性は残し、未確認だけを消す。
+      expect(execution?.partial_effect).toEqual(['POSSIBLE_CHANGE']);
+    });
+
+    it('8. 提案の候補を求める 1 回の呼び出しで manifest を 1 度だけ読む', () => {
+      synth.manifestLoads = 0;
+      expect(proposableSkills('user_reversible').length).toBeGreaterThan(1);
+      expect(synth.manifestLoads).toBe(1);
+    });
+
+    it('8. Y の再検証でも manifest を 1 度だけ読む', async () => {
+      setManifest(ALL_BUT_DISK);
+      const session = await readySession();
+      const first = await executing(session);
+      await report(session.token, first.op, resultBody(first.op, FOLDER_OUTPUT));
+      const second = await propose(session.id);
+      synth.manifestLoads = 0;
+      await decide(session.id, second.proposal.id, {
+        decision: 'Y',
+        approvalHash: second.proposal.approvalHash,
+      });
+      expect(second.proposal.verifyOps).toHaveLength(1);
+      expect(synth.manifestLoads).toBe(1);
+    });
+  });
+
   describe('失効済みトークンの報告期限（410 RESULT_REPORT_EXPIRED）', () => {
     async function revokedDuringRun() {
       const session = await readySession();
@@ -1997,32 +2197,109 @@ describe('共通支援セッション（Mock: ヘルパー / RSP / 名簿 / PII 
       expect(row?.proposal_count).toBe(6);
     });
 
-    it('進捗なし（結果コードが 2 回同じ）で止める', async () => {
-      setManifest(['user.marker.set', 'user.marker.status']);
+    /** AI の提案で変更系を確認まで通す。 */
+    async function runModify(
+      session: { id: string; token: string },
+      skillId: string,
+      params: Record<string, unknown>,
+      output: Record<string, unknown>,
+      status: Record<string, unknown>,
+    ) {
+      world.aiReply = { skillId, params, rationale: '検証' };
+      const { proposal } = await propose(session.id);
+      expect(proposal.skillId).toBe(skillId);
+      await decide(session.id, proposal.id, {
+        decision: 'Y',
+        approvalHash: proposal.approvalHash,
+      });
+      const op = (await poll(session.token)).skillOps?.[0] as Op;
+      await start(session.token, op);
+      await report(session.token, op, resultBody(op, output));
+      const verifyOp = (await poll(session.token)).skillOps?.[0] as Op;
+      await start(session.token, verifyOp);
+      await report(session.token, verifyOp, resultBody(verifyOp, status));
+    }
+
+    async function aiSession() {
+      setManifest(ALL_BUT_DISK);
       config.DEEPSEEK_API_KEY = 'synthetic-ai-key';
       const session = await readySession();
       await call(OWNER, 'POST', base(session.id, '/consents/ai-input'), {
         version: 'ai-input-consent/1',
         ttlMinutes: 30,
       });
-      for (const value of ['VERIFY_A', 'VERIFY_B']) {
-        world.aiReply = { skillId: 'user.marker.set', params: { value }, rationale: '検証' };
-        const { proposal } = await propose(session.id);
-        await decide(session.id, proposal.id, {
-          decision: 'Y',
-          approvalHash: proposal.approvalHash,
-        });
-        const op = (await poll(session.token)).skillOps?.[0] as Op;
-        await start(session.token, op);
-        await report(session.token, op, resultBody(op, { applied: true, previousPresent: true }));
-        const verifyOp = (await poll(session.token)).skillOps?.[0] as Op;
-        await start(session.token, verifyOp);
-        await report(session.token, verifyOp, resultBody(verifyOp, { present: true, value }));
-        if (value === 'VERIFY_A') {
-          await call(OWNER, 'POST', base(session.id, '/resolution'), { resolved: false });
-        }
-      }
-      expect((await sessionRow(session.id))?.end_reason).toBe('no_progress');
+      return session;
+    }
+
+    it('異なる変更系の成功は進捗として扱い、解決確認へ進む', async () => {
+      const session = await aiSession();
+      await runModify(
+        session,
+        'user.marker.set',
+        { value: 'VERIFY_A' },
+        { applied: true, previousPresent: false, previousValue: null },
+        { present: true, value: 'VERIFY_A' },
+      );
+      await call(OWNER, 'POST', base(session.id, '/resolution'), { resolved: false });
+      await runModify(
+        session,
+        'user.marker.set',
+        { value: 'VERIFY_B' },
+        { applied: true, previousPresent: true, previousValue: 'VERIFY_A' },
+        { present: true, value: 'VERIFY_B' },
+      );
+      expect((await sessionRow(session.id))?.status).toBe('resolve_confirm');
+    });
+
+    it('Skill・params・出力が過去の実行と同じなら、直前でなくても進捗なしで止める', async () => {
+      const session = await aiSession();
+      const first = { applied: true, previousPresent: false, previousValue: null };
+      await runModify(session, 'user.marker.set', { value: 'VERIFY_A' }, first, {
+        present: true,
+        value: 'VERIFY_A',
+      });
+      await call(OWNER, 'POST', base(session.id, '/resolution'), { resolved: false });
+      await runModify(
+        session,
+        'user.marker.clear',
+        {},
+        { cleared: true, previousPresent: true, previousValue: 'VERIFY_A' },
+        { present: false, value: null },
+      );
+      await call(OWNER, 'POST', base(session.id, '/resolution'), { resolved: false });
+      // 重複の提案は先に止まるので、記録を合わせて「同じ操作が同じ結果を返した」場面を作る。
+      await sql`
+        UPDATE assist_executions SET params = ${sql.json({ value: 'VERIFY_B' })}
+        WHERE support_session_id = ${session.id} AND role = 'main'
+          AND skill_id = 'user.marker.set'
+      `;
+      await runModify(session, 'user.marker.set', { value: 'VERIFY_B' }, first, {
+        present: true,
+        value: 'VERIFY_B',
+      });
+      const row = await sessionRow(session.id);
+      expect(row?.end_reason).toBe('no_progress');
+    });
+
+    it('交互の再提案（設定 → 消去 → 同じ設定）は止まり、解決確認へ進まない', async () => {
+      const session = await aiSession();
+      const first = { applied: true, previousPresent: false, previousValue: null };
+      await runModify(session, 'user.marker.set', { value: 'VERIFY_A' }, first, {
+        present: true,
+        value: 'VERIFY_A',
+      });
+      await call(OWNER, 'POST', base(session.id, '/resolution'), { resolved: false });
+      await runModify(
+        session,
+        'user.marker.clear',
+        {},
+        { cleared: true, previousPresent: true, previousValue: 'VERIFY_A' },
+        { present: false, value: null },
+      );
+      await call(OWNER, 'POST', base(session.id, '/resolution'), { resolved: false });
+      world.aiReply = { skillId: 'user.marker.set', params: { value: 'VERIFY_A' }, rationale: 'x' };
+      await call(OWNER, 'POST', base(session.id, '/proposals'), {});
+      expect((await sessionRow(session.id))?.end_reason).toBe('duplicate_proposal');
     });
 
     it('同一操作の重複で止める（AI が同じ操作を再提案）', async () => {

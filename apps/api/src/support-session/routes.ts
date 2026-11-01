@@ -10,7 +10,7 @@ import { loadContext, type RequestContext } from '../folder-access/service.js';
 import { jsonbValue } from '../lib/jsonb-value.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
 import type { ProposalHistoryEntry } from '../resolve/proposer.js';
-import { validateParams } from '../resolve/skills.js';
+import { type ApprovalManifest, validateParams } from '../resolve/skills.js';
 import {
   type AiCandidate,
   type AiStepFact,
@@ -36,6 +36,7 @@ import {
   setSessionStatus,
   stopSessionTx,
 } from './service.js';
+import { loadApprovalManifest } from './skill-source.js';
 import {
   type ApprovedAssistSkill,
   findAssistSkill,
@@ -362,10 +363,11 @@ async function pickCandidate(snapshot: ProposingSnapshot): Promise<PickResult> {
 function buildVerifyDefinition(
   approved: ApprovedAssistSkill,
   params: Record<string, unknown>,
+  manifest: ApprovalManifest,
 ): AssistVerifyDefinition | null {
   const ops: AssistVerifyDefinition['ops'] = [];
   for (const spec of approved.skill.verifyOps(params)) {
-    const op = resolveApprovedSkill(spec.skillId);
+    const op = resolveApprovedSkill(spec.skillId, manifest);
     // 確認操作を実行できないなら、提案しない（検証不能のまま変更しない）。
     if (op?.skill.effect !== 'read') return null;
     ops.push({
@@ -897,7 +899,8 @@ async function sharedRoutes(app: FastifyInstance): Promise<void> {
             return { kind: 'ok' as const };
           }
           // AI の候補も含め、この場で登録・型・範囲を再検証する（§5）。
-          const approved = resolveApprovedSkill(pick.skillId);
+          const manifest = loadApprovalManifest();
+          const approved = resolveApprovedSkill(pick.skillId, manifest);
           const scope = session.operation_consent_scope as OperationScope | null;
           if (
             !approved ||
@@ -909,7 +912,7 @@ async function sharedRoutes(app: FastifyInstance): Promise<void> {
             await stopSessionTx(tx, ctx, session, 'no_candidate', email);
             return { kind: 'stopped' as const, reason: 'no_candidate' };
           }
-          const verify = buildVerifyDefinition(approved, pick.params);
+          const verify = buildVerifyDefinition(approved, pick.params, manifest);
           if (!verify) {
             await stopSessionTx(tx, ctx, session, 'no_candidate', email);
             return { kind: 'stopped' as const, reason: 'no_candidate' };

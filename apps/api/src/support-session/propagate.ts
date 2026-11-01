@@ -19,7 +19,7 @@ import {
 // postgres.js のトランザクション型は循環を避けて緩く受ける（audit-log.ts と同じ）。
 type AnyTx = any;
 
-/** フラグが無効なら新テーブルに触らない（028 未適用の DB でも既存の経路を壊さない）。 */
+/** フラグが無効なら新テーブルに触らない（030 未適用の DB でも既存の経路を壊さない）。 */
 export function assistEnabled(): boolean {
   return config.FOLDER_ACCESS_ENABLED && config.ASSIST_SESSION_ENABLED;
 }

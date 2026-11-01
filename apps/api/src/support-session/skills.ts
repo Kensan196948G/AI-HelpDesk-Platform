@@ -1,12 +1,12 @@
 import {
-  computeScriptHash,
+  type ApprovalManifest,
   computeSkillDefinitionHash,
   SKILL_CATALOG,
   type SkillDefinition,
   type SkillRecord,
 } from '../resolve/skills.js';
 import { ASSIST_SKILL_OUTPUTS, type OutputFieldType } from './contract.js';
-import { loadApprovalManifest, readSkillScript } from './skill-source.js';
+import { loadApprovalManifest, readSkillScriptHash } from './skill-source.js';
 import { ASSIST_LIMITS, type OperationScope } from './state.js';
 
 /**
@@ -286,18 +286,20 @@ export interface ApprovedAssistSkill {
  * スクリプトが無い・manifest に無い・定義やスクリプトが変わった場合は null。
  * 昇格が必要な Skill と高リスク（管理者承認が必要）は本経路で扱わない。
  */
-export function resolveApprovedSkill(id: string): ApprovedAssistSkill | null {
+export function resolveApprovedSkill(
+  id: string,
+  manifest: ApprovalManifest = loadApprovalManifest(),
+): ApprovedAssistSkill | null {
   const skill = findAssistSkill(id);
   if (!skill) return null;
   const { definition } = skill;
   const requires = definition.requires as { elevation?: unknown; adminApproval?: unknown };
   if (requires.elevation === true || requires.adminApproval === true) return null;
   if (definition.riskLevel >= 4) return null;
-  const script = readSkillScript(definition.scriptPath);
-  if (!script) return null;
-  const scriptHash = computeScriptHash(script);
+  const scriptHash = readSkillScriptHash(definition.scriptPath);
+  if (!scriptHash) return null;
   const contentHash = computeSkillDefinitionHash(definition, scriptHash);
-  const entry = loadApprovalManifest().skills.find(
+  const entry = manifest.skills.find(
     (item) => item.id === definition.id && item.version === definition.version,
   );
   if (!entry || entry.scriptHash !== scriptHash || entry.contentHash !== contentHash) return null;
@@ -312,9 +314,10 @@ export function isWithinScope(skill: AssistSkill, scope: OperationScope): boolea
 /** 提案の候補（承認済み・範囲内・確認専用を除く）。 */
 export function proposableSkills(scope: OperationScope): ApprovedAssistSkill[] {
   const result: ApprovedAssistSkill[] = [];
+  const manifest = loadApprovalManifest();
   for (const skill of ASSIST_SKILLS) {
     if (skill.verifyOnly || !isWithinScope(skill, scope)) continue;
-    const approved = resolveApprovedSkill(skill.definition.id);
+    const approved = resolveApprovedSkill(skill.definition.id, manifest);
     if (approved) result.push(approved);
   }
   return result;

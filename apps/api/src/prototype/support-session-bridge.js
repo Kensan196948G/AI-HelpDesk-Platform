@@ -128,9 +128,13 @@
 
   const MINE = {
     sessions: [],
+    // 404 の後はしばらく問い合わせない（一度の 404 で止め続けない）。
+    retryAt: 0,
     disabled: false,
     busy: false,
+    // 状態確認の失敗（確認が成功すれば消える）と、操作の失敗（次の操作まで残す）を分ける。
     error: null,
+    actionError: null,
     forms: new Map(),
     lastKey: '',
   };
@@ -141,19 +145,23 @@
   }
 
   async function load() {
-    if (MINE.disabled) return;
+    if (Date.now() < MINE.retryAt) return;
     try {
       const data = await api('/api/support-sessions/mine');
       MINE.sessions = data.sessions ?? [];
+      MINE.disabled = false;
+      MINE.error = null;
       const ids = new Set(MINE.sessions.map((session) => session.id));
       for (const id of MINE.forms.keys()) {
         if (!ids.has(id)) MINE.forms.delete(id);
       }
     } catch (error) {
       if (error.status === 404) {
-        // 機能が無効。以後は問い合わせず、何も描画しない。
+        // 機能が無効か、一時的な不整合。何も描画せず、時間を置いて確かめ直す。
         MINE.disabled = true;
+        MINE.retryAt = Date.now() + 60_000;
         MINE.sessions = [];
+        MINE.error = null;
       } else if (error.status !== 401 && error.status !== 403) {
         MINE.error = String(error.message || error);
       }
@@ -164,12 +172,12 @@
   async function action(run) {
     if (MINE.busy) return;
     MINE.busy = true;
-    MINE.error = null;
+    MINE.actionError = null;
     render();
     try {
       await run();
     } catch (error) {
-      MINE.error = String(error.message || error);
+      MINE.actionError = String(error.message || error);
     } finally {
       MINE.busy = false;
       await load();
@@ -342,10 +350,17 @@
     const lines = [small(parts.filter(Boolean).join(' / '))];
     if (execution.output) lines.push(small(outputText(execution.output)));
     if (execution.lateResult) lines.push(small('遅れて届いた結果です。次へ進めません。'));
+    if (execution.stopOutcome === 'not_running') {
+      // 実行していない。停止や変更の話を出さない。
+      lines.push(small(STOP_LABEL.not_running));
+      return lines;
+    }
     if (execution.stopRequestedAt) {
       lines.push(
         small(`停止を要求しました。${STOP_LABEL[execution.stopOutcome] ?? '結果を待っています。'}`),
       );
+    } else if (execution.stopOutcome) {
+      lines.push(small(STOP_LABEL[execution.stopOutcome] ?? ''));
     }
     if (execution.partialEffect?.length) {
       lines.push(
@@ -449,7 +464,7 @@
 
   function render() {
     const sessions = MINE.sessions;
-    const key = JSON.stringify([sessions, MINE.error, MINE.busy, MINE.disabled]);
+    const key = JSON.stringify([sessions, MINE.error, MINE.actionError, MINE.busy, MINE.disabled]);
     if (key === MINE.lastKey) return;
     MINE.lastKey = key;
     let panel = document.getElementById('aihdSupportSessionMinePanel');
@@ -479,6 +494,7 @@
         '担当者があなたの PC の操作を提案しています。実行前に必ず確認します。いつでも取り消せます。',
       ),
       ...sessions.map(section),
+      MINE.actionError ? small(MINE.actionError, 'color:#b42318') : document.createTextNode(''),
       MINE.error ? small(MINE.error, 'color:#b42318') : document.createTextNode(''),
       MINE.busy ? small('処理中…') : document.createTextNode(''),
     );

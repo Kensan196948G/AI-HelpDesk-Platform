@@ -73,7 +73,11 @@ class FakeElement {
 
 type Reply = { status: number; body: unknown };
 
-function harness(route: (url: string, init?: RequestInit) => Reply) {
+function harness(
+  route: (url: string, init?: RequestInit) => Reply,
+  clock: { offsetMs: number } = { offsetMs: 0 },
+) {
+  const timers: (() => void)[] = [];
   const body = new FakeElement('body');
   const created: FakeElement[] = [];
   const storage = new Proxy(
@@ -102,10 +106,14 @@ function harness(route: (url: string, init?: RequestInit) => Reply) {
     },
     localStorage: storage,
     sessionStorage: storage,
-    setInterval: () => 0,
+    setInterval: (callback: () => void) => timers.push(callback),
     encodeURIComponent,
     JSON,
-    Date,
+    Date: class extends Date {
+      static now() {
+        return Date.now() + clock.offsetMs;
+      }
+    },
     Map,
     Set,
     Object,
@@ -130,6 +138,10 @@ function harness(route: (url: string, init?: RequestInit) => Reply) {
   return {
     calls,
     flush,
+    tick: async () => {
+      for (const timer of timers) timer();
+      await flush();
+    },
     start: async () => {
       for (const listener of load) listener();
       await flush();
@@ -204,6 +216,98 @@ describe('本人パネル（Mock: DOM / fetch）', () => {
     await page.flush();
     const decision = page.calls.find((item) => item.url.endsWith('/decision'));
     expect(decision?.body).toEqual({ decision: 'Y', approvalHash: 'a'.repeat(64) });
+  });
+
+  it('404 の後はしばらく問い合わせないが、時間を置いて再開する', async () => {
+    const clock = { offsetMs: 0 };
+    let enabled = false;
+    const page = harness(
+      () => (enabled ? { status: 200, body: { sessions: [BASE] } } : { status: 404, body: {} }),
+      clock,
+    );
+    await page.start();
+    const before = page.calls.length;
+    await page.tick();
+    expect(page.calls.length).toBe(before);
+    enabled = true;
+    clock.offsetMs = 120_000;
+    await page.tick();
+    expect(page.calls.length).toBeGreaterThan(before);
+    expect(page.panel()).toBeDefined();
+  });
+
+  it('一時的な失敗の後に成功すればエラーを消す', async () => {
+    let failing = false;
+    const page = harness(() =>
+      failing
+        ? { status: 500, body: { error: { message: 'TEMPORARY-FAILURE' } } }
+        : { status: 200, body: { sessions: [BASE] } },
+    );
+    await page.start();
+    failing = true;
+    await page.tick();
+    expect((page.panel() as FakeElement).text).toContain('TEMPORARY-FAILURE');
+    failing = false;
+    await page.tick();
+    expect((page.panel() as FakeElement).text).not.toContain('TEMPORARY-FAILURE');
+  });
+
+  it('操作の失敗は直後の状態確認で消さない', async () => {
+    const page = harness((url) =>
+      url.endsWith('/mine')
+        ? { status: 200, body: { sessions: [BASE] } }
+        : { status: 409, body: { error: { message: 'ACTION-FAILED' } } },
+    );
+    await page.start();
+    const no = (page.panel() as FakeElement)
+      .buttons()
+      .find((button) => button.text.includes('いいえ')) as FakeElement;
+    no.listeners.click?.[0]?.({});
+    await page.flush();
+    expect((page.panel() as FakeElement).text).toContain('ACTION-FAILED');
+  });
+
+  it('未実行の結果に変更の可能性を出さず、停止の表示と矛盾しない', async () => {
+    const execution = {
+      role: 'main',
+      skillId: 'user.marker.set',
+      executionMode: 'real',
+      resultCode: 'START_NO_RESPONSE',
+      verifyOk: null,
+      output: null,
+      lateResult: false,
+    };
+    const session = (fields: Record<string, unknown>) => ({
+      ...BASE,
+      status: 'stopped',
+      proposals: [],
+      executions: [{ ...execution, ...fields }],
+    });
+    const page = harness(() => ({
+      status: 200,
+      body: {
+        sessions: [
+          session({
+            stopRequestedAt: null,
+            stopOutcome: 'not_running',
+            partialEffect: ['POSSIBLE_CHANGE'],
+          }),
+        ],
+      },
+    }));
+    await page.start();
+    const text = (page.panel() as FakeElement).text;
+    expect(text).toContain('実行していません');
+    expect(text).not.toContain('変更が生じた可能性');
+    expect(text).not.toContain('停止を要求');
+
+    const killed = harness(() => ({
+      status: 200,
+      body: { sessions: [session({ stopRequestedAt: null, stopOutcome: 'stopped' })] },
+    }));
+    await killed.start();
+    expect((killed.panel() as FakeElement).text).toContain('停止しました');
+    expect((killed.panel() as FakeElement).text).not.toContain('停止を要求');
   });
 
   it('N と取消の導線がある', async () => {

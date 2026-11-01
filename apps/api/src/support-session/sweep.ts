@@ -7,7 +7,7 @@ import { ASSIST_LIMITS, OPEN_SESSION_STATUSES } from './state.js';
 
 /** 期限の定期処理（docs/63 §10）。DB だけを触る。機能フラグが無効の間は何もしない。 */
 export async function sweepSupportSessions(): Promise<number> {
-  // 無効なら新テーブルに触らない（028 未適用の DB で失敗し続けない）。有効に戻せば追いつく。
+  // 無効なら新テーブルに触らない（030 未適用の DB で失敗し続けない）。有効に戻せば追いつく。
   if (!assistEnabled()) return 0;
   const due = await sql<{ id: string }[]>`
     SELECT DISTINCT s.id
@@ -48,18 +48,20 @@ export async function sweepSupportSessions(): Promise<number> {
   `;
   // 停止要求の後に報告が届かないものは、止まったと書かない（§10）。
   await sql`
-    UPDATE assist_executions
+    UPDATE assist_executions e
     SET stop_outcome = 'stop_unconfirmed',
-        status = CASE WHEN status = 'executing' THEN 'timed_out' ELSE status END,
-        partial_effect = CASE WHEN role = 'main'
-          THEN COALESCE(partial_effect, '[]'::jsonb) || ${jsonbValue(['STOP_UNCONFIRMED'])}
-          ELSE partial_effect END
-    WHERE stop_requested_at IS NOT NULL
-      AND started_at IS NOT NULL
-      AND result_received_at IS NULL
-      AND stop_outcome IS NULL
-      AND stop_requested_at
-        <= now() - ((max_seconds + ${ASSIST_LIMITS.runGraceSeconds}::int) * interval '1 second')
+        status = CASE WHEN e.status = 'executing' THEN 'timed_out' ELSE e.status END,
+        partial_effect = CASE WHEN e.role = 'main' AND p.effect = 'modify'
+          THEN COALESCE(e.partial_effect, '[]'::jsonb) || ${jsonbValue(['STOP_UNCONFIRMED'])}
+          ELSE e.partial_effect END
+    FROM assist_proposals p
+    WHERE p.id = e.proposal_id
+      AND e.stop_requested_at IS NOT NULL
+      AND e.started_at IS NOT NULL
+      AND e.result_received_at IS NULL
+      AND e.stop_outcome IS NULL
+      AND e.stop_requested_at
+        <= now() - ((e.max_seconds + ${ASSIST_LIMITS.runGraceSeconds}::int) * interval '1 second')
   `;
   await closeExpiredReports();
   await scrubExpiredIdentifiers();
@@ -88,15 +90,17 @@ async function closeExpiredReports(): Promise<void> {
       const locked = await lockSession(tx, row.support_session_id);
       if (!locked) return;
       const updated = await tx<{ id: string }[]>`
-        UPDATE assist_executions
+        UPDATE assist_executions e
         SET report_expired_at = now(),
-            status = CASE WHEN status = 'executing' THEN 'timed_out' ELSE status END,
-            partial_effect = CASE WHEN stop_outcome IS NULL AND role = 'main'
-              THEN COALESCE(partial_effect, '[]'::jsonb) || ${jsonbValue(['STOP_UNCONFIRMED'])}
-              ELSE partial_effect END,
-            stop_outcome = COALESCE(stop_outcome, 'stop_unconfirmed')
-        WHERE id = ${row.id} AND result_received_at IS NULL AND report_expired_at IS NULL
-        RETURNING id
+            status = CASE WHEN e.status = 'executing' THEN 'timed_out' ELSE e.status END,
+            partial_effect = CASE WHEN e.stop_outcome IS NULL AND e.role = 'main' AND p.effect = 'modify'
+              THEN COALESCE(e.partial_effect, '[]'::jsonb) || ${jsonbValue(['STOP_UNCONFIRMED'])}
+              ELSE e.partial_effect END,
+            stop_outcome = COALESCE(e.stop_outcome, 'stop_unconfirmed')
+        FROM assist_proposals p
+        WHERE p.id = e.proposal_id
+          AND e.id = ${row.id} AND e.result_received_at IS NULL AND e.report_expired_at IS NULL
+        RETURNING e.id
       `;
       if (!updated[0]) return;
       await sessionAudit(tx, 'support_session.report_expired', locked.session, 'system:sweep', {

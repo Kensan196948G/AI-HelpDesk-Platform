@@ -1,3 +1,5 @@
+import { stableStringify } from '../domain/audit.js';
+
 /**
  * 共通支援セッションの純関数（docs/63）。DB / ネットワークに触れない。
  * 上限はここで一元管理する（§8）。resolve の 6 ステップ、terminal の 20、旧 UI の 15 とは別物。
@@ -149,7 +151,15 @@ export function folderReasonForSessionEnd(
   return 'operator_end';
 }
 
-/** 進捗なし（結果コードが 2 回同じ。§8）。比較できないときは進捗なしと断定しない。 */
-export function isNoProgress(previous: string | null | undefined, current: string): boolean {
-  return Boolean(previous) && previous === current;
+/** 実行の結果の指紋（Skill + params + 正規化した出力）。キーの順序に左右されない。 */
+export function progressFingerprint(skillId: string, params: unknown, output: unknown): string {
+  return stableStringify({ skillId, params, output });
+}
+
+/**
+ * 進捗なし（§8）。同じ操作が同じ結果を返したとき。直前に限らないので、
+ * 別の Skill を交互に実行して何も変わらない場合も検出する。異なる操作の成功は進捗として扱う。
+ */
+export function isNoProgress(previous: readonly string[], current: string): boolean {
+  return previous.includes(current);
 }

@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { repoRoot } from '../config.js';
 import { readApprovalManifest } from '../resolve/skills.js';
 import { ASSIST_SKILLS, normalizeSkillOutput, resolveApprovedSkill } from './skills.js';
-import { folderReasonForSessionEnd, isNoProgress, terminalStatusForSession } from './state.js';
+import {
+  folderReasonForSessionEnd,
+  isNoProgress,
+  progressFingerprint,
+  terminalStatusForSession,
+} from './state.js';
 
 /** 実際の scripts/skills/approved.json を読む（Mock なし）。書き込まない。 */
 describe('本経路の Skill の承認', () => {
@@ -114,9 +119,18 @@ describe('状態の写像', () => {
     expect(terminalStatusForSession('ai_stop')).toBe('stopped');
   });
 
-  it('進捗なしは同じコードが 2 回のときだけ', () => {
-    expect(isNoProgress('A', 'A')).toBe(true);
-    expect(isNoProgress('A', 'B')).toBe(false);
-    expect(isNoProgress(null, 'A')).toBe(false);
+  it('進捗なしは Skill・params・出力が過去の実行と同じときだけ', () => {
+    const fingerprint = (skillId: string, params: unknown, output: unknown) =>
+      progressFingerprint(skillId, params, output);
+    const a = fingerprint('s.a', { v: 1 }, { n: 1 });
+    expect(isNoProgress([a], fingerprint('s.a', { v: 1 }, { n: 1 }))).toBe(true);
+    // 直前でなくても、交互の実行で変わっていなければ検出する。
+    expect(isNoProgress([a, fingerprint('s.b', {}, {})], a)).toBe(true);
+    expect(isNoProgress([a], fingerprint('s.b', { v: 1 }, { n: 1 }))).toBe(false);
+    expect(isNoProgress([a], fingerprint('s.a', { v: 2 }, { n: 1 }))).toBe(false);
+    expect(isNoProgress([a], fingerprint('s.a', { v: 1 }, { n: 2 }))).toBe(false);
+    expect(isNoProgress([], a)).toBe(false);
+    // キーの順序に左右されない。
+    expect(fingerprint('s', { a: 1, b: 2 }, {})).toBe(fingerprint('s', { b: 2, a: 1 }, {}));
   });
 });

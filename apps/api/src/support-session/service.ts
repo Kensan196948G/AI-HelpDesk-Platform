@@ -12,6 +12,7 @@ import { isTerminal } from '../folder-access/state.js';
 import { appendAudit } from '../lib/audit-log.js';
 import { jsonbValue } from '../lib/jsonb-value.js';
 import { approvalHashMatches } from '../resolve/approval.js';
+import type { ApprovalManifest } from '../resolve/skills.js';
 import { evaluateVerify } from '../resolve/verify.js';
 import {
   type AssistApprovalPayload,
@@ -31,6 +32,7 @@ import {
   type StartRejectCode,
 } from './contract.js';
 import { assistEnabled, terminateSessionTx } from './propagate.js';
+import { loadApprovalManifest } from './skill-source.js';
 
 export { assistEnabled };
 
@@ -46,6 +48,7 @@ import {
   folderReasonForSessionEnd,
   isNoProgress,
   isOpenSession,
+  progressFingerprint,
   type SessionEndReason,
 } from './state.js';
 
@@ -422,8 +425,9 @@ function skillStillApproved(
   version: string,
   contentHash: string,
   scriptHash: string,
+  manifest: ApprovalManifest,
 ): ApprovedAssistSkill | null {
-  const approved = resolveApprovedSkill(skillId);
+  const approved = resolveApprovedSkill(skillId, manifest);
   if (!approved) return null;
   if (
     approved.version !== version ||
@@ -443,15 +447,18 @@ async function approvalStillValid(
   proposal: ProposalRow,
 ): Promise<'ok' | 'consent' | 'approval' | 'skill'> {
   if (!(await operationConsentLive(tx, session))) return 'consent';
+  // manifest は 1 回の再検証で 1 度だけ読む（ロックを持ったまま読み直さない）。
+  const manifest = loadApprovalManifest();
   const skill = skillStillApproved(
     proposal.skill_id,
     proposal.skill_version,
     proposal.content_hash,
     proposal.script_hash,
+    manifest,
   );
   if (!skill) return 'skill';
   for (const op of proposal.verify.ops) {
-    if (!skillStillApproved(op.skillId, op.skillVersion, op.contentHash, op.scriptHash)) {
+    if (!skillStillApproved(op.skillId, op.skillVersion, op.contentHash, op.scriptHash, manifest)) {
       return 'skill';
     }
   }
@@ -641,7 +648,7 @@ async function drainExecutionCancels(tx: Tx, helperId: string): Promise<string[]
 export async function assistPollTx(tx: Tx, input: AssistPollInput): Promise<AssistPollOutcome> {
   const enabled = assistEnabled();
   const outcome: AssistPollOutcome = { enabled, skillOps: [], cancel: [], nextPollSeconds: null };
-  // 無効なら新テーブルに触らない（028 未適用の DB でも poll を失敗させない）。
+  // 無効なら新テーブルに触らない（030 未適用の DB でも poll を失敗させない）。
   if (!enabled) return outcome;
   if (!input.revoked && input.requestId) {
     const ctx = await loadContext(tx, input.requestId);
@@ -880,15 +887,26 @@ function isAllowedFailureCode(code: string): boolean {
   return COMMON_CODES.has(code);
 }
 
+/**
+ * 停止の報告を記録する（§10）。ヘルパー自身が kill した場合は停止要求がなくても残す。
+ * 止まったと分かれば未確認を解消し、実行していないと分かれば変更の可能性も取り消す。
+ */
 async function recordStopReport(tx: Tx, execution: ExecutionRow, body: SkillResultBody) {
-  // rejected は実行していないという申告なので、停止要求の有無によらず not_running。
   const notRun = body.status === 'rejected';
-  if (!notRun && !execution.stop_requested_at) return;
-  const outcome = notRun ? 'not_running' : (body.stopOutcome ?? 'stop_unconfirmed');
+  const outcome = notRun
+    ? 'not_running'
+    : (body.stopOutcome ?? (execution.stop_requested_at ? 'stop_unconfirmed' : null));
+  if (!outcome) return;
+  const stopped = outcome === 'stopped' || outcome === 'not_running';
   await tx`
     UPDATE assist_executions
     SET stop_outcome = ${outcome},
-        stopped_at = CASE WHEN ${outcome} IN ('stopped', 'not_running') THEN now() ELSE stopped_at END
+        stopped_at = CASE WHEN ${stopped} THEN now() ELSE stopped_at END,
+        partial_effect = CASE
+          WHEN ${notRun} THEN NULL
+          WHEN ${stopped} THEN NULLIF(partial_effect - 'STOP_UNCONFIRMED', '[]'::jsonb)
+          ELSE partial_effect
+        END
     WHERE id = ${execution.id}
   `;
 }
@@ -979,17 +997,20 @@ export async function recordResultTx(
           result_received_at = now()
       WHERE id = ${opId}
     `;
-    await mergePartialEffect(tx, opId, body.partialEffect ?? []);
+    // 実行していない申告には変更の報告を付けない。
+    if (body.status !== 'rejected') await mergePartialEffect(tx, opId, body.partialEffect ?? []);
     await recordStopReport(tx, current, body);
   };
 
-  // 実行していないという申告（署名不正など）。証拠にならず、次へ進まない。
+  // 実行していないという申告（署名不正、/start の応答の喪失など）。証拠にならず、次へ進まない。
+  // /start の応答を失うとサーバは executing のままで、停止後に届くこともある。
   if (body.status === 'rejected') {
-    if (current.status !== 'delivered') return notAccepted('NOT_DELIVERED');
+    const reportable = ['delivered', 'executing', 'timed_out', 'expired', 'rejected_at_start'];
+    if (!reportable.includes(current.status)) return notAccepted('NOT_DELIVERED');
     await store({
       status: 'rejected_by_helper',
       evidence: false,
-      late: false,
+      late: !isOpenSession(session.status),
       resultCode: body.resultCode,
     });
     await audit('support_session.result', { result: 'rejected_by_helper' });
@@ -1039,32 +1060,27 @@ export async function recordResultTx(
     return { kind: 'not_accepted', reason: 'NOT_REAL' };
   }
 
-  // OS の実行主体（自己申告）が束縛と違う。
-  if (body.actorSid !== session.sid) {
+  // OS の実行主体（自己申告）が束縛と違う。改ざんの可能性を固定コードで示し、報告値は残す。
+  const identityMismatch =
+    body.actorSid !== session.sid
+      ? ({ endReason: 'sid_mismatch', reason: 'SID_MISMATCH' } as const)
+      : body.sessionId !== session.windows_session_id
+        ? ({ endReason: 'session_changed', reason: 'SESSION_MISMATCH' } as const)
+        : null;
+  if (identityMismatch) {
+    await store({
+      status: 'failed',
+      evidence: false,
+      late: false,
+      resultCode: 'RESULT_MISMATCH',
+      verifyOk: null,
+      verifyReason: identityMismatch.endReason,
+    });
     await markModifyUnknown(tx, current, proposal);
-    await endRequestTx(tx, ctx, 'sid_mismatch', HELPER_ACTOR);
+    await endRequestTx(tx, ctx, identityMismatch.endReason, HELPER_ACTOR);
     await reload(tx, session);
-    await tx`
-      UPDATE assist_executions SET status = 'failed', result_received_at = now(),
-        execution_mode = 'real', result_source = 'helper_token', result_code = 'SID_MISMATCH',
-        evidence = false
-      WHERE id = ${opId}
-    `;
-    await audit('support_session.result', { result: 'sid_mismatch' });
-    return { kind: 'not_accepted', reason: 'SID_MISMATCH' };
-  }
-  if (body.sessionId !== session.windows_session_id) {
-    await markModifyUnknown(tx, current, proposal);
-    await endRequestTx(tx, ctx, 'session_changed', HELPER_ACTOR);
-    await reload(tx, session);
-    await tx`
-      UPDATE assist_executions SET status = 'failed', result_received_at = now(),
-        execution_mode = 'real', result_source = 'helper_token', result_code = 'SESSION_MISMATCH',
-        evidence = false
-      WHERE id = ${opId}
-    `;
-    await audit('support_session.result', { result: 'session_mismatch' });
-    return { kind: 'not_accepted', reason: 'SESSION_MISMATCH' };
+    await audit('support_session.result', { result: identityMismatch.endReason });
+    return { kind: 'not_accepted', reason: identityMismatch.reason };
   }
 
   // 改変（op と別物の報告）。ハッシュ不一致で検証を通さない（resolve の取込処理は使わない）。
@@ -1169,13 +1185,23 @@ async function afterProposalSucceeded(
   session: SessionRow,
   proposal: ProposalRow,
 ): Promise<void> {
-  const codes = await tx<{ step_seq: number; result_code: string | null }[]>`
-    SELECT step_seq, result_code FROM assist_executions
-    WHERE support_session_id = ${session.id} AND role = 'main' AND step_seq <= ${proposal.step_seq}
-    ORDER BY step_seq DESC
-    LIMIT 2
+  const mains = await tx<
+    {
+      step_seq: number;
+      skill_id: string;
+      params: unknown;
+      normalized_output: unknown;
+    }[]
+  >`
+    SELECT step_seq, skill_id, params, normalized_output FROM assist_executions
+    WHERE support_session_id = ${session.id} AND role = 'main' AND status = 'completed'
+    ORDER BY step_seq
   `;
-  if (codes.length === 2 && isNoProgress(codes[1]?.result_code, codes[0]?.result_code ?? '')) {
+  const fingerprint = (row: (typeof mains)[number]) =>
+    progressFingerprint(row.skill_id, row.params, row.normalized_output);
+  const current = mains.find((row) => row.step_seq === proposal.step_seq);
+  const previous = mains.filter((row) => row.step_seq !== proposal.step_seq).map(fingerprint);
+  if (current && isNoProgress(previous, fingerprint(current))) {
     await stopSessionTx(tx, ctx, session, 'no_progress', HELPER_ACTOR);
     return;
   }
