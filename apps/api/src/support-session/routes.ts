@@ -145,7 +145,7 @@ async function assertAssigneeBefore(request: FastifyRequest, id: string): Promis
 }
 
 /** 利用できる Skill を見せる状態（同意の前と、次の提案を求める前）。 */
-const SHOWS_AVAILABILITY = ['awaiting_next', 'consent_pending', 'ready'];
+const SHOWS_AVAILABILITY = ['ready', 'awaiting_next', 'consent_pending'];
 
 function proposalDto(row: ProposalRow) {
   return {
