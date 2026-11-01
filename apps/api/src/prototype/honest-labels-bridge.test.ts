@@ -112,6 +112,31 @@ describe('モデル表示（msgMeta）', () => {
     expect(meta).toBe('承認済みナレッジ検索（DeepSeek 未使用）|—');
   });
 
+  it('担当者の追加質問（/api/ai/answer-case）の回答を実 AI とフォールバックで分ける', () => {
+    // ahAskCase の新しい保存形式
+    expect(metaOf({ model: 'deepseek-flash', conf: '高', provider: 'deepseek' })).toBe(
+      'DeepSeek-V4.1-Flash|高',
+    );
+    expect(metaOf({ model: 'fallback', conf: '中', provider: 'fallback' })).toBe(
+      '承認済みナレッジ検索（DeepSeek 未使用）|—',
+    );
+    // provider を保存する前の分（model が API の値）
+    expect(metaOf({ model: 'deepseek-flash', conf: '高' })).toBe('DeepSeek-V4.1-Flash|高');
+    expect(metaOf({ model: 'fallback', conf: '中' })).toBe(
+      '承認済みナレッジ検索（DeepSeek 未使用）|—',
+    );
+    // サーバが案件へ追記した分
+    expect(
+      metaOf({ id: 'case-ai-1', model: 'DeepSeek-V4.1-Flash', provider: 'fallback', conf: '—' }),
+    ).toBe('承認済みナレッジ検索（DeepSeek 未使用）|—');
+    expect(metaOf({ id: 'case-ai-2', model: 'DeepSeek-V4.1-Flash', provider: 'deepseek' })).toBe(
+      'DeepSeek-V4.1-Flash|undefined',
+    );
+    expect(metaOf({ id: 'case-ai-3', model: 'DeepSeek-V4.1-Flash' })).toBe(
+      'DeepSeek-V4.1-Flash|undefined',
+    );
+  });
+
   it('由来が別のメッセージと、モデル欄のないメッセージは変えない', () => {
     expect(metaOf({ model: 'AIヘルプデスク連携', conf: undefined })).toBe(
       'AIヘルプデスク連携|undefined',
@@ -306,6 +331,7 @@ describe('発言者・判定ヘルパー', () => {
   it('実 AI の回答がある相談だけを実 AI 利用とする', () => {
     const api = honest();
     expect(api.usedRealAi({ messages: [{ provider: 'deepseek' }] })).toBe(true);
+    expect(api.usedRealAi({ messages: [{ model: 'deepseek-flash' }] })).toBe(true);
     expect(api.usedRealAi({ messages: [{ provider: 'fallback' }, { model: 'x' }] })).toBe(false);
     expect(api.usedRealAi(null)).toBe(false);
   });

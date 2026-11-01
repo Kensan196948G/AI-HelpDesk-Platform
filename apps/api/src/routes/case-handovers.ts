@@ -235,7 +235,7 @@ export async function latestHandoverForCase(caseId: string): Promise<HandoverRow
 
 function appendChat(
   snapshot: CaseSnapshot,
-  message: { role: 'user' | 'ai'; text: string; who?: string },
+  message: { role: 'user' | 'ai'; text: string; who?: string; provider?: string },
 ): void {
   if (!snapshot.chat) return;
   const messages = Array.isArray(snapshot.chat.messages) ? snapshot.chat.messages : [];
@@ -247,6 +247,8 @@ function appendChat(
       : {
           html: `<p>${escapeHtml(message.text).replace(/\n/g, '<br>')}</p>`,
           model: 'DeepSeek-V4.1-Flash',
+          // 画面は provider で実 AI とフォールバックを見分ける。
+          provider: message.provider,
         }),
     who: message.who,
     at: new Date().toISOString(),
@@ -703,7 +705,7 @@ export async function caseHandoverRoutes(app: FastifyInstance): Promise<void> {
       });
 
       appendChat(snapshot, { role: 'user', text: body.text, who: 'DX推進部' });
-      appendChat(snapshot, { role: 'ai', text: answer.answer });
+      appendChat(snapshot, { role: 'ai', text: answer.answer, provider: answer.provider });
       // F-04: サーバ側で保存する直前に、スナップショット全体の PII を伏せ字にする。
       // （クライアント側の置換に依存しない。AI 追加質問の履歴も含めて保存する。）
       const redactedSnapshot = redactCaseSnapshot(snapshot);

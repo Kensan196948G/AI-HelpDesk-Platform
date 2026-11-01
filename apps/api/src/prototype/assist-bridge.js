@@ -2055,6 +2055,8 @@
         const html = '<p>' + ahEsc(data.answer || '').replace(/\n/g, '<br>') + '</p>';
         ai(chat, html, {
           model: data.model || 'DeepSeek-V4.1-Flash',
+          // 実 AI かフォールバックかを表示と報告書で判定する（honest-labels-bridge.js）。
+          provider: data.provider,
           conf: data.confidence || '—',
           src: (data.sources || []).map((source) => source.kbNo),
         });

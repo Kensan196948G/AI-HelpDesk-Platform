@@ -298,6 +298,13 @@ describe('案件引継ぎ API', () => {
     const answerBody = answer.json();
     expect(answerBody.answer.length).toBeGreaterThan(0);
     expect(['fallback', 'deepseek']).toContain(answerBody.provider);
+    // 案件へ追記した回答にも provider を残す（画面が実 AI とフォールバックを見分ける）。
+    const answered = await sql<{ text: string }[]>`
+      SELECT snapshot::text AS text FROM case_handovers
+      WHERE case_id = ${CASE_ID} AND owner_email = ${email}
+      ORDER BY updated_at DESC LIMIT 1
+    `;
+    expect(answered[0]?.text).toContain(`"provider": "${answerBody.provider}"`);
 
     // 同じ案件をもう一度共有すると、進行中の行は置き換わる（重複しない）。
     const reShared = await app.inject({

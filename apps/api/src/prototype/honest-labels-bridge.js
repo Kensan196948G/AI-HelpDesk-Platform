@@ -30,39 +30,65 @@
   const REAL_EXEC_HTML =
     /実端末へコマンドを送信|実端末で実行しました|実端末での実行に失敗|端末エージェントからの応答がありません|状態の確認に失敗しました/;
 
+  /** メッセージの由来。実 AI と判定できるものだけ deepseek を返す。 */
+  function sourceOf(message) {
+    if (message.provider === 'deepseek' || message.provider === 'fallback') {
+      return message.provider;
+    }
+    const model = String(message.model || '');
+    // 担当者の追加質問（/api/ai/answer-case）の保存済み分は provider が無く、model が API の値。
+    if (/^deepseek-/.test(model)) return 'deepseek';
+    if (model === 'fallback') return 'fallback';
+    // サーバが案件へ追記した回答（provider を保存する前の分）は判定できないのでそのまま出す。
+    if (String(message.id || '').startsWith('case-ai-')) return 'pass';
+    if (PASS_THROUGH_MODELS.has(model)) return 'pass';
+    if (REAL_EXEC_HTML.test(String(message.html || ''))) return 'agent';
+    return 'rule';
+  }
+
   function honestMeta(message) {
     if (!message) return message;
-    if (message.provider === 'deepseek') {
-      return Object.assign({}, message, { model: REAL_MODEL });
+    // モデル欄が無く由来の情報も無いカード（診断など）には何も足さない。
+    if (!message.model && !message.provider) return message;
+    switch (sourceOf(message)) {
+      case 'deepseek':
+        return Object.assign({}, message, { model: REAL_MODEL });
+      case 'fallback':
+        return Object.assign({}, message, { model: FALLBACK_LABEL, conf: '—' });
+      case 'agent':
+        return Object.assign({}, message, { model: AGENT_LABEL, conf: '—' });
+      case 'pass':
+        return message;
+      default:
+        return Object.assign({}, message, {
+          model: message.after ? RULE_DIAG_LABEL : RULE_LABEL,
+          conf: '—',
+        });
     }
-    if (message.provider === 'fallback') {
-      return Object.assign({}, message, { model: FALLBACK_LABEL, conf: '—' });
-    }
-    if (!message.model || PASS_THROUGH_MODELS.has(message.model)) return message;
-    if (REAL_EXEC_HTML.test(String(message.html || ''))) {
-      return Object.assign({}, message, { model: AGENT_LABEL, conf: '—' });
-    }
-    return Object.assign({}, message, {
-      model: message.after ? RULE_DIAG_LABEL : RULE_LABEL,
-      conf: '—',
-    });
   }
 
   /** 担当者画面・報告書で、発言者を「AI」と一括りにしない。 */
   function whoFor(message) {
     if (!message) return RULE_LABEL;
-    if (message.provider === 'deepseek') return 'AI（DeepSeek）';
-    if (message.provider === 'fallback') return FALLBACK_LABEL;
-    if (message.model && PASS_THROUGH_MODELS.has(message.model)) return message.model;
-    if (REAL_EXEC_HTML.test(String(message.html || ''))) return AGENT_LABEL;
-    return RULE_LABEL;
+    switch (sourceOf(message)) {
+      case 'deepseek':
+        return 'AI（DeepSeek）';
+      case 'fallback':
+        return FALLBACK_LABEL;
+      case 'agent':
+        return AGENT_LABEL;
+      case 'pass':
+        return message.model || 'AI';
+      default:
+        return RULE_LABEL;
+    }
   }
 
   function usedRealAi(chat) {
     return Boolean(
       chat &&
         Array.isArray(chat.messages) &&
-        chat.messages.some((message) => message && message.provider === 'deepseek'),
+        chat.messages.some((message) => message && sourceOf(message) === 'deepseek'),
     );
   }
 

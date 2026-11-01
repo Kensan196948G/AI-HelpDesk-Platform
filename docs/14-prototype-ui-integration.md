@@ -194,6 +194,7 @@
 | 対象 | 変更前 | 変更後 |
 |---|---|---|
 | 実 AI の回答（`provider=deepseek`） | DeepSeek-V4.1-Flash・確信度 | 変更なし |
+| 担当者の追加質問（`/api/ai/answer-case`） | API の model 値・確信度 | `provider` を保存し、上と下の同じ判定で表示（案件へ追記する回答にも保存する） |
 | フォールバック（`provider=fallback`） | DeepSeek-V4.1-Flash・確信度 | 承認済みナレッジ検索（DeepSeek 未使用）・確信度なし |
 | ルールの回答・社内資料カード | DeepSeek-V4.1-Flash・確信度 高/中 | ルールベース（デモデータ）・確信度なし |
 | 端末エージェントの実行結果（`ACT.realExec`） | DeepSeek-V4.1-Flash | 端末エージェント（実端末） |
