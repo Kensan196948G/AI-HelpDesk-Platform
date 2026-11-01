@@ -52,7 +52,7 @@ function parseData(data) {
 /** DB の 1 行が AI の根拠に使えるか（knowledge-search.ts の条件と同じ）。使えない理由を返す。 */
 /** keywords は本文と別に数える（既存行は書き換えない。docs/64 §11）。 */
 export function keywordsHaveDeviceInfo(row) {
-  return (row.keywords ?? []).some((keyword) => containsDeviceInfo(String(keyword)));
+  return (row.keywords ?? []).some((keyword) => countsDeviceInfo(String(keyword)));
 }
 
 export function dbRowBlocker(row) {
