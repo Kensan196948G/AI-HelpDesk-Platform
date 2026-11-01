@@ -881,7 +881,10 @@ async function main(browser) {
     '所属外の承認者が画面のボタンで承認者のパネルを開ける（完了承認と公開承認が別の見出し）',
     outsidePanel.includes('① 引継ぎの完了承認') && outsidePanel.includes('② ナレッジの公開承認'),
   );
-  await outside.page.screenshot({ path: path.join(outDir, '5a-outside-approver-panel.png'), fullPage: true });
+  await outside.page.screenshot({
+    path: path.join(outDir, '5a-outside-approver-panel.png'),
+    fullPage: true,
+  });
   report.apiLog.outside_all = summarizeLog(outside.log);
   await outside.context.close();
 
@@ -1157,7 +1160,10 @@ async function main(browser) {
     'エージェント未接続でも担当者へ引き継ぐ導線が残る',
     noAgentChat.includes('担当者へ引き継'),
   );
-  await B.page.screenshot({ path: path.join(outDir, '11a-b-print-no-agent-kb.png'), fullPage: true });
+  await B.page.screenshot({
+    path: path.join(outDir, '11a-b-print-no-agent-kb.png'),
+    fullPage: true,
+  });
   finding(
     'N0-old',
     `（修正前）端末エージェント未接続の印刷の相談は解決ループへ進まないので、承認済み KB は案内されない（画面に KB 番号: ${report.ids.printNoAgentShowsKb}）。`,
@@ -1307,7 +1313,10 @@ async function main(browser) {
   await approver.page.click('#ahApproverEntry');
   const handoverButton = approver.page.locator(`[data-ahd="ho-approve"][data-id="${handover.id}"]`);
   await handoverButton.waitFor({ timeout: 15_000 });
-  await approver.page.screenshot({ path: path.join(outDir, '10a-approver-panel-handover.png'), fullPage: true });
+  await approver.page.screenshot({
+    path: path.join(outDir, '10a-approver-panel-handover.png'),
+    fullPage: true,
+  });
   await handoverButton.click();
   const completedRow = await waitUntil(
     async () => {
