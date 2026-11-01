@@ -113,7 +113,7 @@ systemctl --user list-timers ai-helpdesk-backup.timer
 
 `api.conf` への `SHARED_IDENTITY_GROUPS=a|b` の追加（2026-10-28）以降、`backup-db.sh` が設定をシェルとして読み込んだ際に `|` をパイプと解釈し、終了コード 127 で失敗し続けた。最後の成功は 2026-10-28 02:30。失敗の間、誰にも通知されなかった。再発防止として通知を追加した（§4-4）。
 
-`set-smtp-password.sh` にも同じ読み込みがあり修正済み。`set -a; . ~/.config/ai-helpdesk/api.conf` と書いた手順（本書 §6-1、`docs/08-deployment.md`、`docs/22-remote-assist-handover.md`、`README.md`）は、同じ理由で今の `api.conf` では失敗する（未修正）。
+`set-smtp-password.sh` にも同じ読み込みがあり修正済み。`set -a; . ~/.config/ai-helpdesk/api.conf` と書いた手順（本書 §6-1、`docs/08-deployment.md`、`docs/22-remote-assist-handover.md`、`README.md`）は未修正。今の `api.conf` では、対話シェルなら `command not found` を出したまま続行し、`|` を含む変数が未設定になる（`set -e` の下では止まる）。後続のコマンドがその変数に依存する場合に注意する。
 
 ### 4-4. 通知の反映手順
 
@@ -121,9 +121,13 @@ systemctl --user list-timers ai-helpdesk-backup.timer
 
 ```bash
 # 1) メイン作業ツリーをマージ済みの main へ進める（nodemailer を使うので有無も確かめる）
+#    ブランチが main でない、または status に出力があれば止まる（並行作業の可能性がある）。
 cd ~/Projects/Mirai-Admin-Platform/AI-HelpDesk-Platform
+git rev-parse --abbrev-ref HEAD
 git status --short
-git pull --ff-only origin main
+git fetch origin main
+git log --stat HEAD..FETCH_HEAD   # Preview はこの作業ツリーの HTML を直接読むので、他の変更も確かめる
+git merge --ff-only FETCH_HEAD
 test -f node_modules/nodemailer/package.json
 
 # 2) 本文を確認する（送らない）
