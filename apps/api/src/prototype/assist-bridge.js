@@ -30,6 +30,8 @@
       ahPendingApprovePayload(item, checklist, comment),
     pendingRejectPayload: (item, reason) => ahPendingRejectPayload(item, reason),
     pendingSectionHtml: (items, errorCode) => ahPendingSectionHtml(items, errorCode),
+    // 相談者の画面が受信箱を呼ばないことの単体テスト用（staff-access.test.ts）。
+    fetchHandoverInbox: () => ahFetchHandoverInbox(),
   };
 
   const AH = {
@@ -1032,7 +1034,7 @@
     const at = ahFormatHandoverDate(c.handoverApprovedAt);
     const by = String(c.handoverApprovedBy || '');
     if (!at && !by) return '';
-    const kind = Boolean(c.handoverSelfApproved) ? '自己承認' : '別ID承認';
+    const kind = c.handoverSelfApproved ? '自己承認' : '別ID承認';
     const rows = [];
     if (by) rows.push('承認者: ' + ahEsc(by));
     if (at) rows.push('承認日時: ' + ahEsc(at) + '（' + kind + '）');
@@ -1086,15 +1088,19 @@
   }
 
   function ahFetchHandoverInbox() {
-    if (AH.handoverLoaded || AH.handoverLoading) return;
+    if (AH.handoverLoaded || AH.handoverLoading) return undefined;
     AH.handoverLoading = true;
-    ahJsonFetch('/api/case-handovers/inbox')
+    const access = window.__AIHD_STAFF_ACCESS__;
+    // 担当者以外は呼ばない（判定の正本はサーバ。staff-access-bridge.js）。
+    return Promise.resolve(access ? access.allowed('helpdeskActor') : true)
+      .then((allowed) => (allowed ? ahJsonFetch('/api/case-handovers/inbox') : { items: [] }))
       .then((data) => {
         AH.handoverInbox = Array.isArray(data.items) ? data.items : [];
       })
       .catch((error) => {
         // DX 以外は 403。エラー表示はせず、受信箱なしとして扱う。
-        if (error.status !== 403) console.warn('[assist] handover inbox failed', error);
+        if (error.status === 403) access?.deny('helpdeskActor');
+        else console.warn('[assist] handover inbox failed', error);
         AH.handoverInbox = [];
       })
       .finally(() => {
