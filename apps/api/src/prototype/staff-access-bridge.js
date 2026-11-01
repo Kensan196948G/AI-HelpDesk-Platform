@@ -7,12 +7,13 @@
  * - 権限なしの結果は 60 秒だけ使う。名簿の一時障害でも 200 で false が返るので、
  *   ページ内に保持し続けると、復旧後も担当者の機能が隠れたままになる。
  * - /api/me が取れないときは「呼ぶ」側に倒す（一時的な失敗で担当者の機能を隠さない）。
- *   サーバが 403 を返したら、呼び出し側が deny() で以後の呼び出しを止める。
+ *   サーバが 403 を返したら、呼び出し側が deny() で 60 秒間の呼び出しを止める。
+ *   403 も名簿の一時障害で返るので、ページ内に保持し続けない。
  */
 (() => {
   if (window.__AIHD_STAFF_ACCESS__) return;
 
-  const denied = new Set();
+  const deniedUntil = new Map();
   const DENIED_RECHECK_MS = 60_000;
   let mePromise = null;
   let recheckAt = Number.POSITIVE_INFINITY;
@@ -33,14 +34,16 @@
     return mePromise;
   }
 
+  const isDenied = (capability) => Date.now() < (deniedUntil.get(capability) ?? 0);
+
   window.__AIHD_STAFF_ACCESS__ = {
     async allowed(capability) {
-      if (denied.has(capability)) return false;
+      if (isDenied(capability)) return false;
       const me = await loadMe();
-      return me?.[capability] !== false && !denied.has(capability);
+      return me?.[capability] !== false && !isDenied(capability);
     },
     deny(capability) {
-      denied.add(capability);
+      deniedUntil.set(capability, Date.now() + DENIED_RECHECK_MS);
     },
   };
 })();

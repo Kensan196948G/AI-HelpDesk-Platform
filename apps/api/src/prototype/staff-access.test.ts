@@ -136,11 +136,14 @@ describe('staff-access-bridge: 権限なしの判定を保持し続けない', (
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
-  it('サーバの 403（deny）は取り直しで解除しない', async () => {
+  it('サーバの 403（deny）は 60 秒間止め、そのあとは一時障害からの回復のため再開する', async () => {
     const { access, advance } = load(() => ME_STAFF);
     access.deny('helpdeskActor');
-    advance(600_000);
     expect(await access.allowed('helpdeskActor')).toBe(false);
+    advance(59_000);
+    expect(await access.allowed('helpdeskActor')).toBe(false);
+    advance(1_000);
+    expect(await access.allowed('helpdeskActor')).toBe(true);
   });
 });
 
