@@ -5,7 +5,7 @@ import { redactPII } from '../domain/pii.js';
  * これ未満の一致は根拠にしない。原因欄に意図語が 1 回出るだけの KB まで外部 AI へ送らない。
  * 専門キーワードの一致は 1 語で 4 点なので、この下限にはかからない。
  */
-const MIN_SCORE = 2;
+export const MIN_SCORE = 2;
 
 /**
  * 画面経路の KB は keywords が空で保存される（原本の draftForSync が返さない）。
@@ -26,6 +26,7 @@ export function scoreKnowledge(
   text: string,
   intentKeywords: string[],
   limit = 3,
+  minScore = MIN_SCORE,
 ): KnowledgeLike[] {
   const lowerText = text.toLowerCase();
   const tokens = new Set(
@@ -57,7 +58,7 @@ export function scoreKnowledge(
       }
       return { knowledge, score: specific + contextual };
     })
-    .filter((entry) => entry.score >= MIN_SCORE)
+    .filter((entry) => entry.score >= minScore)
     .sort((a, b) => b.score - a.score)
     .slice(0, limit)
     .map((entry) => entry.knowledge);
@@ -101,4 +102,29 @@ export async function findApprovedKnowledge(
     version: row.version,
   }));
   return scoreKnowledge(candidates, text, intentKeywords);
+}
+
+/**
+ * AI の根拠に使える行の clientRef と題名、全件数（画面の「承認済み」表示の判定用）。
+ * 条件は findApprovedKnowledge と同じ。承認済み KB は相談者も閲覧できるので本文以外を返してよい。
+ */
+export async function listAiUsableRefs(
+  tx: any,
+): Promise<{ count: number; items: Array<{ clientRef: string; title: string }> }> {
+  const rows: Array<{ client_ref: string | null; title: string }> = await tx`
+    SELECT k.client_ref, k.title
+    FROM knowledge k
+    WHERE k.status = 'approved'
+      AND k.approver_id IS NOT NULL
+      AND k.approved_at IS NOT NULL
+      AND k.approver_id <> k.author_id
+      AND k.version >= 1
+      AND k.updated_at <= k.approved_at
+  `;
+  return {
+    count: rows.length,
+    items: rows
+      .filter((row) => row.client_ref)
+      .map((row) => ({ clientRef: String(row.client_ref), title: row.title })),
+  };
 }

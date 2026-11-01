@@ -44,6 +44,11 @@ interface AssistBridge {
   pendingRejectPayload: (item: Record<string, unknown>, reason: string) => Record<string, unknown>;
   pendingSectionHtml: (items: Array<Record<string, unknown>>, errorCode?: string) => string;
   approvalNoteHtml: (c: SyncedCase) => string;
+  labelHdKb: (
+    items: Array<Record<string, unknown>>,
+    drafts: Array<Record<string, unknown>>,
+    refs: { items: Array<{ clientRef: string; title: string }> } | null,
+  ) => Array<Record<string, unknown>>;
   handoverApprovalNotice: (
     approved: Record<string, unknown>,
     kb: { published: boolean; aiUsable?: boolean; reason?: string },
@@ -396,5 +401,41 @@ describe('assist-bridge: 引継ぎの承認と KB 公開を分ける', () => {
     expect(failed.text).toContain('引継ぎの完了を承認しました');
     expect(failed.text).toContain('ナレッジは公開されていません');
     expect(failed.text).not.toContain('次の相談から');
+  });
+});
+
+describe('assist-bridge: 画面内の KB の承認済み表示', () => {
+  const bridge = loadBridge({}, () => false);
+  const kb = (id: string, title: string) => ({
+    id,
+    title,
+    src: 'hd',
+    owner: 'AI',
+    approvedBy: '渡辺',
+  });
+  const drafts = [{ id: 'DR-001', kbId: 'KB-111' }];
+  const approved = { items: [{ clientRef: 'ui-DR-001', title: '題名' }] };
+
+  it('DB で承認された下書きに結びつく KB だけ「ヘルプデスク承認済み」の表示を残す', () => {
+    const [hit, demo] = bridge.labelHdKb(
+      [kb('KB-111', '題名'), kb('KB-101', 'デモ')],
+      drafts,
+      approved,
+    );
+    expect(hit?.src).toBe('hd');
+    expect(demo?.src).toBe('local');
+    expect(demo?.owner).toBe('画面内の資料（DB で未承認）');
+  });
+
+  it('下書き番号が重なっても題名が違えば承認済みにしない。作成者別の clientRef は一致させる', () => {
+    expect(bridge.labelHdKb([kb('KB-111', '別の内容')], drafts, approved)[0]?.src).toBe('local');
+    const scoped = { items: [{ clientRef: 'ui-DR-001~abcd1234', title: '題名' }] };
+    expect(bridge.labelHdKb([kb('KB-111', '題名')], drafts, scoped)[0]?.src).toBe('hd');
+    const other = { items: [{ clientRef: 'ui-DR-0012', title: '題名' }] };
+    expect(bridge.labelHdKb([kb('KB-111', '題名')], drafts, other)[0]?.src).toBe('local');
+  });
+
+  it('判定が取れない間は承認済みと表示しない', () => {
+    expect(bridge.labelHdKb([kb('KB-111', '題名')], drafts, null)[0]?.src).toBe('local');
   });
 });

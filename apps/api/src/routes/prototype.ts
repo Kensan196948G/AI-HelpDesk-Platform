@@ -47,6 +47,28 @@ export function patchStateLoad(html: string): string {
 }
 
 /**
+ * ヘルプデスク画面の KB は state（ブラウザのデータ）で、DB で承認されたとは限らない。
+ * 配信時に表示だけ差し替え、判定は assist-bridge の __AIHD_KB_APPROVAL__ に任せる（docs/14 §2-12）。
+ */
+const KB_APPROVAL_EXPR =
+  "${esc(typeof __AIHD_KB_APPROVAL__==='function'?__AIHD_KB_APPROVAL__(k):'DB 未承認')}";
+export const KB_LABEL_PATCHES: ReadonlyArray<readonly [string, string]> = [
+  ['（承認：${esc(k.approvedBy)}）', `（${KB_APPROVAL_EXPR}）`],
+  ['<td>${esc(k.approvedBy)}</td>', `<td>${KB_APPROVAL_EXPR}</td>`],
+  [
+    '承認者が承認したナレッジだけが保存され、AIの回答に使われます。',
+    'この一覧はブラウザ内のデータです。AIの回答に使われるのは、DB で別の承認者が承認したものだけです。',
+  ],
+  ['――― 根拠（承認済みナレッジ）―――', '――― 根拠（画面内のナレッジ）―――'],
+];
+
+export function patchKbLabels(html: string): string {
+  let out = html;
+  for (const [from, to] of KB_LABEL_PATCHES) out = out.split(from).join(to);
+  return out;
+}
+
+/**
  * 依頼者以外の「操作する人」で案件を開くと、画面が `USERS[c.userId]` を解決できず
  * `asideHtml` で TypeError になる（2026-10-25 に実ブラウザで再現）。
  * 社員名簿から案件の依頼者を解決し、解決できない場合も表示を壊さないようにする。
@@ -238,6 +260,7 @@ function renderPrototype(boot: {
   // 古い・欠けた状態を読み込んでも白画面にならないよう、欠落キーを補完する。
   html = patchStateLoad(html);
   html = patchCaseUserResolution(html);
+  html = patchKbLabels(html);
   // 最初のアプリ <script> の直前に、サーバー保持の状態を localStorage へ入れる。
   // 置換文字列は `$'` `$&` `$$` を特殊パターンとして解釈するため、利用者データを含む文字列は関数で渡す。
   html = html.replace('<script>', () => `${bootScript}<script>`);

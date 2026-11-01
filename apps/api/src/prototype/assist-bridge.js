@@ -20,6 +20,9 @@
     version: 2,
     at: new Date().toISOString(),
     rspDeepLink: (c) => ahRspDeepLink(c),
+    // 画面内の KB を「承認済み」と表示するかの判定の単体テスト用。
+    labelHdKb: (items, drafts, refs) => ahLabelHdKb(items, drafts, refs),
+    kbIsDbApproved: (kb, drafts, refs) => ahKbIsDbApproved(kb, drafts, refs),
     // 引継ぎの承認と KB 公開を分ける処理の単体テスト用。
     handoverApprovalNotice: (approved, kb) => ahHandoverApprovalNotice(approved, kb),
     publishKnowledgeAfterHandover: (full, checklist, comment) =>
@@ -59,6 +62,8 @@
     pendingLoadedAt: 0,
     pendingError: '',
     pendingBusy: false,
+    // GET /api/knowledge/approved-refs の結果。null の間は承認済みと表示しない。
+    kbRefs: null,
   };
   window.__AIHD_ASSIST__ = AH;
 
@@ -373,8 +378,7 @@
         if (!message || message.kind === 'welcome') continue;
         if (message.kind === 'diag')
           push(message.at, 'AI', '端末を診断（読み取りのみ）', message.title || '');
-        if (message.kind === 'kb')
-          push(message.at, 'AI', '承認済みナレッジを提示', message.kbId || '');
+        if (message.kind === 'kb') push(message.at, 'AI', 'ナレッジを提示', message.kbId || '');
         if (message.kind === 'proposal') push(message.at, 'AI', '修復を提案', message.propId || '');
         if (message.kind === 'exec')
           push(message.at, 'PCエージェント', '修復の実行結果', message.state || '');
@@ -1418,6 +1422,85 @@
         String((kb && kb.reason) || '不明なエラー'),
       tone: 'bad',
     };
+  }
+
+  // ---------------------------------------------------------------------
+  // 画面内（state）の KB はブラウザのデータで、DB で承認されたとは限らない。
+  // サーバーの判定（GET /api/knowledge/approved-refs）に一致するものだけ承認済みと表示する。
+  // 原本 HTML は変えず、window.HD の戻り値と配信時の差し替え（prototype.ts）で表示を変える。
+  // ---------------------------------------------------------------------
+  const AH_HELPDESK_STATE_KEY = 'mirai-wizard-v31-helpdesk';
+  const AH_KB_LOCAL_OWNER = '画面内の資料（DB で未承認）';
+
+  /** state の KB が DB で承認済みか。下書き → clientRef → 題名の順に照合する（純粋関数）。 */
+  function ahKbIsDbApproved(kb, drafts, refs) {
+    if (!kb || !refs || !Array.isArray(refs.items) || !Array.isArray(drafts)) return false;
+    const draft = drafts.find((item) => item && item.kbId === kb.id);
+    if (!draft) return false;
+    // 下書き番号はブラウザごとの連番で重なるので、題名まで一致したものだけを同じ KB と見なす。
+    const base = 'ui-' + String(draft.id);
+    return refs.items.some(
+      (item) =>
+        (item.clientRef === base || String(item.clientRef).startsWith(base + '~')) &&
+        item.title === kb.title,
+    );
+  }
+
+  /** HD.kb() の戻り値から、DB で未承認のものの「承認済み」表示を外す（純粋関数）。 */
+  function ahLabelHdKb(items, drafts, refs) {
+    return (Array.isArray(items) ? items : []).map((item) =>
+      ahKbIsDbApproved(item, drafts, refs)
+        ? item
+        : Object.assign({}, item, { src: 'local', owner: AH_KB_LOCAL_OWNER }),
+    );
+  }
+
+  let ahDraftCacheRaw = null;
+  let ahDraftCache = [];
+  function ahLocalDrafts() {
+    try {
+      const raw = localStorage.getItem(AH_HELPDESK_STATE_KEY);
+      if (raw !== ahDraftCacheRaw) {
+        ahDraftCacheRaw = raw;
+        const parsed = raw ? JSON.parse(raw) : null;
+        ahDraftCache = parsed && Array.isArray(parsed.drafts) ? parsed.drafts : [];
+      }
+    } catch (error) {
+      ahDraftCache = [];
+    }
+    return ahDraftCache;
+  }
+
+  function ahRefreshKbApprovals() {
+    return ahJsonFetch('/api/knowledge/approved-refs')
+      .then((data) => {
+        AH.kbRefs = data;
+      })
+      .catch(() => {
+        // 判定できない間は承認済みと表示しない。
+        AH.kbRefs = null;
+      });
+  }
+
+  function ahInstallKbLabels() {
+    // 配信時の差し替え（prototype.ts の patchKbLabels）が呼ぶ。
+    window.__AIHD_KB_APPROVAL__ = (kb) =>
+      ahKbIsDbApproved(kb, ahLocalDrafts(), AH.kbRefs)
+        ? '承認：' + String((kb && kb.approvedBy) || '')
+        : 'DB 未承認';
+    const hd = window.HD;
+    if (hd && typeof hd.kb === 'function') {
+      const originalKb = hd.kb.bind(hd);
+      hd.kb = () => ahLabelHdKb(originalKb(), ahLocalDrafts(), AH.kbRefs);
+    }
+    if (hd && typeof hd.stats === 'function') {
+      const originalStats = hd.stats.bind(hd);
+      // 画面の「承認済みナレッジ」の件数は、AI の根拠に使える DB の件数にする。
+      hd.stats = () =>
+        Object.assign({}, originalStats(), { kb: AH.kbRefs ? Number(AH.kbRefs.count) || 0 : 0 });
+    }
+    void ahRefreshKbApprovals();
+    setInterval(() => void ahRefreshKbApprovals(), 60_000);
   }
 
   /** 承認画面のチェックリスト4件の状態（取得できなければ null）。 */
@@ -2528,6 +2611,8 @@
         return originalAutoAdvance.apply(this, arguments);
       };
     }
+
+    ahInstallKbLabels();
 
     const app = window.App;
     if (app) {

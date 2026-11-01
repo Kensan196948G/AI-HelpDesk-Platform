@@ -386,24 +386,57 @@ describe('POST /knowledge/ui-sync はクライアント指定の status で穴�
 
   it('他人の下書きを書き換えられない（書き換えて自分で承認すると職務分離を抜ける）', async () => {
     const body = kbBody();
-    expect((await sync(AUTHOR, body)).statusCode).toBe(200);
+    const original = await sync(AUTHOR, body);
+    expect(original.statusCode).toBe(200);
 
+    // 下書き番号は担当者間で重なるので拒否はせず、作成者別の行にする。元の行は変わらない。
     const tampered = { ...body, steps: '承認者が差し替えた手順' };
     const overwrite = await sync(APPROVER, tampered);
-    expect(overwrite.statusCode, overwrite.body).toBe(403);
-    expect(overwrite.json().error.code).toBe('NOT_KNOWLEDGE_AUTHOR');
+    expect(overwrite.statusCode, overwrite.body).toBe(200);
+    expect(overwrite.json().knowledge.id).not.toBe(original.json().knowledge.id);
 
-    const stored = await sql<{ steps: string }[]>`
-      SELECT steps FROM knowledge WHERE client_ref = ${body.clientRef}
+    const stored = await sql<{ steps: string; status: string }[]>`
+      SELECT steps, status FROM knowledge WHERE client_ref = ${body.clientRef}
     `;
     expect(stored[0]?.steps).toBe(body.steps);
+    expect(stored[0]?.status).toBe('pending');
 
     const approve = await sync(APPROVER, {
       ...tampered,
       status: 'approved',
       checklist: FULL_CHECKLIST,
     });
-    expect(approve.statusCode, approve.body).toBe(409);
+    // 自分の行が優先されるので、これは自己承認になり AI の根拠にならない。
+    expect(approve.statusCode, approve.body).toBe(200);
+    expect(approve.json().selfApproved).toBe(true);
+    expect(approve.json().aiUsable).toBe(false);
+    await ask(ASKER, '工事写真台帳が起動しません');
+    expect(sentPrompt()).not.toContain('承認者が差し替えた手順');
+  });
+
+  it('同じ下書き番号でも、担当者ごとの KB が別人の承認で公開できる', async () => {
+    const body = kbBody();
+    await sync(AUTHOR, body);
+    const second = kbBody({
+      clientRef: body.clientRef,
+      title: '別の担当者の工事写真台帳の手順',
+      steps: '二人目の手順',
+    });
+    const created = await sync(APPROVER, second);
+    expect(created.statusCode, created.body).toBe(200);
+    const row = created.json().knowledge;
+
+    const listed = await sql<{ client_ref: string }[]>`
+      SELECT client_ref FROM knowledge WHERE id = ${row.id}
+    `;
+    const approved = await sync(AUTHOR, {
+      ...second,
+      clientRef: listed[0]?.client_ref,
+      status: 'approved',
+      checklist: FULL_CHECKLIST,
+    });
+    expect(approved.statusCode, approved.body).toBe(200);
+    expect(approved.json().aiUsable).toBe(true);
   });
 
   it('公開済みの KB は作成者でも書き換えられない', async () => {
@@ -412,6 +445,97 @@ describe('POST /knowledge/ui-sync はクライアント指定の status で穴�
     await sync(APPROVER, { ...body, status: 'approved', checklist: FULL_CHECKLIST });
     const again = await sync(AUTHOR, { ...body, status: 'draft', steps: '公開後の差し替え' });
     expect(again.statusCode, again.body).toBe(409);
+  });
+});
+
+/** 別の接続が行ロック待ちになるまで待つ（競合を決定的に再現する）。 */
+async function waitForRowLockWaiter(): Promise<void> {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    const rows = await sql<{ n: number }[]>`
+      SELECT count(*)::int AS n FROM pg_stat_activity
+      WHERE datname = current_database() AND wait_event_type = 'Lock'
+    `;
+    if ((rows[0]?.n ?? 0) > 0) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error('行ロック待ちになりませんでした');
+}
+
+describe('本文比較と承認の間の競合', () => {
+  it('比較の後に作成者が更新しても、未確認の本文は公開されない', async () => {
+    const body = kbBody();
+    const created = await sync(AUTHOR, body);
+    const id = created.json().knowledge.id as string;
+
+    let approve: Awaited<ReturnType<typeof sync>> | undefined;
+    await sql.begin(async (tx) => {
+      // 作成者の更新が確定する前に承認が始まる。比較は古い本文で通り、承認の更新は行ロックで待つ。
+      await tx`UPDATE knowledge SET steps = '未確認の手順' WHERE id = ${id}`;
+      const pending = sync(APPROVER, { ...body, status: 'approved', checklist: FULL_CHECKLIST });
+      await waitForRowLockWaiter();
+      void pending.then((response) => {
+        approve = response;
+      });
+    });
+    await vi.waitFor(() => expect(approve).toBeTruthy());
+
+    expect(approve?.statusCode, approve?.body).toBe(409);
+    const rows = await sql<{ status: string; steps: string; approver_id: string | null }[]>`
+      SELECT status, steps, approver_id FROM knowledge WHERE id = ${id}
+    `;
+    expect(rows[0]).toEqual({ status: 'pending', steps: '未確認の手順', approver_id: null });
+    const reviews = await sql<{ n: number }[]>`
+      SELECT count(*)::int AS n FROM knowledge_reviews WHERE knowledge_id = ${id}
+    `;
+    expect(reviews[0]?.n).toBe(0);
+  });
+
+  it('作成者の更新が承認と競合したら、公開済みの行を書き換えない', async () => {
+    const body = kbBody();
+    const created = await sync(AUTHOR, body);
+    const id = created.json().knowledge.id as string;
+
+    let edit: Awaited<ReturnType<typeof sync>> | undefined;
+    await sql.begin(async (tx) => {
+      await tx`
+        UPDATE knowledge
+        SET status = 'approved', approver_id = (SELECT id FROM users WHERE email = ${APPROVER}),
+            approved_at = now(), version = version + 1
+        WHERE id = ${id}
+      `;
+      const pending = sync(AUTHOR, { ...body, steps: '公開後の差し替え' });
+      await waitForRowLockWaiter();
+      void pending.then((response) => {
+        edit = response;
+      });
+    });
+    await vi.waitFor(() => expect(edit).toBeTruthy());
+
+    expect(edit?.statusCode, edit?.body).toBe(409);
+    const rows = await sql<{ status: string; steps: string }[]>`
+      SELECT status, steps FROM knowledge WHERE id = ${id}
+    `;
+    expect(rows[0]).toEqual({ status: 'approved', steps: body.steps });
+  });
+});
+
+describe('GET /knowledge/approved-refs', () => {
+  it('AI の根拠に使える行だけを返す（自己承認と承認待ちは返さない）', async () => {
+    const usable = kbBody();
+    await sync(AUTHOR, usable);
+    await sync(APPROVER, { ...usable, status: 'approved', checklist: FULL_CHECKLIST });
+    const selfApproved = kbBody();
+    await sync(AUTHOR, { ...selfApproved, status: 'approved', checklist: FULL_CHECKLIST });
+    const pending = kbBody();
+    await sync(AUTHOR, pending);
+
+    as(ASKER);
+    const response = await app.inject({ method: 'GET', url: '/api/knowledge/approved-refs' });
+    expect(response.statusCode, response.body).toBe(200);
+    const refs = (response.json().items as Array<{ clientRef: string }>).map((i) => i.clientRef);
+    expect(refs).toContain(usable.clientRef);
+    expect(refs).not.toContain(selfApproved.clientRef);
+    expect(refs).not.toContain(pending.clientRef);
   });
 });
 
@@ -424,7 +548,7 @@ describe('外部 AI へ送る内容', () => {
   });
 
   it('送る本文は 1 件あたりの上限で切り、3 件までに収める', async () => {
-    // ui-sync は bodyLimit 16KiB なので、列の上限まで入った行は SQL で作る（案件経路は上限が別）。
+    // 列の上限まで入った行を作る。承認時刻は UPDATE より後へ動かす。
     const long = 'あ'.repeat(4000);
     for (let index = 0; index < 4; index += 1) {
       const published = await publishThroughTwoPeople({

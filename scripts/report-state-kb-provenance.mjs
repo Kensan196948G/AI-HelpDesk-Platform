@@ -92,6 +92,7 @@ export function summarize(states, knowledge, demoKeys, sharedGroups = []) {
       editedAfterApproval: 0,
       missingApprovalRecord: 0,
       usableWithoutKeywords: 0,
+      draftsWithoutClientRef: 0,
     },
   };
 
@@ -118,7 +119,10 @@ export function summarize(states, knowledge, demoKeys, sharedGroups = []) {
   }
 
   for (const row of knowledge) {
-    if (row.status !== 'approved') continue;
+    if (row.status !== 'approved') {
+      if (!row.client_ref && row.status !== 'rejected') report.db.draftsWithoutClientRef += 1;
+      continue;
+    }
     report.db.approved += 1;
     const blocker = dbRowBlocker(row);
     if (blocker) report.db[blocker] += 1;

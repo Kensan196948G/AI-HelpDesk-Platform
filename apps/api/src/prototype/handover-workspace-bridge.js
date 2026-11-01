@@ -1461,7 +1461,13 @@
           '</div>'
         : '') +
       (kbId
-        ? '<div class="hw-alert info"><b>ナレッジ下書き</b> <span class="hw-chip warn">承認待ち（下書き）</span><div class="hw-tc-meta">' +
+        ? '<div class="hw-alert info"><b>ナレッジ下書き</b> ' +
+          (knowledge && knowledge.status === 'approved'
+            ? '<span class="hw-chip ok">公開済み</span>'
+            : knowledge && knowledge.status === 'rejected'
+              ? '<span class="hw-chip warn">差戻し</span>'
+              : '<span class="hw-chip warn">承認待ち（下書き）</span>') +
+          '<div class="hw-tc-meta">' +
           (kbNo ? 'kbNo: <span class="hw-mono">' + esc(kbNo) + '</span>' : 'ID: ' + esc(kbId)) +
           '</div><div class="hw-tc-meta">公開は承認者のレビュー後です（自動公開しません）。</div></div>'
         : '') +

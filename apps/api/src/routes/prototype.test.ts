@@ -9,7 +9,9 @@ import { resetRateLimits } from '../lib/rate-limit.js';
 import { buildServer } from '../server.js';
 import {
   ENSURE_CASE_USERS,
+  KB_LABEL_PATCHES,
   patchCaseUserResolution,
+  patchKbLabels,
   patchStateLoad,
   STATE_DEFAULTS_PATCH,
 } from './prototype.js';
@@ -344,5 +346,38 @@ describe('保存済み状態の欠落キー補完', () => {
     expect(r.undefinedName).toBe('（未定）');
     expect(r.mk).toBe('佐藤 奨太');
     expect(r.named).toBe('田中');
+  });
+});
+
+describe('画面の KB 表示の差し替え（DB で未承認を承認済みと表示しない）', () => {
+  const html = readFileSync(
+    path.join(repoRoot, 'Mirai_AIHelpdesk_Cowork_StepWizard_V3.1_PCinfo_Offline.html'),
+    'utf8',
+  );
+
+  it('差し替え元の文字列が原本にあり、配信時に残らない', () => {
+    const patched = patchKbLabels(html);
+    for (const [from, to] of KB_LABEL_PATCHES) {
+      expect(html, from).toContain(from);
+      expect(patched, from).not.toContain(from);
+      expect(patched).toContain(to);
+    }
+  });
+
+  it('差し替え後の行は JavaScript として解釈でき、判定関数の結果を表示する', () => {
+    const [, expression] = KB_LABEL_PATCHES[0] as readonly [string, string];
+    const render = runInNewContext(`(k)=>{const esc=(v)=>String(v);return \`${expression}\`}`, {
+      __AIHD_KB_APPROVAL__: () => 'DB 未承認',
+    }) as (k: unknown) => string;
+    expect(render({ approvedBy: '渡辺' })).toBe('（DB 未承認）');
+  });
+
+  it('ブリッジが読み込まれていなくても「承認：」を出さない', () => {
+    const [, expression] = KB_LABEL_PATCHES[0] as readonly [string, string];
+    const render = runInNewContext(
+      `(k)=>{const esc=(v)=>String(v);return \`${expression}\`}`,
+      {},
+    ) as (k: unknown) => string;
+    expect(render({ approvedBy: '渡辺' })).toBe('（DB 未承認）');
   });
 });

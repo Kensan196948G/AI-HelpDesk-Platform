@@ -14,6 +14,7 @@ import { redactPII } from '../domain/pii.js';
 import { ApiError, badRequest, conflict, notFound } from '../errors.js';
 import { appendAudit } from '../lib/audit-log.js';
 import { jsonbValue } from '../lib/jsonb-value.js';
+import { listAiUsableRefs } from '../lib/knowledge-search.js';
 import { nextKbNo } from '../lib/numbers.js';
 import { caseSummary, knowledgeDto } from '../lib/serializers.js';
 import { ensureAuthorUser } from '../lib/users.js';
@@ -161,6 +162,11 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
     };
   });
 
+  /** 画面が state の KB を「承認済み」と表示してよいかの判定に使う（docs/64）。 */
+  app.get('/knowledge/approved-refs', { preHandler: authenticateUi }, async () =>
+    listAiUsableRefs(sql),
+  );
+
   app.get('/knowledge/:id', { preHandler: authenticate }, async (request) => {
     const user = request.authUser!;
     const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
@@ -207,15 +213,20 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
     const steps = input.steps !== undefined ? redactPII(input.steps) : null;
 
     await sql.begin(async (tx) => {
-      await tx`
+      // 確認と更新の間に申請・承認されていたら更新しない。
+      const updatedRows = await tx`
         UPDATE knowledge SET
           title = COALESCE(${title?.text ?? null}, title),
           symptom = COALESCE(${symptom?.text ?? null}, symptom),
           cause = COALESCE(${cause?.text ?? null}, cause),
           steps = COALESCE(${steps?.text ?? null}, steps),
           keywords = COALESCE(${input.keywords ?? null}::text[], keywords)
-        WHERE id = ${id}
+        WHERE id = ${id} AND status IN ('draft', 'rejected')
+        RETURNING id
       `;
+      if (updatedRows.length === 0) {
+        throw conflict('承認待ち・公開済みのナレッジは編集できません。');
+      }
       await appendAudit(tx, {
         actorId: user.id,
         action: 'knowledge.update',
@@ -292,14 +303,16 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
             ${jsonbValue(input.checklist)})
         `;
       if (input.decision === 'approved') {
-        await tx`
+        const approvedRows = await tx`
             UPDATE knowledge SET
               status = 'approved',
               approver_id = ${user.id},
               approved_at = now(),
               version = version + 1
-            WHERE id = ${id}
+            WHERE id = ${id} AND status = 'pending'
+            RETURNING id
           `;
+        if (approvedRows.length === 0) throw conflict('承認待ちのナレッジではありません。');
         if (row.case_id) {
           const caseRows = await tx<any[]>`
               SELECT case_no, signal FROM cases WHERE id = ${row.case_id} LIMIT 1
@@ -377,7 +390,8 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
    */
   app.post(
     '/knowledge/ui-sync',
-    { preHandler: authenticateUi, bodyLimit: 16 * 1024 },
+    // 本文は最大 16,000 字（UTF-8 で約 48KiB）。端末記録から作った長い下書きも承認できるようにする。
+    { preHandler: authenticateUi, bodyLimit: 64 * 1024 },
     async (request) => {
       if (!request.uiEmail) throw badRequest('UI の認証情報がありません。');
       const email = request.uiEmail;
@@ -395,10 +409,21 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
 
       const authorId = await ensureAuthorUser(email, actor.name ?? email);
 
+      const isDecision = input.status === 'approved' || input.status === 'rejected';
+      // 画面の下書き番号（DR-001）はブラウザごとの連番で、別の担当者と重なる。
+      // 重なっても他人の行を下書き・申請で上書きせず、作成者別の clientRef で別の行にする。
+      // 上書きを許すと、他人名義のまま差し替えて自分で承認でき、職務分離を抜けられる。
+      const ownClientRef = `${input.clientRef}~${authorId.slice(0, 8)}`;
       const existingRows = await sql<any[]>`
-        SELECT * FROM knowledge WHERE client_ref = ${input.clientRef} LIMIT 1
+        SELECT * FROM knowledge
+        WHERE client_ref IN (${input.clientRef}, ${ownClientRef})
+        ORDER BY (client_ref = ${ownClientRef}) DESC
+        LIMIT 1
       `;
-      const existing = existingRows[0];
+      const collidesWithOther =
+        !isDecision && existingRows[0] && String(existingRows[0].author_id) !== authorId;
+      const existing = collidesWithOther ? undefined : existingRows[0];
+      const newClientRef = collidesWithOther ? ownClientRef : input.clientRef;
       const recordAuthorId = existing ? String(existing.author_id) : authorId;
       const selfApproved = recordAuthorId === authorId;
       // 別アカウントだが同一人物による承認か（selfApproved=false の誤読を防ぐ）。
@@ -413,27 +438,16 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
         throw conflict('公開済みのナレッジは更新できません。');
       }
 
-      const isDecision = input.status === 'approved' || input.status === 'rejected';
-      // 他人の行を下書き・申請で上書きさせない。上書きしてから自分で承認すると、作成者の名義のまま
-      // 自分の本文を公開でき、職務分離を抜ける（PATCH /knowledge/:id と同じ制限）。
-      if (existing && !isDecision && recordAuthorId !== authorId) {
-        throw new ApiError(
-          403,
-          'NOT_KNOWLEDGE_AUTHOR',
-          '他の担当者が作成したナレッジは編集できません。',
-        );
-      }
       // 行の新規作成は下書き権限が要る（承認者だけでは未知の clientRef から作れない）。
       if (isDecision && !existing) await requireHelpdeskActor(email);
       // 他人のナレッジを判定するときは本文を変更しない（作成者名義の改ざんを防ぐ）。
       const lockContent = isDecision && Boolean(existing) && !selfApproved;
       // DX 推進部以外の承認者が判定できるのは申請済みだけ（下書き・差戻し中は見えないため）。
-      if (
-        isDecision &&
-        existing &&
-        existing.status !== 'pending' &&
-        !(await isHelpdeskActor(email))
-      ) {
+      const decidableStatuses =
+        isDecision && existing && !(await isHelpdeskActor(email))
+          ? ['pending']
+          : ['draft', 'pending', 'rejected'];
+      if (isDecision && existing && !decidableStatuses.includes(existing.status)) {
         throw conflict('承認待ちのナレッジではありません。');
       }
       // 承認者が確認した本文と保存済みの本文が違えば公開しない（確認後の更新を見逃さない）。
@@ -484,7 +498,7 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
               client_ref, version
             ) VALUES (
               ${kbNo}, ${title.text}, ${symptom.text}, ${cause.text}, ${steps.text},
-              ${input.keywords}, 'draft', ${authorId}, ${input.clientRef}, 1
+              ${input.keywords}, 'draft', ${authorId}, ${newClientRef}, 1
             )
             RETURNING id
           `;
@@ -494,20 +508,23 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
             action: 'knowledge.create',
             targetType: 'knowledge',
             targetId: id,
-            detail: { kbNo, clientRef: input.clientRef, via: 'ui', actorEmail: email },
+            detail: { kbNo, clientRef: newClientRef, via: 'ui', actorEmail: email },
           });
         }
 
         if (!lockContent) {
-          await tx`
+          // 確認の後に公開された行は書き換えない。
+          const contentRows = await tx`
             UPDATE knowledge SET
               title = ${title.text},
               symptom = ${symptom.text},
               cause = ${cause.text},
               steps = ${steps.text},
               keywords = ${input.keywords}
-            WHERE id = ${id}
+            WHERE id = ${id} AND status <> 'approved'
+            RETURNING id
           `;
+          if (contentRows.length === 0) throw conflict('公開済みのナレッジは更新できません。');
         }
 
         if (input.status === 'draft' || input.status === 'pending') {
@@ -522,18 +539,29 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
             });
           }
         } else if (input.status === 'approved') {
-          await tx`
-            INSERT INTO knowledge_reviews (knowledge_id, reviewer_id, decision, comment, checklist)
-            VALUES (${id}, ${authorId}, 'approved', ${input.comment ?? ''},
-              ${jsonbValue(input.checklist)})
-          `;
-          await tx`
+          // 承認者が確認した本文のままのときだけ公開する。事前の比較との間に作成者が更新しても、
+          // 行ロックの後で条件を評価し直すので、未確認の本文は公開されない。
+          const approvedRows = await tx`
             UPDATE knowledge SET
               status = 'approved',
               approver_id = ${authorId},
               approved_at = now(),
               version = version + 1
             WHERE id = ${id}
+              AND status IN ${tx(decidableStatuses)}
+              AND title = ${title.text}
+              AND symptom = ${symptom.text}
+              AND cause = ${cause.text}
+              AND steps = ${steps.text}
+            RETURNING id
+          `;
+          if (approvedRows.length === 0) {
+            throw conflict('確認後に本文が更新されています。一覧を更新して確認し直してください。');
+          }
+          await tx`
+            INSERT INTO knowledge_reviews (knowledge_id, reviewer_id, decision, comment, checklist)
+            VALUES (${id}, ${authorId}, 'approved', ${input.comment ?? ''},
+              ${jsonbValue(input.checklist)})
           `;
           await appendAudit(tx, {
             actorId: authorId,
@@ -550,12 +578,17 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
             },
           });
         } else {
+          const rejectedRows = await tx`
+            UPDATE knowledge SET status = 'rejected'
+            WHERE id = ${id} AND status IN ${tx(decidableStatuses)}
+            RETURNING id
+          `;
+          if (rejectedRows.length === 0) throw conflict('承認待ちのナレッジではありません。');
           await tx`
             INSERT INTO knowledge_reviews (knowledge_id, reviewer_id, decision, comment, checklist)
             VALUES (${id}, ${authorId}, 'rejected', ${input.comment ?? ''},
               ${jsonbValue(input.checklist ?? {})})
           `;
-          await tx`UPDATE knowledge SET status = 'rejected' WHERE id = ${id}`;
           await appendAudit(tx, {
             actorId: authorId,
             action: 'knowledge.reject',

@@ -56,6 +56,7 @@ AUDIT_DATABASE_URL=<接続先> SHARED_IDENTITY_GROUPS=<本番と同じ値> \
 | `db.usableSharedIdentity` | 使えるが、承認者と作成者が同一人物の別アカウント | 記録のみ。別の人物が画面で承認できるようになったら、除外するか判断する（§7） |
 | `db.editedAfterApproval` | 承認後に行が更新された | 差分を確認して再承認する |
 | `db.usableWithoutKeywords` | 使えるがキーワードが空 | 題名で照合されるため必須ではない。精度が足りなければ別途補う |
+| `db.draftsWithoutClientRef` | 承認前で `client_ref` がない（この修正前の端末記録の下書きなど）。画面から承認できない | 自動で書き換えない。必要なら起票し直す |
 
 公開済みの行は `ui-sync` で変更できないので、再承認には新しい下書きとして起票し直す。`approver_id` を SQL で書き換えない。
 
@@ -68,6 +69,14 @@ AUDIT_DATABASE_URL=<接続先> SHARED_IDENTITY_GROUPS=<本番と同じ値> \
 `assist-bridge.js` は引継ぎの承認後に `ui-sync` で KB の公開を別に保存し、両方の結果を分けて表示する。
 公開に失敗しても引継ぎの承認は戻さず、未公開と伝える。行は申請中のまま残るので「サーバ下書き」から承認し直せる。
 
+### 引継ぎワークスペースの「ナレッジ下書きを作成」
+
+`POST /api/terminal/sessions/:id/knowledge-draft` は、`client_ref = terminal-<session id>`、`status='pending'` で行を作る。
+
+- 画面に下書きを編集する導線はなく、作成の時点で「承認待ち」と表示していたので、実際の状態を表示に合わせた。自動公開はしない。
+- 承認者は ⑥ 承認者の確認の「サーバ下書き」から承認する。DX 推進部以外の承認者にも一覧に出る。
+- 既存の `client_ref` なしの行は書き換えない。件数は検出スクリプトの `db.draftsWithoutClientRef` で確認する。必要なら作成者が別の手順で起票し直す。
+
 ## 6. `POST /api/knowledge/ui-sync` の調査結果
 
 クライアントは `status` を指定できるが、権限はサーバーで判定している。
@@ -78,15 +87,17 @@ AUDIT_DATABASE_URL=<接続先> SHARED_IDENTITY_GROUPS=<本番と同じ値> \
 | ヘルプデスクでない承認者が未知の `clientRef` で `approved` | `requireHelpdeskActor` | 403 |
 | `approverId` / `version` / `approved` の指定 | zod が捨てる | 無視される |
 | 公開済みの行の更新 | `conflict` | 409 |
-| **他人の行を `draft` / `pending` で上書き** | **判定なし（修正前）** | **本文を差し替えて自分で承認でき、職務分離を抜けられた。403 `NOT_KNOWLEDGE_AUTHOR` に修正** |
+| **他人の行を `draft` / `pending` で上書き** | **判定なし（修正前）** | **本文を差し替えて自分で承認でき、職務分離を抜けられた。作成者別の別の行（`<clientRef>~<作成者 ID 先頭 8 桁>`）に保存し、元の行を変えないように修正** |
+| 本文比較と承認の競合 | 条件付き更新 | 承認の `UPDATE` に状態と本文の一致を条件に入れた。行ロックの後で評価し直すので、比較の直後に作成者が更新しても 409 で止まる。作成者の更新も `status <> 'approved'` を条件にした（PATCH と `/review` も同様） |
 | 自己承認（`ALLOW_SELF_APPROVAL=true`） | 設定で許可 | 行は `approved` になるが AI の根拠にしない。応答の `aiUsable=false` で画面に伝える |
+
+下書き番号（`DR-001`）はブラウザごとの連番で担当者間で重なる。別の行にするのはこのためで、拒否すると二人目の担当者が保存できなくなる。
+本文の上限は計 16,000 字なので、`bodyLimit` を 64KiB に広げた（16KiB では端末記録の長い下書きを承認できない）。
 
 ## 7. 影響と残課題
 
 - 相談者の AI 回答から、原本 HTML のデモ KB（KB-101 系）が根拠として消える。DB に承認済み KB がなければ「担当者へ引き継いでください」が増える。
-- 画面内の決定ルールと `HD.kb()`（ブラウザ内の検索、API 障害時の `originalKb`）は引き続き state の KB を使う。本人のブラウザだけで完結し、サーバーの根拠にはならない。
+- 画面内の決定ルールと `HD.kb()`（ブラウザ内の検索、API 障害時の `originalKb`）は引き続き state の KB を使う。本人のブラウザだけで完結し、サーバーの根拠にはならない。DB で未承認のものは承認済みと表示しない（[docs/14](./14-prototype-ui-integration.md) 2-12）。
 - `findApprovedKnowledge` は更新順に 100 件までを照合する。承認済みが 100 件を超えると古い KB は候補から外れる。
-- `ui-sync` の本文比較と承認の更新は別の文で行う。比較の直後に作成者が更新すると未確認の本文が承認される窓が残る。
 - 職務分離はアカウント単位である。[docs/61](./61-approvers-and-owners-20261031.md) §7 のとおり、画面から承認できるのは現在人物 A の 2 アカウントだけなので、同一人物の承認を除くと新しい KB が AI に届かなくなる。別の人物が画面で承認できるようになった時点で、除外を検討する。
-- 引継ぎワークスペースの「ナレッジ下書きを作成」（`POST /api/terminal/sessions/:id/knowledge-draft`）は `client_ref` なしで行を作る。`/knowledge/pending` は `client_ref` のある行だけを返し、画面のブリッジは `/knowledge/:id/submit`・`/review` を呼ばない。そのためこの下書きは画面から承認できず、AI の根拠にならない。
 - `MIN_SCORE` は案件診断（`cases.ts`）が示す KB にも適用される。`scripts/eval` は実行していない。
