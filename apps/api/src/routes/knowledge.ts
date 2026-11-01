@@ -414,6 +414,15 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
       }
 
       const isDecision = input.status === 'approved' || input.status === 'rejected';
+      // 他人の行を下書き・申請で上書きさせない。上書きしてから自分で承認すると、作成者の名義のまま
+      // 自分の本文を公開でき、職務分離を抜ける（PATCH /knowledge/:id と同じ制限）。
+      if (existing && !isDecision && recordAuthorId !== authorId) {
+        throw new ApiError(
+          403,
+          'NOT_KNOWLEDGE_AUTHOR',
+          '他の担当者が作成したナレッジは編集できません。',
+        );
+      }
       // 行の新規作成は下書き権限が要る（承認者だけでは未知の clientRef から作れない）。
       if (isDecision && !existing) await requireHelpdeskActor(email);
       // 他人のナレッジを判定するときは本文を変更しない（作成者名義の改ざんを防ぐ）。
@@ -565,7 +574,9 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
       });
 
       const updated = await loadKnowledge(savedId);
-      return { knowledge: knowledgeDto(updated), selfApproved, sharedIdentity };
+      // AI の根拠に使われるか（findApprovedKnowledge と同じ職務分離の条件）。画面の案内に使う。
+      const aiUsable = updated?.status === 'approved' && !selfApproved && !sharedIdentity;
+      return { knowledge: knowledgeDto(updated), selfApproved, sharedIdentity, aiUsable };
     },
   );
 }

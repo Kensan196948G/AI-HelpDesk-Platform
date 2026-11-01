@@ -130,7 +130,7 @@
 - `GET /api/device/inventory` は `?deviceId=<browser UUID>` を指定するとそのブラウザ端末を基準にする。省略時は最新のブラウザ端末。
 - `/api/device/agent` だけは Cloudflare Access のパス限定 bypass（アプリ ID `250fa30a-d49c-4a83-b773-8fbdec3c0b6a`）。人間の UI / API は Access 必須。
 - `/api/ai/answer` の応答に `device: {source, collectedAt}` を含む。PC コンテキストから IP・シリアル・資産番号・メールは除外する。
-- `/api/ai/answer` の根拠は、DB の承認済みナレッジに加え、**本人の helpdesk 画面状態で承認済み（`status: active`）のナレッジ**も対象にする。`sources[].kbNo` は画面の KB 番号（例: `KB-111`）と一致する。使用停止中・形式不正の要素は除外し、他ユーザーの状態は参照しない（`lib/prototype-knowledge.ts`）。
+- `/api/ai/answer` の根拠は DB の承認済みナレッジだけ（承認者 ≠ 作成者、承認後の更新なし）。全相談者に共通で、`sources[]` に `version` を含む。ブラウザが送る `prototype_states` の KB は根拠にしない（[docs/64](./64-kb-approved-provenance.md)）。
 
 ## 6-3. 最終報告書 / 遠隔支援
 

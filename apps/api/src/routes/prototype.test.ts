@@ -130,7 +130,7 @@ describe('prototype UI integration', () => {
     expect(body.prompt.user).toContain('共有フォルダ');
   });
 
-  it('画面で承認したナレッジ（helpdesk 状態の active KB）を AI 回答の根拠に使う', async () => {
+  it('helpdesk 状態の active KB は AI 回答の根拠にしない（ブラウザが送る JSON のため）', async () => {
     const kbNo = `KB-T${Date.now().toString(36)}`;
     const put = await app.inject({
       method: 'PUT',
@@ -160,8 +160,8 @@ describe('prototype UI integration', () => {
     });
     expect(response.statusCode, response.body).toBe(200);
     const body = response.json();
-    expect(body.sources.map((source: { kbNo: string }) => source.kbNo)).toContain(kbNo);
-    expect(body.answer).toContain(kbNo);
+    expect(body.sources.map((source: { kbNo: string }) => source.kbNo)).not.toContain(kbNo);
+    expect(body.answer).not.toContain(kbNo);
   });
 
   it('状態に $ を含んでも HTML が壊れず、$$ が縮まない（String.replace の特殊パターン対策）', async () => {

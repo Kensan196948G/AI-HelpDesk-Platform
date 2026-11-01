@@ -5,12 +5,13 @@ import { buildDeviceAiContext } from '../domain/device.js';
 import { redactPII } from '../domain/pii.js';
 import { loadClientInventory } from '../lib/device-inventory.js';
 import { findApprovedKnowledge } from '../lib/knowledge-search.js';
-import { loadPrototypeKnowledge } from '../lib/prototype-knowledge.js';
 
 export interface AiSource {
   id: string;
   kbNo: string;
   title: string;
+  /** 承認された版。 */
+  version?: number;
 }
 
 export interface AiPrompt {
@@ -43,10 +44,28 @@ const SYSTEM_PROMPT = [
   '- 回答に根拠がある場合は、最後に「根拠: KB-...」の形式で示す。根拠に使わないKB（検索候補）は列挙しない。該当がない場合は「根拠: 該当なし」とだけ示す。',
 ].join('\n');
 
+/**
+ * 外部 AI へ送る KB 本文の上限（1 件あたり）。件数は scoreKnowledge の上限（3 件）で決まる。
+ * DB の列は symptom/cause 4000 字・steps 8000 字まで入るので、上限がないと 1 件で約 16,000 字になる。
+ */
+const KB_PROMPT_LIMITS = { title: 160, symptom: 600, cause: 600, steps: 1500 } as const;
+
+function clip(text: string, limit: number): string {
+  return text.length > limit ? `${text.slice(0, limit)}…（以下省略）` : text;
+}
+
 function buildKnowledgeContext(knowledge: KnowledgeLike[]): string {
   if (knowledge.length === 0) return '（該当する承認済みナレッジなし）';
   return knowledge
-    .map((k) => `[${k.kbNo}] ${k.title}\n症状: ${k.symptom}\n原因: ${k.cause}\n手順:\n${k.steps}`)
+    .map((k) => {
+      const label = k.version ? `${k.kbNo} v${k.version}` : k.kbNo;
+      return [
+        `[${label}] ${clip(k.title, KB_PROMPT_LIMITS.title)}`,
+        `症状: ${clip(k.symptom, KB_PROMPT_LIMITS.symptom)}`,
+        `原因: ${clip(k.cause, KB_PROMPT_LIMITS.cause)}`,
+        `手順:\n${clip(k.steps, KB_PROMPT_LIMITS.steps)}`,
+      ].join('\n');
+    })
     .join('\n\n---\n\n');
 }
 
@@ -78,7 +97,7 @@ function fallbackAnswer(knowledge: KnowledgeLike[]): string {
 }
 
 function toSources(knowledge: KnowledgeLike[]): AiSource[] {
-  return knowledge.map((k) => ({ id: k.id, kbNo: k.kbNo, title: k.title }));
+  return knowledge.map((k) => ({ id: k.id, kbNo: k.kbNo, title: k.title, version: k.version }));
 }
 
 /**
@@ -316,14 +335,8 @@ export async function answerWithDeepSeek(
 ): Promise<AiAnswer> {
   const redacted = redactPII(input);
   const intent = detectIntent('', redacted.text);
-  // 画面で承認・公開したナレッジ（本人の helpdesk 状態）も根拠に含める。
-  const prototypeKnowledge = email ? await loadPrototypeKnowledge(sql, email).catch(() => []) : [];
-  const knowledge = await findApprovedKnowledge(
-    sql,
-    redacted.text,
-    intent.keywords,
-    prototypeKnowledge,
-  );
+  // 根拠は DB の承認済みナレッジだけ。ブラウザが送る state の KB は承認済みとして扱わない。
+  const knowledge = await findApprovedKnowledge(sql, redacted.text, intent.keywords);
   const sources = toSources(knowledge);
   const inventory = email
     ? await loadClientInventory(email, browserDeviceId).catch(() => null)

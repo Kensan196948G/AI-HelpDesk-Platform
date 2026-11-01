@@ -30,6 +30,10 @@
       ahPendingApprovePayload(item, checklist, comment),
     pendingRejectPayload: (item, reason) => ahPendingRejectPayload(item, reason),
     pendingSectionHtml: (items, errorCode) => ahPendingSectionHtml(items, errorCode),
+    // 引継ぎの承認と KB 公開を分ける処理の単体テスト用。
+    handoverApprovalNotice: (approved, kb) => ahHandoverApprovalNotice(approved, kb),
+    publishKnowledgeAfterHandover: (full, checklist, comment) =>
+      ahPublishKnowledgeAfterHandover(full, checklist, comment),
   };
 
   const AH = {
@@ -1010,7 +1014,7 @@
     const at = ahFormatHandoverDate(c.handoverApprovedAt);
     const by = String(c.handoverApprovedBy || '');
     if (!at && !by) return '';
-    const kind = Boolean(c.handoverSelfApproved) ? '自己承認' : '別ID承認';
+    const kind = c.handoverSelfApproved ? '自己承認' : '別ID承認';
     const rows = [];
     if (by) rows.push('承認者: ' + ahEsc(by));
     if (at) rows.push('承認日時: ' + ahEsc(at) + '（' + kind + '）');
@@ -1369,6 +1373,53 @@
     });
   }
 
+  const AH_KB_NOT_FOR_AI =
+    '作成者本人または同一人物の承認のため、AI の根拠には使いません（別の承認者の承認が必要です）';
+
+  /**
+   * 原本の完了モーダルは「次回から AI の根拠に使う」と固定で表示する。
+   * サーバーが AI の根拠にしないと判定した場合だけ、文言を実際の結果に置き換える（DOM は変えない）。
+   */
+  function ahCorrectReflectModal(reason) {
+    if (!document || typeof document.querySelector !== 'function') return;
+    const step = document.querySelector('#rs4 span:last-child');
+    if (step) step.textContent = 'AI の根拠には使いません';
+    const note = document.querySelector('#rsdone .note');
+    if (note) note.textContent = reason;
+  }
+
+  /** 引継ぎの承認後に、KB 公開を別の判定としてサーバーへ保存する。失敗しても引継ぎの承認は戻さない。 */
+  function ahPublishKnowledgeAfterHandover(full, checklist, comment) {
+    if (!full) return Promise.resolve({ published: false, reason: '下書きを取得できません' });
+    return ahSyncKnowledge(full, 'approved', { checklist: checklist, comment: comment })
+      .then((data) => ({ published: true, aiUsable: Boolean(data && data.aiUsable) }))
+      .catch((error) => ({ published: false, reason: ahUiSyncErrorLabel(error) }));
+  }
+
+  /** 引継ぎの承認と KB 公開の結果を、混同しない文言にする（純粋関数）。 */
+  function ahHandoverApprovalNotice(approved, kb) {
+    const source = approved || {};
+    const head = source.selfApproved
+      ? '自分の対応した案件を自己承認しました（DX 推進部の別の担当者が承認することが望ましい）。'
+      : '引継ぎの完了を承認しました（承認者: ' + String(source.approvedByName || '') + '）。';
+    if (kb && kb.published && kb.aiUsable) {
+      return {
+        text: head + 'ナレッジも公開し、次の相談から AI の根拠に使います。',
+        tone: source.selfApproved ? 'bad' : '',
+      };
+    }
+    if (kb && kb.published) {
+      return { text: head + 'ナレッジは公開しましたが、' + AH_KB_NOT_FOR_AI + '。', tone: 'bad' };
+    }
+    return {
+      text:
+        head +
+        'ナレッジは公開されていません（AI の根拠になりません）。サーバ下書きから承認してください：' +
+        String((kb && kb.reason) || '不明なエラー'),
+      tone: 'bad',
+    };
+  }
+
   /** 承認画面のチェックリスト4件の状態（取得できなければ null）。 */
   function ahApproveChecklistValues() {
     const boxes = ahApproveChecklist();
@@ -1623,7 +1674,11 @@
       item._localState = 'approved';
       if (kbNo) item.kbNo = kbNo;
       if (typeof toast === 'function') {
-        toast('サーバのナレッジを承認しました' + (kbNo ? '（' + kbNo + '）' : ''), 'ok');
+        if (data && data.aiUsable === false) {
+          toast('承認しましたが、' + AH_KB_NOT_FOR_AI, 'bad');
+        } else {
+          toast('サーバのナレッジを承認しました' + (kbNo ? '（' + kbNo + '）' : ''), 'ok');
+        }
       }
       // 承認済みは pending 一覧から消えるため、サーバから取り直す。
       await ahRefreshPending(true);
@@ -1714,7 +1769,14 @@
       checklist: ahApproveChecklistValues(),
       comment: ahApproveComment(),
     })
-      .then(() => originalApprove.apply(context, args))
+      .then((data) => {
+        const result = originalApprove.apply(context, args);
+        if (data && data.aiUsable === false) {
+          ahCorrectReflectModal(AH_KB_NOT_FOR_AI + '。');
+          if (typeof toast === 'function') toast(AH_KB_NOT_FOR_AI, 'bad');
+        }
+        return result;
+      })
       .catch((error) => {
         console.error('[assist] knowledge sync (approve) failed', error);
         if (typeof toast === 'function') {
@@ -2505,6 +2567,14 @@
           AH.approving = true;
           const args = arguments;
           const handoverId = target.handoverId;
+          // 引継ぎの承認は案件の完了で、KB の公開ではない。公開は ui-sync で別に保存する。
+          // 原本の承認処理が画面を描き直す前に、チェックリストと本文を控える。
+          const kbFull =
+            window.HD && typeof window.HD.draftForSync === 'function'
+              ? window.HD.draftForSync(id)
+              : null;
+          const kbChecklist = ahApproveChecklistValues();
+          const kbComment = ahApproveComment();
           ahJsonFetch('/api/case-handovers/' + encodeURIComponent(handoverId) + '/approve', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -2530,21 +2600,18 @@
                 return ahRecoverHandoverAfterLocalApproveFailure(handoverId, localError);
               }
               const approved = data && data.handover ? data.handover : {};
-              if (typeof toast === 'function') {
-                if (approved.selfApproved) {
-                  toast(
-                    '自分の対応した案件を自己承認しました（DX 推進部の別の担当者が承認することが望ましい）',
-                    'bad',
-                  );
-                } else {
-                  toast(
-                    'ナレッジを承認しました（承認者: ' +
-                      String(approved.approvedByName || '') +
-                      '）',
+              return ahPublishKnowledgeAfterHandover(kbFull, kbChecklist, kbComment).then((kb) => {
+                if (!kb.published || !kb.aiUsable) {
+                  ahCorrectReflectModal(
+                    kb.published
+                      ? AH_KB_NOT_FOR_AI + '。'
+                      : 'ナレッジは公開されていません。AI の根拠にはなりません。',
                   );
                 }
-              }
-              return undefined;
+                const notice = ahHandoverApprovalNotice(approved, kb);
+                if (typeof toast === 'function') toast(notice.text, notice.tone);
+                return undefined;
+              });
             })
             .catch((error) => {
               console.error('[assist] approve failed', error);

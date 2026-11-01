@@ -9,6 +9,8 @@ export interface KnowledgeLike {
   cause: string;
   steps: string;
   keywords: string[];
+  /** 承認された版（DB の knowledge.version）。出典とプロンプトに示す。 */
+  version?: number;
 }
 
 export type IntentId =
