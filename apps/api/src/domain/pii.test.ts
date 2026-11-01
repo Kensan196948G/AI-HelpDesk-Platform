@@ -66,3 +66,17 @@ describe('redactPII（表記ゆれ）', () => {
     expect(redactPII(text).text).toBe(text);
   });
 });
+
+describe('UUID の中の数字を電話番号と誤認しない', () => {
+  it('実行 ID をそのまま残し、横の電話番号は伏せる', () => {
+    const id = '23b8f117-7833-441e-83b7-7ad081537ae9';
+    const result = redactPII(`実行ID ${id} 連絡先 090-1234-5678`);
+    expect(result.text).toContain(id);
+    expect(result.text).toContain('[電話番号]');
+    expect(result.text).not.toContain('090-1234-5678');
+  });
+
+  it('UUID に見えない 16 進の並びの電話番号は従来どおり伏せる', () => {
+    expect(redactPII('tel09012345678').text).toContain('[電話番号]');
+  });
+});

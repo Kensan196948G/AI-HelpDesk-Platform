@@ -73,13 +73,22 @@ const RULES: Array<{ type: PiiFinding['type']; pattern: RegExp; replacement: str
  * 相談本文・解決記録・ナレッジ下書きの保存前に PII を伏せ字にする。
  * 完全な PII 検出ではなく、MVP で扱う代表的なパターンに限定する。
  */
+const UUID_PATTERN = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+
 export function redactPII(input: string): RedactionResult {
   let text = input;
   const findings: PiiFinding[] = [];
 
   for (const rule of RULES) {
     let count = 0;
-    text = text.replace(rule.pattern, () => {
+    // UUID の 16 進の中の数字の並びは電話番号ではない。実行 ID を壊すと追跡できなくなる。
+    const uuids =
+      rule.type === 'phone'
+        ? [...text.matchAll(UUID_PATTERN)].map((m) => [m.index, m[0].length])
+        : [];
+    text = text.replace(rule.pattern, (match: string, ...rest: unknown[]) => {
+      const offset = rest.find((value) => typeof value === 'number') as number;
+      if (uuids.some(([start, length]) => offset >= start && offset < start + length)) return match;
       count += 1;
       return rule.replacement;
     });
