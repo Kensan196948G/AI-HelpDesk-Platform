@@ -2480,6 +2480,59 @@ describe('共通支援セッション（Mock: ヘルパー / RSP / 名簿 / PII 
       expect((await executionRows(session.id))[0]?.status).toBe('rejected_at_start');
     });
 
+    it('期限切れの後の状態: 報告済みにも停止確認済みにも数えず、監査を残し、期限で識別子を消す', async () => {
+      const { session, op } = await revokedDuringRun();
+      await ageRevocation(session.helperId, '25 hours');
+      await sweepSupportSessions();
+      const before = (await call(OWNER, 'GET', base(session.id))).json().session;
+      expect(before.executions[0].phase).toBe('stop_unconfirmed');
+      expect(before.executions[0].verification).toBe('unverified');
+      expect(before.executions[0].reportExpiredAt).not.toBeNull();
+      expect(before.executionSummary).toMatchObject({
+        reported: 0,
+        stopConfirmed: 0,
+        stopUnconfirmed: 1,
+      });
+
+      // 期限を過ぎた報告は保存しない。再度届いても数えない。
+      const late = await report(session.token, op, resultBody(op, FOLDER_OUTPUT));
+      expect(late.statusCode).toBe(410);
+      const stored = (await executionRows(session.id))[0];
+      expect(stored?.result_received_at).toBeNull();
+      expect(stored?.normalized_output).toBeNull();
+      expect(stored?.evidence).toBe(false);
+      expect(stored?.verify_ok).toBeNull();
+      expect(stored?.stopped_at).toBeNull();
+      const audits = await sql<{ detail: Record<string, unknown> }[]>`
+        SELECT detail FROM audit_log
+        WHERE action = 'support_session.report_expired' AND target_id = ${session.id}
+        ORDER BY created_at
+      `;
+      expect(audits.map((row) => row.detail.source)).toEqual(['sweep', 'report']);
+
+      await sql`UPDATE support_sessions SET ended_at = now() - interval '400 days' WHERE id = ${session.id}`;
+      await sweepSupportSessions();
+      const after = (await executionRows(session.id))[0];
+      expect(after?.sid).toBeNull();
+      expect(after?.helper_id).toBeNull();
+      expect(after?.stop_outcome).toBe('stop_unconfirmed');
+      expect(after?.report_expired_at).not.toBeNull();
+      const view = (await call(OWNER, 'GET', base(session.id))).json();
+      expect(view.session.endReason).toBe('requester_revoked');
+    });
+
+    it('失効の後でも期限内の結果は受け付け、次へ進めない', async () => {
+      const { session, op } = await revokedDuringRun();
+      const response = await report(session.token, op, resultBody(op, FOLDER_OUTPUT));
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({ accepted: false, reason: 'LATE_RESULT' });
+      const view = (await call(OWNER, 'GET', base(session.id))).json().session;
+      expect(view.executions[0].lateResult).toBe(true);
+      expect(view.executions[0].verification).toBe('unverified');
+      expect(view.executionSummary.reported).toBe(1);
+      expect(view.status).toBe('revoked');
+    });
+
     it('報告が来ないまま期限を過ぎた実行は sweep で停止未確認として残す', async () => {
       const { session } = await revokedDuringRun();
       await ageRevocation(session.helperId, '25 hours');

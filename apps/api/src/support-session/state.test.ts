@@ -1,5 +1,13 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { executionPhase, executionVerification, summarizeExecutions } from './state.js';
+import { repoRoot } from '../config.js';
+import {
+  ASSIST_LIMITS,
+  executionPhase,
+  executionVerification,
+  summarizeExecutions,
+} from './state.js';
 
 const row = (fields: Record<string, unknown> = {}) => ({
   status: 'queued',
@@ -83,5 +91,13 @@ describe('実行の段階', () => {
       stopUnconfirmed: 1,
       notRun: 1,
     });
+  });
+});
+
+describe('端末のローカル保持期限（scripts/windows/folder-helper.ps1）', () => {
+  it('報告専用トークンの期限は、サーバの報告の受付より長い', () => {
+    const script = readFileSync(path.join(repoRoot, 'scripts/windows/folder-helper.ps1'), 'utf8');
+    const hours = Number(/\$script:ReportTokenRetentionHours = (\d+)/.exec(script)?.[1]);
+    expect(hours).toBeGreaterThan(ASSIST_LIMITS.revokedReportHours);
   });
 });

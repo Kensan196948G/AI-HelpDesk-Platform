@@ -54,6 +54,14 @@ $script:SkillRunCapability = 'skill_run/1'
 $script:RunRecordGraceMinutes = 60
 $script:RunRecordMaxRetentionHours = 168
 $script:RunRecordCleanupIntervalMinutes = 60
+# 恒久オフライン端末のローカル保持期限（docs/63 §12）。通信なしで判定する。
+# 報告専用トークン: サーバの受付は失効 + 24 時間まで。引き渡しは失効の後なので、受付に 24 時間の余裕を足す。
+$script:ReportTokenRetentionHours = 48
+# サーバと連絡できないままトークンを持ち続ける上限。実行記録の保持の上限に揃える。
+$script:LocalNoContactRetentionHours = 168
+$script:LocalClockSkewHours = 24
+$script:LastContactWriteIntervalMinutes = 60
+$script:LastContactWritten = $null
 $script:RunClosedKinds = @('sent', 'expired', 'rejected', 'abandoned')
 $script:RunCleanupLast = $null
 
@@ -2174,7 +2182,7 @@ function Initialize-StateDirectory {
 }
 
 function Get-StatePath {
-  param([Parameter(Mandatory)][ValidateSet('token.dat', 'report-token.dat', 'config.json', 'pairing-code.txt', 'helper.log', 'revoked.flag')][string]$Name)
+  param([Parameter(Mandatory)][ValidateSet('token.dat', 'report-token.dat', 'config.json', 'pairing-code.txt', 'helper.log', 'revoked.flag', 'last-contact.txt')][string]$Name)
   return [IO.Path]::Combine((Get-StateDirectory), $Name)
 }
 
@@ -2648,6 +2656,73 @@ function Set-UnsentRunsAbandoned {
   foreach ($id in @(Get-UnsentRunIds -Store $Store)) { Set-RunState -OpId $id -Kind 'abandoned' -Store $Store }
 }
 
+function Test-LocalRetentionExpired {
+  # 保持期限を過ぎたか。時計が戻って記録が未来になった場合は、期限を延ばさず過ぎたものとして扱う。
+  param([Parameter(Mandatory)][DateTimeOffset]$RecordTime, [Parameter(Mandatory)][DateTimeOffset]$Now, [Parameter(Mandatory)][double]$Hours)
+  if ($RecordTime -gt $Now.AddHours($script:LocalClockSkewHours)) { return $true }
+  return ($Now -ge $RecordTime.AddHours($Hours))
+}
+
+function Update-LastContact {
+  # サーバと連絡できた時刻。poll のたびに書かない。
+  param([Parameter(Mandatory)][DateTimeOffset]$Now)
+  if ($null -ne $script:LastContactWritten -and $Now -lt $script:LastContactWritten.AddMinutes($script:LastContactWriteIntervalMinutes)) { return }
+  [IO.File]::WriteAllText((Get-StatePath -Name 'last-contact.txt'), 'contact')
+  $script:LastContactWritten = $Now
+}
+
+function Invoke-LocalStateRetention {
+  # 通信なしで保持期限を適用する。トークンを引退させたら $true（呼び出し側は常駐をやめる）。
+  # 期限切れの報告は abandoned で閉じる。報告済みにはならない。サーバ側は停止未確認のまま残る。
+  param([Parameter(Mandatory)][DateTimeOffset]$Now)
+  $retired = $false
+  $reportPath = Get-StatePath -Name 'report-token.dat'
+  if (Test-Path -LiteralPath $reportPath) {
+    # 引き渡しの時刻。再送では書き換えないので延びない。
+    $handedOff = [DateTimeOffset][IO.File]::GetLastWriteTimeUtc($reportPath)
+    if (Test-LocalRetentionExpired -RecordTime $handedOff -Now $Now -Hours $script:ReportTokenRetentionHours) {
+      Set-UnsentRunsAbandoned -Store 'report-runs'
+      Remove-StateFile -Name 'report-token.dat'
+      Write-HelperLog -EventName 'report_token_expired_local'
+    }
+  }
+  $tokenPath = Get-StatePath -Name 'token.dat'
+  if (Test-Path -LiteralPath $tokenPath) {
+    # 登録（トークンの作成）と最後の連絡の新しいほう。再登録の直後に古い連絡の記録で引退しない。
+    $lastContact = [DateTimeOffset][IO.File]::GetLastWriteTimeUtc($tokenPath)
+    $contactPath = Get-StatePath -Name 'last-contact.txt'
+    if (Test-Path -LiteralPath $contactPath) {
+      $contacted = [DateTimeOffset][IO.File]::GetLastWriteTimeUtc($contactPath)
+      if ($contacted -gt $lastContact) { $lastContact = $contacted }
+    }
+    if (Test-LocalRetentionExpired -RecordTime $lastContact -Now $Now -Hours $script:LocalNoContactRetentionHours) {
+      Set-UnsentRunsAbandoned
+      Remove-StateFile -Name 'token.dat'
+      Remove-StateFile -Name 'pairing-code.txt'
+      # 再開には install-folder-helper.ps1 での再登録が要る。
+      [IO.File]::WriteAllText((Get-StatePath -Name 'revoked.flag'), 'revoked')
+      Write-HelperLog -EventName 'local_retention_retired'
+      $retired = $true
+    }
+  }
+  if (-not (Test-Path -LiteralPath $tokenPath) -and -not (Test-Path -LiteralPath $reportPath)) {
+    # どのトークンも無い。新しいトークンでは送らないので、未報告のまま持ち続けない。
+    Set-UnsentRunsAbandoned
+    Set-UnsentRunsAbandoned -Store 'report-runs'
+  }
+  return $retired
+}
+
+function Invoke-LocalStateRetentionSafe {
+  # 保持期限の処理の失敗で常駐を止めない。
+  try {
+    return [bool](Invoke-LocalStateRetention -Now ([DateTimeOffset]::UtcNow))
+  } catch {
+    Write-HelperLog -EventName 'local_retention_failed' -Fields @{ errorType = (Get-ExceptionTypeName -ErrorRecord $_) }
+    return $false
+  }
+}
+
 function Move-RevokedTokenToReportStore {
   # 失効後の引き渡し。未報告があれば token.dat を report-token.dat へ、未報告の記録を report-runs へ移して token.dat を消す。
   # 途中で落ちても token.dat を最後に消すので、次回に同じ手順をやり直せる。
@@ -3039,6 +3114,8 @@ function Invoke-HelperMain {
 
   if (Test-Path -LiteralPath (Get-StatePath -Name 'revoked.flag')) {
     Write-HelperLog -EventName 'revoked_flag_present'
+    # 期限を過ぎたものは通信せずに消す。
+    $null = Invoke-LocalStateRetentionSafe
     # 前回の失効で報告できなかった結果を再送する。ヘルパーとしての動作は再開しない。
     if (Test-Path -LiteralPath (Get-StatePath -Name 'token.dat')) {
       # 引き渡しの途中で落ちた場合。
@@ -3055,6 +3132,11 @@ function Invoke-HelperMain {
     return 0
   }
 
+  if (Invoke-LocalStateRetentionSafe) {
+    Invoke-RunRecordCleanupIfDue -Now ([DateTimeOffset]::UtcNow)
+    if (-not $Background) { Write-Host 'サーバと連絡できない期間が保持期限を超えたため停止しました。install-folder-helper.ps1 で再登録してください。' }
+    return 0
+  }
   Invoke-ReportOnlyFlushSafe -ServerBase $serverBase -Identity $identity
   Invoke-RunRecordCleanupIfDue -Now ([DateTimeOffset]::UtcNow)
   $failures = 0
@@ -3080,6 +3162,7 @@ function Invoke-HelperMain {
     $retryAfter = 0
     if ($poll.Ok) {
       $failures = 0
+      try { Update-LastContact -Now ([DateTimeOffset]::UtcNow) } catch { Write-HelperLog -EventName 'last_contact_failed' -Fields @{ errorType = (Get-ExceptionTypeName -ErrorRecord $_) } }
     } elseif ($poll.Status -eq 401) {
       # トークンが無効。再登録には導入コードが必要なので install を待つ。
       Write-HelperLog -EventName 'token_rejected' -Fields @{ httpStatus = $poll.Status }
@@ -3099,6 +3182,11 @@ function Invoke-HelperMain {
       if (-not $done) { Write-HelperLog -EventName 'revocation_reports_pending' }
       Remove-StateFile -Name 'pairing-code.txt'
       [IO.File]::WriteAllText((Get-StatePath -Name 'revoked.flag'), 'revoked')
+      return 0
+    }
+
+    if (Invoke-LocalStateRetentionSafe) {
+      Write-HelperLog -EventName 'stopped_by_local_retention'
       return 0
     }
 

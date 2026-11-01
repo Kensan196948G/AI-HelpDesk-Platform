@@ -916,6 +916,8 @@ $script:WireStartStatus = 200
 $script:WirePollBody = '{"ops":[],"cancel":[],"revoked":false}'
 $script:WireResultStatus = 200
 $script:WireSessionState = 'active'
+$script:WirePollStatus = 200
+$script:WirePollHook = $null
 function Invoke-HelperHttp {
   param($Url, $Token, $BodyJson, $TimeoutSec = 30)
   $action = $Url.Substring($Url.LastIndexOf('/') + 1)
@@ -928,7 +930,10 @@ function Invoke-HelperHttp {
     if ($script:WireRegisterStatus -ne 200) { return @{ Status = $script:WireRegisterStatus; Body = $script:WireRegisterFailBody; RetryAfter = 0; ErrorType = $null } }
     return @{ Status = 200; Body = $script:WireRegisterBody; RetryAfter = 0; ErrorType = $null }
   }
-  if ($action -ceq 'poll') { return @{ Status = 200; Body = $script:WirePollBody; RetryAfter = 0; ErrorType = $null } }
+  if ($action -ceq 'poll') {
+    if ($null -ne $script:WirePollHook) { & $script:WirePollHook }
+    return @{ Status = $script:WirePollStatus; Body = $script:WirePollBody; RetryAfter = 0; ErrorType = $null }
+  }
   return @{ Status = $script:WireResultStatus; Body = '{"ok":true,"accepted":true}'; RetryAfter = 0; ErrorType = $null }
 }
 
@@ -1075,7 +1080,7 @@ if ($IsLinux -and (Test-Path -LiteralPath '/bin/sleep')) {
     # ---- 報告用資格情報の分離 ----
     function Reset-WireStore {
       foreach ($d in (Get-RunsDirectory), (Get-ReportRunsDirectory)) { if (Test-Path -LiteralPath $d) { Remove-Item -LiteralPath $d -Recurse -Force } }
-      foreach ($n in 'token.dat', 'report-token.dat', 'revoked.flag') { Remove-StateFile -Name $n }
+      foreach ($n in 'token.dat', 'report-token.dat', 'revoked.flag', 'last-contact.txt', 'pairing-code.txt') { Remove-StateFile -Name $n }
       $script:WireHttp.Clear()
       $script:WireResultStatus = 200
       $script:WirePollBody = '{"ops":[],"cancel":[],"revoked":false}'
@@ -1354,6 +1359,137 @@ if ($IsLinux -and (Test-Path -LiteralPath '/bin/sleep')) {
     Assert-Equal 'main: RegisterOnly でも登録しない' 3 (Invoke-HelperMain 6>$null)
     Assert-Equal 'main: RegisterOnly の通信なし' '' (Get-WireActions)
     $RegisterOnly = $false
+
+    # ---- 恒久オフライン端末のローカル保持期限（docs/63 §12）。通信しない ----
+    Assert-True 'retention: 報告専用の期限はサーバの受付より長い' ($script:ReportTokenRetentionHours -gt 24)
+    Assert-True 'retention: 連絡なしの期限は報告専用より長い' ($script:LocalNoContactRetentionHours -gt $script:ReportTokenRetentionHours)
+    function Set-StateFileAge { param([string]$Name, [double]$Hours) [IO.File]::SetLastWriteTimeUtc((Get-StatePath -Name $Name), [DateTime]::UtcNow.AddHours(-$Hours)) }
+    function New-ReportRecord {
+      param([string]$OpId, [double]$AgeHours)
+      [IO.File]::WriteAllText((Get-StatePath -Name 'report-token.dat'), 'OLD-TOKEN')
+      if (-not (Test-Path -LiteralPath (Get-ReportRunsDirectory))) { $null = New-Item -ItemType Directory -Path (Get-ReportRunsDirectory) }
+      [IO.File]::WriteAllText((Get-RunFilePath -OpId $OpId -Kind 'run' -Store 'report-runs'), (New-RunRecordJson -Op (New-WireOp -OpId $OpId) -Effect 'modify' -StartedAt 's'))
+      Set-StateFileAge -Name 'report-token.dat' -Hours $AgeHours
+    }
+    function New-TokenRecord {
+      param([string]$OpId, [double]$AgeHours)
+      [IO.File]::WriteAllText((Get-StatePath -Name 'token.dat'), 'CUR-TOKEN')
+      if (-not (Test-Path -LiteralPath (Get-RunsDirectory))) { $null = New-Item -ItemType Directory -Path (Get-RunsDirectory) }
+      [IO.File]::WriteAllText((Get-RunFilePath -OpId $OpId -Kind 'run'), (New-RunRecordJson -Op (New-WireOp -OpId $OpId) -Effect 'modify' -StartedAt 's'))
+      Set-StateFileAge -Name 'token.dat' -Hours $AgeHours
+    }
+    $retentionNow = [DateTimeOffset]::UtcNow
+
+    # 期限内は残して、通信できれば報告する
+    Reset-WireStore
+    New-ReportRecord -OpId 'keep-1' -AgeHours ($script:ReportTokenRetentionHours - 1)
+    Assert-False 'retention: 期限内の報告専用は引退しない' (Invoke-LocalStateRetention -Now $retentionNow)
+    Assert-True 'retention: 期限内は報告専用を残す' (Test-StateFile 'report-token.dat')
+    Assert-False 'retention: 期限内は記録を閉じない' (Test-RunFile 'keep-1' 'abandoned' 'report-runs')
+    Invoke-ReportOnlyFlush -ServerBase $wireServer -Identity $wireIdentity
+    Assert-Equal 'retention: 期限内は報告する' 'skill-result' (Get-WireActions)
+
+    # 期限を過ぎた報告専用は通信せず消す。報告済みにしない
+    Reset-WireStore
+    New-ReportRecord -OpId 'old-1' -AgeHours ($script:ReportTokenRetentionHours + 1)
+    [IO.File]::WriteAllText((Get-StatePath -Name 'token.dat'), 'CUR-TOKEN')
+    $script:WireLog.Clear()
+    Assert-False 'retention: 報告専用の期限切れで引退しない' (Invoke-LocalStateRetention -Now $retentionNow)
+    Assert-False 'retention: 報告専用を消す' (Test-StateFile 'report-token.dat')
+    Assert-True 'retention: 記録を閉じる' (Test-RunFile 'old-1' 'abandoned' 'report-runs')
+    Assert-False 'retention: 報告済みにしない' (Test-RunFile 'old-1' 'sent' 'report-runs')
+    Assert-False 'retention: 結果を残さない' (Test-RunFile 'old-1' 'res' 'report-runs')
+    Assert-True 'retention: 現在のトークンは残す' (Test-StateFile 'token.dat')
+    Assert-True 'retention: ログに残す' ($script:WireLog.Contains('report_token_expired_local'))
+    Assert-Equal 'retention: 通信しない' '' (Get-WireActions)
+
+    # 時計が戻った（未来の時刻）場合は期限を延ばさない
+    Reset-WireStore
+    New-ReportRecord -OpId 'future-1' -AgeHours (-48)
+    $null = Invoke-LocalStateRetention -Now $retentionNow
+    Assert-False 'retention: 未来の時刻で残し続けない' (Test-StateFile 'report-token.dat')
+
+    # サーバと連絡できないまま期限を過ぎたトークン
+    Reset-WireStore
+    New-TokenRecord -OpId 'gone-1' -AgeHours ($script:LocalNoContactRetentionHours + 1)
+    [IO.File]::WriteAllText((Get-StatePath -Name 'pairing-code.txt'), 'CODE')
+    $script:WireLog.Clear()
+    Assert-True 'retention: 連絡なしの期限で引退する' (Invoke-LocalStateRetention -Now $retentionNow)
+    Assert-False 'retention: トークンを消す' (Test-StateFile 'token.dat')
+    Assert-False 'retention: ペアリングコードを消す' (Test-StateFile 'pairing-code.txt')
+    Assert-True 'retention: 再開しない印を残す' (Test-StateFile 'revoked.flag')
+    Assert-True 'retention: 未報告を閉じる' (Test-RunFile 'gone-1' 'abandoned')
+    Assert-True 'retention: 引退をログに残す' ($script:WireLog.Contains('local_retention_retired'))
+    Assert-Equal 'retention: 引退で通信しない' '' (Get-WireActions)
+
+    # 最後の連絡を基準にする（導入が古くても連絡があれば残す）
+    Reset-WireStore
+    New-TokenRecord -OpId 'live-1' -AgeHours ($script:LocalNoContactRetentionHours + 100)
+    [IO.File]::WriteAllText((Get-StatePath -Name 'last-contact.txt'), 'x')
+    Assert-False 'retention: 連絡があれば引退しない' (Invoke-LocalStateRetention -Now $retentionNow)
+    Assert-True 'retention: 連絡があればトークンを残す' (Test-StateFile 'token.dat')
+    Set-StateFileAge -Name 'last-contact.txt' -Hours ($script:LocalNoContactRetentionHours + 1)
+    Assert-True 'retention: 最後の連絡から期限を過ぎれば引退する' (Invoke-LocalStateRetention -Now $retentionNow)
+
+    # 再登録の直後は古い連絡の記録で引退しない
+    Reset-WireStore
+    New-TokenRecord -OpId 'reenroll-1' -AgeHours 0
+    [IO.File]::WriteAllText((Get-StatePath -Name 'last-contact.txt'), 'x')
+    Set-StateFileAge -Name 'last-contact.txt' -Hours ($script:LocalNoContactRetentionHours + 100)
+    Assert-False 'retention: 再登録の直後は引退しない' (Invoke-LocalStateRetention -Now $retentionNow)
+    Assert-True 'retention: 再登録のトークンを残す' (Test-StateFile 'token.dat')
+
+    # どのトークンも無ければ未報告は送れない
+    Reset-WireStore
+    New-TokenRecord -OpId 'orphan-2' -AgeHours 1
+    Remove-StateFile -Name 'token.dat'
+    New-ReportRecord -OpId 'orphan-3' -AgeHours 1
+    Remove-StateFile -Name 'report-token.dat'
+    Assert-False 'retention: トークンなしで引退しない' (Invoke-LocalStateRetention -Now $retentionNow)
+    Assert-True 'retention: トークンなしの未報告を閉じる' (Test-RunFile 'orphan-2' 'abandoned')
+    Assert-True 'retention: トークンなしの報告専用も閉じる' (Test-RunFile 'orphan-3' 'abandoned' 'report-runs')
+    # 閉じた記録は以後の掃除で消える（未報告のまま残り続けない）
+    $null = Invoke-RunRecordCleanup -Now ($retentionNow.AddHours($script:RunRecordMaxRetentionHours + 1))
+    Assert-False 'retention: 閉じた記録を消す' (Test-RunFile 'orphan-2' 'run')
+    Assert-False 'retention: 閉じた報告専用の記録を消す' (Test-RunFile 'orphan-3' 'run' 'report-runs')
+
+    # 本体から: 起動時に通信せず消す
+    $Background = $true
+    $RegisterOnly = $false
+    Reset-WireStore
+    New-TokenRecord -OpId 'main-gone' -AgeHours ($script:LocalNoContactRetentionHours + 1)
+    Assert-Equal 'main: 引退は正常終了' 0 (Invoke-HelperMain 6>$null)
+    Assert-Equal 'main: 引退で通信しない' '' (Get-WireActions)
+    Assert-False 'main: 引退でトークンを消す' (Test-StateFile 'token.dat')
+    Assert-Equal 'main: 引退の後の起動も通信しない' 0 (Invoke-HelperMain 6>$null)
+    Assert-Equal 'main: 引退の後も通信なし' '' (Get-WireActions)
+
+    # 本体から: 失効済みの印があっても期限切れの報告専用は送らない
+    Reset-WireStore
+    [IO.File]::WriteAllText((Get-StatePath -Name 'revoked.flag'), 'revoked')
+    New-ReportRecord -OpId 'main-old' -AgeHours ($script:ReportTokenRetentionHours + 1)
+    Assert-Equal 'main: 失効済みは正常終了' 0 (Invoke-HelperMain 6>$null)
+    Assert-Equal 'main: 期限切れは送らない' '' (Get-WireActions)
+    Assert-False 'main: 期限切れの報告専用を消す' (Test-StateFile 'report-token.dat')
+
+    # 本体から: 常駐の途中で通信できないまま期限を過ぎた
+    Reset-WireStore
+    New-TokenRecord -OpId 'main-loop' -AgeHours 1
+    $script:WirePollStatus = 503
+    $script:WirePollHook = { Set-StateFileAge -Name 'token.dat' -Hours ($script:LocalNoContactRetentionHours + 1) }
+    Assert-Equal 'main: 常駐中の引退は正常終了' 0 (Invoke-HelperMain 6>$null)
+    Assert-Equal 'main: poll だけを試した' 'poll' (Get-WireActions)
+    Assert-False 'main: 常駐中の引退でトークンを消す' (Test-StateFile 'token.dat')
+    $script:WirePollStatus = 200
+    $script:WirePollHook = $null
+
+    # 本体から: poll の成功で最後の連絡を記録する
+    Reset-WireStore
+    New-TokenRecord -OpId 'main-seen' -AgeHours ($script:LocalNoContactRetentionHours - 1)
+    $script:WirePollBody = '{"ops":[],"cancel":[],"revoked":true}'
+    $null = Invoke-HelperMain 6>$null
+    Assert-True 'main: 最後の連絡を記録する' (Test-StateFile 'last-contact.txt')
+    $script:WirePollBody = '{"ops":[],"cancel":[],"revoked":false}'
 
     Reset-WireStore
     $script:SkillPollEveryMs = 0
