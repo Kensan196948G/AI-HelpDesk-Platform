@@ -8,6 +8,7 @@ import { sql } from '../db.js';
 import { resetRateLimits } from '../lib/rate-limit.js';
 import { buildServer } from '../server.js';
 import {
+  ASSIGNEE_ORIGINAL,
   ENSURE_CASE_USERS,
   KB_DRAFT_BODY_ORIGINAL,
   KB_LABEL_PATCHES,
@@ -371,6 +372,13 @@ describe('画面の KB 表示の差し替え（DB で未承認を承認済みと
     expect(html).toContain(KB_DRAFT_BODY_ORIGINAL);
     expect(patched).not.toContain(KB_DRAFT_BODY_ORIGINAL);
     expect(patched).toContain('__AIHD_KB_CONSULT__');
+  });
+
+  it('原本の「③ 引継ぎ」の担当者欄の既定値も差し替える', () => {
+    const patched = patchKbDraftBody(html);
+    expect(html).toContain(ASSIGNEE_ORIGINAL);
+    expect(patched).not.toContain(ASSIGNEE_ORIGINAL);
+    expect(patched).toContain('__AIHD_ASSIGNEE__');
   });
 
   it('差し替え後の行は JavaScript として解釈でき、判定関数の結果を表示する', () => {

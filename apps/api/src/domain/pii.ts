@@ -162,7 +162,7 @@ export function containsDeviceInfo(input: string): boolean {
  */
 export function scrubAiAnswer(answer: string): string {
   const scrubbed = answer.replace(
-    /[^\n。]*指示[^\n。]*含まれ[^\n。]*(?:従いません|従わ)[^\n。]*。?/g,
+    /[^\n。]*入力[^\n。]*指示[^\n。]*含まれ[^\n。]*(?:従いません|従わ)[^\n。]*。?/g,
     '',
   );
   if (scrubbed === answer) return answer;

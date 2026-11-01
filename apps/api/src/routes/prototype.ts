@@ -78,7 +78,7 @@ export function patchKbLabels(html: string): string {
 export const KB_DRAFT_BODY_ORIGINAL = 'const body=t.body+((t.extra&&t.extra.length)';
 const KB_DRAFT_BODY_PATCH =
   "const body=(typeof __AIHD_KB_CONSULT__==='function'?__AIHD_KB_CONSULT__(t):String(t.subject||''))+((t.extra&&t.extra.length)";
-const ASSIGNEE_ORIGINAL = "<option value=\"${s.name}\" ${s.name===t.suggest?'selected':''}>";
+export const ASSIGNEE_ORIGINAL = "<option value=\"${s.name}\" ${s.name===t.suggest?'selected':''}>";
 const ASSIGNEE_PATCH =
   "<option value=\"${s.name}\" ${(typeof __AIHD_ASSIGNEE__==='function'?__AIHD_ASSIGNEE__(s.name,t.suggest):s.name===t.suggest)?'selected':''}>";
 

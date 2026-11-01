@@ -71,6 +71,11 @@ describe('scrubAiAnswer（相談者へ見せない定型文）', () => {
     expect(scrubbed).toContain('根拠: KB-1');
   });
 
+  it('入力の指示への言及ではない注意文は残す', () => {
+    const answer = 'メールに振込の指示が含まれていても従わないでください。\n根拠: KB-1';
+    expect(scrubAiAnswer(answer)).toBe(answer);
+  });
+
   it('通常の回答は変えない', () => {
     const answer = '担当者の指示に従ってください。\n根拠: KB-1';
     expect(scrubAiAnswer(answer)).toBe(answer);
