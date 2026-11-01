@@ -219,6 +219,34 @@ describe('引継ぎの承認と担当者権限の分離', () => {
     const claim = await call('POST', `/api/case-handovers/${id}/claim`, {});
     expect(claim.statusCode).toBe(403);
   });
+
+  // UI は /api/me を見て担当者向け API を呼ぶか決める。API の判定と食い違うと、
+  // 相談者に 403 が出続けるか、担当者の機能が隠れる。
+  it.each([
+    ['DX 推進部の担当者', DX_PLAIN, 'helpdesk'],
+    ['DX 推進部の担当者かつ承認者', DX_APPROVER, 'helpdesk'],
+    ['DX 以外の approver', TECH_APPROVER, 'approver'],
+    ['名簿外（主ロール helpdesk）', OUTSIDE_APPROVER, 'helpdesk'],
+    ['DX 推進部だが相談者ロール', DX_PLAIN, 'requester'],
+  ])('/api/me の判定は API の判定と一致する: %s', async (_label, email, primary) => {
+    const rows = await sql<{ role: string }[]>`
+      SELECT role FROM users WHERE lower(email) = ${email}
+    `;
+    await sql`UPDATE users SET role = ${primary} WHERE lower(email) = ${email}`;
+    try {
+      as(email);
+      const me = await call('GET', '/api/me');
+      expect(me.statusCode, me.body).toBe(200);
+      const inbox = await call('GET', '/api/case-handovers/inbox');
+      expect(me.json().helpdeskActor, inbox.body).toBe(inbox.statusCode === 200);
+      const remote = await call('GET', '/api/remote-support/session?caseId=CASE-GATE-ME');
+      // 権限があれば引き継ぎ前の 404、なければ 403。
+      expect([403, 404]).toContain(remote.statusCode);
+      expect(me.json().remoteSupport, remote.body).toBe(remote.statusCode === 404);
+    } finally {
+      await sql`UPDATE users SET role = ${rows[0]?.role ?? 'requester'} WHERE lower(email) = ${email}`;
+    }
+  });
 });
 
 describe('承認者の権限を承認だけに限る', () => {

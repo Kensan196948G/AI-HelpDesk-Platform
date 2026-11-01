@@ -57,14 +57,28 @@ function requireEmail(email: string | undefined): string {
   return email;
 }
 
-/** 担当者（helpdesk / approver）だけが遠隔対応を操作できる。 */
-async function requireHelpdesk(email: string): Promise<{ email: string; role: string }> {
+/** 遠隔対応を操作できる担当者ならそのロール、それ以外は null。 */
+async function remoteSupportRole(email: string): Promise<string | null> {
   const rows = await sql<{ role: string }[]>`
     SELECT role FROM users WHERE lower(email) = lower(${email}) LIMIT 1
   `;
   const role = rows[0]?.role;
   // 承認ロールだけでは遠隔対応を許可しない（技術部・社外の承認者を含むため。docs/61）。
   if ((role !== 'helpdesk' && role !== 'approver') || !(await isHelpdeskActor(email))) {
+    return null;
+  }
+  return role;
+}
+
+/** 403 を投げずに判定する（UI が API を呼ぶ前の判断に /api/me から使う）。 */
+export async function isRemoteSupportActor(email: string): Promise<boolean> {
+  return (await remoteSupportRole(email)) !== null;
+}
+
+/** 担当者（helpdesk / approver）だけが遠隔対応を操作できる。 */
+async function requireHelpdesk(email: string): Promise<{ email: string; role: string }> {
+  const role = await remoteSupportRole(email);
+  if (!role) {
     throw new ApiError(403, 'FORBIDDEN', '遠隔対応は担当者のみ操作できます。');
   }
   return { email, role };

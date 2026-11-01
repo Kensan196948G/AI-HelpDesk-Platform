@@ -3,6 +3,7 @@
  *
  * 担当者（helpdesk / approver）がケース画面から MeshAgent の状態確認・導入依頼・
  * RSP への遷移を行う。API は担当者以外に 403 を返すため、その場合はパネルを出さない。
+ * 担当者以外は API を呼ばない（staff-access-bridge.js）。403 を受けたら以後も呼ばない。
  */
 (() => {
   if (window.__AIHD_REMOTE_SUPPORT_BRIDGE__) return;
@@ -17,7 +18,10 @@
     matches: null,
     selected: null,
     lastKey: '',
+    loading: false,
   };
+
+  const CAPABILITY = 'remoteSupport';
 
   function esc(value) {
     return String(value ?? '').replace(
@@ -63,18 +67,30 @@
     const caseId = currentCaseId();
     if (!caseId) return;
     if (!force && STATE.caseId === caseId && STATE.data) return;
+    // パネルは画面の再描画で消えて作り直されるため、応答待ちの間は重ねて呼ばない。
+    if (!force && STATE.loading) return;
     STATE.caseId = caseId;
     STATE.error = null;
+    STATE.loading = true;
+    const access = window.__AIHD_STAFF_ACCESS__;
     try {
-      const data = await api(`/api/remote-support/session?caseId=${encodeURIComponent(caseId)}`);
-      STATE.data = data;
-      if (!STATE.hostname) STATE.hostname = data.link?.hostname ?? '';
+      if (access && !(await access.allowed(CAPABILITY))) {
+        STATE.data = null;
+      } else {
+        const data = await api(`/api/remote-support/session?caseId=${encodeURIComponent(caseId)}`);
+        STATE.data = data;
+        if (!STATE.hostname) STATE.hostname = data.link?.hostname ?? '';
+      }
     } catch (error) {
       // 担当者以外・引き継ぎ前は表示しない。
       STATE.data = null;
+      // 404（引き継ぎ前）は止めない。引き継ぎ後にパネルを出す必要がある。
+      if (error.status === 403) access?.deny(CAPABILITY);
       if (error.status !== 403 && error.status !== 404) {
         STATE.error = String(error.message || error);
       }
+    } finally {
+      STATE.loading = false;
     }
     render(true);
   }

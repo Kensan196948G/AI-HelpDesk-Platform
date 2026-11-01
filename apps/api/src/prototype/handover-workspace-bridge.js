@@ -2135,9 +2135,17 @@
     HW.inboxLoading = true;
     HW.inboxState = 'loading';
     renderList();
+    const access = window.__AIHD_STAFF_ACCESS__;
     try {
+      // 担当者以外は呼ばない（判定の正本はサーバ。staff-access-bridge.js）。
+      if (access && !(await access.allowed('helpdeskActor'))) {
+        HW.inbox = [];
+        HW.inboxState = 'done';
+        return;
+      }
       const response = await fetch('/api/case-handovers/inbox');
       if (response.status === 403) {
+        access?.deny('helpdeskActor');
         HW.inbox = [];
         HW.inboxState = 'done';
         return;
@@ -2154,6 +2162,9 @@
       if (HW.open) renderList();
     }
   }
+
+  // 更新ボタンでも権限なしの呼び出しを繰り返さないことの単体テスト用（staff-access.test.ts）。
+  window.__AIHD_HW_BRIDGE__.loadInbox = loadInbox;
 
   function openDraft(t) {
     if (!t || !t.draftId || !window.App || typeof window.App.go !== 'function') return;
