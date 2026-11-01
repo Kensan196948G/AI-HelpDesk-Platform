@@ -409,16 +409,21 @@
         ' AI に要約（相談の分類、症状の区分、確認済み事項、ナレッジの参照、件数と結果コード）を渡して提案させる。相談の全文、名前、パス、ユーザー名は渡しません。',
       ),
       small('チェックしなければルールベースの提案だけを使います。管理者権限の操作は行いません。'),
-      h(
-        'div',
-        { style: 'margin-top:8px;display:flex;gap:8px;flex-wrap:wrap' },
-        h('button', { class: 'u-btn pri', onclick: () => submitConsent(session) }, '同意する'),
-      ),
+      session.acceptingNew === false
+        ? small(`${DRAINING_NOTE}同意はできません。`)
+        : h(
+            'div',
+            { style: 'margin-top:8px;display:flex;gap:8px;flex-wrap:wrap' },
+            h('button', { class: 'u-btn pri', onclick: () => submitConsent(session) }, '同意する'),
+          ),
     ];
   }
 
+  const DRAINING_NOTE = '新しい受付を停止しています。';
+
   function proposalBlock(session, proposal) {
     const verifyOps = proposal.verifyOps ?? [];
+    const canApprove = session.acceptingNew !== false;
     return [
       h(
         'div',
@@ -453,17 +458,20 @@
       h(
         'div',
         { style: 'margin-top:8px;display:flex;gap:8px;flex-wrap:wrap' },
-        h(
-          'button',
-          { class: 'u-btn pri', onclick: () => decide(session, proposal, 'Y') },
-          'はい（実行する）',
-        ),
+        canApprove
+          ? h(
+              'button',
+              { class: 'u-btn pri', onclick: () => decide(session, proposal, 'Y') },
+              'はい（実行する）',
+            )
+          : null,
         h(
           'button',
           { class: 'u-btn', onclick: () => decide(session, proposal, 'N') },
           'いいえ（実行しない）',
         ),
       ),
+      canApprove ? null : small(`${DRAINING_NOTE}この提案は実行できません。`),
     ];
   }
 
@@ -582,7 +590,9 @@
       }
     }
     for (const execution of session.executions ?? []) nodes.push(...executionLine(execution));
-    if (['ready', 'awaiting_next'].includes(session.status)) {
+    if (['ready', 'awaiting_next'].includes(session.status) && session.acceptingNew === false) {
+      nodes.push(small(`${DRAINING_NOTE}次の操作は提案できません。`));
+    } else if (['ready', 'awaiting_next'].includes(session.status)) {
       const reason = noSkillsReason(session);
       nodes.push(
         reason
@@ -709,6 +719,7 @@
     handoverId: null,
     session: null,
     available: false,
+    acceptingNew: true,
     busy: false,
     error: null,
     actionError: null,
@@ -766,6 +777,7 @@
       if (!isCurrent()) return;
       STAFF.available = true;
       STAFF.session = data.session;
+      STAFF.acceptingNew = data.acceptingNew !== false;
       STAFF.error = null;
     } catch (error) {
       if (!isCurrent()) return;
@@ -826,6 +838,8 @@
           h('button', { class: 'u-btn', onclick: stopSession }, '中止'),
         ),
       );
+    } else if (STAFF.handoverId && !STAFF.acceptingNew) {
+      nodes.push(small(`${DRAINING_NOTE}新しいセッションは開始できません。`));
     } else if (STAFF.handoverId) {
       nodes.push(
         small('相談者のフォルダ同意が有効なときに開始できます。'),
@@ -846,6 +860,7 @@
       STAFF.available,
       STAFF.session,
       STAFF.handoverId,
+      STAFF.acceptingNew,
       STAFF.error,
       STAFF.actionError,
       STAFF.busy,

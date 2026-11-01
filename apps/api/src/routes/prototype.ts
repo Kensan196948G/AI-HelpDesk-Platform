@@ -10,6 +10,7 @@ import { sql } from '../db.js';
 import { ApiError, badRequest } from '../errors.js';
 import { jsonbValue } from '../lib/jsonb-value.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
+import { assistEnabled } from '../support-session/propagate.js';
 
 const PROTOTYPE_FILE = 'Mirai_AIHelpdesk_Cowork_StepWizard_V3.1_PCinfo_Offline.html';
 const BRIDGE_FILES = [
@@ -180,7 +181,8 @@ function readBridge(): string {
     cachedFolderAccessBridge = readFileSync(path.join(repoRoot, FOLDER_ACCESS_BRIDGE_FILE), 'utf8');
   }
   const withFolderAccess = `${cachedBridge}\n\n${cachedFolderAccessBridge}`;
-  if (!config.ASSIST_SESSION_ENABLED) return withFolderAccess;
+  // 受付の停止中も配信する。本人が既存のセッションを取り消し、結果を確認できるようにする。
+  if (!assistEnabled()) return withFolderAccess;
   if (!cachedSupportSessionBridge) {
     cachedSupportSessionBridge = readFileSync(
       path.join(repoRoot, SUPPORT_SESSION_BRIDGE_FILE),

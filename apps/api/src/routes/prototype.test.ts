@@ -306,12 +306,24 @@ describe('保存済み状態の欠落キー補完', () => {
       const on = (await app.inject({ method: 'GET', url: '/' })).body;
       expect(on).toContain('__AIHD_SUPPORT_SESSION_BRIDGE__');
 
+      // 受付の停止中も、本人が既存のセッションを取り消せるよう配信する。
+      config.ASSIST_SESSION_ENABLED = false;
+      config.ASSIST_SESSION_MODE = 'drain';
+      const drain = (await app.inject({ method: 'GET', url: '/' })).body;
+      expect(drain).toContain('__AIHD_SUPPORT_SESSION_BRIDGE__');
+      config.ASSIST_SESSION_MODE = 'off';
+      const modeOff = (await app.inject({ method: 'GET', url: '/' })).body;
+      expect(modeOff).not.toContain('__AIHD_SUPPORT_SESSION_BRIDGE__');
+      config.ASSIST_SESSION_MODE = undefined;
+
+      config.ASSIST_SESSION_ENABLED = true;
       config.FOLDER_ACCESS_ENABLED = false;
       const noFolder = (await app.inject({ method: 'GET', url: '/' })).body;
       expect(noFolder).not.toContain('__AIHD_SUPPORT_SESSION_BRIDGE__');
     } finally {
       config.FOLDER_ACCESS_ENABLED = folder;
       config.ASSIST_SESSION_ENABLED = assist;
+      config.ASSIST_SESSION_MODE = undefined;
     }
   });
 

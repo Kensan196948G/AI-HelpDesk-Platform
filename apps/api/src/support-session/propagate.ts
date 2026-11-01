@@ -19,9 +19,28 @@ import {
 // postgres.js のトランザクション型は循環を避けて緩く受ける（audit-log.ts と同じ）。
 type AnyTx = any;
 
-/** フラグが無効なら新テーブルに触らない（030 未適用の DB でも既存の経路を壊さない）。 */
+export type AssistMode = 'off' | 'drain' | 'on';
+
+/**
+ * 動作モード（docs/63 §12）。ASSIST_SESSION_MODE を優先し、未設定なら ASSIST_SESSION_ENABLED に従う。
+ * フォルダ機能が無効なら経路がないので off。設定を起動後に変えられるテストのため呼び出しごとに読む。
+ */
+export function assistMode(): AssistMode {
+  if (!config.FOLDER_ACCESS_ENABLED) return 'off';
+  return config.ASSIST_SESSION_MODE ?? (config.ASSIST_SESSION_ENABLED ? 'on' : 'off');
+}
+
+/**
+ * 既存のセッションを処理するか（on と drain）。off なら定期処理の識別子の消去を除いて
+ * 新テーブルに触らない（030 未適用の DB でも既存の経路を壊さない）。
+ */
 export function assistEnabled(): boolean {
-  return config.FOLDER_ACCESS_ENABLED && config.ASSIST_SESSION_ENABLED;
+  return assistMode() !== 'off';
+}
+
+/** 新しい受付（開始・同意・提案・Y）を受けるか。drain では既存の終了処理だけを動かす。 */
+export function assistAcceptingNew(): boolean {
+  return assistMode() === 'on';
 }
 
 interface SessionKeyRow {

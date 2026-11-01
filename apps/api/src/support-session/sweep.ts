@@ -1,7 +1,7 @@
 import { config } from '../config.js';
 import { sql } from '../db.js';
 import { jsonbValue } from '../lib/jsonb-value.js';
-import { assistEnabled } from './propagate.js';
+import { assistMode } from './propagate.js';
 import { applyLiveness, lockSession, sessionAudit } from './service.js';
 import { ASSIST_LIMITS, OPEN_SESSION_STATUSES } from './state.js';
 
@@ -30,10 +30,34 @@ async function guarded(
   }
 }
 
-/** 期限の定期処理（docs/63 §10）。DB だけを触る。機能フラグが無効の間は何もしない。 */
+/** 030 未適用の DB か。off の間はこれを確かめてから触る（失敗し続けない）。 */
+async function assistTablesExist(): Promise<boolean> {
+  const rows = await sql<{ present: boolean }[]>`
+    SELECT to_regclass('support_sessions') IS NOT NULL
+       AND to_regclass('assist_executions') IS NOT NULL AS present
+  `;
+  return rows[0]?.present === true;
+}
+
+/**
+ * 保持期限の処理だけ（off）。結果が届かないまま残る実行を閉じてから識別子を消す。
+ * セッションの状態は変えない（フラグの切替で本人の見えないまま終えない。戻せば追いつく）。
+ */
+async function sweepRetentionOnly(log: SweepLog): Promise<void> {
+  if (!(await assistTablesExist())) return;
+  await guarded(log, 'expired_reports', {}, () => closeExpiredReports(log));
+  await guarded(log, 'retention', {}, () => scrubExpiredIdentifiers());
+}
+
+/**
+ * 期限の定期処理（docs/63 §10）。DB だけを触る。
+ * on と drain は全部を動かす。off でも保持期限の識別子の消去は止めない（§12）。
+ */
 export async function sweepSupportSessions(log: SweepLog = consoleLog): Promise<number> {
-  // 無効なら新テーブルに触らない（030 未適用の DB で失敗し続けない）。有効に戻せば追いつく。
-  if (!assistEnabled()) return 0;
+  if (assistMode() === 'off') {
+    await guarded(log, 'retention_only', {}, () => sweepRetentionOnly(log));
+    return 0;
+  }
   const due = await sql<{ id: string }[]>`
     SELECT DISTINCT s.id
     FROM support_sessions s
@@ -116,11 +140,17 @@ async function closeExpiredReports(log: SweepLog): Promise<void> {
   >`
     SELECT e.id, e.support_session_id, e.skill_id, e.role
     FROM assist_executions e
-    JOIN folder_access_helpers h ON h.id = e.helper_id
+    JOIN support_sessions s ON s.id = e.support_session_id
+    LEFT JOIN folder_access_helpers h ON h.id = e.helper_id
     WHERE e.started_at IS NOT NULL
       AND e.result_received_at IS NULL
       AND e.report_expired_at IS NULL
-      AND h.revoked_at <= now() - (${ASSIST_LIMITS.revokedReportHours}::int * interval '1 hour')
+      AND (
+        h.revoked_at <= now() - (${ASSIST_LIMITS.revokedReportHours}::int * interval '1 hour')
+        -- 失効しないまま保持期限へ来た実行。識別子を消すと以後は閉じられないので先に閉じる。
+        OR COALESCE(s.ended_at, s.expires_at)
+          <= now() - (${config.FOLDER_ACCESS_RETENTION_DAYS}::int * interval '1 day')
+      )
   `;
   for (const row of due) {
     await guarded(log, 'expired_report', { sessionId: row.support_session_id, opId: row.id }, () =>
@@ -152,7 +182,11 @@ async function closeExpiredReports(log: SweepLog): Promise<void> {
   }
 }
 
-/** 終了から保持期間を過ぎた識別子を消す。状態・理由・時刻は残す（docs/62 §7-1 と同じ方針）。 */
+/**
+ * 終了から保持期間を過ぎた識別子を消す。状態・理由・時刻は残す（docs/62 §7-1 と同じ方針）。
+ * off の間に終わらないまま残るセッションは、セッションの期限を起点にする（期限の後は動かない）。
+ * 結果が未確定の実行は閉じるまで残す（closeExpiredReports が先に閉じる）。
+ */
 async function scrubExpiredIdentifiers(): Promise<void> {
   const days = config.FOLDER_ACCESS_RETENTION_DAYS;
   await sql`
@@ -161,14 +195,15 @@ async function scrubExpiredIdentifiers(): Promise<void> {
         params = '{}'::jsonb, helper_id = NULL
     FROM support_sessions s
     WHERE e.support_session_id = s.id
-      AND s.ended_at <= now() - (${days}::int * interval '1 day')
+      AND COALESCE(s.ended_at, s.expires_at) <= now() - (${days}::int * interval '1 day')
+      AND (e.started_at IS NULL OR e.result_received_at IS NOT NULL OR e.report_expired_at IS NOT NULL)
       AND (e.sid IS NOT NULL OR e.actor_sid IS NOT NULL OR e.normalized_output IS NOT NULL)
   `;
   await sql`
     UPDATE support_sessions
     SET sid = NULL, machine_guid = NULL, windows_session_id = NULL, rsp_device_id = NULL,
         mesh_node_id = NULL, helper_id = NULL
-    WHERE ended_at <= now() - (${days}::int * interval '1 day')
+    WHERE COALESCE(ended_at, expires_at) <= now() - (${days}::int * interval '1 day')
       AND (sid IS NOT NULL OR machine_guid IS NOT NULL OR rsp_device_id IS NOT NULL
            OR mesh_node_id IS NOT NULL OR helper_id IS NOT NULL)
   `;

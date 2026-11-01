@@ -125,6 +125,10 @@ const EnvSchema = z.object({
     .enum(['true', 'false'])
     .default('false')
     .transform((value) => value === 'true'),
+  // 受付の停止と既存の終了を分ける（docs/63 §12）。off: 全 API が 404 で、定期処理は識別子の消去だけ。
+  // drain: 新規（開始・同意・提案・Y）を 409 で止め、既存の終了処理は動かす。on: 通常。
+  // 未設定なら ASSIST_SESSION_ENABLED に従う（true は on、false は off）。設定すればこちらを優先する。
+  ASSIST_SESSION_MODE: z.enum(['off', 'drain', 'on']).optional(),
   // 検証専用: mock / manual の結果報告を記録する（証拠にはしない）。production では起動を拒否する。
   ASSIST_ALLOW_MOCK_EXECUTION: z
     .enum(['true', 'false'])
@@ -176,6 +180,13 @@ if (!parsed.success) {
 if (isProduction && parsed.data.AUTH_MODE === 'local') {
   console.error(
     '[config] NODE_ENV=production では AUTH_MODE=local を使えません。AUTH_MODE=cloudflare-access を設定してください。',
+  );
+  process.exit(1);
+}
+// 無効のつもりの環境で有効にならないよう、矛盾する指定は起動を拒否する（fail-closed）。
+if (parsed.data.ASSIST_SESSION_MODE === 'on' && process.env.ASSIST_SESSION_ENABLED === 'false') {
+  console.error(
+    '[config] ASSIST_SESSION_MODE=on と ASSIST_SESSION_ENABLED=false は同時に指定できません。',
   );
   process.exit(1);
 }

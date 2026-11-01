@@ -80,6 +80,7 @@ const AI_URL = 'https://ai.test.invalid';
 const originals = {
   folder: config.FOLDER_ACCESS_ENABLED,
   assist: config.ASSIST_SESSION_ENABLED,
+  assistMode: config.ASSIST_SESSION_MODE,
   mock: config.ASSIST_ALLOW_MOCK_EXECUTION,
   isProduction: config.isProduction,
   leaseUrl: config.LEASE_API_URL,
@@ -512,6 +513,7 @@ beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn(fakeFetch));
   config.FOLDER_ACCESS_ENABLED = true;
   config.ASSIST_SESSION_ENABLED = true;
+  config.ASSIST_SESSION_MODE = undefined;
   config.ASSIST_ALLOW_MOCK_EXECUTION = false;
   config.isProduction = false;
   config.DEEPSEEK_API_KEY = undefined;
@@ -530,6 +532,7 @@ afterEach(() => {
 afterAll(async () => {
   config.FOLDER_ACCESS_ENABLED = originals.folder;
   config.ASSIST_SESSION_ENABLED = originals.assist;
+  config.ASSIST_SESSION_MODE = originals.assistMode;
   config.ASSIST_ALLOW_MOCK_EXECUTION = originals.mock;
   config.isProduction = originals.isProduction;
   config.LEASE_API_URL = originals.leaseUrl;
@@ -1241,6 +1244,226 @@ describe('共通支援セッション（Mock: ヘルパー / RSP / 名簿 / PII 
     `;
       expect(rows[0]).toMatchObject({ status: 'revoked', sid: null, machine_guid: null });
       expect((await executionRows(session.id))[0]?.sid).toBeNull();
+    });
+  });
+
+  describe('受付の停止と既存の終了（ASSIST_SESSION_MODE）', () => {
+    const scrubbed = async (id: string) => {
+      const rows = await sql<Record<string, unknown>[]>`
+        SELECT status, end_reason, sid, machine_guid FROM support_sessions WHERE id = ${id}
+      `;
+      return rows[0];
+    };
+
+    describe('drain', () => {
+      const draining = (response: { statusCode: number; json: () => any }) => {
+        expect(response.statusCode).toBe(409);
+        expect(response.json().error.code).toBe('ASSIST_DRAINING');
+      };
+
+      it('新しいセッション・同意・提案・Y を受け付けない。何も配送しない', async () => {
+        const consentPending = await startSession();
+        const ready = await readySession();
+        const { proposal } = await propose(ready.id);
+        const fresh = await activeFolderRequest();
+        config.ASSIST_SESSION_MODE = 'drain';
+
+        draining(
+          await call(ASSIGNEE, 'POST', '/api/support-sessions', { handoverId: fresh.handoverId }),
+        );
+        draining(
+          await call(OWNER, 'POST', base(consentPending.id, '/consents/operation'), {
+            scope: 'read_only',
+            version: 'operation-consent/1',
+            ttlMinutes: 30,
+          }),
+        );
+        draining(
+          await call(OWNER, 'POST', base(consentPending.id, '/consents/ai-input'), {
+            version: 'ai-input-consent/2',
+            ttlMinutes: 30,
+          }),
+        );
+        draining(await call(OWNER, 'POST', base(consentPending.id, '/proposals'), {}));
+        draining(
+          await decide(ready.id, proposal.id, {
+            decision: 'Y',
+            approvalHash: proposal.approvalHash,
+          }),
+        );
+        expect((await sessionRow(ready.id))?.status).toBe('awaiting_approval');
+        expect((await executionRows(ready.id)).length).toBe(0);
+        expect((await poll(ready.token)).skillOps ?? []).toEqual([]);
+      });
+
+      it('N・取消・中止・状態の確認は動く。画面へ受付停止を伝える', async () => {
+        const declined = await readySession();
+        const { proposal } = await propose(declined.id);
+        const revoked = await readySession();
+        const stopped = await readySession();
+        config.ASSIST_SESSION_MODE = 'drain';
+
+        const view = (await call(OWNER, 'GET', base(revoked.id))).json().session;
+        expect(view.acceptingNew).toBe(false);
+        const lookup = await call(
+          ASSIGNEE,
+          'GET',
+          `/api/support-sessions?handoverId=${revoked.handoverId}`,
+        );
+        expect(lookup.json().acceptingNew).toBe(false);
+
+        const no = await decide(declined.id, proposal.id, { decision: 'N' });
+        expect(no.statusCode, no.body).toBe(200);
+        expect((await sessionRow(declined.id))?.end_reason).toBe('requester_declined');
+        const revoke = await call(OWNER, 'POST', base(revoked.id, '/revoke'), {});
+        expect(revoke.statusCode, revoke.body).toBe(200);
+        expect((await sessionRow(revoked.id))?.status).toBe('revoked');
+        const stop = await call(ASSIGNEE, 'POST', base(stopped.id, '/stop'), {});
+        expect(stop.statusCode, stop.body).toBe(200);
+        expect((await sessionRow(stopped.id))?.end_reason).toBe('operator_stop');
+      });
+
+      it('承認済みの実行は開始でき、結果と確認操作と解決確認まで終えられる', async () => {
+        setManifest(ALL_BUT_DISK);
+        const session = await readySession();
+        const first = await executing(session);
+        config.ASSIST_SESSION_MODE = 'drain';
+        const result = await report(session.token, first.op, resultBody(first.op, FOLDER_OUTPUT));
+        expect(result.json().accepted).toBe(true);
+        expect((await sessionRow(session.id))?.status).toBe('awaiting_next');
+        const resolved = await call(OWNER, 'POST', base(session.id, '/resolution'), {
+          resolved: true,
+        });
+        expect(resolved.statusCode, resolved.body).toBe(200);
+        expect((await sessionRow(session.id))?.status).toBe('resolved');
+      });
+
+      it('Y の後で受付を止めても、配送と開始は動く', async () => {
+        const session = await readySession();
+        await approveFirst(session);
+        config.ASSIST_SESSION_MODE = 'drain';
+        const op = (await poll(session.token)).skillOps?.[0] as Op;
+        expect(op).toBeTruthy();
+        const started = await start(session.token, op);
+        expect(started.statusCode, started.body).toBe(200);
+      });
+
+      it('定期処理と同意の終了の伝搬が動く', async () => {
+        const expired = await readySession();
+        const folderEnded = await readySession();
+        config.ASSIST_SESSION_MODE = 'drain';
+        await sql`UPDATE support_sessions SET expires_at = now() - interval '1 minute' WHERE id = ${expired.id}`;
+        await sweepSupportSessions();
+        expect((await sessionRow(expired.id))?.status).toBe('expired');
+        const revoked = await call(OWNER, 'POST', folderBase(folderEnded.requestId, '/revoke'), {});
+        expect(revoked.statusCode, revoked.body).toBe(200);
+        expect((await sessionRow(folderEnded.id))?.status).toBe('revoked');
+      });
+
+      it('ASSIST_SESSION_ENABLED=false でも drain は既存の終了処理を動かす', async () => {
+        const session = await readySession();
+        config.ASSIST_SESSION_ENABLED = false;
+        config.ASSIST_SESSION_MODE = 'drain';
+        const response = await call(OWNER, 'POST', base(session.id, '/revoke'), {});
+        expect(response.statusCode, response.body).toBe(200);
+      });
+    });
+
+    describe('off', () => {
+      const off = () => {
+        config.ASSIST_SESSION_MODE = 'off';
+      };
+
+      it('API は 404 だが、保持期限を過ぎた識別子は消える', async () => {
+        const session = await readySession();
+        await call(OWNER, 'POST', base(session.id, '/revoke'), {});
+        await sql`UPDATE support_sessions SET ended_at = now() - interval '400 days' WHERE id = ${session.id}`;
+        off();
+        expect((await call(OWNER, 'GET', '/api/support-sessions/mine')).statusCode).toBe(404);
+        await sweepSupportSessions();
+        expect(await scrubbed(session.id)).toMatchObject({
+          status: 'revoked',
+          end_reason: 'requester_revoked',
+          sid: null,
+          machine_guid: null,
+        });
+      });
+
+      it('ASSIST_SESSION_ENABLED=false と FOLDER_ACCESS_ENABLED=false でも消える', async () => {
+        const session = await readySession();
+        await call(OWNER, 'POST', base(session.id, '/revoke'), {});
+        await sql`UPDATE support_sessions SET ended_at = now() - interval '400 days' WHERE id = ${session.id}`;
+        config.ASSIST_SESSION_ENABLED = false;
+        config.FOLDER_ACCESS_ENABLED = false;
+        await sweepSupportSessions();
+        expect((await scrubbed(session.id))?.sid).toBeNull();
+      });
+
+      it('保持期限の前の識別子は消さず、期限の処理で進行中のセッションを終えない', async () => {
+        const session = await readySession();
+        await sql`UPDATE support_sessions SET expires_at = now() - interval '1 minute' WHERE id = ${session.id}`;
+        off();
+        await sweepSupportSessions();
+        expect(await scrubbed(session.id)).toMatchObject({ status: 'ready', end_reason: null });
+        expect((await scrubbed(session.id))?.sid).not.toBeNull();
+      });
+
+      it('終わらないまま無効になったセッションも、期限 + 保持期間で消え、戻すと終わる', async () => {
+        const session = await readySession();
+        await sql`UPDATE support_sessions SET expires_at = now() - interval '400 days' WHERE id = ${session.id}`;
+        off();
+        await sweepSupportSessions();
+        expect(await scrubbed(session.id)).toMatchObject({ status: 'ready', sid: null });
+        config.ASSIST_SESSION_MODE = 'on';
+        const response = await call(OWNER, 'GET', base(session.id));
+        expect(response.statusCode, response.body).toBe(200);
+        expect(response.json().session.status).not.toBe('ready');
+      });
+
+      it('結果が来ていない実行は、識別子を消す前に停止未確認として閉じる', async () => {
+        const session = await readySession();
+        await executing(session);
+        await sql`UPDATE support_sessions SET expires_at = now() - interval '400 days' WHERE id = ${session.id}`;
+        off();
+        await sweepSupportSessions();
+        const execution = (await executionRows(session.id))[0];
+        expect(execution?.report_expired_at).not.toBeNull();
+        expect(execution?.stop_outcome).toBe('stop_unconfirmed');
+        expect(execution?.stopped_at).toBeNull();
+        expect(execution?.verify_ok).toBeNull();
+        expect(execution?.evidence).toBe(false);
+        expect(execution?.sid).toBeNull();
+        expect(execution?.helper_id).toBeNull();
+      });
+
+      it('承認時にタグの列へ書かない（035 未適用でも承認を止めない）', async () => {
+        sequence += 1;
+        const clientRef = `ui-ss-off-${sequence}`;
+        const payload = {
+          clientRef,
+          title: '容量が足りないときの対処',
+          symptom: '容量が不足',
+          cause: 'x',
+          steps: 'x',
+          keywords: [],
+        };
+        off();
+        try {
+          await call(ASSIGNEE, 'POST', '/api/knowledge/ui-sync', { ...payload, status: 'pending' });
+          const approved = await call(APPROVER_ONLY, 'POST', '/api/knowledge/ui-sync', {
+            ...payload,
+            status: 'approved',
+            checklist: { reproducible: true, noSecrets: true, noBlame: true, scopeClear: true },
+          });
+          expect(approved.statusCode, approved.body).toBe(200);
+          const rows = await sql<{ symptom_tags: string[] | null; status: string }[]>`
+            SELECT symptom_tags, status FROM knowledge WHERE client_ref = ${clientRef}
+          `;
+          expect(rows[0]).toMatchObject({ status: 'approved', symptom_tags: null });
+        } finally {
+          await sql`DELETE FROM knowledge WHERE client_ref = ${clientRef}`;
+        }
+      });
     });
   });
 

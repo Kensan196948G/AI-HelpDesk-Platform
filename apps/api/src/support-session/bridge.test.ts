@@ -653,6 +653,47 @@ describe('本人パネル（Mock: DOM / fetch）', () => {
     });
   });
 
+  describe('受付の停止中', () => {
+    const texts = async (session: Record<string, unknown>) => {
+      const page = harness((url) =>
+        url.endsWith('/support-sessions/mine')
+          ? { status: 200, body: { sessions: [session] } }
+          : { status: 200, body: { requests: [] } },
+      );
+      await page.start();
+      const panel = page.panel() as FakeElement;
+      return { text: panel.text, buttons: panel.buttons().map((button) => button.text) };
+    };
+
+    it('Y と新しい提案を出さず、N・取消・解決確認は残す', async () => {
+      const pending = await texts({ ...BASE, acceptingNew: false });
+      expect(pending.text).toContain('新しい受付を停止しています');
+      expect(pending.buttons.some((label) => label.includes('はい'))).toBe(false);
+      expect(pending.buttons.some((label) => label.includes('いいえ'))).toBe(true);
+      expect(pending.buttons).toContain('今すぐ取り消す');
+
+      const next = await texts({
+        ...BASE,
+        acceptingNew: false,
+        status: 'awaiting_next',
+        proposals: [],
+        skillAvailability: { readOnly: 1, userReversible: 1 },
+      });
+      expect(next.buttons).not.toContain('次の操作を提案してもらう');
+      expect(next.buttons).toContain('解決した');
+
+      const consent = await texts({
+        ...BASE,
+        acceptingNew: false,
+        status: 'consent_pending',
+        operationConsent: null,
+        proposals: [],
+      });
+      expect(consent.buttons).not.toContain('同意する');
+      expect(consent.buttons).toContain('今すぐ取り消す');
+    });
+  });
+
   it('終了理由のすべてに表示文言がある', () => {
     const block = /const END_LABEL = \{([\s\S]*?)\n {2}\};/.exec(source)?.[1] ?? '';
     expect(block).not.toBe('');

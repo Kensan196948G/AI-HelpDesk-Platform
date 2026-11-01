@@ -32,6 +32,7 @@ import {
   type ReasonCode,
   type SymptomTag,
 } from './case-facts.js';
+import { assistAcceptingNew } from './propagate.js';
 import {
   applyLiveness,
   assistEnabled,
@@ -111,6 +112,13 @@ async function requireAssignee(request: FastifyRequest): Promise<string> {
 function assertRequester(ctx: RequestContext, session: SessionRow, email: string): void {
   if (session.requester_email !== email || ctx.owner_email !== email) {
     throw new ApiError(403, 'NOT_REQUESTER', '相談者本人のみ操作できます。');
+  }
+}
+
+/** drain では新しい受付を止める。権限の確認の後に呼ぶ（無関係な人へ状態を見せない）。 */
+function assertAcceptingNew(): void {
+  if (!assistAcceptingNew()) {
+    throw new ApiError(409, 'ASSIST_DRAINING', '新しい受付を停止しています。');
   }
 }
 
@@ -274,6 +282,7 @@ function buildSessionDto(
         : null,
     // 実行できないものを実行できるように見せないための情報。
     aiAvailable: aiConfigured(),
+    acceptingNew: assistAcceptingNew(),
     skillAvailability: SHOWS_AVAILABILITY.includes(session.status) ? availability() : null,
     operationConsent: session.operation_consent_id
       ? {
@@ -644,6 +653,7 @@ async function assignRoutes(app: FastifyInstance): Promise<void> {
     { preHandler: authenticateUi, bodyLimit: 2 * 1024 },
     async (request) => {
       const email = await requireAssignee(request);
+      assertAcceptingNew();
       if (!checkRateLimit(`assist-create:${email}`, 10, 60_000)) {
         throw new ApiError(429, 'RATE_LIMITED', '操作が多すぎます。少し待ってください。');
       }
@@ -747,9 +757,10 @@ async function assignRoutes(app: FastifyInstance): Promise<void> {
       ORDER BY created_at DESC
       LIMIT 1
     `;
-    if (!rows[0]) return { ok: true, session: null };
+    const acceptingNew = assistAcceptingNew();
+    if (!rows[0]) return { ok: true, session: null, acceptingNew };
     const { session, ctx } = await refresh(rows[0].id, email);
-    return { ok: true, session: await sessionDto(session, ctx, 'assignee') };
+    return { ok: true, session: await sessionDto(session, ctx, 'assignee'), acceptingNew };
   });
 
   // 担当者の中止（§10）。stop_requested と停止の結果は実行ごとに別に残る。
@@ -834,6 +845,7 @@ async function requesterRoutes(app: FastifyInstance): Promise<void> {
       const { id } = IdParams.parse(request.params);
       const body = OperationConsentBody.parse(request.body);
       await assertRequesterBefore(id, email);
+      assertAcceptingNew();
       const outcome = await sql.begin(async (tx) => {
         const locked = await lockSession(tx, id);
         if (!locked) return null;
@@ -889,6 +901,7 @@ async function requesterRoutes(app: FastifyInstance): Promise<void> {
       const { id } = IdParams.parse(request.params);
       const body = AiConsentBody.parse(request.body);
       await assertRequesterBefore(id, email);
+      assertAcceptingNew();
       const outcome = await sql.begin(async (tx) => {
         const locked = await lockSession(tx, id);
         if (!locked) return null;
@@ -969,6 +982,8 @@ async function requesterRoutes(app: FastifyInstance): Promise<void> {
       const { id, proposalId } = ProposalParams.parse(request.params);
       const body = DecisionBody.parse(request.body);
       await assertRequesterBefore(id, email);
+      // N は止める操作なので受け付ける。Y は新しい実行を生むので受け付けない。
+      if (body.decision === 'Y') assertAcceptingNew();
       const outcome = await sql.begin(async (tx) => {
         const locked = await lockSession(tx, id);
         if (!locked) return null;
@@ -1071,6 +1086,7 @@ async function sharedRoutes(app: FastifyInstance): Promise<void> {
       const email = requireEmail(request);
       const { id } = IdParams.parse(request.params);
       const view = await viewOf(id, email);
+      assertAcceptingNew();
       if (!checkRateLimit(`assist-propose:${id}`, 12, 60_000)) {
         throw new ApiError(429, 'RATE_LIMITED', '操作が多すぎます。少し待ってください。');
       }
