@@ -72,7 +72,6 @@ export interface RequestContext {
   // 比較は DB の now() で行う（アプリとの時計ずれを持ち込まない）。
   consent_expired: boolean;
   request_expired: boolean;
-  probe_check_due: boolean;
   handover_status: string;
   claimed_by: string | null;
   owner_email: string;
@@ -89,8 +88,6 @@ export async function loadContext(tx: Tx, id: string): Promise<RequestContext | 
     SELECT r.*,
       (r.consent_expires_at IS NOT NULL AND r.consent_expires_at <= now()) AS consent_expired,
       (r.request_expires_at <= now()) AS request_expired,
-      (r.rsp_probe_checked_at IS NULL OR r.rsp_probe_checked_at
-        <= now() - (${LIMITS.probeCheckSeconds}::int * interval '1 second')) AS probe_check_due,
       h.status AS handover_status,
       h.claimed_by,
       h.owner_email,
@@ -169,9 +166,10 @@ export async function endRequestTx(
         enroll_code_hash = NULL, enroll_code_expires_at = NULL
     WHERE id = ${ctx.id}
       AND status IN ('device_pending', 'helper_pending', 'consent_pending', 'active')
-    RETURNING id
+    RETURNING *
   `;
-  if (!updated[0]) return false;
+  const row = updated[0];
+  if (!row) return false;
   await tx`
     UPDATE folder_access_ops
     SET status = 'cancelled', completed_at = now()
@@ -194,8 +192,8 @@ export async function endRequestTx(
     startedAt: ctx.consented_at?.toISOString() ?? null,
     endedAt: new Date().toISOString(),
   });
-  ctx.status = status;
-  ctx.end_reason = reason;
+  // 応答に消したはずの値を出さないように、DB の値で置き換える。
+  Object.assign(ctx, row);
   return true;
 }
 
@@ -404,9 +402,7 @@ export async function revalidateLease(ctx: RequestContext): Promise<string | 'co
   if (!employee?.employeeNo) return 'EMPLOYEE_UNRESOLVED';
   const lease = await fetchLease(employee.employeeNo);
   if (lease.kind !== 'verified') {
-    return ['LEASE_NONE', 'LEASE_MULTIPLE', 'LEASE_CONFLICT'].includes(lease.code)
-      ? 'conflict'
-      : lease.code;
+    return ['LEASE_NONE', 'LEASE_MULTIPLE'].includes(lease.code) ? 'conflict' : lease.code;
   }
   return lease.hostname.toLowerCase() === (ctx.rsp_hostname ?? '').toLowerCase()
     ? null
@@ -482,14 +478,18 @@ export async function reconcileProbe(
     probeCompletedBefore(probe.completedAt, snapshot.helper_created_at);
   let staleExhausted = false;
   if (busy || stale) {
-    // 再投入の権利を原子的に取る。結果の参照を外すので、投入が終わるまで他は確認に進まない。
+    // 再投入の権利を原子的に取る。確認の時刻を未来にして、投入が終わるまで他の確認を止める。
+    // 結果の参照は残すので、途中で落ちても期限が過ぎれば確認を再開できる。
     const claimed = await sql<{ id: string }[]>`
       UPDATE folder_access_requests
-      SET rsp_probe_attempts = rsp_probe_attempts + 1, rsp_probe_log_id = NULL, updated_at = now()
+      SET rsp_probe_attempts = rsp_probe_attempts + 1,
+          rsp_probe_checked_at = now() + (${LIMITS.probeRequeueSeconds}::int * interval '1 second'),
+          updated_at = now()
       WHERE id = ${id}
         AND status = 'helper_pending'
         AND rsp_probe_status = 'pending'
         AND rsp_probe_log_id = ${logId}
+        AND rsp_probe_attempts = ${snapshot.rsp_probe_attempts}
         AND rsp_probe_attempts < ${LIMITS.maxProbeAttempts}
       RETURNING id
     `;
@@ -606,11 +606,11 @@ async function requeueProbe(
   }
   await sql.begin(async (tx) => {
     const ctx = await loadContext(tx, id);
-    if (!ctx || ctx.status !== 'helper_pending' || ctx.rsp_probe_log_id !== null) return;
+    if (!ctx || ctx.status !== 'helper_pending' || ctx.rsp_probe_log_id !== previousLogId) return;
     if (!enqueued) {
       await tx`
         UPDATE folder_access_requests
-        SET rsp_probe_log_id = ${previousLogId}, reason_code = 'RSP_PROBE_UNAVAILABLE',
+        SET reason_code = 'RSP_PROBE_UNAVAILABLE',
             rsp_probe_checked_at = now(), updated_at = now()
         WHERE id = ${id}
       `;

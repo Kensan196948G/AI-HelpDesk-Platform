@@ -160,6 +160,7 @@ async function fakeFetch(input: unknown, init?: RequestInit) {
       exit_code: null,
       status: 'completed',
       error_code: null,
+      completed_at: new Date(Date.now() + 60_000).toISOString(),
       output: JSON.stringify({
         machineGuid: MACHINE,
         quser: [

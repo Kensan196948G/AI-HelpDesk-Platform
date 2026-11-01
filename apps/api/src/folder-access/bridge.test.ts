@@ -302,6 +302,105 @@ describe('フォルダ一覧ブリッジ（Mock DOM）', () => {
     expect(panel(h, 'aihdFolderAccessPanel')?.style.display).toBe('');
   });
 
+  it('担当者パネル: 案件を切り替えたら、応答を待たずに前の案件のファイル名を消す', async () => {
+    const caseRef = {
+      current: {
+        id: 'CASE-A',
+        handoverId: '11111111-1111-4111-8111-11111111111a',
+      } as Record<string, unknown>,
+    };
+    let hang = false;
+    const h = harness((url) => {
+      if (url.includes('/mine')) return { status: 200, body: { requests: [] } };
+      if (hang) return new Promise<never>(() => undefined);
+      if (url.endsWith('/result')) {
+        return {
+          status: 200,
+          body: {
+            result: {
+              opId: 'o',
+              receivedAt: 'r',
+              status: 'ok',
+              count: 1,
+              entries: [{ name: 'CANARY-前の案件.txt', type: 'file' }],
+            },
+          },
+        };
+      }
+      return {
+        status: 200,
+        body: { request: requestDto('active', { scope: { root: 'Documents', segments: [] } }) },
+      };
+    }, caseRef);
+    h.load[0]?.();
+    await h.settle();
+    const staff = panel(h, 'aihdFolderAccessPanel') as FakeElement;
+    expect(staff.text).toContain('CANARY-前の案件.txt');
+    hang = true;
+    caseRef.current = { id: 'CASE-B', handoverId: '11111111-1111-4111-8111-11111111111b' };
+    for (const timer of h.timers) timer();
+    await h.settle();
+    expect(staff.text).not.toContain('CANARY-前の案件.txt');
+  });
+
+  it('担当者パネル: 案件を特定できないとき（409）は開始の導線を出さず、理由を見せる', async () => {
+    const h = harness(
+      (url) => {
+        if (url.includes('/mine')) return { status: 200, body: { requests: [] } };
+        if (url.includes('/handovers/lookup')) {
+          return { status: 409, body: { error: { code: 'AMBIGUOUS', message: 'AMBIGUOUS-CASE' } } };
+        }
+        throw new Error('確定していない案件へ問い合わせない');
+      },
+      { current: { id: 'CASE-1' } },
+    );
+    h.load[0]?.();
+    await h.settle();
+    const staff = panel(h, 'aihdFolderAccessPanel') as FakeElement;
+    expect(staff.text).toContain('AMBIGUOUS-CASE');
+    expect(staff.findAll((element) => element.tag === 'button')).toEqual([]);
+  });
+
+  it('担当者パネル: 画面が所有者を持つときは検索へ渡す', async () => {
+    const h = harness(
+      (url) => {
+        if (url.includes('/mine')) return { status: 200, body: { requests: [] } };
+        if (url.includes('/handovers/lookup')) {
+          return { status: 200, body: { handoverId: null } };
+        }
+        return notFound;
+      },
+      { current: { id: 'CASE-1', ownerEmail: 'owner@example.com' } },
+    );
+    h.load[0]?.();
+    await h.settle();
+    expect(h.calls.some((call) => call.includes('owner=owner%40example.com'))).toBe(true);
+  });
+
+  it('相談者パネル: 同意の画面に依頼元の担当者を表示する', async () => {
+    const h = harness((url) =>
+      url.includes('/mine')
+        ? {
+            status: 200,
+            body: {
+              requests: [
+                {
+                  ...requestDto('consent_pending'),
+                  caseId: 'C',
+                  assigneeEmail: 'assignee-canary@example.com',
+                },
+              ],
+            },
+          }
+        : notFound,
+    );
+    h.load[0]?.();
+    await h.settle();
+    const mine = panel(h, 'aihdFolderAccessMinePanel') as FakeElement;
+    expect(mine.text).toContain('依頼元の担当者');
+    expect(mine.text).toContain('assignee-canary@example.com');
+  });
+
   it('担当者パネル: 案件を切り替えると、前の案件の端末 ID とホスト名を送らない', async () => {
     const handoverA = '11111111-1111-4111-8111-11111111111a';
     const handoverB = '11111111-1111-4111-8111-11111111111b';

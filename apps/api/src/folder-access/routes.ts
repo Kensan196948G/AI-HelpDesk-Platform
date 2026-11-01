@@ -32,7 +32,11 @@ const CreateBody = z.object({
 const HandoverQuery = z.object({ handoverId: z.string().uuid() });
 const MineQuery = z.object({ handoverId: z.string().uuid().optional() });
 const PairBody = z.object({ code: z.string().regex(/^\d{8}$/) });
-const LookupQuery = z.object({ ref: z.string().trim().min(1).max(200) });
+const LookupQuery = z.object({
+  ref: z.string().trim().min(1).max(200),
+  // 画面が案件の所有者を持つときだけ渡す。候補を絞るためだけに使う。
+  owner: z.string().trim().min(1).max(320).optional(),
+});
 
 export function requireFolderAccessEnabled(): void {
   // 無効時は存在しないルートと同じ応答にする（機能の有無を漏らさない）。
@@ -82,6 +86,8 @@ async function loadOwnership(id: string): Promise<Ownership> {
 }
 
 function dto(ctx: RequestContext, view: 'assignee' | 'requester') {
+  // 本人が同意するまで、担当者に Windows ユーザーと端末の自己申告の名前を見せない。
+  const showHelperIdentity = view === 'requester' || ctx.status === 'active';
   return {
     id: ctx.id,
     handoverId: ctx.handover_id,
@@ -95,12 +101,12 @@ function dto(ctx: RequestContext, view: 'assignee' | 'requester') {
     probeStatus: ctx.rsp_probe_status,
     device: {
       hostname: ctx.rsp_hostname,
-      helperHostname: ctx.helper_hostname,
+      helperHostname: showHelperIdentity ? ctx.helper_hostname : null,
       ...(view === 'assignee'
         ? { rspDeviceId: ctx.rsp_device_id, meshNodeId: ctx.mesh_node_id }
         : {}),
     },
-    windowsUser: ctx.windows_user,
+    windowsUser: showHelperIdentity ? ctx.windows_user : null,
     scope:
       ctx.status === 'active'
         ? {
@@ -230,11 +236,13 @@ async function assignRoutes(app: FastifyInstance): Promise<void> {
 
   // 画面の案件（caseId / INC / チケット番号）から、自分が引き受けた引継ぎの ID だけを引く。
   // 受信箱は pending / claimed の最新 50 件なので、resolved や古い案件を引けない。
+  // 案件 ID は利用者ごとの採番で一意でない。別の相談者の PC へ依頼を飛ばさないように、
+  // 候補が 1 件に定まらなければ確定しない（最新を選ぶなどの推測をしない）。
   app.get('/folder-access/handovers/lookup', { preHandler: authenticateUi }, async (request) => {
     const email = await requireAssignee(request);
-    const { ref } = LookupQuery.parse(request.query);
-    const rows = await sql<{ id: string }[]>`
-      SELECT id FROM case_handovers
+    const { ref, owner } = LookupQuery.parse(request.query);
+    const rows = await sql<{ id: string; owner_email: string }[]>`
+      SELECT id, owner_email FROM case_handovers
       WHERE claimed_by = ${email}
         AND status IN ('claimed', 'resolved')
         AND (
@@ -242,10 +250,17 @@ async function assignRoutes(app: FastifyInstance): Promise<void> {
           OR snapshot #>> '{inc,id}' = ${ref}
           OR snapshot #>> '{ticket,id}' = ${ref}
         )
-      ORDER BY created_at DESC
-      LIMIT 1
+      LIMIT 20
     `;
-    return { ok: true, handoverId: rows[0]?.id ?? null };
+    const candidates = owner ? rows.filter((row) => row.owner_email === owner) : rows;
+    if (candidates.length > 1) {
+      throw new ApiError(
+        409,
+        'AMBIGUOUS',
+        '同じ番号の案件が複数あるため特定できません。引継ぎの一覧から開いてください。',
+      );
+    }
+    return { ok: true, handoverId: candidates[0]?.id ?? null };
   });
 
   // 画面の再読込時に既存の依頼を引くための読み取り（docs/62 §5 への追加）。
