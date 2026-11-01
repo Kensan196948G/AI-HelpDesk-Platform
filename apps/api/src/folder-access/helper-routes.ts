@@ -4,6 +4,8 @@ import { sql } from '../db.js';
 import { ApiError, unauthorized } from '../errors.js';
 import { jsonbValue } from '../lib/jsonb-value.js';
 import { checkRateLimit, clientAddress } from '../lib/rate-limit.js';
+import { SKILL_RUN_CAPABILITY, signSkillRun } from '../support-session/contract.js';
+import { assistPollTx } from '../support-session/service.js';
 import { checkAddressLimit, isAddressLimited } from './address-limit.js';
 import { requireFolderAccessEnabled } from './routes.js';
 import {
@@ -59,7 +61,11 @@ const RegisterBody = z.object({
   enrollCode: z.unknown().optional(),
   ...SessionFields,
 });
-const PollBody = z.object(SessionFields);
+// capabilities は skill_run を実行できるヘルパーの申告（docs/63 / support-session/contract.ts）。
+const PollBody = z.object({
+  ...SessionFields,
+  capabilities: z.array(z.string().max(40)).max(16).optional(),
+});
 const OpParams = z.object({ id: z.string().uuid() });
 
 interface HelperRow {
@@ -336,7 +342,17 @@ export async function folderHelperRoutes(app: FastifyInstance): Promise<void> {
       throw new ApiError(429, 'RATE_LIMITED', 'リクエストが多すぎます。');
     }
     const beat = PollBody.parse(request.body);
-    const outcome = await sql.begin((tx) => pollTx(tx, helper, beat));
+    const outcome = await sql.begin(async (tx) => {
+      const polled = await pollTx(tx, helper, beat);
+      const assist = await assistPollTx(tx, {
+        helperId: helper.id,
+        requestId: helper.request_id,
+        revoked: polled.revoked,
+        capable: beat.capabilities?.includes(SKILL_RUN_CAPABILITY) === true,
+        sessionActive: normalizeSessionState(beat.sessionState) === 'active',
+      });
+      return { ...polled, assist };
+    });
     if (outcome.pendingRequestId) {
       await reconcileProbe(outcome.pendingRequestId, HELPER_ACTOR);
     }
@@ -361,9 +377,21 @@ export async function folderHelperRoutes(app: FastifyInstance): Promise<void> {
           sig: signOp(token, signable),
         };
       }),
-      cancel: outcome.cancel,
+      cancel: [...outcome.cancel, ...outcome.assist.cancel],
       revoked: outcome.revoked,
       paired: !outcome.revoked && Boolean(helper.request_id),
+      // 機能が無効なら応答の形を変えない。
+      ...(outcome.assist.enabled
+        ? {
+            skillOps: outcome.assist.skillOps.map((op) => ({
+              ...op,
+              sig: signSkillRun(token, op),
+            })),
+            ...(outcome.assist.nextPollSeconds
+              ? { nextPollSeconds: outcome.assist.nextPollSeconds }
+              : {}),
+          }
+        : {}),
     };
   });
 

@@ -44,6 +44,10 @@ try {
   $targetScript = $stateDir + '\folder-helper.ps1'
   Copy-Item -LiteralPath $sourceScript -Destination $targetScript -Force
   Write-HelperConfig -ServerBase $ServerUrl -AllowInsecure ([bool]$AllowInsecureHttp)
+  # 失効済みなのに旧トークンが残っていれば報告専用へ移す。残したままだと新規登録されない。
+  if ((Test-Path -LiteralPath (Get-StatePath -Name 'revoked.flag')) -and (Test-Path -LiteralPath (Get-StatePath -Name 'token.dat'))) {
+    $null = Move-RevokedTokenToReportStore
+  }
   Remove-StateFile -Name 'revoked.flag'
 
   if ($null -eq (Read-HelperToken)) {

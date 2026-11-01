@@ -54,6 +54,7 @@ try {
   if (Test-Path -LiteralPath $stateDir) {
     $info = New-Object IO.DirectoryInfo -ArgumentList $stateDir
     if (($info.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw '状態フォルダがリンクなので削除しません。' }
+    # token.dat、report-token.dat、runs、report-runs をまとめて消す。報告専用トークンでは通知しない。
     Remove-Item -LiteralPath $stateDir -Recurse -Force
   }
   Write-Output ('[uninstall] task={0} notify={1}' -f $taskName, $notified)

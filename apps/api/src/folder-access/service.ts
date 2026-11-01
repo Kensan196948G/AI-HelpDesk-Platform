@@ -9,6 +9,7 @@ import {
   fetchDeviceIdentityProbe,
   lookupRspDevices,
 } from '../remote-support/rsp.js';
+import { terminateSessionsForFolderRequestTx } from '../support-session/propagate.js';
 import { fetchLease, type LeaseResult } from './lease.js';
 import { auditRef, hashSid } from './sign.js';
 import {
@@ -183,6 +184,8 @@ export async function endRequestTx(
       WHERE id = ${ctx.helper_id}
     `;
   }
+  // 依頼の終了は、紐づく共通支援セッションへも同じトランザクションで伝える（docs/63 §10）。
+  await terminateSessionsForFolderRequestTx(tx, ctx.id, reason, actorEmail);
   await appendFolderAudit(tx, endAuditAction(status), ctx, actorEmail, {
     status,
     endReason: reason,

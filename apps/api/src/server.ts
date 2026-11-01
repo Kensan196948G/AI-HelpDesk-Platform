@@ -26,6 +26,8 @@ import { prototypeRoutes } from './routes/prototype.js';
 import { remoteAssistRoutes } from './routes/remote-assist.js';
 import { reportRoutes } from './routes/reports.js';
 import { terminalRoutes } from './routes/terminal.js';
+import { supportSessionHelperRoutes } from './support-session/helper-routes.js';
+import { supportSessionRoutes } from './support-session/routes.js';
 
 function secretsMatch(actual: string, expected: string): boolean {
   const a = Buffer.from(actual);
@@ -233,6 +235,8 @@ export async function buildServer(options?: { logger?: boolean }): Promise<Fasti
   await app.register(remoteSupportRoutes, { prefix: '/api' });
   await app.register(folderAccessRoutes, { prefix: '/api' });
   await app.register(folderHelperRoutes, { prefix: '/api' });
+  await app.register(supportSessionRoutes, { prefix: '/api' });
+  await app.register(supportSessionHelperRoutes, { prefix: '/api' });
   await app.register(healthRoutes, { prefix: '/api' });
 
   return app;
