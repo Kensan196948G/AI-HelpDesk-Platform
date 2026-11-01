@@ -16,9 +16,17 @@ export function executionSourceOf(result: unknown): ExecutionSource {
   return value === 'endpoint_agent' || value === 'mock' ? value : 'unknown';
 }
 
-/** 模擬の結果を受け取ってよい環境か。本番は常に拒否する（fail-closed）。 */
-export function mockResultAllowed(nodeEnv: string): boolean {
-  return nodeEnv !== 'production';
+/**
+ * Skill の結果を受け取ってよいか。本番相当では `endpoint_agent` だけを受け付ける（fail-closed）。
+ * 旧版エージェントの fixture は申告が無いので、`unknown` も拒否する。
+ * Cloudflare Access の認証で動いている環境は NODE_ENV の設定漏れがあっても本番相当とみなす。
+ */
+export function resultSourceAccepted(
+  source: ExecutionSource,
+  env: { nodeEnv: string; authMode: string },
+): boolean {
+  if (env.nodeEnv !== 'production' && env.authMode !== 'cloudflare-access') return true;
+  return source === 'endpoint_agent';
 }
 
 /**

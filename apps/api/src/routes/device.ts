@@ -18,7 +18,7 @@ import {
 } from '../lib/device-inventory.js';
 import { jsonbValue } from '../lib/jsonb-value.js';
 import { checkRateLimit, clientAddress } from '../lib/rate-limit.js';
-import { executionSourceOf, mockResultAllowed } from '../resolve/execution-source.js';
+import { executionSourceOf, resultSourceAccepted } from '../resolve/execution-source.js';
 
 const Int = (min: number, max: number) => z.number().int().min(min).max(max);
 const Num = (min: number, max: number) => z.number().min(min).max(max);
@@ -437,8 +437,10 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
     });
     const { id } = CommandIdSchema.parse(request.params);
     const input = CommandResultSchema.parse(request.body);
-    const existing = await sql<{ device_id: string | null; requires_elevation: boolean }[]>`
-      SELECT dc.device_id,
+    const existing = await sql<
+      { device_id: string | null; skill_id: string | null; requires_elevation: boolean }[]
+    >`
+      SELECT dc.device_id, dc.skill_id,
         EXISTS (
           SELECT 1 FROM skills sk
           WHERE sk.id = dc.skill_id
@@ -461,16 +463,28 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
         'このコマンドの要求権限とエージェントの権限が一致しません。',
       );
     }
-    // 模擬の結果は本番へ入れない。結果を保存せず失敗として閉じ、案件は担当者へ回す。
-    if (executionSourceOf(input.result) === 'mock' && !mockResultAllowed(config.NODE_ENV)) {
+    // 模擬・出所不明の Skill 結果は本番へ入れない。保存せず失敗として閉じ、案件は担当者へ回す。
+    // skill_id の無い既存経路（SPOOLER_RESTART）と、結果を持たない失敗報告は対象外。
+    const source = executionSourceOf(input.result);
+    if (
+      existing[0].skill_id &&
+      input.ok &&
+      !resultSourceAccepted(source, { nodeEnv: config.NODE_ENV, authMode: config.AUTH_MODE })
+    ) {
+      const message =
+        source === 'mock'
+          ? '模擬の結果は本番では受け付けません（実端末で実行されていません）。'
+          : '実行元を確認できない結果は本番では受け付けません。端末エージェントを更新してください。';
       await sql`
         UPDATE device_commands
-        SET status = 'failed', result = NULL,
-            error = '模擬の結果は本番では受け付けません（実端末で実行されていません）。',
-            completed_at = now()
+        SET status = 'failed', result = NULL, error = ${message}, completed_at = now()
         WHERE id = ${id} AND user_email = ${email} AND status = 'delivered'
       `;
-      throw new ApiError(403, 'MOCK_RESULT_FORBIDDEN', '模擬の結果は本番では受け付けません。');
+      throw new ApiError(
+        403,
+        source === 'mock' ? 'MOCK_RESULT_FORBIDDEN' : 'UNVERIFIED_RESULT_SOURCE',
+        message,
+      );
     }
     const rows = await sql<{ id: string }[]>`
       UPDATE device_commands

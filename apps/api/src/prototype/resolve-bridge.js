@@ -40,6 +40,7 @@
     // null は未確認。
     agentConnected: null,
     lastMode: 'idle',
+    restoredFor: null,
   };
 
   // 結果の出所の表示。実端末と言えるのは endpoint_agent だけで、それ以外は言わない。
@@ -147,6 +148,46 @@
     }
   }
 
+  function caseById(caseId) {
+    try {
+      return (S.cases || []).find((item) => item && item.id === caseId) || null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  /** 引継ぎ済み・完了済みの案件では、解決ループを新たに進めない。 */
+  function caseFinished(c) {
+    try {
+      if (!c) return false;
+      if (c.closed) return true;
+      return typeof link === 'function' && Boolean(link(c)?.tkt);
+    } catch (error) {
+      return Boolean(c?.closed);
+    }
+  }
+
+  // 再読み込み・案件の切替後に同じセッションへ戻るための控え（案件ごと・ステップ ID のみ）。
+  function activeKey(caseId) {
+    return `aihd.resolve.active.${caseId}`;
+  }
+
+  function rememberActive(caseId, stepId) {
+    try {
+      if (caseId && stepId) window.localStorage?.setItem(activeKey(caseId), String(stepId));
+    } catch (error) {
+      // 保存できなくてもカードは動く（復帰だけが効かない）。
+    }
+  }
+
+  function forgetActive(caseId) {
+    try {
+      if (caseId) window.localStorage?.removeItem(activeKey(caseId));
+    } catch (error) {
+      // localStorage が使えない環境では何もしない。
+    }
+  }
+
   function caseOfChat(chat) {
     try {
       return (S.cases || []).find((item) => item && item.chatId === chat?.id) || null;
@@ -176,7 +217,8 @@
 
   /** 結果を会話へ残す（1 ステップ 1 回）。報告書・担当者の AI 文脈はここを読む。 */
   function recordResult(step) {
-    const c = currentCase();
+    // 開いている案件ではなく、このセッションの案件の会話へ残す。
+    const c = caseById(STATE.caseId);
     const chat = chatOfCase(c);
     if (!chat || !step?.id || step.status !== 'done') return;
     if (chat.messages.some((message) => message?.resolveResult?.stepId === step.id)) return;
@@ -241,10 +283,15 @@
     render(true);
   }
 
-  async function start() {
+  async function start(expectedCaseId) {
     const c = currentCase();
     if (!c?.id || STATE.busy) return;
-    if (!isOwnerOf(c) || !c.chatId) return;
+    // 会話に残った開始ボタンは、その相談の案件を開いているときだけ効く。
+    if (expectedCaseId && expectedCaseId !== c.id) {
+      toast?.('この相談の案件を開いてから開始してください', 'bad');
+      return;
+    }
+    if (!isOwnerOf(c) || !c.chatId || caseFinished(c)) return;
     STATE.busy = true;
     STATE.error = null;
     try {
@@ -286,6 +333,7 @@
       STATE.session = data.session;
       STATE.step = data.step;
       STATE.mode = data.step ? 'proposed' : 'stopped';
+      rememberActive(c.id, data.step?.id);
       clearVerifyWait();
       STATE.busy = false;
       render(true);
@@ -308,6 +356,7 @@
         STATE.session = data.session;
         STATE.step = data.step;
         STATE.mode = 'stopped';
+        forgetActive(STATE.caseId);
         STATE.busy = false;
         render(true);
         return;
@@ -323,6 +372,7 @@
       STATE.step = data.step;
       STATE.mode = 'executing';
       STATE.busy = false;
+      rememberActive(STATE.caseId, data.step?.id);
       render(true);
       poll();
     } catch (error) {
@@ -405,10 +455,12 @@
             stopPolling();
           }
         } else if (status === 'failed') {
+          forgetActive(STATE.caseId);
           STATE.mode = 'escalated';
           clearVerifyWait();
           stopPolling();
         } else if (status === 'rejected' || status === 'cancelled') {
+          forgetActive(STATE.caseId);
           STATE.mode = 'stopped';
           clearVerifyWait();
           stopPolling();
@@ -447,6 +499,7 @@
       clearVerifyWait();
       if (data.step) {
         STATE.mode = 'proposed';
+        rememberActive(STATE.caseId, data.step.id);
       } else if (data.session?.status === 'stopped') {
         STATE.mode = 'stopped';
       } else {
@@ -470,6 +523,7 @@
 
   async function manualClose(action) {
     if (!STATE.session?.id || STATE.busy) return;
+    const actionCaseId = STATE.caseId;
     STATE.busy = true;
     STATE.error = null;
     try {
@@ -480,7 +534,8 @@
       // 確定したので、再読み込み復帰用の控えは残さない。
       forgetPending(data.session?.id);
       stopPolling();
-      followToWizard(action);
+      forgetActive(actionCaseId);
+      followToWizard(action, actionCaseId);
     } catch (error) {
       STATE.error = String(error.message || error);
       toast?.(`操作できませんでした: ${STATE.error}`, 'bad');
@@ -491,10 +546,12 @@
   }
 
   /** 本人の判断を案件へつなげる。担当者へは STEP 4 の同意画面、解決は完了画面へ進む。 */
-  function followToWizard(action) {
+  function followToWizard(action, caseId) {
     try {
       const c = currentCase();
-      if (!isOwnerOf(c) || !c.chatId || typeof ACT !== 'object') return;
+      // 操作の途中で別の案件を開いたら、そちらへは適用しない。
+      if (caseId && c?.id !== caseId) return;
+      if (!isOwnerOf(c) || !c.chatId || typeof ACT !== 'object' || caseFinished(c)) return;
       if (action === 'escalate' && typeof ACT.wHand === 'function') ACT.wHand();
       if (action === 'resolve' && typeof ACT.wSolved === 'function') ACT.wSolved();
     } catch (error) {
@@ -612,6 +669,7 @@
   async function decideAwaiting(action) {
     if (!STATE.session?.id || STATE.busy) return;
     if (action !== 'resolve' && action !== 'escalate') return;
+    const actionCaseId = STATE.caseId;
     STATE.busy = true;
     STATE.error = null;
     render(true);
@@ -632,7 +690,8 @@
       }
       stopPolling();
       STATE.mode = action === 'resolve' ? 'resolved' : 'escalated';
-      followToWizard(action);
+      forgetActive(actionCaseId);
+      followToWizard(action, actionCaseId);
     } catch (error) {
       STATE.error = String(error.message || error);
       toast?.(`操作できませんでした: ${STATE.error}`, 'bad');
@@ -707,6 +766,7 @@
       clearVerifyWait();
       // 停止したセッションは最終判断待ちではないので、復帰用の控えを消す。
       forgetPending(data.session?.id);
+      forgetActive(STATE.caseId);
       stopPolling();
     } catch (error) {
       STATE.error = String(error.message || error);
@@ -759,6 +819,7 @@
       agent: STATE.agentConnected,
       owner: isOwnerOf(c),
       sent: Boolean(c?.chatId),
+      finished: caseFinished(c),
     });
     const panel = document.getElementById('aihdResolvePanel');
     if (!panel) return;
@@ -780,9 +841,13 @@
       '</span></div>';
 
     let body = '';
+    const finished = caseFinished(c) && STATE.mode !== 'executing';
     // 確認待ちカードのボタンは押下中に無効化する（二重送信防止）。他モードの markup は変えない。
     const awaitingDisabled = STATE.busy ? ' disabled' : '';
-    if (STATE.mode === 'idle') {
+    if (finished) {
+      body =
+        '<div class="u-small u-muted" style="margin-top:6px">この案件は引継ぎ済み、または完了しています。読み取り診断は新しい相談から行えます。</div>';
+    } else if (STATE.mode === 'idle') {
       if (!isOwnerOf(c)) {
         body =
           '<div class="u-small u-muted" style="margin-top:6px">読み取り診断は相談した本人が行います。</div>';
@@ -971,10 +1036,65 @@
     );
   }
 
+  /** 再読み込み・案件の切替の後、同じセッションへ戻る（結果の取りこぼしと二重開始を防ぐ）。 */
+  async function restoreActive(c) {
+    let stepId = '';
+    try {
+      stepId = window.localStorage?.getItem(activeKey(c.id)) || '';
+    } catch (error) {
+      stepId = '';
+    }
+    if (!stepId || !isOwnerOf(c)) return;
+    try {
+      const data = await api(`/api/resolve/steps/${encodeURIComponent(stepId)}`);
+      if (currentCase()?.id !== c.id || STATE.mode !== 'idle') return;
+      const sessionStatus = data.session?.status;
+      if (
+        data.session?.caseId !== c.id ||
+        !['waiting_execute', 'executing', 'waiting_continue'].includes(sessionStatus)
+      ) {
+        forgetActive(c.id);
+        return;
+      }
+      STATE.caseId = c.id;
+      STATE.session = data.session;
+      STATE.step = data.step;
+      if (sessionStatus === 'waiting_execute') {
+        STATE.mode = 'proposed';
+      } else if (data.step?.status === 'done') {
+        recordResult(data.step);
+        if (sessionStatus === 'executing') {
+          STATE.mode = 'result';
+          poll();
+          STATE.verifyWait = true;
+          STATE.verifyWaitStartedAt = Date.now();
+        } else if (
+          data.session?.lastSummary?.outcome === 'verified' &&
+          !awaitingBlockedByVerify(data.session)
+        ) {
+          await showAwaitingDecision(data.session);
+          return;
+        } else {
+          STATE.mode = 'result';
+        }
+      } else {
+        STATE.mode = 'executing';
+        poll();
+      }
+      render(true);
+    } catch (error) {
+      if (error.status === 404 || error.status === 403) forgetActive(c.id);
+    }
+  }
+
   function ensurePanel() {
     const c = currentCase();
     if (!c?.id) return;
     if (!document.querySelector('#wzPane')) return;
+    if (STATE.restoredFor !== c.id) {
+      STATE.restoredFor = c.id;
+      if (STATE.mode === 'idle' && !caseFinished(c)) void restoreActive(c);
+    }
     let panel = document.getElementById('aihdResolvePanel');
     if (!panel) {
       const wiz = document.querySelector('.w-wiz');
@@ -1000,7 +1120,7 @@
     if (!button) return;
     const action = button.getAttribute('data-aihd-resolve');
     const decision = button.getAttribute('data-decision') || 'Y';
-    if (action === 'start') void start();
+    if (action === 'start') void start(button.getAttribute('data-case') || '');
     else if (action === 'approve') void approve(decision);
     else if (action === 'continue') void continueLoop(decision);
     else if (action === 'stop') void stop();
@@ -1023,11 +1143,13 @@
    * 固定データの確認カード（confirmHearing）と診断（H.print）へ進めない。
    * 他の相談の導線は変えない。
    */
-  function printGuideHtml(connected) {
+  function printGuideHtml(connected, c) {
     if (connected) {
       return (
         '<p>この端末は端末エージェントに接続されています。下の「解決ループ（読み取り診断）」で実際の状態を読み取れます。実行の前に必ず確認します。</p>' +
-        '<div class="btns"><button class="btn sm" data-aihd-resolve="start">読み取り診断を開始</button></div>'
+        '<div class="btns"><button class="btn sm" data-aihd-resolve="start" data-case="' +
+        esc(c?.id || '') +
+        '">読み取り診断を開始</button></div>'
       );
     }
     return `<p>${esc(NO_AGENT_NOTICE)}</p><div class="btns">${
@@ -1050,6 +1172,22 @@
       // 初期化前は何もしない。
     }
     if (c) c.realPath = connected ? 'agent' : 'no-agent';
+    if (!c) {
+      // 案件の無い会話には解決ループのカードが無く、接続も確かめていない。未接続とは言わない。
+      const notice =
+        '端末の読み取り診断は「新しい相談」の案件から行えます。担当者へ引き継ぐこともできます。';
+      addMsg(chat, {
+        kind: 'ai',
+        model: 'システム',
+        conf: '—',
+        text: notice,
+        html: `<p>${esc(notice)}</p><div class="btns">${
+          typeof escBtn === 'function' ? escBtn('IT端末', '通常', '担当者へ引き継ぐ') : ''
+        }</div>`,
+      });
+      persist();
+      return;
+    }
     addMsg(chat, {
       kind: 'ai',
       model: 'システム',
@@ -1058,7 +1196,7 @@
       text: connected
         ? '端末エージェントが接続されています。読み取り診断へ案内しました。'
         : NO_AGENT_NOTICE,
-      html: printGuideHtml(connected),
+      html: printGuideHtml(connected, c),
     });
     persist();
     // STEP 3 の説明は部分更新（wizSoft）では描き直されないので全体を描き直す。
@@ -1104,7 +1242,7 @@
         const row =
           `<label><input type="checkbox" data-w="share" data-k="realDiag" ${checked}>` +
           `<span><b>${esc(SHARE_KEY)}</b><br><span class="u-small u-muted">${lines.map(esc).join('<br>')}</span></span></label>`;
-        out = out.replace('<div class="w-share">', `<div class="w-share">${row}`);
+        out = out.replace('<div class="w-share">', () => `<div class="w-share">${row}`);
       }
     }
     return out;
@@ -1143,6 +1281,16 @@
     );
   });
 
+  function withholdResults(chat) {
+    for (const item of chat?.messages || []) {
+      if (!item?.resolveResult) continue;
+      item.resolveResult.facts = [];
+      item.resolveResult.withheld = true;
+      item.text = '【本人が共有しないことを選択】読み取り診断の結果';
+      item.html = `<p class="small muted">${esc(item.text)}</p>`;
+    }
+  }
+
   let pendingShare = null;
   wrapGlobal('createTicket', (original) => (state, options) => {
     if (!pendingShare || !options?.shared) return original(state, options);
@@ -1162,6 +1310,9 @@
         const lines = message?.ctx?.realDiag;
         pendingShare =
           Array.isArray(lines) && lines.length && message.sel?.realDiag !== false ? lines : null;
+        // 共有しないと選んだら、会話の写し（担当者・AI 文脈・報告書が読む）からも値を除く。
+        // 結果の正本はサーバの resolution_steps に残る。
+        if (Array.isArray(lines) && lines.length && !pendingShare) withholdResults(found?.[0]);
         try {
           return originalConsentSend(detail);
         } finally {

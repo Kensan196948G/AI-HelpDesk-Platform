@@ -254,6 +254,21 @@ describe('本番での模擬の拒否', () => {
     expect(JSON.stringify(step.json().step.resultSummary)).not.toContain('Running');
   });
 
+  it('本番は申告の無い Skill の結果も 403 で拒否する（旧版エージェントの fixture を入れない）', async () => {
+    const started = await startSession();
+    expect((await approveY(started)).statusCode).toBe(200);
+    const command = await deliver();
+    config.NODE_ENV = 'production';
+    const response = await report(command.id, SPOOLER_RESULT);
+    config.NODE_ENV = originalNodeEnv;
+    expect(response.statusCode, response.body).toBe(403);
+    expect(response.json().error.code).toBe('UNVERIFIED_RESULT_SOURCE');
+    const rows = await sql<{ status: string; result: unknown }[]>`
+      SELECT status, result FROM device_commands WHERE id = ${command.id}
+    `;
+    expect(rows[0]).toMatchObject({ status: 'failed', result: null });
+  });
+
   it('本番でも endpoint_agent の結果は受け付ける', async () => {
     const started = await startSession();
     expect((await approveY(started)).statusCode).toBe(200);

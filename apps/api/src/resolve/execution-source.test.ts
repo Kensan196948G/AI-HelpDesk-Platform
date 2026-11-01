@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { executionSourceOf, mockResultAllowed, resultShapeOk } from './execution-source.js';
+import { executionSourceOf, resultShapeOk, resultSourceAccepted } from './execution-source.js';
 
 describe('executionSourceOf', () => {
   it('申告が endpoint_agent / mock のときだけその値を返す', () => {
@@ -16,11 +16,25 @@ describe('executionSourceOf', () => {
   });
 });
 
-describe('mockResultAllowed', () => {
-  it('本番だけ拒否する', () => {
-    expect(mockResultAllowed('production')).toBe(false);
-    expect(mockResultAllowed('development')).toBe(true);
-    expect(mockResultAllowed('test')).toBe(true);
+describe('resultSourceAccepted', () => {
+  const dev = { nodeEnv: 'development', authMode: 'local' };
+  const prod = { nodeEnv: 'production', authMode: 'cloudflare-access' };
+
+  it('検証環境はどの出所も受け付ける（表示で区別する）', () => {
+    expect(resultSourceAccepted('mock', dev)).toBe(true);
+    expect(resultSourceAccepted('unknown', dev)).toBe(true);
+  });
+
+  it('本番は endpoint_agent だけ受け付ける', () => {
+    expect(resultSourceAccepted('endpoint_agent', prod)).toBe(true);
+    expect(resultSourceAccepted('mock', prod)).toBe(false);
+    expect(resultSourceAccepted('unknown', prod)).toBe(false);
+  });
+
+  it('NODE_ENV の設定漏れでも Access 認証なら本番相当として拒否する', () => {
+    const env = { nodeEnv: 'development', authMode: 'cloudflare-access' };
+    expect(resultSourceAccepted('mock', env)).toBe(false);
+    expect(resultSourceAccepted('endpoint_agent', env)).toBe(true);
   });
 });
 

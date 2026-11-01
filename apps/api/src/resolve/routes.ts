@@ -2256,7 +2256,13 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
       // AI に渡すのは fieldsToAi 適用後の result_ai だけ。旧データ（result_ai なし）は
       // 未フィルターの last_summary へ退避せず、何も渡さない（fail-closed）。
       const lastResultAi = await loadLastResultAi(current.session.id);
-      const lastResultAiText = lastResultAi ? JSON.stringify(lastResultAi).slice(0, 1000) : '';
+      // jsonb はキー順を保たないので、1000 字で切っても出所が残るよう先頭へ置き直す。
+      const lastResultAiText = lastResultAi
+        ? JSON.stringify({
+            executionSource: executionSourceOf(lastResultAi),
+            ...jsonObject(lastResultAi),
+          }).slice(0, 1000)
+        : '';
       const proposal = await proposeNext({
         text: caseText(ownedCase),
         lastSummary: lastResultAiText,

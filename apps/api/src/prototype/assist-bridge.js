@@ -108,6 +108,10 @@
 
   function ahName(id) {
     try {
+      // 名簿に無い利用者はデモ人物に固定されている。その氏名を報告書へ書かない。
+      if (typeof PERSONA_LOCKED !== 'undefined' && PERSONA_LOCKED && id === S.ui.user) {
+        return '名簿未登録の利用者（氏名は未確認）';
+      }
       return uname(id);
     } catch (error) {
       return String(id || '');
@@ -326,7 +330,8 @@
             rows: (result.facts || []).map(([key, value]) => ({
               k: String(key),
               v: String(value),
-              lv: 'ok',
+              // 値を判定していないので「正常」と書かない。
+              lv: 'none',
             })),
           };
         }

@@ -517,7 +517,7 @@ Phase B の独立レビューで指摘された High 3 件を、Phase C 着手�
 | `unknown` | 申告なし・不正（旧版エージェント）。実端末の結果と見なさない |
 
 - エージェントは Skill の結果に `executionSource` を付ける。サーバは `result_summary` / `result_ai` / `last_summary` へ写し、`stepDto.executionSource` で返す。
-- **本番（`NODE_ENV=production`）は `mock` の結果を受け付けない。** `POST /api/device/command/:id/result` は 403 `MOCK_RESULT_FORBIDDEN` を返し、結果を保存せずコマンドを `failed` にする（ステップは失敗、セッションは担当者へ）。
+- **本番は `endpoint_agent` 以外の Skill の結果を受け付けない。** `NODE_ENV=production`、または `AUTH_MODE=cloudflare-access` の環境で、`POST /api/device/command/:id/result` は `mock` を 403 `MOCK_RESULT_FORBIDDEN`、申告なしを 403 `UNVERIFIED_RESULT_SOURCE` とし、結果を保存せずコマンドを `failed` にする（ステップは失敗、セッションは担当者へ）。旧版エージェントは非 Windows で申告なしの fixture を返すため拒否する。**本番へ入れるときはエージェントの更新が先に必要。** `skill_id` の無い既存経路（`SPOOLER_RESTART`）と失敗報告は対象外。
 - `result_ai` の先頭に出所を置き、AI には「`endpoint_agent` 以外は解決の根拠にしない」と指示する。
 - **限界**: 出所はデバイストークンを持つエージェントの自己申告で、端末の実在の証明ではない。トークンを持つ者が `endpoint_agent` と偽ることは防げない。模擬を実端末に見せない・本番へ入れないための区別である。
 
@@ -542,4 +542,4 @@ Phase B の独立レビューで指摘された High 3 件を、Phase C 着手�
 
 - 実行器は `scripts/endpoint-command-agent.mjs`（Node 20+、`--mock` なし、Windows）。**`scripts/windows/command-agent.ps1` は使えない**（`SPOOLER_RESTART` だけで Skill を実行せず、`x-device-id` も送らないので `GET /api/device/command` が 400 になる）。
 - 設定の `browserDeviceId` には、ブラウザの端末 ID（`localStorage` の `aihd.device.id`。未接続のカードに表示）をそのまま入れる。画面の `WEB-XXXXXXXX` は短縮表示で、`device_tokens.device_id` と一致しないのでコマンドが届かない。
-- 旧版エージェントの結果は `unknown` と表示される。実機受入は更新後の版で行う。
+- 旧版エージェントの結果は本番で拒否される。実機受入は更新後の版で行う。

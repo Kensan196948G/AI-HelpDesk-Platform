@@ -185,6 +185,29 @@ describe('印刷の相談の導線', () => {
   });
 });
 
+describe('案件の状態との整合', () => {
+  it('会話に案件が無ければ未接続と言わない', async () => {
+    const context = createSandbox({ agentConnected: true });
+    context.sandbox.S.cases = [];
+    context.sandbox.H.print(context.chat);
+    await settle();
+    await settle();
+    expect(context.chat.messages[0].text).not.toContain('未接続');
+    expect(context.calls.some((call) => call.startsWith('fetch'))).toBe(false);
+  });
+
+  it('share の結果に $ が含まれても HTML を壊さない', () => {
+    const context = createSandbox();
+    context.chat.messages.push({
+      id: 'r1',
+      model: 'x',
+      resolveResult: { source: 'mock', title: 't', commandId: 'c', facts: [['k', 'print$&']] },
+    });
+    const pane = context.sandbox.paneHtml({ ...context.targetCase, step: 4 });
+    expect(pane.match(/class="w-share"/g)).toHaveLength(1);
+  });
+});
+
 describe('結果の出所の扱い', () => {
   function withResult(source: string, facts: string[][] = [['status', 'Running']]) {
     const context = createSandbox({ agentConnected: true });
@@ -246,6 +269,26 @@ describe('結果の出所の扱い', () => {
     consent.sel.realDiag = false;
     sandbox.ACT.consentSend({ mid: consent.id });
     expect(tickets[1].shared['実診断の結果']).toBeUndefined();
+  });
+
+  it('共有しないと選んだら、会話の写しからも値を除く', () => {
+    const { sandbox, chat } = withResult('endpoint_agent');
+    const result = chat.messages[0];
+    result.text = '【実端末】status=Running';
+    result.html = '<p>status=Running</p>';
+    const consent = sandbox.consentCard(chat);
+    consent.sel.realDiag = false;
+    sandbox.ACT.consentSend({ mid: consent.id });
+    expect(JSON.stringify(result)).not.toContain('Running');
+    expect(result.resolveResult.withheld).toBe(true);
+  });
+
+  it('共有すると選んだら会話の写しは残す', () => {
+    const { sandbox, chat } = withResult('endpoint_agent');
+    const result = chat.messages[0];
+    const consent = sandbox.consentCard(chat);
+    sandbox.ACT.consentSend({ mid: consent.id });
+    expect(JSON.stringify(result)).toContain('Running');
   });
 
   it('結果が無ければ選択肢も項目も増やさない', () => {
