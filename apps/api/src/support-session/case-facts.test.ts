@@ -116,6 +116,134 @@ describe('案件の固定の語彙への写像', () => {
     expect(buildCaseFacts(snapshot(text)).symptomTags).toContain(tag);
   });
 
+  describe('否定・解消済み・過去形・複数症状（docs/63 §12）', () => {
+    const tags = (subject: string, messages: string[] = []) =>
+      buildCaseFacts(
+        snapshot(
+          subject,
+          messages.map((text) => ({ kind: 'user', text })),
+        ),
+      ).symptomTags;
+
+    it.each([
+      '印刷できる',
+      '印刷エラーはありません',
+      '印刷に失敗していません',
+      '印刷できないわけではない',
+      'フォルダは消えていません',
+      'ファイルは消えていない',
+      'VPN は切れていません',
+      '容量不足ではありません',
+      'ネットワークのエラーは出ていません',
+      'PC が重いわけではありません',
+    ])('否定を症状にしない: %s', (text) => {
+      expect(tags(text)).toEqual([]);
+    });
+
+    it('節をまたいで症状を作らない', () => {
+      expect(tags('印刷はできるが、保存できない')).toEqual(['save_failed']);
+      expect(tags('プリンタは正常ですが VPN につながらない')).toEqual([
+        'vpn_failed',
+        'network_down',
+      ]);
+    });
+
+    it.each([
+      '印刷できませんでしたが、直りました',
+      '印刷できない件は解決しました',
+      'VPN につながらなかったが今はつながる',
+      'ファイルが消えましたが、見つかりました',
+      '保存できませんでしたが、再起動したら保存できました',
+      'プリンタで印刷できません。プリンタは直りました',
+    ])('解消済みを症状にしない: %s', (text) => {
+      expect(tags(text)).toEqual([]);
+    });
+
+    it('本人の後の発言で解消した症状を残さない', () => {
+      expect(tags('プリンタで印刷できない', ['直りました'])).toEqual([]);
+      expect(tags('VPN につながらない', ['もう大丈夫です'])).toEqual([]);
+    });
+
+    it('解消の後にまた起きたら症状にする', () => {
+      expect(tags('印刷できません', ['直りました', 'また印刷できません'])).toEqual([
+        'print_failed',
+      ]);
+    });
+
+    it('どれが直ったか語からも節からも分からないときは推測で消さない', () => {
+      expect(tags('印刷できません。VPN につながりません。直りました')).toEqual([
+        'print_failed',
+        'vpn_failed',
+        'network_down',
+      ]);
+    });
+
+    it('まだ直っていない表現を解消にしない', () => {
+      expect(tags('印刷できません。まだ解決していません')).toEqual(['print_failed']);
+      expect(tags('印刷できません。直りましたか')).toEqual(['print_failed']);
+    });
+
+    it.each([
+      '昨日はファイルが開けなかったが今は開ける',
+      '昨日は印刷できませんでした',
+      '先週は VPN につながらなかった',
+      '以前は保存できませんでした',
+    ])('過去の時点の話を今の症状にしない: %s', (text) => {
+      expect(tags(text)).toEqual([]);
+    });
+
+    it.each([
+      ['昨日から印刷できません', 'print_failed'],
+      ['昨日は印刷できませんでしたが今も印刷できません', 'print_failed'],
+      ['さっき試したら印刷できませんでした', 'print_failed'],
+      ['ファイルが開けなかった', 'file_missing'],
+      ['プリンタが動かない', 'print_failed'],
+      ['パスワードがわからない', 'password_reset'],
+      ['アプリが固まる', 'app_crash'],
+    ])('続いている症状は残す: %s', (text, tag) => {
+      expect(tags(text)).toContain(tag);
+    });
+
+    it('複数の症状を全部残し、直ったものだけ除く', () => {
+      expect(tags('印刷できません。ログインもできません。PC が重い')).toEqual([
+        'print_failed',
+        'login_failed',
+        'slow',
+      ]);
+      expect(tags('印刷は直りましたが、VPN につながらない')).toEqual([
+        'vpn_failed',
+        'network_down',
+      ]);
+      expect(tags('VPN につながりません。印刷できません。印刷は直りました')).toEqual([
+        'vpn_failed',
+        'network_down',
+      ]);
+    });
+
+    it('同じ節で起きた症状は一緒に解消する', () => {
+      expect(tags('VPN につながりません。VPN は直りました')).toEqual([]);
+    });
+
+    it('分類は残った症状から決める', () => {
+      expect(buildCaseFacts(snapshot('印刷は直りましたが、VPN につながらない')).caseCategory).toBe(
+        'network',
+      );
+      expect(buildCaseFacts(snapshot('印刷できませんでしたが、直りました')).caseCategory).toBe(
+        'other',
+      );
+    });
+
+    it.each([
+      ['問題ないです', 'unknown'],
+      ['印刷できませんでしたが、直りました', 'unknown'],
+      ['印刷できません', 'repair'],
+      ['容量の確認方法は', 'information'],
+      ['直してほしい', 'repair'],
+    ])('目的は残った内容から決める: %s', (text, purpose) => {
+      expect(buildCaseFacts(snapshot(text)).purpose).toBe(purpose);
+    });
+  });
+
   it('確認済み事項は固定条件を満たした実行だけから作る', () => {
     expect(
       confirmedFacts([

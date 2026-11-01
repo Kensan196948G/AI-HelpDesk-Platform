@@ -41,7 +41,7 @@ export const CONFIRMED_FACTS = [
 ] as const;
 export type ConfirmedFact = (typeof CONFIRMED_FACTS)[number];
 
-const CANNOT = 'でき(ない|ません|なく)';
+const CANNOT = 'でき(ない|ません|なく|なかった)';
 
 /**
  * 症状の辞書。話題の語だけでは数えず、問題を示す形（否定形など）に限る。
@@ -58,21 +58,21 @@ const SYMPTOM_RULES: {
     tag: 'folder_missing',
     category: 'storage',
     pattern:
-      /フォルダ.{0,8}(見つから(ない|ず)|見つかりません|見当たら(ない|ず)|見当たりません|消え(た|ました|て)|開け(ない|ません))|フォルダ(が|は)?(ない|ありません)/,
+      /フォルダ.{0,8}(見つから(ない|ず)|見つかりません|見当たら(ない|ず)|見当たりません|消え(た|ました|て)|開け(ない|ません|なかった))|フォルダ(が|は)?(ない|ありません)/,
     keyword: /フォルダ/,
   },
   {
     tag: 'file_missing',
     category: 'storage',
     pattern:
-      /ファイル.{0,8}(見つから(ない|ず)|見つかりません|見当たら(ない|ず)|見当たりません|消え(た|ました|て)|開け(ない|ません))|ファイル(が|は)?(ない|ありません)/,
+      /ファイル.{0,8}(見つから(ない|ず)|見つかりません|見当たら(ない|ず)|見当たりません|消え(た|ました|て)|開け(ない|ません|なかった))|ファイル(が|は)?(ない|ありません)/,
     keyword: /ファイル/,
   },
   {
     tag: 'storage_full',
     category: 'storage',
     pattern:
-      /(容量|空き).{0,8}(足り(ない|ません)|不足|少な|いっぱい|(が|は)(ない|ありません))|ディスク.{0,8}(いっぱい|不足)|disk full/i,
+      /(容量|空き).{0,8}(足り(ない|ません)|不足|少な|いっぱい)|(容量|空き)(容量)?(が|は)(ない|ありません)|ディスク.{0,8}(いっぱい|不足)|disk full/i,
     keyword: /容量|空き|ディスク|disk|storage/i,
   },
   {
@@ -85,7 +85,7 @@ const SYMPTOM_RULES: {
     tag: 'print_failed',
     category: 'printing',
     pattern: new RegExp(
-      `(印刷|プリント).{0,8}(${CANNOT}|失敗|エラー|されない|されません)|プリンタ.{0,12}(${CANNOT}|つながら|応答し(ない|ません)|動か|エラー|認識し)|スプーラ.{0,8}(エラー|停止)|print.{0,10}(fail|error)`,
+      `(印刷|プリント).{0,8}(${CANNOT}|失敗|エラー|されない|されません)|プリンタ.{0,12}(${CANNOT}|つながら(ない|ず|なかった)|つながりません|応答し(ない|ません)|動か(ない|ず|なかった)|動きません|エラー|認識し(ない|ません|なかった))|スプーラ.{0,8}(エラー|停止)|print.{0,10}(fail|error)`,
       'i',
     ),
     keyword: /印刷|プリンタ|プリント|スプーラ|print/i,
@@ -93,14 +93,17 @@ const SYMPTOM_RULES: {
   {
     tag: 'vpn_failed',
     category: 'network',
-    pattern: new RegExp(`VPN.{0,12}(つながら|つながりません|接続${CANNOT}|切れ|エラー|失敗)`, 'i'),
+    pattern: new RegExp(
+      `VPN.{0,12}(つながら(ない|ず|なかった)|つながりません|接続${CANNOT}|切れ|エラー|失敗)`,
+      'i',
+    ),
     keyword: /VPN/i,
   },
   {
     tag: 'network_down',
     category: 'network',
     pattern: new RegExp(
-      `つながら(ない|ず)|つながりません|(ネットワーク|インターネット|Wi-?Fi|ネット).{0,12}(切れ|エラー|${CANNOT})|オフライン`,
+      `つながら(ない|ず|なかった)|つながりません|(ネットワーク|インターネット|Wi-?Fi|ネット).{0,12}(切れ|エラー|${CANNOT})|オフライン`,
       'i',
     ),
     keyword: /ネットワーク|インターネット|Wi-?Fi/i,
@@ -109,7 +112,7 @@ const SYMPTOM_RULES: {
     tag: 'password_reset',
     category: 'account',
     pattern: new RegExp(
-      `パスワード.{0,12}(忘れ|わから|分から|わかりません|期限|ロック|変更${CANNOT})|password.{0,12}(forgot|reset|expired)`,
+      `パスワード.{0,12}(忘れ|わから(ない|なく|ず)|分から(ない|なく|ず)|わかりません|分かりません|期限|ロック|変更${CANNOT})|password.{0,12}(forgot|reset|expired)`,
       'i',
     ),
     keyword: /パスワード|password/i,
@@ -126,7 +129,7 @@ const SYMPTOM_RULES: {
   {
     tag: 'app_crash',
     category: 'software',
-    pattern: /(アプリ|ソフト).{0,12}(落ち|起動し(ない|ません)|固ま)|クラッシュ/,
+    pattern: /(アプリ|ソフト).{0,12}(落ち|起動し(ない|ません)|固ま(る|り|った|って))|クラッシュ/,
     keyword: /クラッシュ|起動/,
   },
   {
@@ -164,17 +167,150 @@ function consultationText(snapshot: unknown): string {
   return parts.join('\n').slice(0, 8000);
 }
 
+function sentencesOf(text: string): string[] {
+  return text.split(/[。．！？!?\n]+/).filter((sentence) => sentence.trim().length > 0);
+}
+
+/**
+ * 節へ分ける。辞書の `.{0,12}` が別の節の語へ届かないようにするため。
+ * 助詞の「が」（容量が足りません）では切らず、活用語尾に続く逆接の「が」だけで切る。
+ */
+function clausesOf(sentence: string): string[] {
+  return sentence
+    .replace(/([がはもをにでと])[、，,]\s*/g, '$1')
+    .split(/[、，,]|(?<=[ただすんるい])が|けれども|けれど|けど|のに|ものの/)
+    .filter((clause) => clause.trim().length > 0);
+}
+
+/** 一致の直後が打ち消しなら症状にしない（「エラーはありません」「消えていません」）。 */
+const NEGATED_AFTER =
+  /^\s*(?:[はがも]?(?:ない|なし|無し|ありません|出てい(?:ない|ません)|起きてい(?:ない|ません)|し(?:てい)?(?:ない|ません))|て?い(?:ない|ません)|て(?:ない|ません)|し(?:てい)?(?:ない|ません)|く(?:ない|ありません)|で(?:は|も)(?:ない|ありません)|じゃ(?:ない|ありません)|わけ(?:では|じゃ)(?:ない|ありません)|こと(?:は|も)(?:ない|ありません))/;
+
+/** 時点を示す語と過去の形が揃った節は、今の症状として数えない。「昨日から」は続いているので含めない。 */
+const PAST_POINT =
+  /(?:昨日|一昨日|おととい|先週|先月|去年|昨年|以前|前回|先日|今朝|午前中)(?:は|には|まで|の時は|のときは)|(?:さっき|先ほど|この前|前|今まで)(?:は|まで)/;
+const PAST_FORM = /なかった|ませんでした|でした|だった|ていた|ていました/;
+const STILL = /今も|いまも|現在も|まだ|依然|ずっと|相変わらず/;
+
+/** それだけで解消を述べる表現。語が無ければ、同じ文か、対象が 1 つに決まるときだけ効く。 */
+const RESOLVED =
+  /(?:直り|治り|解決し|解消し|復旧し|回復し|修復し)(?:ました|た)|直った|治った|解決済|解消済|もう大丈夫|問題なくなり|(?:でき|つながる|動く)ようになり|(?:今|いま|現在)は?.{0,12}(?:でき(?:る|ます|て)|開け(?:る|ます)|つなが(?:る|ります|って)|動(?:く|きます|いて)|使え(?:る|ます)|見つか|問題(?:は)?(?:ない|ありません)|大丈夫|正常)/;
+/** 今は動くという表現。語か同じ文の症状が無ければ、何が動いたのか分からないので効かせない。 */
+const WORKING =
+  /でき(?:ました|た)|(?:つながり|見つかり|開け|開き|起動し|動き)ました|つながった|見つかった|正常|問題(?:は)?(?:ない|ありません|なし)/;
+
+function isNegated(clause: string, pattern: RegExp): boolean {
+  // 節の中のすべての一致が打ち消しのときだけ、症状なしとする。
+  const flags = pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`;
+  const matches = [...clause.matchAll(new RegExp(pattern.source, flags))];
+  return (
+    matches.length > 0 &&
+    matches.every((match) => NEGATED_AFTER.test(clause.slice(match.index + match[0].length)))
+  );
+}
+
+function clauseSymptoms(clause: string): SymptomTag[] {
+  return SYMPTOM_RULES.filter(
+    (rule) => rule.pattern.test(clause) && !isNegated(clause, rule.pattern),
+  ).map((rule) => rule.tag);
+}
+
+/** 語で対象を決める。「再起動で直りました」の「起動」はアプリの話ではない。 */
+function mentionedRules(clause: string) {
+  const text = clause.replace(/再起動/g, '');
+  return SYMPTOM_RULES.filter((rule) => rule.keyword.test(text));
+}
+
+interface ActiveSymptoms {
+  /** 症状 → それを述べた節の番号。 */
+  tags: Map<SymptomTag, number>;
+  /** 残った症状を述べた節。目的の判定に使う。 */
+  clauses: Map<number, string>;
+}
+
+/** 文の順に読み、症状の追加と解消を反映する。辞書で決められない解消は推測で消さない。 */
+function readSymptoms(text: string): ActiveSymptoms {
+  const active: ActiveSymptoms = { tags: new Map(), clauses: new Map() };
+  let clauseNo = 0;
+  const drop = (tags: Iterable<SymptomTag>) => {
+    for (const tag of tags) active.tags.delete(tag);
+  };
+  for (const sentence of sentencesOf(text)) {
+    const sameSentence = new Set<SymptomTag>();
+    for (const clause of clausesOf(sentence)) {
+      clauseNo += 1;
+      const question = /か\s*$/.test(clause);
+      const resolved = !question && RESOLVED.test(clause);
+      const working = !question && !resolved && WORKING.test(clause);
+      if (!resolved && !working) {
+        const past = PAST_POINT.test(clause) && PAST_FORM.test(clause) && !STILL.test(clause);
+        if (past) continue;
+        const tags = clauseSymptoms(clause);
+        for (const tag of tags) {
+          active.tags.set(tag, clauseNo);
+          sameSentence.add(tag);
+        }
+        if (tags.length > 0) active.clauses.set(clauseNo, clause);
+        continue;
+      }
+      const mentioned = mentionedRules(clause);
+      if (mentioned.length > 0) {
+        // 語で特定できる。同じ節で述べた症状（VPN の「つながらない」と network_down）も一緒に消す。
+        const origins = new Set<number>();
+        for (const rule of mentioned) {
+          const origin = active.tags.get(rule.tag);
+          if (origin !== undefined) origins.add(origin);
+        }
+        for (const [tag, origin] of [...active.tags]) {
+          if (origins.has(origin)) active.tags.delete(tag);
+        }
+        continue;
+      }
+      if (sameSentence.size > 0) {
+        drop(sameSentence);
+        sameSentence.clear();
+        continue;
+      }
+      // 別の文の「直りました」。症状が 1 つの節にしかないときだけ対象が決まる。
+      if (resolved && new Set(active.tags.values()).size === 1) drop([...active.tags.keys()]);
+    }
+  }
+  return active;
+}
+
 export function tagsFromText(text: string): SymptomTag[] {
-  return SYMPTOM_RULES.filter((rule) => rule.pattern.test(text)).map((rule) => rule.tag);
+  const { tags } = readSymptoms(text);
+  return SYMPTOM_RULES.filter((rule) => tags.has(rule.tag)).map((rule) => rule.tag);
+}
+
+/**
+ * ナレッジの本文を固定のタグへ写す。ナレッジは解決した事例の記録なので、
+ * 解消の表現で消さない（打ち消しだけを除く）。戻り値は固定の語彙だけ。
+ */
+export function knowledgeTagsFromText(...texts: readonly string[]): SymptomTag[] {
+  const found = new Set<SymptomTag>();
+  for (const text of texts) {
+    for (const sentence of sentencesOf(text)) {
+      for (const clause of clausesOf(sentence)) {
+        for (const tag of clauseSymptoms(clause)) found.add(tag);
+      }
+    }
+  }
+  return SYMPTOM_RULES.filter((rule) => found.has(rule.tag)).map((rule) => rule.tag);
 }
 
 export function buildCaseFacts(snapshot: unknown): CaseFacts {
   const text = consultationText(snapshot);
-  const tags = tagsFromText(text);
+  const active = readSymptoms(text);
+  const tags = SYMPTOM_RULES.filter((rule) => active.tags.has(rule.tag)).map((rule) => rule.tag);
   const first = SYMPTOM_RULES.find((rule) => rule.tag === tags[0]);
+  const remaining = [...new Set(active.tags.values())]
+    .map((no) => active.clauses.get(no) ?? '')
+    .join('\n');
   let purpose: CasePurpose = 'unknown';
   if (/教えて|知りたい|方法は|確認したい/.test(text)) purpose = 'information';
-  else if (/直したい|直して|解消|できない|ない|失敗/.test(text)) purpose = 'repair';
+  else if (/直したい|直して|解消したい/.test(text)) purpose = 'repair';
+  else if (/でき(?:ない|ません|なく|ず)|ない|ません|失敗/.test(remaining)) purpose = 'repair';
   else if (tags.length > 0) purpose = 'diagnose';
   return { caseCategory: first?.category ?? 'other', symptomTags: tags, purpose };
 }
