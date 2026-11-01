@@ -51,7 +51,7 @@ README の図と記述の各線を、実際の経路と証跡に対応づける�
 | 🔍 調べる（読み取り診断、resolve カード） | 開始 → 本人 Y | `POST /api/resolve/sessions`、`/steps/:id/approve` | `resolution_*`、`device_commands` | `--mock` | 模擬と表示、DB に `executionSource=mock` | 出所付きで引継ぎ・報告書 | 経路は**実データ（mock まで）**。実端末の結果は**未検証** | I | E2E A4〜A9、X1、`real-path.integration.test.ts`、#126 の `docs/evidence/wizard-real-path-20261101/` |
 | 🔍 調べる（読み取り診断、元ウィザードの印刷以外） | STEP 3 の確認 Y | なし | `prototype_states` | なし | 固定データ | デモと表示 | **デモ** | M / I | docs/14 §2-11 |
 | 🛠 直す（提案カード） | 提案の Y | なし（`ACT.realExec` を押したときだけ `/api/device/command`） | `prototype_states` | 模擬（`SPOOLER_RESTART` のみ別経路） | 「実行しました（模擬）」 | デモと表示 | **デモ** | M / I | docs/14 §2-11 |
-| 🛠 直す（`SPOOLER_RESTART` の実機） | 提案カードの実行ボタン | `POST /api/device/command` | `device_commands` | エージェント | - | - | **未検証**。リポジトリに実機の実行記録が無い（docs/19 §「実機（Windows）での実行は未実施」）。I では印刷の提案カードが出ないので、この経路の入口がウィザードから無くなる（**未接続**） | M のみ入口あり | docs/19、`device.test.ts`、E2E A2 |
+| 🛠 直す（`SPOOLER_RESTART` の実機） | 提案カードの実行ボタン | `POST /api/device/command` | `device_commands` | エージェント | - | - | **未検証**。`SPOOLER_RESTART` の実機の実行記録は見つからない（docs/19 は「実機（Windows）での実行は未実施」、`docs/evidence/device-command/20261023/` は `mock:true`）。I では印刷の提案カードが出ないので、この経路の入口がウィザードから無くなる（**未接続**） | M のみ入口あり | docs/19、`device.test.ts`、E2E A2 |
 | 🛠 直す（修復 Skill、resolve カード） | 提案の Y | `/api/resolve/steps/:id/approve` | 同上 | エージェント | - | - | API と統合試験のみ。画面の通しは未実施（**未検証**）。AI が修復を選ぶ前提で、読み取りの提案までしか流していない | I | `routes.integration.test.ts` |
 | 🛠 直す（新本人ヘルパー） | 既定無効 | `/api/support-sessions/*` | #120 のテーブル | 本人権限ヘルパー | docs/63 §14 | - | **未検証（この統合には無い）**。実機の記録は docs/63 §14 のとおり検証端末 1 台、検証インスタンス、ヘッダ注入で、実画面の操作ではない。結果は `folder.summary` などで、印刷・修復の実障害の証拠ではない | #120 | docs/63 §14 |
 | 🚫 やらない（許可リスト外） | - | サーバのカタログ照合（resolve）、定義済みの操作のみ（元ウィザード） | - | - | - | - | resolve は**実データ（統合試験）**、元ウィザードは**デモ** | M / I | `routes.integration.test.ts` |
@@ -103,6 +103,8 @@ README の図と記述の各線を、実際の経路と証跡に対応づける�
 | 構成図: Access + Tunnel | 今回は使っていない（`AUTH_MODE=local`）。**未検証** | - | - |
 | 構成図: `/api/ai/answer`（deepseek-flash + 承認済みナレッジ + PC 情報） | **実データ**（`/api/state` の KB を使わないのは I のみ）。実 AI の確認では PC 情報を外した | M / I | E2E Q1〜Q4、Q6 |
 | 構成図: `/api/resolve/*`、`/api/knowledge/*`、`/api/case-handovers/*` | 図に載っていなかったので追記した | M / I | §3〜§5 |
+| 図 flow.svg「AI が答えて直す」「次の人の答えになる」、cycle.svg「④ 次の人へ」 | 目指す流れ。修復は**デモ**、次の人へは自由記述の AI 入力まで。SVG は変えず、README の図の直下に注記した | - | §3、§5、§7 |
+| 安心の表「共有は同意した分だけ」、FAQ「自分の PC 以外の情報が混ざらない」「誰に見られる」 | 担当者への共有は同意の範囲（**実データ**、E2E H7）。KB を通じて別の人の AI 入力へ渡る経路がある（欠陥 1）。申請中の KB 本文は承認者が読める（docs/61 §7） | M / I | E2E K14、K15、H7 |
 | FAQ: 承認ずみナレッジ 9 件からスタート | シードの件数。本番の件数はこの作業では見ていない（**未検証**） | - | `scripts/seed.ts` |
 
 ## 7. 通しの E2E で見つけた欠陥
