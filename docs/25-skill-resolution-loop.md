@@ -540,7 +540,7 @@ Phase B の独立レビューで指摘された High 3 件を、Phase C 着手�
 
 ### 20-5. 実機の前提
 
-- 実行器は `scripts/endpoint-command-agent.mjs`（Node 20+、`--mock` なし、Windows）。**`scripts/windows/command-agent.ps1` は使えない**（`SPOOLER_RESTART` だけで Skill を実行せず、`x-device-id` も送らないので `GET /api/device/command` が 400 になる）。
+- 実行器は `scripts/endpoint-command-agent.mjs`（Node 20+、`--mock` なし、Windows）、または Node の無い端末では `scripts/windows/command-agent.ps1`（standard の 8 Skill。[docs/66](66-windows-command-agent.md)。2026-11-01 に Skill 実行へ対応。Windows では未実行）。
 - 設定の `browserDeviceId` には、ブラウザの端末 ID（`localStorage` の `aihd.device.id`。未接続のカードに表示）をそのまま入れる。画面の `WEB-XXXXXXXX` は短縮表示で、`device_tokens.device_id` と一致しないのでコマンドが届かない。
 - 旧版エージェントの結果は本番で拒否される。実機受入は更新後の版で行う。
 

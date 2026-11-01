@@ -38,7 +38,7 @@ README の図と記述の各線を、実際の経路と証跡に対応づける�
 | 名前 | 何か | 実行器 |
 |---|---|---|
 | 元ウィザード | 原本 HTML の STEP と決定ルール（`H.*`）、提案カード（`kind=proposal`） | 模擬。例外は `ACT.realExec`（`SPOOLER_RESTART`） |
-| resolve カード | `resolve-bridge.js` の「解決ループ」カード、`/api/resolve/*`（#126 で印刷の相談から誘導） | `endpoint-command-agent.mjs`（`device_commands`） |
+| resolve カード | `resolve-bridge.js` の「解決ループ」カード、`/api/resolve/*`（#126 で印刷の相談から誘導） | `endpoint-command-agent.mjs` または Node の無い端末の `command-agent.ps1`（`device_commands`） |
 | 新本人ヘルパー | #120 の共通支援セッション（`docs/63`、既定無効） | 本人権限ヘルパーのみ。`device_commands` / RSP へ配送しない |
 
 ## 3. 「AI はどこまでやる」
@@ -50,6 +50,7 @@ README の図と記述の各線を、実際の経路と証跡に対応づける�
 | 💬 答える（印刷の相談） | STEP 2 の送信 | **`/api/ai/answer` を呼ばない** | `prototype_states` | なし | 解決ループへ誘導、または未接続の案内 | 下の「調べる」。結果の後に承認済み KB を案内する（§5） | AI の文章の回答は**未接続**。M では**デモ** | I | E2E A1、N0、N3 |
 | 🔍 調べる（PC 基本情報: ブラウザ） | STEP 2 の取得 | `POST /api/device/browser` | `device_inventories` | ブラウザ | 項目一覧 | 本人の同意で引継ぎへ | **実データ** | M / I | E2E の API 記録（`apiLog.*`）、`device.test.ts` |
 | 🔍 調べる（読み取り診断、resolve カード） | 開始 → 本人 Y | `POST /api/resolve/sessions`、`/steps/:id/approve` | `resolution_*`、`device_commands` | `--mock` | 模擬と表示、DB に `executionSource=mock` | 出所付きで引継ぎ・報告書 | 経路は**実データ（mock まで）**。実端末の結果は**未検証** | I | E2E A4〜A9、X1、`real-path.integration.test.ts`、#126 の `docs/evidence/wizard-real-path-20261101/` |
+| 🔍 調べる（読み取り診断、Node の無い Windows の実行器） | 開始 → 本人 Y | 同上 | 同上 | `scripts/windows/command-agent.ps1` | Linux の pwsh とスタブの Skill で模擬。出所は `mock` | 同上 | **未検証**（Windows PowerShell 5.1、本物の Skill、`endpoint_agent` は未実行） | I | [docs/66](66-windows-command-agent.md)、`docs/evidence/command-agent-ps1-20261101/` |
 | 🔍 調べる（読み取り診断、元ウィザードの印刷以外） | STEP 3 の確認 Y | なし | `prototype_states` | なし | 固定データ | デモと表示 | **デモ** | M / I | docs/14 §2-11 |
 | 🛠 直す（提案カード） | 提案の Y | なし（`ACT.realExec` を押したときだけ `/api/device/command`） | `prototype_states` | 模擬（`SPOOLER_RESTART` のみ別経路） | 「実行しました（模擬）」 | デモと表示 | **デモ** | M / I | docs/14 §2-11 |
 | 🛠 直す（`SPOOLER_RESTART` の実機） | 提案カードの実行ボタン | `POST /api/device/command` | `device_commands` | エージェント | - | - | **未検証**。`SPOOLER_RESTART` の実機の実行記録は見つからない（docs/19 は「実機（Windows）での実行は未実施」、`docs/evidence/device-command/20261023/` は `mock:true`）。I では印刷の提案カードが出ないので、この経路の入口がウィザードから無くなる（**未接続**） | M のみ入口あり | docs/19、`device.test.ts`、E2E A2 |

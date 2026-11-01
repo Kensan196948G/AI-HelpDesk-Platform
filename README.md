@@ -375,7 +375,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\windows\install-collector-tas
 - [Security](docs/07-security.md) / [Deployment](docs/08-deployment.md) / [Operations](docs/09-operations.md)
 - [受入照合](docs/11-acceptance.md) / [Round Log](docs/12-round-log.md) / [Blocker 報告](docs/13-blocked-report.md)
 - [既存 UI の適用](docs/14-prototype-ui-integration.md) / [AI 修復フロー](docs/16-ai-repair-flow.md) / [端末コマンド実行](docs/19-device-command-execution.md) / [社員名簿](docs/20-employee-directory.md)
-- [README のデータの流れの対応表](docs/65-readme-dataflow-map.md) / [最終報告書](docs/21-final-report-export.md) / [STEP5 引継ぎと遠隔支援](docs/22-remote-assist-handover.md) / [RSP / MeshCentral 連携設計](docs/23-rsp-meshcentral-integration.md)
+- [README のデータの流れの対応表](docs/65-readme-dataflow-map.md) / [Windows の端末エージェント（Node 不要）](docs/66-windows-command-agent.md) / [最終報告書](docs/21-final-report-export.md) / [STEP5 引継ぎと遠隔支援](docs/22-remote-assist-handover.md) / [RSP / MeshCentral 連携設計](docs/23-rsp-meshcentral-integration.md)
 
 ### 既知の制約
 

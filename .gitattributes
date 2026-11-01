@@ -1,0 +1,4 @@
+# Skill のスクリプトはバイト列の SHA-256（approved.json の scriptHash）で照合する。
+# Windows の core.autocrlf で CRLF に変えると、エージェントは実行を拒否する（docs/66）。
+scripts/skills/windows/*.ps1 -text
+scripts/skills/approved.json -text
