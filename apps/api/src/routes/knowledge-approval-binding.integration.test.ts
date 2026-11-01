@@ -6,7 +6,8 @@ import { hashSessionToken } from '../auth/password.js';
 import { clearUiRoleCache } from '../auth/ui.js';
 import { config } from '../config.js';
 import { sql } from '../db.js';
-import { findApprovedKnowledge } from '../lib/knowledge-search.js';
+import { knowledgeContentHash } from '../domain/knowledge-content.js';
+import { findApprovedKnowledge, listAiUsableRefs } from '../lib/knowledge-search.js';
 import { resetRateLimits } from '../lib/rate-limit.js';
 import { buildServer } from '../server.js';
 
@@ -40,6 +41,8 @@ const FULL_CHECKLIST = { reproducible: true, noSecrets: true, noBlame: true, sco
 const original = {
   devEmail: config.DEV_AUTH_EMAIL,
   allowSelf: config.ALLOW_SELF_APPROVAL,
+  folder: config.FOLDER_ACCESS_ENABLED,
+  assist: config.ASSIST_SESSION_ENABLED,
 };
 
 let app: FastifyInstance;
@@ -106,7 +109,7 @@ async function rowOf(id: string) {
  */
 async function withCommitDuringApproval<T>(
   id: string,
-  change: { steps?: string; keywords?: string[] },
+  change: { steps?: string; keywords?: string[]; symptomTags?: string[] },
   request: () => Promise<T>,
 ): Promise<T> {
   const reserved = await other.reserve();
@@ -115,7 +118,8 @@ async function withCommitDuringApproval<T>(
     await reserved`
       UPDATE knowledge SET
         steps = COALESCE(${change.steps ?? null}, steps),
-        keywords = COALESCE(${change.keywords ?? null}::text[], keywords)
+        keywords = COALESCE(${change.keywords ?? null}::text[], keywords),
+        symptom_tags = COALESCE(${change.symptomTags ?? null}::text[], symptom_tags)
       WHERE id = ${id}
     `;
     const pendingRequest = request();
@@ -427,5 +431,151 @@ describe('メタデータの保護: keywords', () => {
     const hit = found.find((row) => row.id === id);
     expect(hit?.keywords).toEqual(['プリンタ']);
     expect((await rowOf(id)).keywords).toEqual(['プリンタ', DEVICE_WORD]);
+  });
+});
+
+describe('固定症状タグの束縛（#120 の symptom_tags。docs/64 §11）', () => {
+  /** storage_full と save_failed に写る本文。keywords は画面と同じく空。 */
+  const TAGGED = {
+    title: '保存できないときの手順',
+    symptom: '容量が不足しています。保存できません。',
+    keywords: [] as string[],
+  };
+  const TAGS = ['storage_full', 'save_failed'];
+  const DEVICE_WORD = 'DESKTOP-ABC1234';
+
+  function assist(on: boolean): void {
+    config.FOLDER_ACCESS_ENABLED = on;
+    config.ASSIST_SESSION_ENABLED = on;
+  }
+
+  beforeEach(() => assist(true));
+  afterEach(() => {
+    config.FOLDER_ACCESS_ENABLED = original.folder;
+    config.ASSIST_SESSION_ENABLED = original.assist;
+  });
+
+  const approveBody = (contentHash: string) => ({
+    decision: 'approved',
+    checklist: FULL_CHECKLIST,
+    contentHash,
+  });
+
+  it('指紋はタグの違いだけで変わり、未算出の行は本文から求めたタグと同じ値になる', () => {
+    const row = { id: 'x', version: 1, cause: 'c', steps: 's', ...TAGGED };
+    const stored = knowledgeContentHash({ ...row, symptom_tags: TAGS });
+    expect(knowledgeContentHash({ ...row, symptom_tags: null })).toBe(stored);
+    expect(knowledgeContentHash({ ...row, symptom_tags: [...TAGS].reverse() })).toBe(stored);
+    expect(knowledgeContentHash({ ...row, symptom_tags: ['print_failed'] })).not.toBe(stored);
+    expect(knowledgeContentHash({ ...row, symptom_tags: [] })).not.toBe(stored);
+  });
+
+  it('/review: 確認の後にタグだけが変わると 409 で公開しない', async () => {
+    const { id } = await submitted(TAGGED);
+    const item = await pendingItem(id);
+    await sql`UPDATE knowledge SET symptom_tags = ${['print_failed']} WHERE id = ${id}`;
+    const res = await review(id, approveBody(item.contentHash));
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.code).toBe('KB_CONTENT_CHANGED');
+    expect((await rowOf(id)).status).toBe('pending');
+  });
+
+  it('ui-sync: 確認の後にタグだけが変わると 409 で公開しない', async () => {
+    const { id, payload } = await submitted(TAGGED);
+    const item = await pendingItem(id);
+    await sql`UPDATE knowledge SET symptom_tags = ${['print_failed']} WHERE id = ${id}`;
+    const res = await syncAs(APPROVER, {
+      ...payload,
+      status: 'approved',
+      checklist: FULL_CHECKLIST,
+      contentHash: item.contentHash,
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.code).toBe('KB_CONTENT_CHANGED');
+    expect((await rowOf(id)).status).toBe('pending');
+  });
+
+  it('/review: 本文の取得の後にタグの更新が確定しても公開しない（行ロックの後で判定）', async () => {
+    const { id } = await submitted(TAGGED);
+    const item = await pendingItem(id);
+    const res = await withCommitDuringApproval(id, { symptomTags: ['print_failed'] }, () =>
+      review(id, approveBody(item.contentHash)),
+    );
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.code).toBe('KB_CONTENT_CHANGED');
+    expect((await rowOf(id)).status).toBe('pending');
+  });
+
+  it.each([
+    ['本文に合わない語彙内のタグ', ['print_failed']],
+    ['語彙の外のタグ', [...TAGS, 'CANARY-TAG']],
+  ])('承認者が確認した指紋でも、%s は公開しない', async (_label, tags) => {
+    const { id, payload } = await submitted(TAGGED);
+    await sql`UPDATE knowledge SET symptom_tags = ${tags} WHERE id = ${id}`;
+    const item = await pendingItem(id);
+    const viaReview = await review(id, approveBody(item.contentHash));
+    expect(viaReview.statusCode).toBe(409);
+    expect(viaReview.json().error.code).toBe('KB_SYMPTOM_TAGS_INVALID');
+    const viaSync = await syncAs(APPROVER, {
+      ...payload,
+      status: 'approved',
+      checklist: FULL_CHECKLIST,
+      contentHash: item.contentHash,
+    });
+    expect(viaSync.statusCode).toBe(409);
+    expect(viaSync.json().error.code).toBe('KB_SYMPTOM_TAGS_INVALID');
+    expect((await rowOf(id)).status).toBe('pending');
+  });
+
+  it('タグの列に端末情報があれば公開しない', async () => {
+    const { id } = await submitted(TAGGED);
+    await sql`UPDATE knowledge SET symptom_tags = ${[...TAGS, DEVICE_WORD]} WHERE id = ${id}`;
+    const item = await pendingItem(id);
+    const res = await review(id, approveBody(item.contentHash));
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.code).toBe('KB_CONTAINS_DEVICE_INFO');
+    expect((await rowOf(id)).status).toBe('pending');
+  });
+
+  it('本文の端末情報はタグへ入らない（固定の語彙だけが保存される）', async () => {
+    const { id } = await submitted({ ...TAGGED, symptom: `容量が不足しています ${DEVICE_WORD}` });
+    const row = await rowOf(id);
+    expect(row.symptom_tags).toBeNull();
+    const item = await pendingItem(id);
+    const res = await review(id, approveBody(item.contentHash));
+    expect(res.statusCode, res.body).toBe(200);
+    const stored = await rowOf(id);
+    expect(stored.symptom_tags).toEqual(TAGS);
+    expect(stored.symptom_tags.join()).not.toContain(DEVICE_WORD);
+  });
+
+  it('承認で確認したタグを保存し、記録の指紋を保存後の行から再計算でき、AI の根拠から外れない', async () => {
+    const { id, clientRef } = await submitted(TAGGED);
+    const item = await pendingItem(id);
+    const res = await review(id, approveBody(item.contentHash));
+    expect(res.statusCode, res.body).toBe(200);
+    const row = await rowOf(id);
+    expect(row.symptom_tags).toEqual(TAGS);
+    const reviews = await sql<{ content_hash: string; reviewed_version: number }[]>`
+      SELECT content_hash, reviewed_version FROM knowledge_reviews WHERE knowledge_id = ${id}
+    `;
+    expect(reviews[0]?.content_hash).toBe(item.contentHash);
+    expect(knowledgeContentHash({ ...row, version: reviews[0]?.reviewed_version ?? 0 })).toBe(
+      item.contentHash,
+    );
+    // タグの保存（同じトランザクションの更新）で updated_at が approved_at を超えない。
+    const refs = await listAiUsableRefs(sql);
+    expect(refs.items.map((entry) => entry.clientRef)).toContain(clientRef);
+  });
+
+  it('機能が無効の間は列へ書かず、指紋は有効のときと同じで承認できる', async () => {
+    const { id } = await submitted(TAGGED);
+    const onHash = (await pendingItem(id)).contentHash;
+    assist(false);
+    const offHash = (await pendingItem(id)).contentHash;
+    expect(offHash).toBe(onHash);
+    const res = await review(id, approveBody(offHash));
+    expect(res.statusCode, res.body).toBe(200);
+    expect((await rowOf(id)).symptom_tags).toBeNull();
   });
 });
