@@ -3,6 +3,7 @@
 README の図と記述の各線を、実際の経路と証跡に対応づける。README の「いまの状態」はこの表に合わせる。
 
 - 作成: 2026-11-01。対象は `verify/dataflow-integration`（検証用の統合。#125 と #126 を含む）。
+- 追記: 2026-11-01。`verify/dataflow-assist-integration` で #120（`abb9a38`。#117 を含む。merge は `48cbff3`）を統合した。**この表の E2E の証跡は #120 の統合の前の記録で、統合の後に通しの E2E は流していない。** 統合の後の結果は vitest と pwsh の試験で、[docs/evidence/assist-integration-20261101/](evidence/assist-integration-20261101/) にある。3 経路の責任範囲は [docs/67](67-execution-paths.md)。
 - 通しの E2E: `scripts/e2e/dataflow-integration.mjs`、結果は [docs/evidence/dataflow-20261101/](evidence/dataflow-20261101/)。`stub/`、`real-ai/` が修正後、`before-fix/` が修正前の再現、`round1-*/` が最初の通しの記録。
 
 ## 0. 実機で確かめた範囲（2026-11-01）
@@ -43,9 +44,9 @@ README の図と記述の各線を、実際の経路と証跡に対応づける�
 | #125 | AI の根拠を DB の別人承認 KB に限定 | 含む（この統合で merge） | 未 |
 | #126 | 印刷の相談を解決ループへ、結果の出所 | 含む | 未 |
 | #127 | この PR の修正（KB の端末情報、印刷の相談への KB、担当者欄、AI の定型文、試験の後片付け） | 含む | 未 |
-| #120 / #117 | 共通支援セッション、新本人ヘルパー、フォルダ同意 | **含まない** | 未 |
+| #120 / #117 | 共通支援セッション、新本人ヘルパー、フォルダ同意 | `verify/dataflow-integration` には**含まない**。`verify/dataflow-assist-integration` に含む（既定無効） | 未 |
 
-表の「成立」列の記号: **M** = main で成立、**I** = この統合（#123〜#126 + #127 の修正）で成立、**#120** = #120 のブランチでのみ（既定無効）。この統合の E2E で確かめたのは **I** だけである。**M** はコード読解で、E2E は流していない。
+表の「成立」列の記号: **M** = main で成立、**I** = この統合（#123〜#126 + #127 の修正）で成立、**#120** = #120 を含むブランチでのみ（`feat/assist-session`、`verify/dataflow-assist-integration`。既定無効）。この統合の E2E で確かめたのは **I** だけである。**M** はコード読解で、E2E は流していない。
 
 **経路の区別:**
 
@@ -69,7 +70,7 @@ README の図と記述の各線を、実際の経路と証跡に対応づける�
 | 🛠 直す（提案カード） | 提案の Y | なし（`ACT.realExec` を押したときだけ `/api/device/command`） | `prototype_states` | 模擬（`SPOOLER_RESTART` のみ別経路） | 「実行しました（模擬）」 | デモと表示 | **デモ** | M / I | docs/14 §2-11 |
 | 🛠 直す（`SPOOLER_RESTART` の実機） | 提案カードの実行ボタン | `POST /api/device/command` | `device_commands` | エージェント | - | - | **未検証**。`SPOOLER_RESTART` の実機の実行記録は見つからない（docs/19 は「実機（Windows）での実行は未実施」、`docs/evidence/device-command/20261023/` は `mock:true`）。I では印刷の提案カードが出ないので、この経路の入口がウィザードから無くなる（**未接続**） | M のみ入口あり | docs/19、`device.test.ts`、E2E A2 |
 | 🛠 直す（修復 Skill、resolve カード） | 提案の Y | `/api/resolve/steps/:id/approve` | 同上 | エージェント | - | - | API と統合試験のみ。画面の通しは未実施（**未検証**）。AI が修復を選ぶ前提で、読み取りの提案までしか流していない | I | `routes.integration.test.ts` |
-| 🛠 直す（新本人ヘルパー） | 既定無効 | `/api/support-sessions/*` | #120 のテーブル | 本人権限ヘルパー | docs/63 §14 | - | **未検証（この統合には無い）**。実機の記録は docs/63 §14 のとおり検証端末 1 台、検証インスタンス、ヘッダ注入で、実画面の操作ではない。結果は `folder.summary` などで、印刷・修復の実障害の証拠ではない | #120 | docs/63 §14 |
+| 🛠 直す（新本人ヘルパー） | 既定無効 | `/api/support-sessions/*` | #120 のテーブル | 本人権限ヘルパー | docs/63 §14 | - | **未検証。** `verify/dataflow-assist-integration` に統合したが既定無効で、統合の後は統合試験と pwsh の試験だけ（実機、実画面なし）。実機の記録は統合前の docs/63 §14 のとおり検証端末 1 台、検証インスタンス、ヘッダ注入で、実画面の操作ではない。結果は `folder.summary` などで、印刷・修復の実障害の証拠ではない | #120 | docs/63 §14 |
 | 🚫 やらない（許可リスト外） | - | サーバのカタログ照合（resolve）、定義済みの操作のみ（元ウィザード） | - | - | - | - | resolve は**実データ（統合試験）**、元ウィザードは**デモ** | M / I | `routes.integration.test.ts` |
 | 🖐 本人の Y だけで動く | 開始 → Y | `/api/resolve/steps/:id/approve` | `resolution_steps.approval_hash` | - | 他人 404、誤ハッシュ 400、二重 1 回、取消後 409 | - | resolve は**実データ（mock まで）**。元ウィザードは画面の状態だけで**デモ** | I | E2E D1〜D14（API 直接）、A4 |
 | 🔁 15 回まで | - | なし | `prototype_states` | - | - | - | 元ウィザードの画面側の制限（**デモ**）。resolve カードは別で 6 提案・30 分 | M / I | 原本 HTML、`resolve/routes.ts` |
@@ -102,6 +103,7 @@ README の図と記述の各線を、実際の経路と証跡に対応づける�
 | 承認済み → 次の人の AI 入力（自由記述） | B の STEP 2 | `POST /api/ai/answer` | `knowledge` を読む | **実データ**（実 AI でも確認）。`[KB番号 v版]` が入る。実 AI の 2 回のうち、この流れの KB を根拠に挙げたのは 2 回目（§7 の確認 4） | **I のみ**。M では state の KB を根拠にする | E2E K10、Q3、Q5 |
 | 承認済み → 次の人（印刷の相談、エージェント接続あり） | 開始 → 本人 Y → 結果カード | `POST /api/resolve/sessions`、`/steps/:id/continue` | `resolution_steps.knowledge_refs` | **実データ（スタブ AI・mock まで）**。提案の AI 入力に参照が入り、結果カードに出典付きで出る。AI が示したときだけ「AI が参照」と出る。実 AI の提案では**未検証** | I | E2E N1〜N6、`real-path.integration.test.ts` |
 | 承認済み → 次の人（印刷の相談、エージェント未接続） | B の STEP 2 | なし | - | **未接続**。セッションを作らないので KB は案内されない | I | E2E N0 |
+| 承認済み → 新ループの入力（新本人ヘルパー） | 既定無効。実画面は未操作 | `POST /api/knowledge/ui-sync`（作成と別アカウントの承認）→ 提案の AI 入力 | `knowledge.symptom_tags`、`knowledgeRefs` | **実データ（統合試験まで。API 直接、スタブ AI）**。AI へ渡すのは ID と固定タグだけ。統合で #125 と同じ条件に揃え、タグを承認の指紋に含めた（[docs/64](64-kb-approved-provenance.md) §11、[docs/67](67-execution-paths.md) §3）。実 AI、実画面は**未検証** | #120 | `support-session.integration.test.ts` の「画面で作って別人が承認したナレッジ」、[受入表](evidence/assist-integration-20261101/README.md) |
 | 承認前・自己承認は根拠にしない | B の STEP 2 | `/api/ai/answer` | - | **実データ** | I | E2E K4、K17、`knowledge-ai-provenance.integration.test.ts` |
 | 相談者の state の KB は根拠にしない | 注入 → 画面から相談 | `/api/ai/answer` | - | **実データ** | **I のみ**。M では根拠になる（#125 の修正対象） | E2E I1〜I6 |
 | 引継ぎの完了承認（別人） | 画面の導線なし | `POST /api/case-handovers/:id/approve` | `case_handovers` | **未接続**。別人の承認者の画面には案件が無い。今回は API を直接呼んだ | M / I | E2E C1、C2 |
@@ -205,4 +207,4 @@ README の図と記述の各線を、実際の経路と証跡に対応づける�
 | AI | スタブが全経路。実 AI は `/api/ai/answer` の入力と応答を 1 回だけ（中継で送信内容を確認） |
 | 実行器 | `endpoint-command-agent.mjs --mock`。実端末・RSP・Mesh は未使用 |
 | 拒否の試験 D1〜D14、K5、K6、K17、C2 | ブラウザの文脈から API を直接呼ぶ。画面のクリックではない |
-| 未確認 | 実端末、Access、実 AI の提案と担当者文脈、`usedKnowledge` の実 AI での動作、PDF、メール送信、N の引継ぎ要約、VPN など他の相談、遠隔支援、#120 との結合、本番 DB の既存 KB の件数 |
+| 未確認 | 実端末、Access、実 AI の提案と担当者文脈、`usedKnowledge` の実 AI での動作、PDF、メール送信、N の引継ぎ要約、VPN など他の相談、遠隔支援、本番 DB の既存 KB の件数。#120 との結合は統合試験まで（E2E は未実施）。resolve の経路に #120 の対策は効かない（docs/67 §3） |
