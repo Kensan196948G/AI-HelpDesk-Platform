@@ -18,18 +18,29 @@
 
 **失敗の 1 件:** `command-agent.pwsh.test.mjs` の「スタブの HTTP サーバと Skill で fail-closed を確かめる」（pwsh の内訳 passed=153 failed=31 skipped=8。`close:`、`elevated:`、`fail-closed:`、`handle:`、`reparse:`、`source:`、`swap`）。`74dbc21` の修正前の再現試験で、**別担当が元ブランチで修正中**なのでこの統合では触っていない。#120 の統合で増えた失敗ではない（試験は `command-agent.ps1` だけを対象にし、この統合はそのファイルを変えていない）。
 
+## CI
+
+| 項目 | 内容 |
+|---|---|
+| 実行 | [run 41304395529](https://github.com/Kensan196948G/AI-HelpDesk-Platform/actions/runs/41304395529)、`9435ebd`、`workflow_dispatch`。`ci.yml` は main 宛ての PR と push でしか走らないので手動で起動した |
+| 結果 | **failure**。`Test` の手順で 1525 件中 1 件失敗（上と同じ `command-agent.pwsh.test.mjs` の 1 件） |
+| 成功した手順 | Secret scan、Dependency audit（2 種）、Typecheck、Lint、Migrate（2 回） |
+| **走らなかった手順** | **Build、Folder helper tests (pwsh)、Skill executor tests (pwsh)。** `Test` の失敗で止まった。この 3 つの成功はローカルの結果だけで、CI では確かめていない |
+
+`continue-on-error` などでゲートを弱めていない。この節の追加は文書だけで、CI は `9435ebd` の結果である。
+
 ## 受入表
 
-「③」は支援セッションの本人ヘルパー、「②」は resolve ループ（[docs/67](../../67-execution-paths.md)）。成功数はこの SHA の vitest の結果を試験名で引いた値である。
+「③」は支援セッションの本人ヘルパー、「②」は resolve ループ（[docs/67](../../67-execution-paths.md)）。成功数はこの SHA の vitest の結果を試験名で引いた値である。integration は `apps/api/src/support-session/support-session.integration.test.ts`。
 
 | 項目 | ③ の試験（ファイル: 試験名の要約） | ③ の結果 | ② への接続 |
 |---|---|---|---|
-| 症状の否定 | `case-facts.test.ts`: 否定を症状にしない | 10/10 | **未接続**（実測 `probe-resolve-path.json`: 「印刷エラーはありません」でも `spooler.status` を提案） |
+| 症状の否定 | `support-session/case-facts.test.ts`: 否定を症状にしない | 10/10 | **未接続**（実測 `probe-resolve-path.json`: 「印刷エラーはありません」でも `spooler.status` を提案） |
 | 症状の解消 | 同: 解消、まだ直っていない、どれが直ったか | 12/12 | **未接続** |
 | 過去形 | 同: 過去、昨日、時点 | 6/6 | **未接続**（実測: 「昨日は印刷できなかったが今は印刷できます」でも提案） |
 | 複数症状 | 同: 複数の症状、同じ節、分類 | 3/3 | **未接続** |
 | 断定的な AI の表現の拒否 | 同: 確かめていないのに解決、確かめた後の説明。`support-session.integration.test.ts`: AI の説明、事実と推測 | 2/2、2/2 | **未接続**（実測: `rationale` の「解決しました」が `proposalFromAiBody` をそのまま通る。解決の判定には使わない） |
-| `phase` / `verification` | `state.test.ts`: 導出、検証は完了と別、報告の期限切れ。integration: `/start` の応答を失った、期限切れの後の状態 | 成功、2/2 | **未接続**。② は `executionSource` で出所を分ける（別の仕組み） |
+| `phase` / `verification` | `support-session/state.test.ts`: 導出、検証は完了と別、報告の期限切れ。integration: `/start` の応答を失った、期限切れの後の状態 | 14/14、2/2 | **未接続**。② は `executionSource` で出所を分ける（別の仕組み） |
 | real だけで「実行した」と出さない | `support-session/bridge.test.ts`: real でも実行前の拒否、開始と完了、解決の確認の前 | 3/3 | **未接続**（② のカードは `resolve-bridge.js`） |
 | `ASSIST_SESSION_MODE` の起動条件 | `config.test.ts` | 6/6 | 効かない（フラグは ③ だけ） |
 | drain: 新規の停止 | integration: 新しいセッション・同意・提案・Y を受け付けない | 1/1 | 同上 |
@@ -51,6 +62,10 @@
 2. **新ループが自己承認の KB を AI の入力へ渡していた。** 修正した（docs/67 §3）。
 3. **`terminal.integration.test.ts` の 1 件が `74dbc21` の時点で失敗していた。** 指紋なしで承認していた試験で、試験を直した。サーバは変えていない。
 4. **#120 の対策の多くは ② に効かない。** 上の表の「未接続」のとおり。
+
+## ベースの状態（2026-11-01 の確認時）
+
+このブランチは `74dbc21` から分かれた。その後 `origin/verify/dataflow-integration` は `3b1a662` へ進み、`command-agent.ps1` の修正（`049f84d`）を含む。**この統合には取り込んでいない。** 試しの merge（`git merge-tree`）で `knowledge-approval-binding.integration.test.ts`、`docs/14`、`docs/65` が競合する。取り込めば上の 1 件の失敗が解消する可能性があるが、確かめていない。
 
 ## 確かめていないこと
 
