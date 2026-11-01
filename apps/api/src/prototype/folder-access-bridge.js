@@ -186,8 +186,10 @@
   async function findHandoverId(target) {
     if (target.handoverId) return target.handoverId;
     // 受信箱（pending / claimed の最新 50 件）に頼らず、自分が引き受けた引継ぎを直接引く。
+    // 案件 ID は一意でないので、画面が所有者を持つときは渡す。定まらなければサーバが 409 を返す。
+    const owner = target.ownerEmail ? `&owner=${encodeURIComponent(target.ownerEmail)}` : '';
     const found = await api(
-      `/api/folder-access/handovers/lookup?ref=${encodeURIComponent(target.id)}`,
+      `/api/folder-access/handovers/lookup?ref=${encodeURIComponent(target.id)}${owner}`,
     );
     return found.handoverId ?? null;
   }
@@ -212,6 +214,8 @@
     // 前の案件の入力を次の案件へ送らない。
     STAFF.rspDeviceId = '';
     STAFF.hostname = '';
+    // 応答を待たずに、前の案件の状態とファイル名を画面から消す。
+    renderStaff();
   }
 
   async function loadStaff() {
@@ -670,6 +674,7 @@
     }
     if (request.status === 'consent_pending') {
       nodes.push(...targetLines(request));
+      nodes.push(small(`依頼元の担当者: ${request.assigneeEmail ?? '（不明）'}`));
       nodes.push(small('上の端末と Windows ユーザーが自分のものか確認してください。'));
       nodes.push(
         h(

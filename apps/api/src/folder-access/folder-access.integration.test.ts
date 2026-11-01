@@ -14,7 +14,7 @@ import { checkRateLimit, resetRateLimits } from '../lib/rate-limit.js';
 import { DEVICE_IDENTITY_PROBE_COMMAND } from '../remote-support/rsp.js';
 import { buildServer } from '../server.js';
 import { resetAddressLimits } from './address-limit.js';
-import { sweepFolderAccess } from './service.js';
+import { loadContext, sweepFolderAccess } from './service.js';
 import { auditRef, canonicalOpJson, hashSid, signOp } from './sign.js';
 import { LIMITS } from './state.js';
 
@@ -77,6 +77,7 @@ interface World {
   matches: Record<string, unknown>[];
   enqueueDevice: string;
   enqueueStatus?: number;
+  onEnqueue?: () => Promise<void>;
   probe: { status: string; output: unknown; error_code: string | null; completed_at?: string };
   commands: Record<string, unknown>[];
   leaseCalls: number;
@@ -162,6 +163,7 @@ async function fakeFetch(input: unknown, init?: RequestInit) {
     });
   }
   if (url === `${RSP_URL}/api/v1/service/commands` && init?.method === 'POST') {
+    if (world.onEnqueue) await world.onEnqueue();
     if (world.enqueueStatus) return jsonResponse(world.enqueueStatus, { success: false });
     world.commands.push(JSON.parse(String(init.body)));
     return jsonResponse(201, {
@@ -173,7 +175,12 @@ async function fakeFetch(input: unknown, init?: RequestInit) {
   }
   if (url.startsWith(`${RSP_URL}/api/v1/service/commands/`)) {
     world.probeReads += 1;
-    return jsonResponse(200, { log_id: 'x', exit_code: null, ...world.probe });
+    return jsonResponse(200, {
+      log_id: 'x',
+      exit_code: null,
+      completed_at: new Date(Date.now() + 60_000).toISOString(),
+      ...world.probe,
+    });
   }
   world.unexpected.push(url);
   throw new Error(`unexpected fetch: ${url}`);
@@ -2510,5 +2517,229 @@ describe('導入コード（Mock: RSP / PII API / 名簿）', () => {
     expect((await call(OWNER, 'POST', base(request.id, '/consent'), CONSENT)).statusCode).toBe(409);
     const pair = await call(OWNER, 'POST', base(request.id, '/pair'), { code: helper.pairingCode });
     expect(pair.json().request.status).toBe('consent_pending');
+  });
+});
+
+describe('コードレビューの指摘 2 回目（#117。Mock: RSP / PII API / 名簿）', () => {
+  describe('1. 引継ぎの検索は候補が複数なら確定しない', () => {
+    const lookup = (ref: string, owner?: string) =>
+      call(
+        ASSIGNEE,
+        'GET',
+        `/api/folder-access/handovers/lookup?ref=${encodeURIComponent(ref)}${
+          owner ? `&owner=${encodeURIComponent(owner)}` : ''
+        }`,
+      );
+
+    async function twoOwnersSameCase() {
+      sequence += 1;
+      const caseId = `${CASE_PREFIX}SAME-${Date.now()}-${sequence}`;
+      const a = await makeHandover(ASSIGNEE, OWNER);
+      const b = await makeHandover(ASSIGNEE, OTHER_OWNER);
+      await sql`UPDATE case_handovers SET case_id = ${caseId} WHERE id IN (${a}, ${b})`;
+      return { caseId, a, b };
+    }
+
+    it('別の相談者の同じ案件 ID があれば 409 AMBIGUOUS で ID を返さない', async () => {
+      const { caseId, a, b } = await twoOwnersSameCase();
+      const response = await lookup(caseId);
+      expect(response.statusCode).toBe(409);
+      expect(response.json().error.code).toBe('AMBIGUOUS');
+      expect(response.body).not.toContain(a);
+      expect(response.body).not.toContain(b);
+    });
+
+    it('画面が所有者を持つ場合だけ 1 件に絞る', async () => {
+      const { caseId, a, b } = await twoOwnersSameCase();
+      expect((await lookup(caseId, OWNER)).json()).toEqual({ ok: true, handoverId: a });
+      expect((await lookup(caseId, OTHER_OWNER)).json()).toEqual({ ok: true, handoverId: b });
+      expect((await lookup(caseId, 'nobody@example.com')).json().handoverId).toBeNull();
+    });
+
+    it('同じ相談者の同じ案件 ID が複数でも推測しない', async () => {
+      sequence += 1;
+      const caseId = `${CASE_PREFIX}SAME-${Date.now()}-${sequence}`;
+      const a = await makeHandover(ASSIGNEE, OWNER);
+      const b = await makeHandover(ASSIGNEE, OWNER);
+      // 進行中の重複は DB で拒否されるので、解決済みと進行中の組で確かめる。
+      await sql`UPDATE case_handovers SET status = 'resolved' WHERE id = ${a}`;
+      await sql`UPDATE case_handovers SET case_id = ${caseId} WHERE id IN (${a}, ${b})`;
+      expect((await lookup(caseId, OWNER)).statusCode).toBe(409);
+    });
+
+    it('1 件なら所有者なしでも引ける', async () => {
+      const id = await makeHandover();
+      const rows = await sql<{ case_id: string }[]>`
+        SELECT case_id FROM case_handovers WHERE id = ${id}
+      `;
+      expect((await lookup(rows[0]?.case_id ?? '')).json()).toEqual({ ok: true, handoverId: id });
+    });
+  });
+
+  describe('2. 再投入の予約は結果の参照を失わない', () => {
+    it('投入中も前の結果の参照を残し、他の確認を止める', async () => {
+      world.probe = { status: 'running', output: null, error_code: null };
+      const { id } = await pairedRequest();
+      const before = await sql<{ rsp_probe_log_id: string }[]>`
+        SELECT rsp_probe_log_id FROM folder_access_requests WHERE id = ${id}
+      `;
+      world.probe = { status: 'failed', output: '[AGENT_BUSY]', error_code: 'AGENT_BUSY' };
+      await sql`UPDATE folder_access_requests SET rsp_probe_checked_at = NULL WHERE id = ${id}`;
+      let during: string | null | undefined;
+      let readsDuring = 0;
+      world.onEnqueue = async () => {
+        const rows = await sql<{ rsp_probe_log_id: string | null }[]>`
+          SELECT rsp_probe_log_id FROM folder_access_requests WHERE id = ${id}
+        `;
+        during = rows[0]?.rsp_probe_log_id;
+        const reads = world.probeReads;
+        await call(ASSIGNEE, 'GET', base(id));
+        readsDuring = world.probeReads - reads;
+      };
+      await call(ASSIGNEE, 'GET', base(id));
+      world.onEnqueue = undefined;
+      expect(during).toBe(before[0]?.rsp_probe_log_id);
+      expect(readsDuring).toBe(0);
+    });
+
+    it('投入の途中で落ちても（予約の期限切れ）確認を再開できる', async () => {
+      world.probe = { status: 'running', output: null, error_code: null };
+      const { id } = await pairedRequest();
+      const commands = world.commands.length;
+      // 落ちた直後の状態: 回数だけ増え、参照は前のまま、予約の時刻が未来。
+      await sql`
+        UPDATE folder_access_requests
+        SET rsp_probe_attempts = 2, rsp_probe_checked_at = now() + interval '1 minute'
+        WHERE id = ${id}
+      `;
+      world.probe = { status: 'failed', output: '[AGENT_BUSY]', error_code: 'AGENT_BUSY' };
+      await call(ASSIGNEE, 'GET', base(id));
+      expect(world.commands.length).toBe(commands);
+
+      await sql`
+        UPDATE folder_access_requests SET rsp_probe_checked_at = now() - interval '1 minute'
+        WHERE id = ${id}
+      `;
+      await call(ASSIGNEE, 'GET', base(id));
+      expect(world.commands.length).toBe(commands + 1);
+    });
+  });
+
+  describe('3. 終了の応答は DB の値を返す', () => {
+    it.each([
+      ['/end', ASSIGNEE, '/end'],
+      ['/revoke', OWNER, '/revoke'],
+    ])('%s の応答に消した値を出さず、endedAt を返す', async (_name, email, path) => {
+      const { id } = await activeRequest();
+      const response = await call(email, 'POST', base(id, path), {});
+      expect(response.statusCode, response.body).toBe(200);
+      const request = response.json().request;
+      expect(request.windowsUser).toBeNull();
+      expect(request.device.helperHostname).toBeNull();
+      expect(request.endedAt).not.toBeNull();
+      expect(request.scope).toBeNull();
+    });
+
+    it('期限切れを反映した状態確認の応答にも消した値を出さない', async () => {
+      const { id } = await activeRequest();
+      await sql`
+        UPDATE folder_access_requests SET consent_expires_at = now() - interval '1 second'
+        WHERE id = ${id}
+      `;
+      const response = await call(ASSIGNEE, 'GET', base(id));
+      const request = response.json().request;
+      expect(request.status).toBe('expired');
+      expect(request.windowsUser).toBeNull();
+      expect(request.device.helperHostname).toBeNull();
+      expect(request.endedAt).not.toBeNull();
+    });
+  });
+
+  describe('5. 同意前は Windows ユーザーと端末名を担当者に見せない', () => {
+    it('consent_pending までは返さず、active で返す。本人には見せる', async () => {
+      const { id } = await pairedRequest();
+      const before = (await call(ASSIGNEE, 'GET', base(id))).json().request;
+      expect(before.status).toBe('consent_pending');
+      expect(before.windowsUser).toBeNull();
+      expect(before.device.helperHostname).toBeNull();
+      const mine = (await call(OWNER, 'GET', '/api/folder-access/mine')).json().requests;
+      const own = mine.find((item: { id: string }) => item.id === id);
+      expect(own.windowsUser).toBe(USER);
+      expect(own.device.helperHostname).toBe(HOST);
+
+      await call(OWNER, 'POST', base(id, '/consent'), CONSENT);
+      const after = (await call(ASSIGNEE, 'GET', base(id))).json().request;
+      expect(after.status).toBe('active');
+      expect(after.windowsUser).toBe(USER);
+      expect(after.device.helperHostname).toBe(HOST);
+    });
+  });
+
+  describe('6. 完了時刻が比較できない結果は古い扱いにする', () => {
+    it.each([
+      ['タイムゾーンなし', '2026-10-31T00:00:00'],
+      ['解釈不能', 'invalid+00:00'],
+      ['なし', null],
+    ])('%s の結果では進めず、取り直す', async (_name, completedAt) => {
+      world.probe = {
+        status: 'completed',
+        output: probeOutput(),
+        error_code: null,
+        completed_at: completedAt as string,
+      };
+      const { id, pair } = await pairedRequest();
+      expect(pair.status).toBe('helper_pending');
+      expect(world.commands).toHaveLength(2);
+      expect((await requestRow(id))?.status).toBe('helper_pending');
+    });
+  });
+
+  describe('7. 対にならないサロゲート', () => {
+    it('同意のサブフォルダは 400 で拒否する（500 にしない）', async () => {
+      const { id } = await pairedRequest();
+      const response = await app.inject({
+        method: 'POST',
+        url: base(id, '/consent'),
+        headers: {
+          'cf-access-authenticated-user-email': OWNER,
+          'content-type': 'application/json',
+        },
+        payload: '{"root":"Documents","segments":["a\\ud83d"],"ttlMinutes":10}',
+      });
+      expect(response.statusCode, response.body).toBe(400);
+    });
+
+    it('結果の名前に含まれていても保存で失敗しない', async () => {
+      const { helper, op } = await deliveredOp();
+      const response = await postResult(
+        helper.helperToken,
+        op.opId,
+        resultBody([{ name: 'a\ud83db.txt', type: 'file', size: 1 }]),
+      );
+      expect(response.statusCode, response.body).toBe(200);
+      expect(response.json().count).toBe(1);
+    });
+
+    it('ヘルパーの登録情報に含まれていても失敗しない', async () => {
+      const request = await createRequest(await makeHandover());
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/device/agent/folder-helper/register',
+        payload: registerPayload({
+          enrollCode: await issueEnrollCode(request.id),
+          hostname: 'HOST\ud83d',
+          userName: 'user\ud83d',
+        }),
+      });
+      expect(response.statusCode, response.body).toBe(200);
+    });
+  });
+
+  it('10. 使わないコードを残さない', async () => {
+    const state = await import('./state.js');
+    expect(state).not.toHaveProperty('canTransition');
+    const { id } = await pairedRequest();
+    const row = await sql.begin((tx) => loadContext(tx, id));
+    expect(row).not.toHaveProperty('probe_check_due');
   });
 });

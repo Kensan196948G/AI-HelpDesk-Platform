@@ -12,8 +12,7 @@ export type LeasePendingCode =
   | 'LEASE_UNAVAILABLE'
   | 'LEASE_STALE'
   | 'LEASE_NONE'
-  | 'LEASE_MULTIPLE'
-  | 'LEASE_CONFLICT';
+  | 'LEASE_MULTIPLE';
 
 export type LeaseResult =
   | {

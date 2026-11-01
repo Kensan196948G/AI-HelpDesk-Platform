@@ -70,6 +70,8 @@ export const LIMITS = {
   helperStaleSeconds: 180,
   /** 状態確認のついでに RSP へ結果を問い合わせる最短間隔。 */
   probeCheckSeconds: 5,
+  /** 再投入の予約の期限。投入の途中で落ちても、この時間の後に確認を再開する。 */
+  probeRequeueSeconds: 60,
   maxProbeAttempts: 3,
   /** 1 回の確認で RSP へ問い合わせる回数の上限（5 秒間隔で 5 分）。担当者の再確認で数え直す。 */
   maxProbeReads: 60,
@@ -88,21 +90,6 @@ export const LIMITS = {
   /** 相談者の状態確認で返す、直近に終了した依頼の上限（進行中は全件返す）。 */
   maxRecentEnded: 10,
 } as const;
-
-const TRANSITIONS: Record<RequestStatus, readonly RequestStatus[]> = {
-  device_pending: ['helper_pending', 'denied', 'revoked', 'expired', 'ended'],
-  helper_pending: ['consent_pending', 'denied', 'revoked', 'expired', 'ended'],
-  consent_pending: ['active', 'denied', 'revoked', 'expired', 'ended'],
-  active: ['ended', 'denied', 'revoked', 'expired'],
-  ended: [],
-  revoked: [],
-  expired: [],
-  denied: [],
-};
-
-export function canTransition(from: RequestStatus, to: RequestStatus): boolean {
-  return TRANSITIONS[from].includes(to);
-}
 
 export function isTerminal(status: string): boolean {
   return !(OPEN_STATUSES as readonly string[]).includes(status);
@@ -207,9 +194,15 @@ const RESERVED_NAME = /^(con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³]|conin\$|c
 // biome-ignore lint/suspicious/noControlCharactersInRegex: 制御文字の拒否そのものが目的。
 const FORBIDDEN_SEGMENT_CHARS = /[\u0000-\u001f\u007f-\u009f\\/:*?"<>|]/;
 
+// u フラグでは対になったサロゲートは 1 文字として読まれるので、対にならないものだけに一致する。
+const LONE_SURROGATE = /\p{Cs}/u;
+const LONE_SURROGATE_ALL = /\p{Cs}/gu;
+
 /** サブフォルダ 1 段を検証する（端末側と同じ規則の二重防御。docs/62 §6）。 */
 export function isSafeSegment(segment: string): boolean {
   if (segment.length === 0 || segment.length > 255) return false;
+  // 対にならないサロゲートは Windows のパスにも jsonb にもできない。
+  if (LONE_SURROGATE.test(segment)) return false;
   if (segment === '.' || segment === '..') return false;
   if (FORBIDDEN_SEGMENT_CHARS.test(segment)) return false;
   if (/[. ]$/.test(segment)) return false;
@@ -265,7 +258,11 @@ const UNSAFE_NAME_CHARS =
   /[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
 
 export function sanitizeEntryName(name: string): string {
-  return name.replace(UNSAFE_NAME_CHARS, '').slice(0, LIMITS.maxNameLength);
+  // 対にならないサロゲートは jsonb に保存できない（切り詰めで生じるものも含めて置き換える）。
+  return name
+    .replace(UNSAFE_NAME_CHARS, '')
+    .slice(0, LIMITS.maxNameLength)
+    .replace(LONE_SURROGATE_ALL, '\ufffd');
 }
 
 /** 名前を無害化し、500 件 / 32KB に収める。超過分は捨てて truncated にする。 */
@@ -418,12 +415,12 @@ export function parseProbeOutput(output: unknown): ProbeResult | null {
 
 /**
  * RSP の結果がヘルパーの登録より前に完了したか。古い quser ではセッションを判断できない。
- * タイムゾーンの無い時刻は比較できないので「古くない」と扱う（照合そのものは行う）。
+ * 時刻が無い・タイムゾーンが無い・解釈できないときは比較できないので、古い扱いにする（fail-closed）。
  */
 export function probeCompletedBefore(completedAt: string | null, helperCreatedAt: Date): boolean {
-  if (!completedAt || !/(Z|[+-]\d{2}:?\d{2})$/i.test(completedAt)) return false;
+  if (!completedAt || !/(Z|[+-]\d{2}:?\d{2})$/i.test(completedAt)) return true;
   const time = new Date(completedAt).getTime();
-  return !Number.isNaN(time) && time < helperCreatedAt.getTime();
+  return Number.isNaN(time) || time < helperCreatedAt.getTime();
 }
 
 function comparableUser(name: string): string {

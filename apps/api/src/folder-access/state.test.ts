@@ -3,7 +3,6 @@ import {
   type BindingFacts,
   bindingViolation,
   ConsentBodySchema,
-  canTransition,
   endAuditAction,
   evaluateProbe,
   heartbeatDecision,
@@ -22,17 +21,6 @@ const GUID = '11111111-2222-4333-8444-555555555555';
 const SID = 'S-1-5-21-1000000001-1000000002-1000000003-1104';
 
 describe('状態遷移', () => {
-  it('順方向だけ進み、飛び越しや終端からの復帰はできない', () => {
-    expect(canTransition('device_pending', 'helper_pending')).toBe(true);
-    expect(canTransition('helper_pending', 'consent_pending')).toBe(true);
-    expect(canTransition('consent_pending', 'active')).toBe(true);
-    expect(canTransition('device_pending', 'active')).toBe(false);
-    expect(canTransition('helper_pending', 'active')).toBe(false);
-    expect(canTransition('active', 'consent_pending')).toBe(false);
-    expect(canTransition('ended', 'active')).toBe(false);
-    expect(canTransition('revoked', 'active')).toBe(false);
-  });
-
   it('終了理由から終端状態と監査アクションを決める', () => {
     expect(terminalStatusFor('operator_end')).toBe('ended');
     expect(terminalStatusFor('requester_revoked')).toBe('revoked');
@@ -187,6 +175,18 @@ describe('結果の正規化', () => {
   });
 });
 
+describe('サブフォルダの検証', () => {
+  it('対にならないサロゲートを拒否し、正しい絵文字は受ける', () => {
+    expect(isSafeSegment('a\ud83d')).toBe(false);
+    expect(isSafeSegment('\ude00b')).toBe(false);
+    expect(isSafeSegment('テスト😀')).toBe(true);
+  });
+
+  it('名前の対にならないサロゲートを保存できる形にする', () => {
+    expect(sanitizeEntryName('a\ud83db')).toBe('a\ufffdb');
+  });
+});
+
 describe('RSP 固定テンプレートの結果', () => {
   describe('quser: 空白を含むユーザー名（誤解釈で別ユーザーと一致させない）', () => {
     const header = ' USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME';
@@ -318,9 +318,10 @@ describe('RSP 固定テンプレートの結果', () => {
     expect(probeCompletedBefore('2026-10-31T00:59:59Z', created)).toBe(true);
     expect(probeCompletedBefore('2026-10-31T09:59:59+09:00', created)).toBe(true);
     expect(probeCompletedBefore('2026-10-31T01:00:01+00:00', created)).toBe(false);
-    expect(probeCompletedBefore('2026-10-31T00:00:00', created)).toBe(false);
-    expect(probeCompletedBefore(null, created)).toBe(false);
-    expect(probeCompletedBefore('invalid+00:00', created)).toBe(false);
+    // 比較できない時刻は古い扱い（fail-closed）。
+    expect(probeCompletedBefore('2026-10-31T00:00:00', created)).toBe(true);
+    expect(probeCompletedBefore(null, created)).toBe(true);
+    expect(probeCompletedBefore('invalid+00:00', created)).toBe(true);
   });
 
   const helper = { machineGuid: GUID, sessionId: 1, userName: 'DOMAIN\\User-A' };
