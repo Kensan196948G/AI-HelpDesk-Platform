@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { clearUiRoleCache } from '../auth/ui.js';
 import { config } from '../config.js';
 import { sql } from '../db.js';
 import { resetRateLimits } from '../lib/rate-limit.js';
@@ -186,6 +187,121 @@ afterAll(async () => {
 });
 
 describe('RSP実行セッション API', () => {
+  it('端末記録の下書き → 別の承認者が画面の一覧から承認 → 別の相談者の AI 入力に入る', async () => {
+    const approver = 'terminal-kb-approver@example.com';
+    const asker = 'terminal-kb-asker@example.com';
+    const rows = await sql<{ id: string }[]>`
+      INSERT INTO users (email, name, role, password_hash)
+      VALUES (${approver}, ${approver}, 'requester', 'access-only$no-login')
+      ON CONFLICT (lower(email)) DO UPDATE SET updated_at = now()
+      RETURNING id
+    `;
+    await sql`
+      INSERT INTO user_roles (user_id, role, source, granted_by)
+      VALUES (${rows[0]?.id ?? ''}, 'approver', 'manual', 'test')
+      ON CONFLICT DO NOTHING
+    `;
+    clearUiRoleCache();
+
+    const { sessionId, stepId } = await createSessionWithStep(CASE_A);
+    const recorded = await app.inject({
+      method: 'POST',
+      url: `/api/terminal/steps/${stepId}/record`,
+      payload: {
+        command: 'Restart-Service Spooler',
+        output: `  Status Running\n連絡先: user@example.com\n${'出力'.repeat(200)}  `,
+        outputSource: 'manual',
+        exitStatus: 'success',
+        note: 'スプーラが停止していた',
+      },
+    });
+    expect(recorded.statusCode, recorded.body).toBe(200);
+    const closed = await app.inject({
+      method: 'POST',
+      url: `/api/terminal/sessions/${sessionId}/close`,
+      payload: { reason: 'resolved', note: '復旧' },
+    });
+    expect(closed.statusCode, closed.body).toBe(200);
+    const draft = await app.inject({
+      method: 'POST',
+      url: `/api/terminal/sessions/${sessionId}/knowledge-draft`,
+      payload: {},
+    });
+    expect(draft.statusCode, draft.body).toBe(200);
+    const knowledge = draft.json().knowledge;
+    knowledgeIds.push(knowledge.id);
+
+    try {
+      // 承認者（DX 推進部でない）の一覧に申請済みとして出る。
+      config.DEV_AUTH_EMAIL = approver;
+      const list = await app.inject({ method: 'GET', url: '/api/knowledge/pending' });
+      expect(list.statusCode, list.body).toBe(200);
+      const item = (list.json().items as Array<Record<string, unknown>>).find(
+        (entry) => entry.id === knowledge.id,
+      );
+      expect(item?.status).toBe('pending');
+
+      // 画面（assist-bridge の ahPendingApprovePayload）が送るのと同じ本文で承認する。
+      const approved = await app.inject({
+        method: 'POST',
+        url: '/api/knowledge/ui-sync',
+        payload: {
+          clientRef: item?.clientRef,
+          status: 'approved',
+          title: item?.title,
+          symptom: item?.symptom,
+          cause: item?.cause,
+          steps: item?.steps,
+          keywords: item?.keywords,
+          comment: '',
+          checklist: { reproducible: true, noSecrets: true, noBlame: true, scopeClear: true },
+        },
+      });
+      expect(approved.statusCode, approved.body).toBe(200);
+      expect(approved.json().aiUsable).toBe(true);
+      expect(approved.json().knowledge.status).toBe('approved');
+
+      // 作成者のセッションからも公開済みと分かる。
+      config.DEV_AUTH_EMAIL = OPERATOR;
+      const restored = await app.inject({
+        method: 'GET',
+        url: `/api/terminal/sessions/${sessionId}`,
+      });
+      expect(restored.json().session.knowledge.status).toBe('approved');
+
+      config.DEV_AUTH_EMAIL = asker;
+      resetRateLimits();
+      fetchMock.mockClear();
+      fetchMock.mockImplementation(
+        async () =>
+          new Response(
+            JSON.stringify({
+              choices: [{ message: { content: `手順です。\n根拠: ${knowledge.kbNo}` } }],
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          ),
+      );
+      const answer = await app.inject({
+        method: 'POST',
+        url: '/api/ai/answer',
+        payload: { text: 'プリンタで印刷できないです' },
+      });
+      expect(answer.statusCode, answer.body).toBe(200);
+      const call = fetchMock.mock.calls.at(-1) as unknown as [string, { body: string }];
+      const prompt = String(
+        (JSON.parse(call[1].body) as { messages: Array<{ role: string; content: string }> })
+          .messages[1]?.content,
+      );
+      expect(prompt).toContain(knowledge.kbNo);
+      expect(prompt).toContain('Restart-Service Spooler');
+      expect(prompt).not.toContain('user@example.com');
+      expect(answer.json().sources.map((s: { kbNo: string }) => s.kbNo)).toEqual([knowledge.kbNo]);
+    } finally {
+      config.DEV_AUTH_EMAIL = OPERATOR;
+      await sql`DELETE FROM prototype_states WHERE user_email IN ${sql([approver, asker])}`;
+    }
+  });
+
   it('引き受けていない人・同意なしでは開始できない', async () => {
     await setupClaimedHandover(CASE_A);
 
@@ -420,12 +536,12 @@ describe('RSP実行セッション API', () => {
     const knowledge = draft.json().knowledge;
     knowledgeIds.push(knowledge.id);
     expect(knowledge.kbNo).toMatch(/^KB-\d{4}-\d+$/);
-    expect(knowledge.status).toBe('draft');
+    expect(knowledge.status).toBe('pending');
 
     const rows = await sql<{ status: string; kb_no: string; steps: string }[]>`
       SELECT status, kb_no, steps FROM knowledge WHERE id = ${knowledge.id}
     `;
-    expect(rows[0]?.status).toBe('draft'); // 自動公開しない
+    expect(rows[0]?.status).toBe('pending'); // 自動公開しない（承認待ち）
     expect(rows[0]?.steps).toContain('Get-Service Spooler');
 
     const again = await app.inject({
@@ -443,7 +559,7 @@ describe('RSP実行セッション API', () => {
     });
     expect(restored.statusCode, restored.body).toBe(200);
     expect(restored.json().session.knowledge.kbNo).toBe(knowledge.kbNo);
-    expect(restored.json().session.knowledge.status).toBe('draft');
+    expect(restored.json().session.knowledge.status).toBe('pending');
 
     // 監査に一連の操作が残る。
     const audit = await sql<{ action: string }[]>`

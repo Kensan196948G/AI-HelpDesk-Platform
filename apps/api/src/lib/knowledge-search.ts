@@ -1,4 +1,21 @@
 import { type KnowledgeLike, keywordForms } from '../domain/ai.js';
+import { redactPII } from '../domain/pii.js';
+
+/**
+ * これ未満の一致は根拠にしない。原因欄に意図語が 1 回出るだけの KB まで外部 AI へ送らない。
+ * 専門キーワードの一致は 1 語で 4 点なので、この下限にはかからない。
+ */
+export const MIN_SCORE = 2;
+
+/**
+ * 画面経路の KB は keywords が空で保存される（原本の draftForSync が返さない）。
+ * 空なら題名から語を取り出して照合する。保存値は変えない。
+ * 「起動」「対処」のような 2 文字の一般語で無関係な KB を拾わないよう、3 文字以上に限る。
+ */
+export function keywordsFromTitle(title: string): string[] {
+  const terms = title.match(/[\p{Script=Han}\p{Script=Katakana}A-Za-z0-9ー]{3,}/gu) ?? [];
+  return [...new Set(terms)];
+}
 
 /**
  * 承認済みナレッジ候補を、相談文と意図キーワードでスコアリングして上位を返す。
@@ -9,6 +26,7 @@ export function scoreKnowledge(
   text: string,
   intentKeywords: string[],
   limit = 3,
+  minScore = MIN_SCORE,
 ): KnowledgeLike[] {
   const lowerText = text.toLowerCase();
   const tokens = new Set(
@@ -40,40 +58,73 @@ export function scoreKnowledge(
       }
       return { knowledge, score: specific + contextual };
     })
-    .filter((entry) => entry.score > 0)
+    .filter((entry) => entry.score >= minScore)
     .sort((a, b) => b.score - a.score)
     .slice(0, limit)
     .map((entry) => entry.knowledge);
 }
 
 /**
- * DB の承認済みナレッジ（knowledge.status = 'approved'）と、
- * 呼び出し元が渡す追加候補（例: 画面で承認したナレッジ）をまとめて検索する。
+ * AI の根拠にしてよい DB のナレッジを検索する。ブラウザが送る state は読まない。
+ *
+ * - status = 'approved' で、承認者と承認時刻が記録されている。
+ * - 承認者 ≠ 作成者（職務分離。docs/58 のとおりアカウント単位）。
+ * - 承認時の版のまま（approved_at より後に行が更新されていない）。承認と version 加算は
+ *   同じトランザクションなので、updated_at（トリガ）は approved_at と一致する。
+ * - 本文は DB の行から取り、外へ出す前に改めて伏せ字にする。
  */
 export async function findApprovedKnowledge(
   tx: any,
   text: string,
   intentKeywords: string[],
-  extra: KnowledgeLike[] = [],
 ): Promise<KnowledgeLike[]> {
   const rows: any[] = await tx`
-    SELECT id, kb_no, title, symptom, cause, steps, keywords
-    FROM knowledge
-    WHERE status = 'approved'
-    ORDER BY updated_at DESC
+    SELECT k.id, k.kb_no, k.title, k.symptom, k.cause, k.steps, k.keywords, k.version
+    FROM knowledge k
+    WHERE k.status = 'approved'
+      AND k.approver_id IS NOT NULL
+      AND k.approved_at IS NOT NULL
+      AND k.approver_id <> k.author_id
+      AND k.version >= 1
+      AND k.updated_at <= k.approved_at
+    ORDER BY k.updated_at DESC
     LIMIT 100
   `;
 
-  const fromDb: KnowledgeLike[] = rows.map((row) => ({
+  const candidates: KnowledgeLike[] = rows.map((row) => ({
     id: row.id,
     kbNo: row.kb_no,
-    title: row.title,
-    symptom: row.symptom,
-    cause: row.cause,
-    steps: row.steps,
-    keywords: row.keywords ?? [],
+    title: redactPII(row.title).text,
+    symptom: redactPII(row.symptom).text,
+    cause: redactPII(row.cause).text,
+    steps: redactPII(row.steps).text,
+    keywords: row.keywords?.length ? row.keywords : keywordsFromTitle(row.title),
+    version: row.version,
   }));
-  const seen = new Set(fromDb.map((knowledge) => knowledge.kbNo));
-  const candidates = [...fromDb, ...extra.filter((knowledge) => !seen.has(knowledge.kbNo))];
   return scoreKnowledge(candidates, text, intentKeywords);
+}
+
+/**
+ * AI の根拠に使える行の clientRef と題名、全件数（画面の「承認済み」表示の判定用）。
+ * 条件は findApprovedKnowledge と同じ。承認済み KB は相談者も閲覧できるので本文以外を返してよい。
+ */
+export async function listAiUsableRefs(
+  tx: any,
+): Promise<{ count: number; items: Array<{ clientRef: string; title: string }> }> {
+  const rows: Array<{ client_ref: string | null; title: string }> = await tx`
+    SELECT k.client_ref, k.title
+    FROM knowledge k
+    WHERE k.status = 'approved'
+      AND k.approver_id IS NOT NULL
+      AND k.approved_at IS NOT NULL
+      AND k.approver_id <> k.author_id
+      AND k.version >= 1
+      AND k.updated_at <= k.approved_at
+  `;
+  return {
+    count: rows.length,
+    items: rows
+      .filter((row) => row.client_ref)
+      .map((row) => ({ clientRef: String(row.client_ref), title: row.title })),
+  };
 }

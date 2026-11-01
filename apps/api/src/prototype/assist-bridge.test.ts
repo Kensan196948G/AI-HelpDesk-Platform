@@ -44,6 +44,20 @@ interface AssistBridge {
   pendingRejectPayload: (item: Record<string, unknown>, reason: string) => Record<string, unknown>;
   pendingSectionHtml: (items: Array<Record<string, unknown>>, errorCode?: string) => string;
   approvalNoteHtml: (c: SyncedCase) => string;
+  labelHdKb: (
+    items: Array<Record<string, unknown>>,
+    drafts: Array<Record<string, unknown>>,
+    refs: { items: Array<{ clientRef: string; title: string }> } | null,
+  ) => Array<Record<string, unknown>>;
+  handoverApprovalNotice: (
+    approved: Record<string, unknown>,
+    kb: { published: boolean; aiUsable?: boolean; reason?: string },
+  ) => { text: string; tone: string };
+  publishKnowledgeAfterHandover: (
+    full: Record<string, unknown> | null,
+    checklist: Record<string, boolean>,
+    comment: string,
+  ) => Promise<{ published: boolean; aiUsable?: boolean; reason?: string }>;
 }
 
 interface SandboxWindow {
@@ -51,7 +65,11 @@ interface SandboxWindow {
   __AIHD_ASSIST_BRIDGE__?: AssistBridge;
 }
 
-function loadBridge(boot: Record<string, unknown>, pcVisible: () => boolean): AssistBridge {
+function loadBridge(
+  boot: Record<string, unknown>,
+  pcVisible: () => boolean,
+  extras: Record<string, unknown> = {},
+): AssistBridge {
   const window: SandboxWindow = { __AIHD_BOOT__: boot };
   const sandbox: Record<string, unknown> = {
     window,
@@ -62,6 +80,7 @@ function loadBridge(boot: Record<string, unknown>, pcVisible: () => boolean): As
     // 画面が無くても足りるので、最小限の差し替えだけを渡す。
     ACT: { wConsent: () => {} },
     document: { readyState: 'loading', addEventListener: () => {} },
+    ...extras,
   };
   vm.createContext(sandbox);
   vm.runInContext(code, sandbox);
@@ -325,5 +344,98 @@ describe('assist-bridge: 承認情報の常設表示（F-13 追記）', () => {
     expect(b.approvalNoteHtml({ id: 'CASE-3', handoverStatus: 'claimed' })).toBe('');
     expect(b.approvalNoteHtml({ id: 'CASE-4', handoverStatus: 'completed' })).toBe('');
     expect(b.approvalNoteHtml({ id: 'CASE-5' })).toBe('');
+  });
+});
+
+describe('assist-bridge: 引継ぎの承認と KB 公開を分ける', () => {
+  const checklist = { reproducible: true, noSecrets: true, noBlame: true, scopeClear: true };
+  const full = { id: 'DR-1', title: '題名', symptom: '症状', cause: '原因', steps: '手順' };
+
+  function withFetch(status: number, body: unknown) {
+    const calls: Array<{ url: string; body: Record<string, unknown> }> = [];
+    const bridge = loadBridge({}, () => false, {
+      fetch: async (url: string, options: { body: string }) => {
+        calls.push({ url, body: JSON.parse(options.body) });
+        return new Response(JSON.stringify(body), { status });
+      },
+    });
+    return { bridge, calls };
+  }
+
+  it('引継ぎの承認後に ui-sync で公開し、サーバーの aiUsable をそのまま返す', async () => {
+    const { bridge, calls } = withFetch(200, { aiUsable: true });
+    const result = await bridge.publishKnowledgeAfterHandover(full, checklist, 'ok');
+    expect(result).toEqual({ published: true, aiUsable: true });
+    expect(calls[0]?.url).toBe('/api/knowledge/ui-sync');
+    expect(calls[0]?.body).toMatchObject({ clientRef: 'ui-DR-1', status: 'approved', checklist });
+  });
+
+  it('公開に失敗しても例外にせず、未公開として返す', async () => {
+    const { bridge } = withFetch(409, { error: { code: 'CONFLICT', message: 'x' } });
+    await expect(bridge.publishKnowledgeAfterHandover(full, checklist, '')).resolves.toEqual({
+      published: false,
+      reason: 'CONFLICT',
+    });
+    await expect(bridge.publishKnowledgeAfterHandover(null, checklist, '')).resolves.toMatchObject({
+      published: false,
+    });
+  });
+
+  it('文言は引継ぎの承認と KB の公開を別々に伝える', () => {
+    const { bridge } = withFetch(200, {});
+    const approved = { approvedByName: '承認者' };
+    expect(bridge.handoverApprovalNotice(approved, { published: true, aiUsable: true })).toEqual({
+      text: '引継ぎの完了を承認しました（承認者: 承認者）。ナレッジも公開し、次の相談から AI の根拠に使います。',
+      tone: '',
+    });
+    const selfApproved = bridge.handoverApprovalNotice(approved, {
+      published: true,
+      aiUsable: false,
+    });
+    expect(selfApproved.text).toContain('AI の根拠には使いません');
+    expect(selfApproved.tone).toBe('bad');
+    const failed = bridge.handoverApprovalNotice(approved, {
+      published: false,
+      reason: 'CONFLICT',
+    });
+    expect(failed.text).toContain('引継ぎの完了を承認しました');
+    expect(failed.text).toContain('ナレッジは公開されていません');
+    expect(failed.text).not.toContain('次の相談から');
+  });
+});
+
+describe('assist-bridge: 画面内の KB の承認済み表示', () => {
+  const bridge = loadBridge({}, () => false);
+  const kb = (id: string, title: string) => ({
+    id,
+    title,
+    src: 'hd',
+    owner: 'AI',
+    approvedBy: '渡辺',
+  });
+  const drafts = [{ id: 'DR-001', kbId: 'KB-111' }];
+  const approved = { items: [{ clientRef: 'ui-DR-001', title: '題名' }] };
+
+  it('DB で承認された下書きに結びつく KB だけ「ヘルプデスク承認済み」の表示を残す', () => {
+    const [hit, demo] = bridge.labelHdKb(
+      [kb('KB-111', '題名'), kb('KB-101', 'デモ')],
+      drafts,
+      approved,
+    );
+    expect(hit?.src).toBe('hd');
+    expect(demo?.src).toBe('local');
+    expect(demo?.owner).toBe('画面内の資料（DB で未承認）');
+  });
+
+  it('下書き番号が重なっても題名が違えば承認済みにしない。作成者別の clientRef は一致させる', () => {
+    expect(bridge.labelHdKb([kb('KB-111', '別の内容')], drafts, approved)[0]?.src).toBe('local');
+    const scoped = { items: [{ clientRef: 'ui-DR-001~abcd1234', title: '題名' }] };
+    expect(bridge.labelHdKb([kb('KB-111', '題名')], drafts, scoped)[0]?.src).toBe('hd');
+    const other = { items: [{ clientRef: 'ui-DR-0012', title: '題名' }] };
+    expect(bridge.labelHdKb([kb('KB-111', '題名')], drafts, other)[0]?.src).toBe('local');
+  });
+
+  it('判定が取れない間は承認済みと表示しない', () => {
+    expect(bridge.labelHdKb([kb('KB-111', '題名')], drafts, null)[0]?.src).toBe('local');
   });
 });

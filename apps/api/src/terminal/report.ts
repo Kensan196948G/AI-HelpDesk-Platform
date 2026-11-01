@@ -398,5 +398,12 @@ export function buildKnowledgeDraft(input: KnowledgeDraftInput): KnowledgeDraftC
     .slice(0, 12)
     .map((value) => value.slice(0, 40));
 
-  return { title: title.slice(0, 160), symptom, cause, steps, keywords };
+  // 承認は ui-sync の上限と本文照合を通る。伏せ字で長さが変わるので最後に切り、前後の空白を落とす。
+  return {
+    title: title.slice(0, 160).trim(),
+    symptom: symptom.slice(0, 4000).trim(),
+    cause: cause.slice(0, 4000).trim(),
+    steps: steps.slice(0, 8000).trim(),
+    keywords,
+  };
 }

@@ -20,6 +20,13 @@
     version: 2,
     at: new Date().toISOString(),
     rspDeepLink: (c) => ahRspDeepLink(c),
+    // 画面内の KB を「承認済み」と表示するかの判定の単体テスト用。
+    labelHdKb: (items, drafts, refs) => ahLabelHdKb(items, drafts, refs),
+    kbIsDbApproved: (kb, drafts, refs) => ahKbIsDbApproved(kb, drafts, refs),
+    // 引継ぎの承認と KB 公開を分ける処理の単体テスト用。
+    handoverApprovalNotice: (approved, kb) => ahHandoverApprovalNotice(approved, kb),
+    publishKnowledgeAfterHandover: (full, checklist, comment) =>
+      ahPublishKnowledgeAfterHandover(full, checklist, comment),
     // F-13 の単体テスト用（DOM に依存しない純粋関数）。
     applyHandoverStatus: (c, handover) => ahApplyHandoverStatus(c, handover),
     linkWithHandover: (c, L) => ahLinkWithHandover(c, L),
@@ -59,6 +66,8 @@
     pendingLoadedAt: 0,
     pendingError: '',
     pendingBusy: false,
+    // GET /api/knowledge/approved-refs の結果。null の間は承認済みと表示しない。
+    kbRefs: null,
   };
   window.__AIHD_ASSIST__ = AH;
 
@@ -421,8 +430,7 @@
             '端末の読み取り結果',
             message.resolveResult.title || '',
           );
-        if (message.kind === 'kb')
-          push(message.at, 'AI', '承認済みナレッジを提示', message.kbId || '');
+        if (message.kind === 'kb') push(message.at, 'AI', 'ナレッジを提示', message.kbId || '');
         if (message.kind === 'proposal') push(message.at, 'AI', '修復を提案', message.propId || '');
         if (message.kind === 'exec')
           push(message.at, 'PCエージェント', '修復の実行結果', message.state || '');
@@ -1425,6 +1433,132 @@
     });
   }
 
+  const AH_KB_NOT_FOR_AI =
+    '作成者本人の承認のため、AI の根拠には使いません（別の承認者の承認が必要です）';
+
+  /**
+   * 原本の完了モーダルは「次回から AI の根拠に使う」と固定で表示する。
+   * サーバーが AI の根拠にしないと判定した場合だけ、文言を実際の結果に置き換える（DOM は変えない）。
+   */
+  function ahCorrectReflectModal(reason) {
+    if (!document || typeof document.querySelector !== 'function') return;
+    const step = document.querySelector('#rs4 span:last-child');
+    if (step) step.textContent = 'AI の根拠には使いません';
+    const note = document.querySelector('#rsdone .note');
+    if (note) note.textContent = reason;
+  }
+
+  /** 引継ぎの承認後に、KB 公開を別の判定としてサーバーへ保存する。失敗しても引継ぎの承認は戻さない。 */
+  function ahPublishKnowledgeAfterHandover(full, checklist, comment) {
+    if (!full) return Promise.resolve({ published: false, reason: '下書きを取得できません' });
+    return ahSyncKnowledge(full, 'approved', { checklist: checklist, comment: comment })
+      .then((data) => ({ published: true, aiUsable: Boolean(data && data.aiUsable) }))
+      .catch((error) => ({ published: false, reason: ahUiSyncErrorLabel(error) }));
+  }
+
+  /** 引継ぎの承認と KB 公開の結果を、混同しない文言にする（純粋関数）。 */
+  function ahHandoverApprovalNotice(approved, kb) {
+    const source = approved || {};
+    const head = source.selfApproved
+      ? '自分の対応した案件を自己承認しました（DX 推進部の別の担当者が承認することが望ましい）。'
+      : '引継ぎの完了を承認しました（承認者: ' + String(source.approvedByName || '') + '）。';
+    if (kb && kb.published && kb.aiUsable) {
+      return {
+        text: head + 'ナレッジも公開し、次の相談から AI の根拠に使います。',
+        tone: source.selfApproved ? 'bad' : '',
+      };
+    }
+    if (kb && kb.published) {
+      return { text: head + 'ナレッジは公開しましたが、' + AH_KB_NOT_FOR_AI + '。', tone: 'bad' };
+    }
+    return {
+      text:
+        head +
+        'ナレッジは公開されていません（AI の根拠になりません）。サーバ下書きから承認してください：' +
+        String((kb && kb.reason) || '不明なエラー'),
+      tone: 'bad',
+    };
+  }
+
+  // ---------------------------------------------------------------------
+  // 画面内（state）の KB はブラウザのデータで、DB で承認されたとは限らない。
+  // サーバーの判定（GET /api/knowledge/approved-refs）に一致するものだけ承認済みと表示する。
+  // 原本 HTML は変えず、window.HD の戻り値と配信時の差し替え（prototype.ts）で表示を変える。
+  // ---------------------------------------------------------------------
+  const AH_HELPDESK_STATE_KEY = 'mirai-wizard-v31-helpdesk';
+  const AH_KB_LOCAL_OWNER = '画面内の資料（DB で未承認）';
+
+  /** state の KB が DB で承認済みか。下書き → clientRef → 題名の順に照合する（純粋関数）。 */
+  function ahKbIsDbApproved(kb, drafts, refs) {
+    if (!kb || !refs || !Array.isArray(refs.items) || !Array.isArray(drafts)) return false;
+    const draft = drafts.find((item) => item && item.kbId === kb.id);
+    if (!draft) return false;
+    // 下書き番号はブラウザごとの連番で重なるので、題名まで一致したものだけを同じ KB と見なす。
+    const base = 'ui-' + String(draft.id);
+    return refs.items.some(
+      (item) =>
+        (item.clientRef === base || String(item.clientRef).startsWith(base + '~')) &&
+        item.title === kb.title,
+    );
+  }
+
+  /** HD.kb() の戻り値から、DB で未承認のものの「承認済み」表示を外す（純粋関数）。 */
+  function ahLabelHdKb(items, drafts, refs) {
+    return (Array.isArray(items) ? items : []).map((item) =>
+      ahKbIsDbApproved(item, drafts, refs)
+        ? item
+        : Object.assign({}, item, { src: 'local', owner: AH_KB_LOCAL_OWNER }),
+    );
+  }
+
+  let ahDraftCacheRaw = null;
+  let ahDraftCache = [];
+  function ahLocalDrafts() {
+    try {
+      const raw = localStorage.getItem(AH_HELPDESK_STATE_KEY);
+      if (raw !== ahDraftCacheRaw) {
+        ahDraftCacheRaw = raw;
+        const parsed = raw ? JSON.parse(raw) : null;
+        ahDraftCache = parsed && Array.isArray(parsed.drafts) ? parsed.drafts : [];
+      }
+    } catch (error) {
+      ahDraftCache = [];
+    }
+    return ahDraftCache;
+  }
+
+  function ahRefreshKbApprovals() {
+    return ahJsonFetch('/api/knowledge/approved-refs')
+      .then((data) => {
+        AH.kbRefs = data;
+      })
+      .catch(() => {
+        // 判定できない間は承認済みと表示しない。
+        AH.kbRefs = null;
+      });
+  }
+
+  function ahInstallKbLabels() {
+    // 配信時の差し替え（prototype.ts の patchKbLabels）が呼ぶ。
+    window.__AIHD_KB_APPROVAL__ = (kb) =>
+      ahKbIsDbApproved(kb, ahLocalDrafts(), AH.kbRefs)
+        ? '承認：' + String((kb && kb.approvedBy) || '')
+        : 'DB 未承認';
+    const hd = window.HD;
+    if (hd && typeof hd.kb === 'function') {
+      const originalKb = hd.kb.bind(hd);
+      hd.kb = () => ahLabelHdKb(originalKb(), ahLocalDrafts(), AH.kbRefs);
+    }
+    if (hd && typeof hd.stats === 'function') {
+      const originalStats = hd.stats.bind(hd);
+      // 画面の「承認済みナレッジ」の件数は、AI の根拠に使える DB の件数にする。
+      hd.stats = () =>
+        Object.assign({}, originalStats(), { kb: AH.kbRefs ? Number(AH.kbRefs.count) || 0 : 0 });
+    }
+    void ahRefreshKbApprovals();
+    setInterval(() => void ahRefreshKbApprovals(), 60_000);
+  }
+
   /** 承認画面のチェックリスト4件の状態（取得できなければ null）。 */
   function ahApproveChecklistValues() {
     const boxes = ahApproveChecklist();
@@ -1679,7 +1813,11 @@
       item._localState = 'approved';
       if (kbNo) item.kbNo = kbNo;
       if (typeof toast === 'function') {
-        toast('サーバのナレッジを承認しました' + (kbNo ? '（' + kbNo + '）' : ''), 'ok');
+        if (data && data.aiUsable === false) {
+          toast('承認しましたが、' + AH_KB_NOT_FOR_AI, 'bad');
+        } else {
+          toast('サーバのナレッジを承認しました' + (kbNo ? '（' + kbNo + '）' : ''), 'ok');
+        }
       }
       // 承認済みは pending 一覧から消えるため、サーバから取り直す。
       await ahRefreshPending(true);
@@ -1770,7 +1908,14 @@
       checklist: ahApproveChecklistValues(),
       comment: ahApproveComment(),
     })
-      .then(() => originalApprove.apply(context, args))
+      .then((data) => {
+        const result = originalApprove.apply(context, args);
+        if (data && data.aiUsable === false) {
+          ahCorrectReflectModal(AH_KB_NOT_FOR_AI + '。');
+          if (typeof toast === 'function') toast(AH_KB_NOT_FOR_AI, 'bad');
+        }
+        return result;
+      })
       .catch((error) => {
         console.error('[assist] knowledge sync (approve) failed', error);
         if (typeof toast === 'function') {
@@ -2525,6 +2670,8 @@
       };
     }
 
+    ahInstallKbLabels();
+
     const app = window.App;
     if (app) {
       const originalResolve = app.resolve;
@@ -2563,6 +2710,14 @@
           AH.approving = true;
           const args = arguments;
           const handoverId = target.handoverId;
+          // 引継ぎの承認は案件の完了で、KB の公開ではない。公開は ui-sync で別に保存する。
+          // 原本の承認処理が画面を描き直す前に、チェックリストと本文を控える。
+          const kbFull =
+            window.HD && typeof window.HD.draftForSync === 'function'
+              ? window.HD.draftForSync(id)
+              : null;
+          const kbChecklist = ahApproveChecklistValues();
+          const kbComment = ahApproveComment();
           ahJsonFetch('/api/case-handovers/' + encodeURIComponent(handoverId) + '/approve', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -2588,21 +2743,18 @@
                 return ahRecoverHandoverAfterLocalApproveFailure(handoverId, localError);
               }
               const approved = data && data.handover ? data.handover : {};
-              if (typeof toast === 'function') {
-                if (approved.selfApproved) {
-                  toast(
-                    '自分の対応した案件を自己承認しました（DX 推進部の別の担当者が承認することが望ましい）',
-                    'bad',
-                  );
-                } else {
-                  toast(
-                    'ナレッジを承認しました（承認者: ' +
-                      String(approved.approvedByName || '') +
-                      '）',
+              return ahPublishKnowledgeAfterHandover(kbFull, kbChecklist, kbComment).then((kb) => {
+                if (!kb.published || !kb.aiUsable) {
+                  ahCorrectReflectModal(
+                    kb.published
+                      ? AH_KB_NOT_FOR_AI + '。'
+                      : 'ナレッジは公開されていません。AI の根拠にはなりません。',
                   );
                 }
-              }
-              return undefined;
+                const notice = ahHandoverApprovalNotice(approved, kb);
+                if (typeof toast === 'function') toast(notice.text, notice.tone);
+                return undefined;
+              });
             })
             .catch((error) => {
               console.error('[assist] approve failed', error);
