@@ -188,6 +188,26 @@ describe('サブフォルダの検証', () => {
 });
 
 describe('RSP 固定テンプレートの結果', () => {
+  it('quser: 日本語版の 2 行の見出しを行として数えない（実機の出力形式）', () => {
+    expect(
+      parseQuserLines([
+        '                                                      アイドル',
+        ' ユーザー名            セッション名       ID  状態    時間       ログオン時刻',
+        ' synth-user            console             2  Active          .  2026/09/11 11:27',
+      ]),
+    ).toEqual([{ user: 'synth-user', sessionId: 2, state: 'active' }]);
+    // 切断行（セッション名なし）も同じ形式で読める。
+    expect(
+      parseQuserLines([
+        '                                                      アイドル',
+        ' ユーザー名            セッション名       ID  状態    時間       ログオン時刻',
+        ' synth-user                                2  Disc      1+09:29  2026/09/11 11:27',
+      ]),
+    ).toEqual([{ user: 'synth-user', sessionId: 2, state: 'disconnected' }]);
+    // 見出しの語を含む別の行は、従来どおり確定しない。
+    expect(parseQuserLines(['アイドル 不明な行'])[0]?.ambiguous).toBe(true);
+  });
+
   describe('quser: 空白を含むユーザー名（誤解釈で別ユーザーと一致させない）', () => {
     const header = ' USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME';
     const headerJa =
