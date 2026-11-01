@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   countsDeviceInfo,
+  SEED_USER_IDS,
   dbRowBlocker,
   demoKbKeys,
   refusalReason,
@@ -96,6 +97,8 @@ describe('report-state-kb-provenance', () => {
       draftsWithoutClientRef: 0,
       approvedWithDeviceInfo: 0,
       notApprovedWithDeviceInfo: 0,
+      usableOtherPerson: 1,
+      usableSeed: 0,
     });
     expect(JSON.stringify(report)).not.toContain('example.com');
   });
@@ -132,5 +135,31 @@ describe('KB 本文の端末情報の検出（読み取りのみ、docs/64 §8�
     ]) {
       expect(countsDeviceInfo(text), text).toBe(containsDeviceInfo(text));
     }
+  });
+});
+
+describe('承認の出所の件数（docs/64 §9）', () => {
+  it('seed、shared_identity、other_person を数え、使える行だけを対象にする', () => {
+    const seed = { author_id: SEED_USER_IDS[3], approver_id: SEED_USER_IDS[5] };
+    const report = summarize(
+      [],
+      [
+        row({ client_ref: null, ...seed }),
+        row({ client_ref: 'ui-1', author_email: 'a@example.com', approver_email: 'b@example.com' }),
+        row({ client_ref: 'ui-2', author_email: 'c@example.com', approver_email: 'd@example.com' }),
+        row({ client_ref: 'ui-3', ...seed, status: 'pending' }),
+      ],
+      new Set(),
+      [['c@example.com', 'd@example.com']],
+    );
+    expect(report.db.usable).toBe(3);
+    expect(report.db.usableSeed).toBe(1);
+    expect(report.db.usableSharedIdentity).toBe(1);
+    expect(report.db.usableOtherPerson).toBe(1);
+  });
+
+  it('シードの利用者の ID はサーバの判定と同じ', async () => {
+    const domain = await import('../apps/api/src/domain/approval-origin.ts');
+    expect([...SEED_USER_IDS].sort()).toEqual(Object.values(domain.SEED_USER_IDS).sort());
   });
 });

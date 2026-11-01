@@ -271,6 +271,54 @@ describe('承認済み KB は全体で参照する（次の人へ）', () => {
     }
   });
 
+  // ── 承認の出所（docs/64 §9）: 使ってよいかの方針は変えず、事実を区別して出す ──────
+  it('別人の承認は other_person として出典とプロンプトに出す', async () => {
+    const published = await publishThroughTwoPeople();
+    stubAnswer(published.kbNo);
+    const result = await ask(ASKER, '工事写真台帳が起動しません');
+    expect(result.sources[0]).toMatchObject({
+      kbNo: published.kbNo,
+      approvalOrigin: 'other_person',
+      approvalOriginLabel: '別の担当者が承認',
+    });
+    expect(sentPrompt()).toMatch(/出所: 別の担当者が承認/);
+  });
+
+  it('同一人物の別アカウントは根拠のまま shared_identity と出す', async () => {
+    config.SHARED_IDENTITY_GROUPS = `${AUTHOR}|${APPROVER}`;
+    const published = await publishThroughTwoPeople();
+    stubAnswer(published.kbNo);
+    const result = await ask(ASKER, '工事写真台帳が起動しません');
+    expect(result.sources[0]).toMatchObject({
+      kbNo: published.kbNo,
+      approvalOrigin: 'shared_identity',
+      approvalOriginLabel: '同一人物の別アカウントが承認',
+    });
+    expect(sentPrompt()).toMatch(/出所: 同一人物の別アカウントが承認/);
+    expect(sentPrompt()).not.toMatch(/出所: 別の担当者が承認/);
+  });
+
+  it('シードの KB は根拠のまま seed と出し、承認済みナレッジと書かない', async () => {
+    stubAnswer('KB-2026-0003');
+    const result = await ask(ASKER, '印刷ジョブが消えません。スプーラの確認方法は');
+    expect(result.sources.map((source) => source.kbNo)).toContain('KB-2026-0003');
+    expect(result.sources.find((source) => source.kbNo === 'KB-2026-0003')).toMatchObject({
+      approvalOrigin: 'seed',
+      approvalOriginLabel: '初期登録の資料（人の承認記録なし）',
+    });
+    const prompt = sentPrompt();
+    expect(prompt).toMatch(/出所: 初期登録の資料（人の承認記録なし）/);
+    expect(prompt).not.toContain('承認済みナレッジ:');
+  });
+
+  it('外部 AI なし（フォールバック）でもシードを「承認済み」と言わない', async () => {
+    config.DEEPSEEK_API_KEY = undefined;
+    const result = await ask(ASKER, '印刷ジョブが消えません。スプーラの確認方法は');
+    expect(result.provider).toBe('fallback');
+    expect(result.answer).toContain('初期登録の資料');
+    expect(result.answer).not.toContain('承認済みナレッジ');
+  });
+
   // ── 端末情報を KB に入れない（docs/65 §7 欠陥 1 → docs/64 §8） ──────────────
   const DEVICE_LADEN =
     '【相談内容】工事写真台帳が起動しません 【端末】WEB-2B6D41AA／Windows 11 ' +

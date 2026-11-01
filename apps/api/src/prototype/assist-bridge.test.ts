@@ -43,6 +43,7 @@ interface AssistBridge {
   ) => Record<string, unknown>;
   pendingRejectPayload: (item: Record<string, unknown>, reason: string) => Record<string, unknown>;
   kbConsultText: (ticket: Record<string, unknown>) => string;
+  reportSources: (chat: unknown) => unknown[];
   pendingSectionHtml: (items: Array<Record<string, unknown>>, errorCode?: string) => string;
   approvalNoteHtml: (c: SyncedCase) => string;
   labelHdKb: (
@@ -293,6 +294,25 @@ describe('assist-bridge: F-06 承認者向けサーバ下書き（別ID承認）
     expect((html.match(/data-pd-check=/g) ?? []).length).toBe(4);
     // 4項目ONまで承認ボタンは無効。
     expect(html).toContain('disabled>承認</button>');
+  });
+
+  it('報告書の出典は DB の出所を残し、画面内の資料は未承認と分ける', () => {
+    const b = bridge();
+    const chat = {
+      messages: [
+        {
+          kind: 'ai',
+          sourceDetails: [
+            { id: 'x', kbNo: 'KB-1', title: 'T1', approvalOrigin: 'seed' },
+            { id: 'y', kbNo: 'KB-2', title: 'T2', approvalOrigin: 'other_person' },
+          ],
+        },
+      ],
+    };
+    expect(b.reportSources(chat)).toEqual([
+      { id: 'x', kbNo: 'KB-1', title: 'T1', approvalOrigin: 'seed' },
+      { id: 'y', kbNo: 'KB-2', title: 'T2', approvalOrigin: 'other_person' },
+    ]);
   });
 
   it('承認者が確認できるよう、症状・原因・手順を表示する（エスケープする）', () => {

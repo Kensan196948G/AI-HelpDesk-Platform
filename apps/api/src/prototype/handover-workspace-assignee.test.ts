@@ -30,3 +30,13 @@ describe('担当者欄の既定値', () => {
     expect(pick()(names, '', { real: false, name: '山田' })).toBe('佐藤');
   });
 });
+
+describe('解決ループのカードの出典の見出し', () => {
+  const bridge = readFileSync(new URL('./resolve-bridge.js', import.meta.url), 'utf8');
+
+  it('全件を「別の担当者が承認した」と決めつけず、項目ごとの出所を出す', () => {
+    expect(bridge).not.toContain('別の担当者が承認したナレッジ');
+    expect(bridge).toContain('approvalOriginLabel');
+    expect(bridge).toContain('出所を確認できません');
+  });
+});

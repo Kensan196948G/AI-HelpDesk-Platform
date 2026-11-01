@@ -472,6 +472,35 @@ describe('解決ループの提案と承認済み KB', () => {
     expect(refs.length).toBeLessThanOrEqual(3);
   });
 
+  it('参照に承認の出所を付け、プロンプトは「別の担当者が承認した」と決めつけない', async () => {
+    await insertKb();
+    let system = '';
+    const stubbed = globalThis.fetch;
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? '{}')) as {
+        messages?: Array<{ content: string }>;
+      };
+      system = body.messages?.[0]?.content ?? '';
+      return stubbed(url, init);
+    }) as typeof fetch;
+    const response = await post('/api/resolve/sessions', { caseId: CASE_ID, deviceId: DEVICE });
+    expect(response.statusCode, response.body).toBe(200);
+    const refs = sent.at(-1)?.knowledgeRefs as Array<Record<string, unknown>>;
+    expect(refs.find((item) => item.kbNo === KB_NO)).toMatchObject({
+      approvalOrigin: 'other_person',
+      approvalOriginLabel: '別の担当者が承認',
+    });
+    expect(refs.find((item) => item.kbNo === 'KB-2026-0003')).toMatchObject({
+      approvalOrigin: 'seed',
+    });
+    expect(system).toContain('knowledgeRefs');
+    expect(system).not.toContain('別の担当者が承認した');
+    const stored = response.json().step.knowledgeRefs.matched;
+    expect(
+      stored.find((item: { kbNo: string }) => item.kbNo === 'KB-2026-0003').approvalOriginLabel,
+    ).toBe('初期登録の資料（人の承認記録なし）');
+  });
+
   it('AI が使わなければ、一致した KB は示すが「使った」としない', async () => {
     await insertKb();
     const body = (

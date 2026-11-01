@@ -359,3 +359,21 @@ describe('renderFinalReportPdf', () => {
     // ヘッドレス Chrome の起動と描画は CI の共有ランナーで 10 秒を超えることがある。
   }, 60_000);
 });
+
+describe('報告書の出典の出所', () => {
+  it('承認の出所を事実のまま表に出す', () => {
+    const report = sampleReport();
+    report.ai.sources = [
+      { id: 'a', kbNo: 'KB-S', title: 'シード', approvalOrigin: 'seed' },
+      { id: 'b', kbNo: 'KB-O', title: '別人', approvalOrigin: 'other_person' },
+      { id: 'c', kbNo: 'KB-I', title: '同一人物', approvalOrigin: 'shared_identity' },
+      { id: 'd', kbNo: 'KB-L', title: '画面内', approvalOrigin: 'local' },
+    ];
+    const html = renderFinalReportHtml(report);
+    expect(html).toContain('初期登録の資料（人の承認記録なし）');
+    expect(html).toContain('別の担当者が承認');
+    expect(html).toContain('同一人物の別アカウントが承認');
+    expect(html).toContain('画面内の資料（DB で未承認）');
+    expect(html).not.toContain('根拠にした承認済みナレッジ');
+  });
+});

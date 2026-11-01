@@ -317,6 +317,76 @@ try {
       (& ps -o args= -p $_.Id 2>$null) -like '*disk-space.ps1*' })
   Assert-Equal 'timeout: プロセスが残らない' 0 $stray.Count
 
+  # ── ローカル保持期限（通信なしで判定する。docs/66 §7） ──────────
+  $contactPath = $configPath + '.last-contact'
+  function Set-FileAge {
+    param([string]$Path, [double]$Hours)
+    [IO.File]::SetLastWriteTimeUtc($Path, [DateTime]::UtcNow.AddHours(-1 * $Hours))
+  }
+  Set-TestConfig
+  if (Test-Path -LiteralPath $contactPath) { Remove-Item -LiteralPath $contactPath -Force }
+  $state.Command = $null
+  $run = Invoke-Agent
+  Assert-True 'retention: 通信できたら時刻を記録する' (Test-Path -LiteralPath $contactPath) $run.Log
+
+  Set-FileAge -Path $configPath -Hours 300
+  Set-FileAge -Path $contactPath -Hours 167
+  $polled = $state.Polls.Count
+  $run = Invoke-Agent
+  Assert-Equal 'retention: 期限内は動く' 0 $run.Exit
+  Assert-True 'retention: 期限内は通信する' ($state.Polls.Count -gt $polled)
+  Assert-True 'retention: 期限内は消さない' (Test-Path -LiteralPath $configPath)
+  Assert-True 'retention: 通信できたら更新する' (([DateTime]::UtcNow - [IO.File]::GetLastWriteTimeUtc($contactPath)).TotalHours -lt 1)
+
+  Set-FileAge -Path $configPath -Hours 300
+  Set-FileAge -Path $contactPath -Hours 100
+  $state.PollStatus = 500
+  $run = Invoke-Agent
+  Assert-True 'retention: 通信の失敗では更新しない' (([DateTime]::UtcNow - [IO.File]::GetLastWriteTimeUtc($contactPath)).TotalHours -gt 99)
+  $state.PollStatus = 401
+  $run = Invoke-Agent
+  Assert-True 'retention: 認証の失敗でも更新しない' (([DateTime]::UtcNow - [IO.File]::GetLastWriteTimeUtc($contactPath)).TotalHours -gt 99)
+  $state.PollStatus = 200
+
+  Set-FileAge -Path $configPath -Hours 300
+  Set-FileAge -Path $contactPath -Hours 169
+  $state.Results.Clear()
+  $state.Command = New-TestCommand
+  $polled = $state.Polls.Count
+  $run = Invoke-Agent -Extra @('-DryRun')
+  Assert-Equal 'retention: DryRun も期限切れで止まる' 3 $run.Exit
+  Assert-Equal 'retention: DryRun は通信しない' $polled $state.Polls.Count
+  Assert-True 'retention: DryRun は消さない' (Test-Path -LiteralPath $configPath)
+
+  $run = Invoke-Agent
+  Assert-Equal 'retention: 期限切れは成功でない終了コード' 3 $run.Exit
+  Assert-Equal 'retention: 通信しない' $polled $state.Polls.Count
+  Assert-True 'retention: 設定ファイル（トークン）を消す' (-not (Test-Path -LiteralPath $configPath))
+  Assert-True 'retention: 記録も消す' (-not (Test-Path -LiteralPath $contactPath))
+  Assert-Equal 'retention: 報告しない' 0 $state.Results.Count
+  Assert-True 'retention: 成功や停止確認と書かない' ($run.Log -like '*停止の確認ではありません*' -and $run.Log -notlike '*done*')
+  Assert-True 'retention: トークンを出さない' (-not $run.Log.Contains($Token))
+  $run = Invoke-Agent
+  Assert-True 'retention: 消した後は起動しない' ($run.Exit -eq 1 -and $state.Polls.Count -eq $polled)
+
+  # 記録が無ければ設定ファイルの時刻を起点にする（一度も通信しないまま持ち続けない）。
+  Set-TestConfig
+  Set-FileAge -Path $configPath -Hours 169
+  $run = Invoke-Agent
+  Assert-True 'retention: 記録なしで古い設定は消す' ($run.Exit -eq 3 -and -not (Test-Path -LiteralPath $configPath))
+  # 発行し直した設定は、古い記録で消さない。
+  Set-TestConfig
+  [IO.File]::WriteAllText($contactPath, 'contact')
+  Set-FileAge -Path $contactPath -Hours 500
+  $run = Invoke-Agent
+  Assert-Equal 'retention: 新しい設定は動く' 0 $run.Exit
+  # 時計が戻って未来の記録になっても期限を延ばさない。
+  [IO.File]::SetLastWriteTimeUtc($contactPath, [DateTime]::UtcNow.AddHours(48))
+  [IO.File]::SetLastWriteTimeUtc($configPath, [DateTime]::UtcNow.AddHours(-300))
+  $run = Invoke-Agent
+  Assert-True 'retention: 未来の記録は期限切れとして扱う' ($run.Exit -eq 3 -and -not (Test-Path -LiteralPath $configPath))
+  Set-TestConfig
+
   # ── 起動時の拒否 ────────────────────────────────────────────────
   $polled = $state.Polls.Count
   Set-TestConfig -Mode '644'
@@ -365,6 +435,13 @@ try {
   # 出所の分岐。設定や引数で変える手段が無いことはソースで確かめる。
   Assert-Equal 'source: Windows' 'endpoint_agent' (Get-ExecutionSource -OnWindows $true)
   Assert-Equal 'source: それ以外' 'mock' (Get-ExecutionSource -OnWindows $false)
+
+  # 保持期限の境界。
+  $base = [DateTimeOffset]::Parse('2026-11-01T00:00:00Z')
+  Assert-True 'retention: 168 時間ちょうどは期限切れ' (Test-LocalRetentionExpired -RecordTime $base -Now $base.AddHours(168) -Hours 168)
+  Assert-True 'retention: 168 時間より前は期限内' (-not (Test-LocalRetentionExpired -RecordTime $base -Now $base.AddHours(167.9) -Hours 168))
+  Assert-True 'retention: 24 時間を超える未来' (Test-LocalRetentionExpired -RecordTime $base.AddHours(25) -Now $base -Hours 168)
+  Assert-True 'retention: 24 時間以内の未来は期限内' (-not (Test-LocalRetentionExpired -RecordTime $base.AddHours(23) -Now $base -Hours 168))
 
   # Windows の ACL の評価。
   $user = 'S-1-5-21-1-2-3-1001'
