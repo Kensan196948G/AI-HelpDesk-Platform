@@ -84,11 +84,14 @@ export function redactPII(input: string): RedactionResult {
     // UUID の 16 進の中の数字の並びは電話番号ではない。実行 ID を壊すと追跡できなくなる。
     const uuids =
       rule.type === 'phone'
-        ? [...text.matchAll(UUID_PATTERN)].map((m) => [m.index, m[0].length])
+        ? [...text.matchAll(UUID_PATTERN)].map((m) => ({
+            start: m.index,
+            end: m.index + m[0].length,
+          }))
         : [];
     text = text.replace(rule.pattern, (match: string, ...rest: unknown[]) => {
-      const offset = rest.find((value) => typeof value === 'number') as number;
-      if (uuids.some(([start, length]) => offset >= start && offset < start + length)) return match;
+      const offset = Number(rest.find((value) => typeof value === 'number'));
+      if (uuids.some(({ start, end }) => offset >= start && offset < end)) return match;
       count += 1;
       return rule.replacement;
     });
