@@ -1,0 +1,57 @@
+# #120 の統合後の受入（2026-11-01）
+
+- ブランチ: `verify/dataflow-assist-integration`。#127 の検証統合 `74dbc21` に #120 `abb9a38`（#117 を含む）を merge（`48cbff3`）。
+- 試験を流した SHA: `f086d4f`。この文書の commit は証跡の追加だけで、コードを変えていない。
+- 環境: Linux、pwsh、専用 DB `ai_helpdesk_integ2_test`（127.0.0.1:5435）。実 DeepSeek、RSP、実機は使っていない。AI と RSP はスタブ。
+- **実機の確認範囲はこの統合で増えていない。** ここの「成功」は試験の成功で、実端末、実画面、Access の受入ではない。
+
+## 全体の結果
+
+| 検査 | 結果 |
+|---|---|
+| migration（空 DB から 001〜037、2 回目は全件 skip） | 成功 |
+| `npm run typecheck` / `biome check … --diagnostic-level=error` / `npm run build` | 成功 |
+| `npm audit --audit-level=high` | 脆弱性 0 件 |
+| vitest 全件 | 1525 件中 1524 件成功、**1 件失敗**、skip 0 件。同じ DB の 2 回目 |
+| `folder-helper.tests.ps1`（CI の手順） | passed=428 failed=0 |
+| `skill-run.tests.ps1`（CI の手順） | passed=759 failed=0 |
+
+**失敗の 1 件:** `command-agent.pwsh.test.mjs` の「スタブの HTTP サーバと Skill で fail-closed を確かめる」（pwsh の内訳 passed=153 failed=31 skipped=8。`close:`、`elevated:`、`fail-closed:`、`handle:`、`reparse:`、`source:`、`swap`）。`74dbc21` の修正前の再現試験で、**別担当が元ブランチで修正中**なのでこの統合では触っていない。#120 の統合で増えた失敗ではない（試験は `command-agent.ps1` だけを対象にし、この統合はそのファイルを変えていない）。
+
+## 受入表
+
+「③」は支援セッションの本人ヘルパー、「②」は resolve ループ（[docs/67](../../67-execution-paths.md)）。成功数はこの SHA の vitest の結果を試験名で引いた値である。
+
+| 項目 | ③ の試験（ファイル: 試験名の要約） | ③ の結果 | ② への接続 |
+|---|---|---|---|
+| 症状の否定 | `case-facts.test.ts`: 否定を症状にしない | 10/10 | **未接続**（実測 `probe-resolve-path.json`: 「印刷エラーはありません」でも `spooler.status` を提案） |
+| 症状の解消 | 同: 解消、まだ直っていない、どれが直ったか | 12/12 | **未接続** |
+| 過去形 | 同: 過去、昨日、時点 | 6/6 | **未接続**（実測: 「昨日は印刷できなかったが今は印刷できます」でも提案） |
+| 複数症状 | 同: 複数の症状、同じ節、分類 | 3/3 | **未接続** |
+| 断定的な AI の表現の拒否 | 同: 確かめていないのに解決、確かめた後の説明。`support-session.integration.test.ts`: AI の説明、事実と推測 | 2/2、2/2 | **未接続**（実測: `rationale` の「解決しました」が `proposalFromAiBody` をそのまま通る。解決の判定には使わない） |
+| `phase` / `verification` | `state.test.ts`: 導出、検証は完了と別、報告の期限切れ。integration: `/start` の応答を失った、期限切れの後の状態 | 成功、2/2 | **未接続**。② は `executionSource` で出所を分ける（別の仕組み） |
+| real だけで「実行した」と出さない | `support-session/bridge.test.ts`: real でも実行前の拒否、開始と完了、解決の確認の前 | 3/3 | **未接続**（② のカードは `resolve-bridge.js`） |
+| `ASSIST_SESSION_MODE` の起動条件 | `config.test.ts` | 6/6 | 効かない（フラグは ③ だけ） |
+| drain: 新規の停止 | integration: 新しいセッション・同意・提案・Y を受け付けない | 1/1 | 同上 |
+| drain: 既存の終了 | integration: N・取消・中止、承認済みの実行、Y の後、定期処理と伝搬 | 4/4 | 同上 |
+| off | integration: 404 だが消える、保持期限の前、終わらないまま無効、結果が来ていない実行 | 4/4 | 同上 |
+| 失効後の完結 | integration: 失効の後でも期限内、報告が来ないまま期限を過ぎた | 2/2 | 同上 |
+| 画面の配信 | `prototype.test.ts`: 両方のフラグが有効なときだけ、drain でも配信 | 1/1 | 同上 |
+| ローカル保持期限 | `skill-run.tests.ps1`: `retention:` 32 項目を含む全体 | passed=759 failed=0 | `folder-helper.ps1` だけ。② は `command-agent.ps1` の別実装（docs/66 §7）で、上の失敗の試験に含まれる |
+| UI 経路の KB（`ui-sync` で作成 → 別アカウントが一覧の指紋で承認 → 新ループの入力） | integration: 承認で固定のタグを保存し参照に入る、承認待ちは入らない、列の前の承認 | 3/3 | ② は別の入力（`findApprovedKnowledge`、`/api/resolve` の試験）。タグは使わない |
+| 固定の語彙の外を AI へ渡さない | integration: 固定の語彙の外、ID と固定タグだけ | 2/2 | - |
+| KB は根拠にしてよい行だけ（**統合で追加**） | integration: 自己承認、承認者なし、承認後の更新の行は入らない | 3/3 | ② は #125 の条件 |
+| タグの指紋（**統合で追加**） | `knowledge-approval-binding.integration.test.ts`: タグだけの変更で 409、行ロックの競合、語彙、端末情報、無効の間 | 10/10 | ②の経路ではなく KB の承認 |
+
+**修正前の再現:** タグの指紋は 8 件、KB の参照の条件は 3 件が修正前に失敗することを確かめてから直した。
+
+## 統合で見つけたこと
+
+1. **KB の承認の指紋の外にタグがあった。** 確認の後にタグだけ書き換えても公開できた。修正した（docs/64 §11）。
+2. **新ループが自己承認の KB を AI の入力へ渡していた。** 修正した（docs/67 §3）。
+3. **`terminal.integration.test.ts` の 1 件が `74dbc21` の時点で失敗していた。** 指紋なしで承認していた試験で、試験を直した。サーバは変えていない。
+4. **#120 の対策の多くは ② に効かない。** 上の表の「未接続」のとおり。
+
+## 確かめていないこと
+
+実端末、実 Windows、実ブラウザの操作、Access、実 DeepSeek、貸与照合の本番の経路、通しの E2E（`scripts/e2e/dataflow-integration.mjs` は統合の後に流していない）。UI 経路の KB は `ui-sync` の API を直接呼んだ結果で、画面のクリックではない。ローカル保持期限は pwsh、Linux、スタブでの確認である。
