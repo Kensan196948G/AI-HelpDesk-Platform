@@ -3480,15 +3480,19 @@ describe('共通支援セッション（Mock: ヘルパー / RSP / 名簿 / PII 
       });
 
       it('承認済みナレッジは ID と固定タグだけを渡す（本文・タイトル・下書きを渡さない）', async () => {
-        const users = await sql<{ id: string }[]>`SELECT id FROM users LIMIT 1`;
+        const users = await sql<{ id: string }[]>`SELECT id FROM users LIMIT 2`;
         sequence += 1;
+        // 承認済みは別人の承認（AI の根拠にしてよい条件。docs/64）。
         const rows = await sql<{ id: string }[]>`
-          INSERT INTO knowledge (kb_no, title, symptom, cause, steps, keywords, status, author_id)
+          INSERT INTO knowledge (
+            kb_no, title, symptom, cause, steps, keywords, status, author_id, approver_id, approved_at
+          )
           VALUES
             (${`KB-SS-A-${sequence}`}, 'CANARY-KB-TITLE', 'CANARY-KB-SYMPTOM', 'CANARY', 'CANARY',
-             ${['容量', 'CANARY-KEYWORD']}, 'approved', ${users[0]?.id ?? ''}),
+             ${['容量', 'CANARY-KEYWORD']}, 'approved', ${users[0]?.id ?? ''}, ${users[1]?.id ?? ''},
+             now()),
             (${`KB-SS-D-${sequence}`}, 'CANARY-DRAFT', 'x', 'x', 'x', ${['容量']}, 'draft',
-             ${users[0]?.id ?? ''})
+             ${users[0]?.id ?? ''}, NULL, NULL)
           RETURNING id, status
         `;
         try {
@@ -3594,7 +3598,8 @@ describe('共通支援セッション（Mock: ヘルパー / RSP / 名簿 / PII 
           const ref = `ui-ss-kb-${sequence}`;
           try {
             const id = await uiKnowledge('approved', ref);
-            await sql`UPDATE knowledge SET symptom_tags = NULL WHERE id = ${id}`;
+            // 列の導入より前の承認を再現する（承認時刻も揃える。更新の時刻で根拠から外さない）。
+            await sql`UPDATE knowledge SET symptom_tags = NULL, approved_at = now() WHERE id = ${id}`;
             const session = await consultation('容量が不足しています');
             world.aiReply = { skillId: 'disk.space', params: {}, rationale: '確認' };
             await propose(session.id);
@@ -3614,7 +3619,8 @@ describe('共通支援セッション（Mock: ヘルパー / RSP / 名簿 / PII 
           try {
             const id = await uiKnowledge('approved', ref);
             await sql`
-              UPDATE knowledge SET symptom_tags = ${['storage_full', 'CANARY-UI-TAG']}
+              UPDATE knowledge SET symptom_tags = ${['storage_full', 'CANARY-UI-TAG']},
+                approved_at = now()
               WHERE id = ${id}
             `;
             const session = await consultation('容量が不足しています');
@@ -3628,6 +3634,39 @@ describe('共通支援セッション（Mock: ヘルパー / RSP / 名簿 / PII 
           } finally {
             await removeUiKnowledge(ref);
           }
+        });
+
+        describe('AI の根拠にしてよい行だけを参照する（#125 と同じ条件）', () => {
+          const refsFor = async (id: string) => {
+            const session = await consultation('容量が不足しています');
+            world.aiReply = { skillId: 'disk.space', params: {}, rationale: '確認' };
+            await propose(session.id);
+            const refs = lastInput().facts.case.knowledgeRefs as { id: string }[];
+            return refs.filter((item) => item.id === id);
+          };
+          const changes = {
+            自己承認: (id: string) =>
+              sql`UPDATE knowledge SET approver_id = author_id, approved_at = now() WHERE id = ${id}`,
+            承認者の記録が無い: (id: string) =>
+              sql`UPDATE knowledge SET approver_id = NULL, approved_at = now() WHERE id = ${id}`,
+            承認の後に更新された: (id: string) =>
+              sql`UPDATE knowledge SET cause = 'x2' WHERE id = ${id}`,
+          };
+
+          it.each(Object.keys(changes) as (keyof typeof changes)[])(
+            '%s の行は参照に入らない',
+            async (label) => {
+              sequence += 1;
+              const ref = `ui-ss-kb-${sequence}`;
+              try {
+                const id = await uiKnowledge('approved', ref);
+                await changes[label](id);
+                expect(await refsFor(id)).toEqual([]);
+              } finally {
+                await removeUiKnowledge(ref);
+              }
+            },
+          );
         });
       });
 

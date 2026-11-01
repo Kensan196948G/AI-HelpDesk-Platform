@@ -395,7 +395,13 @@ async function snapshotForProposing(
         CASE WHEN symptom_tags IS NULL THEN title END AS title,
         CASE WHEN symptom_tags IS NULL THEN symptom END AS symptom
       FROM knowledge
+      -- AI の根拠にしてよい条件は findApprovedKnowledge と同じ（別人の承認、承認後の更新なし。docs/64）。
       WHERE status = 'approved'
+        AND approver_id IS NOT NULL
+        AND approved_at IS NOT NULL
+        AND approver_id <> author_id
+        AND version >= 1
+        AND updated_at <= approved_at
       ORDER BY updated_at DESC
       LIMIT 200
     `;
