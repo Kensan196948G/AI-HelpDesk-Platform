@@ -410,7 +410,12 @@ type PickResult =
       source: 'deepseek' | 'rule';
       reasonCodes: ReasonCode[];
     }
-  | { kind: 'stop'; reason: 'duplicate_proposal' | 'no_candidate' | 'escalated' };
+  | {
+      kind: 'stop';
+      reason: 'duplicate_proposal' | 'no_candidate' | 'escalated';
+      /** 提案が出なかった理由の分類（監査用。固定語彙のみ。実機で追えなかったので追加）。 */
+      cause: NoProposalCause;
+    };
 
 const overlaps = (skill: ApprovedAssistSkill, tags: readonly SymptomTag[]) =>
   skill.skill.symptomTags?.some((tag) => tags.includes(tag)) === true;
@@ -420,6 +425,15 @@ const overlaps = (skill: ApprovedAssistSkill, tags: readonly SymptomTag[]) =>
  * - 症状の分かる相談は、その症状に対応する Skill だけ
  * - 変更系は、固定条件で確かめた読み取りの後だけ
  */
+type NoProposalCause =
+  | 'ai_duplicate'
+  | 'ai_handover'
+  | 'ai_skill_not_proposable'
+  | 'ai_no_evidence'
+  | 'ai_none_no_rule'
+  | 'unsupported_symptom'
+  | 'no_rule';
+
 function hasEvidence(
   approved: ApprovedAssistSkill,
   snapshot: ProposingSnapshot,
@@ -471,14 +485,19 @@ async function pickCandidate(snapshot: ProposingSnapshot): Promise<PickResult> {
       snapshot.history,
     );
   }
-  if (candidate.kind === 'duplicate') return { kind: 'stop', reason: 'duplicate_proposal' };
-  if (candidate.kind === 'handover') return { kind: 'stop', reason: 'escalated' };
+  if (candidate.kind === 'duplicate') {
+    return { kind: 'stop', reason: 'duplicate_proposal', cause: 'ai_duplicate' };
+  }
+  if (candidate.kind === 'handover') {
+    return { kind: 'stop', reason: 'escalated', cause: 'ai_handover' };
+  }
   if (candidate.kind === 'proposal') {
     const { skillId } = candidate;
     const approved = skills.find((item) => item.skill.definition.id === skillId);
     // 根拠のない候補は使わず、担当者へ引き継ぐ（ルールで別の操作へ置き換えない）。
-    if (!approved || !hasEvidence(approved, snapshot, requireSymptom)) {
-      return { kind: 'stop', reason: 'escalated' };
+    if (!approved) return { kind: 'stop', reason: 'escalated', cause: 'ai_skill_not_proposable' };
+    if (!hasEvidence(approved, snapshot, requireSymptom)) {
+      return { kind: 'stop', reason: 'escalated', cause: 'ai_no_evidence' };
     }
     const explanation = acceptAiExplanation(
       candidate.rationale,
@@ -505,8 +524,14 @@ async function pickCandidate(snapshot: ProposingSnapshot): Promise<PickResult> {
   if (!rule) {
     const tags = snapshot.caseFacts.symptomTags;
     const unsupported = tags.length > 0 && !skills.some((item) => overlaps(item, tags));
-    if (skills.length > 0 && (askedAi || unsupported)) return { kind: 'stop', reason: 'escalated' };
-    return { kind: 'stop', reason: 'no_candidate' };
+    if (skills.length > 0 && (askedAi || unsupported)) {
+      return {
+        kind: 'stop',
+        reason: 'escalated',
+        cause: askedAi ? 'ai_none_no_rule' : 'unsupported_symptom',
+      };
+    }
+    return { kind: 'stop', reason: 'no_candidate', cause: 'no_rule' };
   }
   const approved = skills.find((item) => item.skill.definition.id === rule.skillId);
   return {
@@ -1057,6 +1082,10 @@ async function sharedRoutes(app: FastifyInstance): Promise<void> {
             return { kind: 'stopped' as const, reason: 'ai_consent_changed' };
           }
           if (pick.kind === 'stop') {
+            await sessionAudit(tx, 'support_session.no_proposal', session, email, {
+              reason: pick.reason,
+              cause: pick.cause,
+            });
             await stopSessionTx(tx, ctx, session, pick.reason, email);
             return { kind: 'stopped' as const, reason: pick.reason };
           }

@@ -359,6 +359,8 @@ pwsh -NoProfile -File scripts/windows/tests/folder-helper.tests.ps1
 - **ペアリングのやり直し**: コードを失った状態で再導入しても、トークンがあると再登録しない。`uninstall-folder-helper.ps1` が先に必要。
 - **RSP の危険判定は書き方の判定である**: 再帰削除は `DANGEROUS_BLOCKED` になったが、`[IO.File]::Delete` を正確なパスで繰り返すと通った。後片付けでは自分の作成物だけをこの方法で消した。同じ効果の操作を別の書き方で通せるので、安全策として過信しない。
 
+- **支援セッションとの統合の実機結果**: `docs/63-assist-session.md` §14 を参照。RSP のコマンドが固まると `AGENT_BUSY` が続き、固定テンプレートの照合も進まない。
+
 ### 10-4-1. ユーザー判定（2026-10-31）
 
 - PR #117 は未確認項目を解消するまで保留（draft のまま）。

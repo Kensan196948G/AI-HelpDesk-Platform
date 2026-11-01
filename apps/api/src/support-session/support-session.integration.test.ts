@@ -2644,6 +2644,11 @@ describe('共通支援セッション（Mock: ヘルパー / RSP / 名簿 / PII 
       expect(after.status).toBe('stopped');
       expect(after.endReason).toBe('no_candidate');
       expect(after.proposals.length).toBe(1);
+      const audit = await sql<{ detail: Record<string, unknown> }[]>`
+        SELECT detail FROM audit_log
+        WHERE action = 'support_session.no_proposal' AND target_id = ${session.id}
+      `;
+      expect(audit[0]?.detail).toMatchObject({ reason: 'no_candidate', cause: 'no_rule' });
     });
 
     it('AI が操作範囲の外を選んでも採用しない', async () => {
@@ -3045,6 +3050,13 @@ describe('共通支援セッション（Mock: ヘルパー / RSP / 名簿 / PII 
         expect(after.proposals).toHaveLength(0);
         expect(lastInput().facts.case.symptomTags).toEqual([]);
         expect(lastInput().facts.case.caseCategory).toBe('other');
+        // 実機では理由を追えなかった。監査に固定語彙だけで残す（AI の文面は残さない）。
+        const audit = await sql<{ detail: Record<string, unknown> }[]>`
+          SELECT detail FROM audit_log
+          WHERE action = 'support_session.no_proposal' AND target_id = ${session.id}
+        `;
+        expect(audit[0]?.detail).toMatchObject({ reason: 'escalated', cause: 'ai_no_evidence' });
+        expect(JSON.stringify(audit[0]?.detail)).not.toContain('念のため');
       });
 
       it('根拠不足: 確かめた読み取りが無ければ変更を提案しない', async () => {
