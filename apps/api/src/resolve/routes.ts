@@ -22,6 +22,7 @@ import {
   newNonce,
 } from './approval.js';
 import { type ExecutionSource, executionSourceOf, resultShapeOk } from './execution-source.js';
+import { knowledgeRefsForCase } from './knowledge-refs.js';
 import {
   escalationReasonForDecision,
   type Proposal,
@@ -88,6 +89,7 @@ interface SessionRow {
 
 interface StepRow {
   id: string;
+  knowledge_refs?: unknown;
   session_id: string;
   seq: number;
   skill_id: string;
@@ -432,6 +434,8 @@ function stepDto(row: StepRow, session: SessionRow) {
       : null,
     params: jsonObject(row.params),
     rationale: row.rationale,
+    // 照合した KB の参照。used は AI が使ったと答えたものだけ。
+    knowledgeRefs: jsonObjectOrNull(row.knowledge_refs) ?? { matched: [], used: [] },
     riskLevel: Number(row.risk_level),
     status: row.status,
     approvalChallenge: approvalChallengeFor(row, session),
@@ -658,11 +662,12 @@ async function insertProposedStep(
   const rows = await tx<{ id: string }[]>`
     INSERT INTO resolution_steps (
       session_id, seq, skill_id, skill_version, skill_content_hash, params, rationale,
-      risk_level, status, nonce, approval_expires_at, admin_nonce, admin_expires_at
+      risk_level, status, nonce, approval_expires_at, admin_nonce, admin_expires_at, knowledge_refs
     ) VALUES (
       ${session.id}, ${seq}, ${skill.id}, ${skill.version}, ${skill.contentHash ?? 'sha256:unknown'},
       ${jsonbValue(proposal.params)}, ${proposal.rationale}, ${skill.riskLevel}, 'proposed',
-      ${nonce}, ${STEP_APPROVAL_TTL_SQL}, ${adminNonce}, ${ADMIN_APPROVAL_TTL_SQL}
+      ${nonce}, ${STEP_APPROVAL_TTL_SQL}, ${adminNonce}, ${ADMIN_APPROVAL_TTL_SQL},
+      ${jsonbValue(proposal.knowledge ?? { matched: [], used: [] })}
     )
     RETURNING id
   `;
@@ -1765,6 +1770,7 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
         lastSummary: null,
         history: [],
         skills,
+        knowledgeRefs: await knowledgeRefsForCase(caseText(ownedCase)),
       });
       if (!proposal || proposal.decision) {
         // 初回提案で AI が終了宣言（stop / escalate）を返した場合も、新規セッションは
@@ -2269,6 +2275,7 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
         lastVerify,
         history,
         skills,
+        knowledgeRefs: await knowledgeRefsForCase(caseText(ownedCase)),
       });
 
       const outcome = await sql.begin(async (tx) => {

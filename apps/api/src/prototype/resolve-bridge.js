@@ -216,6 +216,31 @@
   }
 
   /** 結果を会話へ残す（1 ステップ 1 回）。報告書・担当者の AI 文脈はここを読む。 */
+  /**
+   * 相談に一致した承認済み KB の案内。AI が使ったと答えたものだけ「AI が参照」と書く。
+   * 照合はサーバ（DB、別人の承認）で、state の KB は含まれない。
+   */
+  function knowledgeRefsHtml(step) {
+    const refs = step?.knowledgeRefs;
+    const matched = Array.isArray(refs?.matched) ? refs.matched : [];
+    if (!matched.length) return '';
+    const used = Array.isArray(refs.used) ? refs.used : [];
+    const rows = matched
+      .map((ref) => {
+        const note = used.includes(ref.kbNo)
+          ? 'AI が参照しました'
+          : 'AI の参照はありません（相談内容との照合で表示）';
+        return (
+          `<div class="u-small" style="margin-top:6px" data-aihd-kb-ref="${esc(ref.kbNo)}">` +
+          `<b>${esc(ref.kbNo)} v${esc(ref.version)}</b> ${esc(ref.title)}` +
+          `<div class="u-muted">${esc(ref.stepsSummary)}</div>` +
+          `<div class="u-muted">${esc(note)}</div></div>`
+        );
+      })
+      .join('');
+    return `<div style="margin-top:8px"><b class="u-small">出典：別の担当者が承認したナレッジ</b>${rows}</div>`;
+  }
+
   function recordResult(step) {
     // 開いている案件ではなく、このセッションの案件の会話へ残す。
     const c = caseById(STATE.caseId);
@@ -935,6 +960,7 @@
         '<pre class="u-small" style="white-space:pre-wrap;background:#f5f7fa;border:1px solid #d9e2ec;border-radius:6px;padding:8px;max-height:320px;overflow:auto">' +
         esc(resultText(STATE.step)) +
         '</pre>' +
+        knowledgeRefsHtml(STATE.step) +
         (waitingVerify
           ? '<div class="u-small" style="margin-top:6px;color:#8a5a00">原因の対処を確認しています…' +
             (STATE.verifySkillTitle ? `（${esc(STATE.verifySkillTitle)}）` : '') +
