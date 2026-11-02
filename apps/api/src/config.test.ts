@@ -44,6 +44,54 @@ describe('config（起動時の安全確認）', () => {
     expect(result.stderr).toContain('ACCESS_AUD');
   });
 
+  it('NODE_ENV=production で RESOLVE_PATH_MODE=on は起動を拒否する', () => {
+    const result = loadConfig({
+      NODE_ENV: 'production',
+      AUTH_MODE: 'cloudflare-access',
+      RESOLVE_PATH_MODE: 'on',
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('RESOLVE_PATH_MODE');
+  });
+
+  it('既定では経路②は off で起動する', () => {
+    const result = spawnSync(
+      process.execPath,
+      [
+        '--import',
+        'tsx',
+        '-e',
+        "const { config } = await import('./apps/api/src/config.ts'); process.stdout.write(config.RESOLVE_PATH_MODE)",
+      ],
+      {
+        cwd: root,
+        env: {
+          PATH: process.env.PATH ?? '',
+          DATABASE_URL: 'postgresql://user:pass@127.0.0.1:1/none',
+          SESSION_SECRET: 'x'.repeat(40),
+        },
+        encoding: 'utf8',
+        timeout: 30_000,
+      },
+    );
+    expect(result.stdout).toBe('off');
+  });
+
+  it('Access 認証なら NODE_ENV の設定漏れでも検証専用の設定で起動しない', () => {
+    for (const flag of [
+      'RESOLVE_PATH_MODE',
+      'FOLDER_ACCESS_ALLOW_UNVERIFIED_LEASE',
+      'ASSIST_ALLOW_MOCK_EXECUTION',
+    ]) {
+      const result = loadConfig({
+        AUTH_MODE: 'cloudflare-access',
+        [flag]: flag === 'RESOLVE_PATH_MODE' ? 'on' : 'true',
+      });
+      expect(result.status, flag).toBe(1);
+      expect(result.stderr).toContain(flag);
+    }
+  });
+
   it('NODE_ENV=production で FOLDER_ACCESS_ALLOW_UNVERIFIED_LEASE=true は起動を拒否する', () => {
     const result = loadConfig({
       NODE_ENV: 'production',

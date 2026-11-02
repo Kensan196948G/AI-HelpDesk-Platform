@@ -2119,7 +2119,7 @@
     panel.className = 'card';
     panel.setAttribute('hidden', '');
     panel.style.cssText =
-      'position:fixed;right:16px;bottom:60px;z-index:60;width:min(560px,calc(100vw - 32px));max-height:75vh;overflow:auto';
+      'position:fixed;right:16px;bottom:60px;z-index:60;width:min(560px,calc(100vw - 32px));max-height:75vh;overflow:auto;background:var(--u-surface,#fff);color:var(--u-ink,#111);box-shadow:0 8px 24px rgba(0,0,0,.25)';
     document.body.appendChild(panel);
     document.body.appendChild(entry);
   }

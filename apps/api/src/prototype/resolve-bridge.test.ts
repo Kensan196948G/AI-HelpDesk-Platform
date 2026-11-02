@@ -9,7 +9,9 @@ const NO_AGENT = '端末エージェントが未接続のため実診断はで�
 
 type Message = Record<string, any>;
 
-function createSandbox(options: { agentConnected?: boolean; statusFails?: boolean } = {}) {
+function createSandbox(
+  options: { agentConnected?: boolean; statusFails?: boolean; pathEnabled?: boolean } = {},
+) {
   const chat = { id: 'chat-1', userId: 'u1', messages: [] as Message[] };
   const targetCase: Record<string, any> = {
     id: 'CASE-1',
@@ -90,7 +92,11 @@ function createSandbox(options: { agentConnected?: boolean; statusFails?: boolea
       return {
         ok: true,
         status: 200,
-        json: async () => ({ ok: true, agentConnected: options.agentConnected === true }),
+        json: async () => ({
+          ok: true,
+          pathEnabled: options.pathEnabled,
+          agentConnected: options.agentConnected === true,
+        }),
       };
     },
     setInterval: () => 0,
@@ -118,7 +124,11 @@ function createSandbox(options: { agentConnected?: boolean; statusFails?: boolea
 
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 
-async function guideFor(options: { agentConnected?: boolean; statusFails?: boolean }) {
+async function guideFor(options: {
+  agentConnected?: boolean;
+  statusFails?: boolean;
+  pathEnabled?: boolean;
+}) {
   const context = createSandbox(options);
   context.sandbox.H.print(context.chat);
   await settle();
@@ -152,6 +162,14 @@ describe('印刷の相談の導線', () => {
     expect(chat.messages[0].html).toContain(NO_AGENT);
     expect(chat.messages[0].html).not.toContain('data-aihd-resolve="start"');
     expect(chat.messages[0].text).toBe(NO_AGENT);
+    expect(targetCase.realPath).toBe('no-agent');
+  });
+
+  it('経路を閉じているときは「未接続」と書かず、診断を行っていないと伝える', async () => {
+    const { chat, targetCase } = await guideFor({ agentConnected: false, pathEnabled: false });
+    expect(chat.messages[0].html).not.toContain(NO_AGENT);
+    expect(chat.messages[0].html).toContain('端末の読み取り診断を行っていません');
+    expect(chat.messages[0].html).not.toContain('data-aihd-resolve="start"');
     expect(targetCase.realPath).toBe('no-agent');
   });
 

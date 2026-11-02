@@ -9,6 +9,8 @@ export const repoRoot = path.resolve(here, '../../..');
 
 // 本番（systemd）では Environment= を優先し、ローカルの .env.local を読み込まない。
 const isProduction = process.env.NODE_ENV === 'production';
+// NODE_ENV の設定漏れでも検証専用の設定を通さない（resultSourceAccepted と同じ考え方）。
+const isProductionLike = isProduction || process.env.AUTH_MODE === 'cloudflare-access';
 const isTest = process.env.NODE_ENV === 'test';
 const localEnvFile = isTest ? '.env.test.local' : '.env.local';
 if (!isProduction && existsSync(path.join(repoRoot, localEnvFile))) {
@@ -200,14 +202,16 @@ if (parsed.data.ASSIST_SESSION_MODE === 'on' && process.env.ASSIST_SESSION_ENABL
   );
   process.exit(1);
 }
-if (isProduction && parsed.data.RESOLVE_PATH_MODE === 'on') {
-  console.error('[config] NODE_ENV=production では RESOLVE_PATH_MODE=on を使えません（docs/67）。');
+if (isProductionLike && parsed.data.RESOLVE_PATH_MODE === 'on') {
+  console.error(
+    '[config] NODE_ENV=production または Access 認証では RESOLVE_PATH_MODE=on を使えません（docs/67）。',
+  );
   process.exit(1);
 }
 // 貸与情報の検証を省く検証用フラグを本番で有効にさせない（fail-closed）。
-if (isProduction && parsed.data.FOLDER_ACCESS_ALLOW_UNVERIFIED_LEASE) {
+if (isProductionLike && parsed.data.FOLDER_ACCESS_ALLOW_UNVERIFIED_LEASE) {
   console.error(
-    '[config] NODE_ENV=production では FOLDER_ACCESS_ALLOW_UNVERIFIED_LEASE=true を使えません。',
+    '[config] NODE_ENV=production または Access 認証では FOLDER_ACCESS_ALLOW_UNVERIFIED_LEASE=true を使えません。',
   );
   process.exit(1);
 }
@@ -217,9 +221,9 @@ if (isProduction && process.env.ASSIST_VERIFICATION_MANIFEST?.trim()) {
   console.error('[config] NODE_ENV=production では ASSIST_VERIFICATION_MANIFEST を使えません。');
   process.exit(1);
 }
-if (isProduction && parsed.data.ASSIST_ALLOW_MOCK_EXECUTION) {
+if (isProductionLike && parsed.data.ASSIST_ALLOW_MOCK_EXECUTION) {
   console.error(
-    '[config] NODE_ENV=production では ASSIST_ALLOW_MOCK_EXECUTION=true を使えません。',
+    '[config] NODE_ENV=production または Access 認証では ASSIST_ALLOW_MOCK_EXECUTION=true を使えません。',
   );
   process.exit(1);
 }

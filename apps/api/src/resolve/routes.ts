@@ -1691,6 +1691,8 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
       ok: true,
       deviceId,
       owned,
+      // 経路を閉じているときに「未接続」と誤って案内しないよう、画面へ区別を渡す。
+      pathEnabled: config.RESOLVE_PATH_MODE === 'on' && config.RESOLVE_REQUESTER_DIAGNOSIS_ENABLED,
       agentConnected:
         config.RESOLVE_PATH_MODE === 'on' &&
         config.RESOLVE_REQUESTER_DIAGNOSIS_ENABLED &&

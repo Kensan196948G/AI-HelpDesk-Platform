@@ -39,6 +39,7 @@
     // 端末エージェントの接続状態（案内のための参考値。実行の可否は承認時にサーバが判定する）。
     // null は未確認。
     agentConnected: null,
+    pathEnabled: null,
     lastMode: 'idle',
     restoredFor: null,
   };
@@ -51,6 +52,10 @@
   };
   const NO_AGENT_NOTICE =
     '端末エージェントが未接続のため実診断はできません。担当者へ引き継げます。';
+  // 経路を閉じている本番では、未接続が理由ではない（docs/67）。
+  const PATH_CLOSED_NOTICE =
+    'この窓口では、端末の読み取り診断を行っていません。担当者へ引き継げます。';
+  const noAgentNotice = () => (STATE.pathEnabled === false ? PATH_CLOSED_NOTICE : NO_AGENT_NOTICE);
   const SHARE_KEY = '実診断の結果';
 
   // verify 追撃待ちのポーリング上限（1.5 秒間隔なので 30 回で約 45 秒。時間でも打ち切る）。
@@ -124,6 +129,7 @@
       try {
         const data = await api(`/api/resolve/device-status?deviceId=${encodeURIComponent(id)}`);
         connected = data?.agentConnected === true;
+        STATE.pathEnabled = data?.pathEnabled !== false;
       } catch (error) {
         connected = false;
       }
@@ -886,7 +892,7 @@
           esc(
             STATE.agentConnected === null
               ? '端末エージェントの接続を確認しています…'
-              : NO_AGENT_NOTICE,
+              : noAgentNotice(),
           ) +
           '</div>' +
           (STATE.agentConnected === null
@@ -1218,7 +1224,7 @@
         '">読み取り診断を開始</button></div>'
       );
     }
-    return `<p>${esc(NO_AGENT_NOTICE)}</p>${knowledgeGuideHtml(guide)}<div class="btns">${
+    return `<p>${esc(noAgentNotice())}</p>${knowledgeGuideHtml(guide)}<div class="btns">${
       typeof escBtn === 'function' ? escBtn('IT端末', '通常', '担当者へ引き継ぐ') : ''
     }</div>`;
   }
@@ -1262,7 +1268,7 @@
       resolveGuide: true,
       text: connected
         ? '端末エージェントが接続されています。読み取り診断へ案内しました。'
-        : NO_AGENT_NOTICE,
+        : noAgentNotice(),
       html: printGuideHtml(connected, c, guide),
     });
     persist();
@@ -1297,7 +1303,13 @@
     const html = original(target, ...rest);
     if (typeof html !== 'string' || !target) return html;
     let out = html;
-    if (target.realPath && target.step === 3) {
+    if (target.realPath === 'no-agent' && target.step === 3 && STATE.pathEnabled === false) {
+      out = out.replace(
+        /(<h3>AIの一次対応<\/h3><p class="lead">)[^<]*(<\/p>)/,
+        (_, head, tail) =>
+          `${head}印刷の相談は、ナレッジの案内と担当者への引継ぎで対応します。端末の読み取り診断は行っていません。${tail}`,
+      );
+    } else if (target.realPath && target.step === 3) {
       out = out.replace(
         /(<h3>AIの一次対応<\/h3><p class="lead">)[^<]*(<\/p>)/,
         (_, head, tail) =>
