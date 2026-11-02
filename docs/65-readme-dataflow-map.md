@@ -6,7 +6,7 @@ README の図と記述の各線を、実際の経路と証跡に対応づける�
 - 追記: 2026-11-01。`verify/dataflow-assist-integration` で #120（`abb9a38`。#117 を含む。merge は `48cbff3`）を統合した。**この表の E2E の証跡は #120 の統合の前の記録で、統合の後に通しの E2E は流していない。** 統合の後の結果は vitest と pwsh の試験で、[docs/evidence/assist-integration-20261101/](evidence/assist-integration-20261101/) にある。3 経路の責任範囲は [docs/67](67-execution-paths.md)。
 - 通しの E2E: `scripts/e2e/dataflow-integration.mjs`、結果は [docs/evidence/dataflow-20261101/](evidence/dataflow-20261101/)。`stub/`、`real-ai/` が修正後、`before-fix/` が修正前の再現、`round1-*/` が最初の通しの記録。
 
-- 統合の後の通し E2E: main（`75f2359`、#129 まで）を取り込み端末コマンドの経路を閉じた後の `930e39e` で 88 項目、失敗 0（スタブ AI、模擬の実行器）。結果は [docs/evidence/assist-integration-20261101/e2e/result.json](evidence/assist-integration-20261101/e2e/result.json)。
+- 統合の後の通し E2E: main（`dc529c9`、#123 まで）を取り込み端末コマンドの経路を閉じた後の `c6e19ea` で 88 項目、失敗 0（スタブ AI、模擬の実行器）。結果は [docs/evidence/assist-integration-20261101/e2e/result.json](evidence/assist-integration-20261101/e2e/result.json)。
 
 ## 0-0. 実機の後に入れた修正の確認（2026-11-02、`90cba01`）
 

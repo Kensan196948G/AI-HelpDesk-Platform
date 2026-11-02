@@ -35,6 +35,8 @@ main（`056c3ae`、#122 と #124）を取り込んだ後の `1b9d4ec` のロー�
 
 **追記（2026-11-02、#129 の後）:** main（`75f2359`）を取り込んだ `930e39e` で、空にした専用 DB で migration を 2 回、vitest 全 1547 件が成功、通し E2E は 88 項目で失敗 0。
 
+**追記（2026-11-02、#123 の後）:** main（`dc529c9`）を取り込んだ `c6e19ea` で、vitest 全 1547 件が成功、通し E2E は 88 項目で失敗 0。
+
 ## 受入表
 
 「③」は支援セッションの本人ヘルパー、「②」は resolve ループ（[docs/67](../../67-execution-paths.md)）。成功数はこの SHA の vitest の結果を試験名で引いた値である。integration は `apps/api/src/support-session/support-session.integration.test.ts`。
