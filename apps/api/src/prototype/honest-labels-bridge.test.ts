@@ -457,3 +457,171 @@ describe('原本 HTML との対応（文言や関数が変わると置換が黙�
     expect(original).toContain('<span class="r">端末 ${esc(m.device)}</span>');
   });
 });
+
+type HonestApi = {
+  isUnregisteredUser: (id: string) => boolean;
+  reportPerson: (id: string, person?: Record<string, string>) => Record<string, string>;
+};
+
+describe('最終報告書の人物とタイムライン', () => {
+  const bridge = readFileSync(new URL('./assist-bridge.js', import.meta.url), 'utf8');
+
+  /** assist-bridge.js から 1 関数だけ取り出して、honest の結果を通した動作を確かめる。 */
+  function extract(name: string) {
+    const start = bridge.indexOf(`  function ${name}(`);
+    expect(start).toBeGreaterThan(-1);
+    const end = bridge.indexOf('\n  }\n', start) + 5;
+    return bridge.slice(start, end);
+  }
+
+  function honestApi(locked: boolean, extra: Record<string, unknown> = {}) {
+    const { sandbox } = createSandbox({ locked });
+    Object.assign(sandbox, {
+      USERS: { u1: { name: '山田 太郎' }, u2: { name: '佐藤 花子' }, 'emp:1': { real: true } },
+      ...extra,
+    });
+    return (sandbox.window as unknown as { __AIHD_HONEST__: HonestApi }).__AIHD_HONEST__;
+  }
+
+  function timeline(
+    locked: boolean,
+    chat: { messages: Message[] },
+    caseFields: Record<string, unknown> = {},
+  ) {
+    const api = honestApi(locked);
+    const context: Record<string, unknown> = {
+      S: { audit: [], ui: { user: 'u1' } },
+      uname: () => '山田 太郎',
+      ahFmt: (value: unknown) => value,
+      ahHonest: () => api,
+      chat,
+      caseData: { id: 'c1', userId: 'u1', created: 't0', subject: 's', ...caseFields },
+      out: null,
+    };
+    vm.runInNewContext(
+      `${extract('ahName')}\n${extract('ahUsedDemoFlow')}\n${extract('ahTimeline')}\nout = ahTimeline(caseData, {}, chat);`,
+      context,
+    );
+    return context.out as Array<{ actor: string; action: string }>;
+  }
+
+  /** ahReportActor / ahRemoteApprover を実行する。 */
+  function people(locked: boolean, remote: Record<string, unknown>) {
+    const api = honestApi(locked);
+    const context: Record<string, unknown> = {
+      S: { ui: { user: 'u1' } },
+      uname: () => '山田 太郎',
+      ahHonest: () => api,
+      ahUser: () => ({
+        id: 'u1',
+        name: '山田 太郎',
+        role: 'employee',
+        dept: 'sales',
+        employeeNo: 'E1',
+      }),
+      caseData: { userId: 'u1', remote },
+      out: null,
+    };
+    vm.runInNewContext(
+      [
+        extract('ahName'),
+        extract('ahReportPerson'),
+        extract('ahReportActor'),
+        extract('ahRemoteApprover'),
+        'out = JSON.stringify({ actor: ahReportActor(), approver: ahRemoteApprover(caseData) });',
+      ].join('\n'),
+      context,
+    );
+    return JSON.parse(context.out as string) as {
+      actor: Record<string, string>;
+      approver?: string;
+    };
+  }
+
+  it('名簿に無い利用者にデモ人物の氏名・部署・社員番号を渡さない', () => {
+    const person = { name: '山田 太郎', dept: 'sales', employeeNo: 'E1' };
+    expect(JSON.stringify(honestApi(true).reportPerson('u1', person))).toBe(
+      JSON.stringify({
+        name: '名簿未登録の利用者（氏名は未確認）',
+        role: '',
+        dept: '',
+        employeeNo: '',
+      }),
+    );
+    // 別の利用者の案件・名簿の本人は変えない。
+    expect(honestApi(true).reportPerson('u2', person).name).toBe('山田 太郎');
+    expect(honestApi(false).reportPerson('u1', person).name).toBe('山田 太郎');
+  });
+
+  it('名簿の本人は固定中でも未登録と書かない（/api/me の一時障害）', () => {
+    const api = honestApi(true, { S: { ui: { user: 'emp:1' } } });
+    expect(api.isUnregisteredUser('emp:1')).toBe(false);
+    expect(api.reportPerson('emp:1', { name: '本人', employeeNo: 'E9' }).employeeNo).toBe('E9');
+  });
+
+  it('本番では担当者が開いた案件でもデモ人物の氏名を書かない', () => {
+    const api = honestApi(false, { SWITCH_MODE: 'self', S: { ui: { user: 'emp:1' } } });
+    expect(api.isUnregisteredUser('u1')).toBe(true);
+    expect(api.isUnregisteredUser('emp:1')).toBe(false);
+    expect(api.isUnregisteredUser('unknown')).toBe(false);
+  });
+
+  it('本番以外の固定されていない切替ではデモ人物をそのまま出す', () => {
+    const api = honestApi(false, { SWITCH_MODE: 'any', S: { ui: { user: 'u1' } } });
+    expect(api.isUnregisteredUser('u1')).toBe(false);
+  });
+
+  it('報告書の出力者と遠隔支援の承認者にデモ人物を書かない', () => {
+    const unregistered = '名簿未登録の利用者（氏名は未確認）';
+    const locked = people(true, { approvedBy: '山田 太郎' });
+    expect(locked.actor.name).toBe(unregistered);
+    expect(locked.actor.role).toBe('');
+    expect(locked.actor.employeeNo).toBe('');
+    expect(locked.approver).toBe(unregistered);
+    // 承認していない遠隔支援に承認者を作らない。
+    expect(people(true, {}).approver).toBeUndefined();
+    // 名簿の本人は変えない。
+    const roster = people(false, { approvedBy: '山田 太郎' });
+    expect(roster.actor.name).toBe('山田 太郎');
+    expect(roster.actor.role).toBe('employee');
+    expect(roster.approver).toBe('山田 太郎');
+  });
+
+  it('タイムラインの診断・提案・実行と、それを経た解決にデモと明記する', () => {
+    const rows = timeline(
+      false,
+      {
+        messages: [
+          { kind: 'diag', at: 't1', title: 'x' },
+          { kind: 'proposal', at: 't2', propId: 'p' },
+          { kind: 'exec', at: 't3', state: 'done' },
+        ],
+      },
+      { closed: 'ai' },
+    );
+    const actions = rows.map((row) => row.action);
+    for (const expected of [
+      '【デモデータ】端末を診断（読み取りのみ）',
+      '【デモデータ】修復を提案',
+      '【デモデータ】修復の実行結果',
+      '【デモデータ】AIの一次対応で解決',
+    ]) {
+      expect(actions).toContain(expected);
+    }
+    expect(actions).toContain('相談を送信');
+  });
+
+  it('固定データを使っていない解決にデモと付けない', () => {
+    const actions = timeline(
+      false,
+      { messages: [{ kind: 'text', at: 't1' }] },
+      { closed: 'ai' },
+    ).map((row) => row.action);
+    expect(actions).toContain('AIの一次対応で解決');
+  });
+
+  it('名簿に無い利用者のタイムラインにデモ人物の氏名を出さない', () => {
+    const rows = timeline(true, { messages: [] });
+    for (const row of rows) expect(row.actor).toBe('名簿未登録の利用者（氏名は未確認）');
+  });
+});

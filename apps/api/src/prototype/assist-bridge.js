@@ -108,10 +108,8 @@
 
   function ahName(id) {
     try {
-      // 名簿に無い利用者はデモ人物に固定されている。その氏名を報告書へ書かない。
-      if (typeof PERSONA_LOCKED !== 'undefined' && PERSONA_LOCKED && id === S.ui.user) {
-        return '名簿未登録の利用者（氏名は未確認）';
-      }
+      // 名簿に無い利用者はデモ人物のまま固定される。報告書にその氏名を書かない。
+      if (ahHonest()?.isUnregisteredUser(id)) return ahHonest().reportPerson(id).name;
       return uname(id);
     } catch (error) {
       return String(id || '');
@@ -397,6 +395,15 @@
     return Array.from(map.values()).slice(0, 50);
   }
 
+  /** 固定データの診断・修復を経た相談か。 */
+  function ahUsedDemoFlow(chat) {
+    return Boolean(
+      chat?.messages.some(
+        (message) => message && ['diag', 'proposal', 'exec'].includes(message.kind),
+      ),
+    );
+  }
+
   function ahTimeline(c, L, chat) {
     const out = [];
     const push = (at, actor, action, detail) => {
@@ -409,11 +416,13 @@
       });
     };
     push(c.created, ahName(c.userId), '相談を送信', c.subject || '');
+    // 診断・修復は固定データ。報告書でも実端末の出来事に見せない。
+    const demo = (action) => (ahHonest() ? ahHonest().DEMO_PREFIX : '') + action;
     if (chat) {
       for (const message of chat.messages) {
         if (!message || message.kind === 'welcome') continue;
         if (message.kind === 'diag')
-          push(message.at, 'AI', '端末を診断（読み取りのみ）', message.title || '');
+          push(message.at, 'AI', demo('端末を診断（読み取りのみ）'), message.title || '');
         if (message.resolveResult)
           push(
             message.at,
@@ -423,9 +432,10 @@
           );
         if (message.kind === 'kb')
           push(message.at, 'AI', '承認済みナレッジを提示', message.kbId || '');
-        if (message.kind === 'proposal') push(message.at, 'AI', '修復を提案', message.propId || '');
+        if (message.kind === 'proposal')
+          push(message.at, 'AI', demo('修復を提案'), message.propId || '');
         if (message.kind === 'exec')
-          push(message.at, 'PCエージェント', '修復の実行結果', message.state || '');
+          push(message.at, 'PCエージェント', demo('修復の実行結果'), message.state || '');
         if (message.kind === 'ticket')
           push(message.at, 'システム', '担当者へ引き継ぎ', message.ticketId || '');
         if (message.kind === 'consent' && message.state === 'sent') {
@@ -433,8 +443,15 @@
         }
       }
     }
-    if (c.closed === 'ai')
-      push(c.closedAt || c.created, 'AI', 'AIの一次対応で解決', '担当者への引継ぎなし');
+    if (c.closed === 'ai') {
+      // 固定データの修復を経た解決は、実端末の問題が直ったことを示さない。
+      push(
+        c.closedAt || c.created,
+        'AI',
+        ahUsedDemoFlow(chat) ? demo('AIの一次対応で解決') : 'AIの一次対応で解決',
+        '担当者への引継ぎなし',
+      );
+    }
     const tkt = L && L.tkt;
     const inc = L && L.inc;
     if (tkt) {
@@ -531,18 +548,38 @@
     return out.slice(-300);
   }
 
+  /** 報告書の人物。名簿に無い利用者へデモ人物の氏名・部署・社員番号を渡さない。 */
+  function ahReportPerson(userId, person) {
+    return ahHonest() ? ahHonest().reportPerson(userId, person) : person;
+  }
+
+  /** 報告書の出力者。 */
+  function ahReportActor() {
+    const viewer = ahUser() || {};
+    return Object.assign({}, viewer, ahReportPerson(viewer.id, viewer));
+  }
+
+  /** 遠隔支援の承認者。原本は承認時の氏名を保存するので、デモの氏名を報告書へ渡さない。 */
+  function ahRemoteApprover(c) {
+    const approver = c.remote.approvedBy;
+    return approver && ahHonest()?.isUnregisteredUser(c.userId) ? ahName(c.userId) : approver;
+  }
+
   function ahReportPayload(c, L) {
     const chat = ahChatOf(c);
     const tkt = L && L.tkt;
     const inc = L && L.inc;
     const dr = L && L.dr;
     const kb = L && L.kb;
-    const requester = (typeof USERS !== 'undefined' && USERS[c.userId]) || {};
+    const requester = ahReportPerson(
+      c.userId,
+      (typeof USERS !== 'undefined' && USERS[c.userId]) || {},
+    );
     const dept =
       requester.dept && typeof DEPTS !== 'undefined' && DEPTS[requester.dept]
         ? DEPTS[requester.dept].name
         : '';
-    const actor = ahUser() || {};
+    const actor = ahReportActor();
     const actorDept =
       actor.dept && typeof DEPTS !== 'undefined' && DEPTS[actor.dept] ? DEPTS[actor.dept].name : '';
     const sharedKeys = tkt && tkt.shared ? Object.keys(tkt.shared) : [];
@@ -562,6 +599,7 @@
     return {
       reportVersion: 1,
       kind: ahReportKind(c, L),
+      usedDemoData: ahUsedDemoFlow(chat),
       generatedAt: ahNow(),
       generatedBy: {
         name: actor.name || '不明',
@@ -638,7 +676,7 @@
             status: c.remote.status,
             requestedBy: c.remote.requestedBy,
             requestedAt: c.remote.requestedAt,
-            approvedBy: c.remote.approvedBy,
+            approvedBy: ahRemoteApprover(c),
             approvedAt: c.remote.approvedAt,
             endedAt: c.remote.endedAt,
             expiresAt: c.remote.expiresAt,
