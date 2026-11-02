@@ -1303,7 +1303,8 @@
     const html = original(target, ...rest);
     if (typeof html !== 'string' || !target) return html;
     let out = html;
-    if (target.realPath === 'no-agent' && target.step === 3 && STATE.pathEnabled === false) {
+    // 読み取っていない案件に、読み取って確認すると書かない。
+    if (target.realPath === 'no-agent' && target.step === 3) {
       out = out.replace(
         /(<h3>AIの一次対応<\/h3><p class="lead">)[^<]*(<\/p>)/,
         (_, head, tail) =>
@@ -1334,7 +1335,9 @@
     if (typeof html !== 'string' || !target?.realPath) return html;
     return html.replace(
       /定型の相談は[^<]*で対応しています/,
-      '印刷の相談は端末の読み取り結果をもとに本人が確認しています',
+      target.realPath === 'agent'
+        ? '印刷の相談は端末の読み取り結果をもとに本人が確認しています'
+        : '印刷の相談はナレッジの案内と担当者への引継ぎで対応しています（端末の読み取り診断は行っていません）',
     );
   });
 

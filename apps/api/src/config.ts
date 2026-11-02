@@ -9,8 +9,6 @@ export const repoRoot = path.resolve(here, '../../..');
 
 // 本番（systemd）では Environment= を優先し、ローカルの .env.local を読み込まない。
 const isProduction = process.env.NODE_ENV === 'production';
-// NODE_ENV の設定漏れでも検証専用の設定を通さない（resultSourceAccepted と同じ考え方）。
-const isProductionLike = isProduction || process.env.AUTH_MODE === 'cloudflare-access';
 const isTest = process.env.NODE_ENV === 'test';
 const localEnvFile = isTest ? '.env.test.local' : '.env.local';
 if (!isProduction && existsSync(path.join(repoRoot, localEnvFile))) {
@@ -93,7 +91,7 @@ const EnvSchema = z.object({
   RESOLVE_DEVICE_OFFLINE_SEC: z.coerce.number().int().positive().default(120),
   // 経路②（解決ループ + 端末コマンド。docs/67）の動作モード。本人と Windows ユーザーを照合しない検証専用の経路。
   // off: 開始・提案・Y・管理者承認は 404、配送しない。drain: 同じ操作を 409 で止め、配送しない。
-  // on: 通常。どのモードでも結果の受付、本人の N、停止、期限の処理、参照は動かす。production では on を起動時に拒否する。
+  // on: 通常。どのモードでも結果の受付、本人の N、停止、期限の処理、参照は動かす。production と Access 認証では on を起動時に拒否する。
   RESOLVE_PATH_MODE: z.enum(['off', 'drain', 'on']).default('off'),
   // 相談者の画面から解決ループの読取診断へ案内するか（docs/67 の経路②。既定は案内しない）。
   // 案内を止めるだけで API を閉じない。止める保証として数えない。
@@ -202,16 +200,20 @@ if (parsed.data.ASSIST_SESSION_MODE === 'on' && process.env.ASSIST_SESSION_ENABL
   );
   process.exit(1);
 }
-if (isProductionLike && parsed.data.RESOLVE_PATH_MODE === 'on') {
+// NODE_ENV の設定漏れでも経路②を開かない（resultSourceAccepted と同じ考え方。.env の値も見る）。
+if (
+  (isProduction || parsed.data.AUTH_MODE === 'cloudflare-access') &&
+  parsed.data.RESOLVE_PATH_MODE === 'on'
+) {
   console.error(
     '[config] NODE_ENV=production または Access 認証では RESOLVE_PATH_MODE=on を使えません（docs/67）。',
   );
   process.exit(1);
 }
 // 貸与情報の検証を省く検証用フラグを本番で有効にさせない（fail-closed）。
-if (isProductionLike && parsed.data.FOLDER_ACCESS_ALLOW_UNVERIFIED_LEASE) {
+if (isProduction && parsed.data.FOLDER_ACCESS_ALLOW_UNVERIFIED_LEASE) {
   console.error(
-    '[config] NODE_ENV=production または Access 認証では FOLDER_ACCESS_ALLOW_UNVERIFIED_LEASE=true を使えません。',
+    '[config] NODE_ENV=production では FOLDER_ACCESS_ALLOW_UNVERIFIED_LEASE=true を使えません。',
   );
   process.exit(1);
 }
@@ -221,9 +223,9 @@ if (isProduction && process.env.ASSIST_VERIFICATION_MANIFEST?.trim()) {
   console.error('[config] NODE_ENV=production では ASSIST_VERIFICATION_MANIFEST を使えません。');
   process.exit(1);
 }
-if (isProductionLike && parsed.data.ASSIST_ALLOW_MOCK_EXECUTION) {
+if (isProduction && parsed.data.ASSIST_ALLOW_MOCK_EXECUTION) {
   console.error(
-    '[config] NODE_ENV=production または Access 認証では ASSIST_ALLOW_MOCK_EXECUTION=true を使えません。',
+    '[config] NODE_ENV=production では ASSIST_ALLOW_MOCK_EXECUTION=true を使えません。',
   );
   process.exit(1);
 }

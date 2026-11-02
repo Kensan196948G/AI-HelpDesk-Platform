@@ -173,6 +173,19 @@ describe('印刷の相談の導線', () => {
     expect(targetCase.realPath).toBe('no-agent');
   });
 
+  it('読み取っていない案件の説明と信号の理由に、読み取って確認すると書かない', async () => {
+    for (const options of [{ agentConnected: false, pathEnabled: false }, { statusFails: true }]) {
+      const { sandbox, targetCase } = await guideFor(options);
+      expect(targetCase.realPath).toBe('no-agent');
+      const pane = sandbox.paneHtml(targetCase);
+      expect(pane).toContain('ナレッジの案内と担当者への引継ぎ');
+      expect(pane).not.toContain('状態を読み取って確認');
+      const aside = sandbox.asideHtml(targetCase);
+      expect(aside).toContain('端末の読み取り診断は行っていません');
+      expect(aside).not.toContain('読み取り結果をもとに');
+    }
+  });
+
   it('接続を確認できないときは未接続と同じ扱いにする', async () => {
     const { chat } = await guideFor({ statusFails: true });
     expect(chat.messages[0].html).toContain(NO_AGENT);

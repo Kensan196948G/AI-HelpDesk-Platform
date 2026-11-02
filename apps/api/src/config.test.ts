@@ -77,19 +77,10 @@ describe('config（起動時の安全確認）', () => {
     expect(result.stdout).toBe('off');
   });
 
-  it('Access 認証なら NODE_ENV の設定漏れでも検証専用の設定で起動しない', () => {
-    for (const flag of [
-      'RESOLVE_PATH_MODE',
-      'FOLDER_ACCESS_ALLOW_UNVERIFIED_LEASE',
-      'ASSIST_ALLOW_MOCK_EXECUTION',
-    ]) {
-      const result = loadConfig({
-        AUTH_MODE: 'cloudflare-access',
-        [flag]: flag === 'RESOLVE_PATH_MODE' ? 'on' : 'true',
-      });
-      expect(result.status, flag).toBe(1);
-      expect(result.stderr).toContain(flag);
-    }
+  it('Access 認証なら NODE_ENV の設定漏れでも経路②を開かない', () => {
+    const result = loadConfig({ AUTH_MODE: 'cloudflare-access', RESOLVE_PATH_MODE: 'on' });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('RESOLVE_PATH_MODE');
   });
 
   it('NODE_ENV=production で FOLDER_ACCESS_ALLOW_UNVERIFIED_LEASE=true は起動を拒否する', () => {

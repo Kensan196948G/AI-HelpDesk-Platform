@@ -30,7 +30,7 @@
 
 `npm audit` と `scan-secrets.sh` のローカル実行は `2d5b409`。`777caea` では CI の同じ手順が成功している。
 
-## 実機（`2d5b409`。`777caea` との差は設定の判定と画面の文言で、実機は流し直していない。`../real-chain-20261102/resend-2d5b409.json`）
+## 実機（`2d5b409`。候補との差は設定の判定、`device-status` の応答項目、画面の文言と CSS で、実機は流し直していない。`../real-chain-20261102/resend-2d5b409.json`）
 
 Windows 1 台、PowerShell 5.1、非昇格、実 DeepSeek、AUTH_MODE=local。Y は条件付きの事前承認で、提案を機械照合してから押した。
 
