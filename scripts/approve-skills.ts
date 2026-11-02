@@ -66,7 +66,8 @@ const dryRun = flag('--dry-run');
 const approvedBy = arg('--by');
 if (!dryRun && !approvedBy) fail('--by（承認者）は必須です。確認だけなら --dry-run を使います。');
 // 公開リポジトリのファイルと履歴に残るので、個人を特定するメールを記録しない。既存の記録は書き換えない。
-if (approvedBy?.includes('@')) fail('--by にはメールでなく役割名を指定します（例: skill-reviewer）。');
+if (approvedBy?.includes('@'))
+  fail('--by にはメールでなく役割名を指定します（例: skill-reviewer）。');
 const note = arg('--note') ?? '人間レビュー済み';
 const manifestPath = arg('--manifest') ?? path.join(repoRoot, APPROVAL_MANIFEST_PATH);
 const only = arg('--only')
