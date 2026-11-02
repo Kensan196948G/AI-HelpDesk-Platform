@@ -1,9 +1,11 @@
 import type { FastifyInstance } from 'fastify';
 import { emailVariants } from '../auth/email-alias.js';
+import { isHelpdeskActor } from '../auth/helpdesk-scope.js';
 import { authenticateUi } from '../auth/ui.js';
 import { badRequest } from '../errors.js';
 import { findEmployeeByEmail } from '../lib/mirai-info.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
+import { isRemoteSupportActor } from '../remote-support/routes.js';
 import { isResolveAdmin } from '../resolve/admin.js';
 
 /**
@@ -34,6 +36,10 @@ export async function meRoutes(app: FastifyInstance): Promise<void> {
       roles: request.uiRoles ?? [],
       // IT 管理者（リスク4以上の承認者）か。UI が承認待ちを呼ぶかの判断に使う。
       resolveAdmin: isResolveAdmin(request.uiEmail ?? ''),
+      // UI が担当者向け API を呼ぶかの判断に使う（相談者の画面で 403 を出し続けない）。
+      // 各 API の権限判定と同じ関数で計算する。API 側の判定はそのまま正本。
+      helpdeskActor: await isHelpdeskActor(request.uiEmail),
+      remoteSupport: await isRemoteSupportActor(request.uiEmail),
       source: 'mirai-info.employee_directory',
     };
   });

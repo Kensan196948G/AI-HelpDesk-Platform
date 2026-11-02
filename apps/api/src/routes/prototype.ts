@@ -13,6 +13,7 @@ import { checkRateLimit } from '../lib/rate-limit.js';
 
 const PROTOTYPE_FILE = 'Mirai_AIHelpdesk_Cowork_StepWizard_V3.1_PCinfo_Offline.html';
 const BRIDGE_FILES = [
+  path.join('apps', 'api', 'src', 'prototype', 'staff-access-bridge.js'),
   path.join('apps', 'api', 'src', 'prototype', 'bridge.js'),
   path.join('apps', 'api', 'src', 'prototype', 'device-bridge.js'),
   path.join('apps', 'api', 'src', 'prototype', 'honest-labels-bridge.js'),
