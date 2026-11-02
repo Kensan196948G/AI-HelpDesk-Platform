@@ -350,8 +350,8 @@ npm audit --audit-level=high && npm audit --omit=dev --audit-level=high
 ### デプロイ（Preview）
 
 ```bash
-set -a; . ~/.config/ai-helpdesk/api.conf; set +a
-NODE_ENV=production npx tsx scripts/migrate.ts
+# api.conf は EnvironmentFile の形式なので、シェルで読み込まない。
+NODE_ENV=production node scripts/run-with-env-file.mjs ~/.config/ai-helpdesk/api.conf -- npx tsx scripts/migrate.ts
 npm run build
 systemctl --user restart ai-helpdesk-api
 ```

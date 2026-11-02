@@ -1487,7 +1487,62 @@ export async function sweepResolveTimeouts(): Promise<number> {
       );
     }
   }
+  swept += await closeAbandonedSessions();
   return swept;
+}
+
+/**
+ * 期限を過ぎ、実行中のものが無いセッションを閉じる。誰も画面を開かないと提案が残り続け、
+ * off へ進む前の確認で「残り」に数えられたままになる（docs/68 §7）。提案は未実行のまま取り消す。
+ */
+async function closeAbandonedSessions(): Promise<number> {
+  const due = await sql<{ id: string }[]>`
+    SELECT s.id FROM resolution_sessions s
+    WHERE s.status NOT IN ('resolved', 'escalated', 'stopped', 'expired')
+      AND s.expires_at <= now()
+      AND NOT EXISTS (
+        SELECT 1 FROM resolution_steps st
+        WHERE st.session_id = s.id AND st.status IN ('approved', 'executing')
+      )
+    ORDER BY s.expires_at
+    LIMIT 50
+  `;
+  let closed = 0;
+  for (const { id } of due) {
+    try {
+      await sql.begin(async (tx) => {
+        const [session] = await tx<SessionRow[]>`
+          SELECT * FROM resolution_sessions
+          WHERE id = ${id} AND status NOT IN ('resolved', 'escalated', 'stopped', 'expired')
+          FOR UPDATE
+        `;
+        if (!session) return;
+        await tx`
+          UPDATE resolution_steps SET status = 'cancelled'
+          WHERE session_id = ${id} AND status = 'proposed'
+        `;
+        await tx`
+          UPDATE device_commands SET status = 'expired', completed_at = now()
+          WHERE session_id = ${id} AND status = 'queued'
+        `;
+        await tx`UPDATE resolution_sessions SET status = 'expired', updated_at = now() WHERE id = ${id}`;
+        await appendResolveAudit(tx, {
+          action: 'resolution.timeout',
+          sessionId: id,
+          actorEmail: session.user_email,
+          detail: { by: 'system', reason: 'session_expired' },
+        });
+        closed += 1;
+      });
+    } catch (error) {
+      console.warn(
+        '[resolve] 期限切れのセッションを閉じられませんでした',
+        id,
+        (error as { code?: string })?.code ?? 'unknown',
+      );
+    }
+  }
+  return closed;
 }
 
 /** 本人操作による「解決した」「担当者へ」。監査に理由を残し、未実行の作業を止める。 */

@@ -772,3 +772,42 @@ describe('結果の再送の契約（docs/66 §10）', () => {
   });
 });
 
+describe('放置されたセッションの掃除と off の前の確認（docs/68 §7）', () => {
+  it('期限を過ぎた提案のセッションを閉じ、drain の確認で残りが 0 になる', async () => {
+    const { drainStatus } = await import('../../../../scripts/report-drain-status.mjs');
+    const started = await startSession();
+    const before = await drainStatus(sql);
+    expect(before.path2.openSessions).toBeGreaterThan(0);
+
+    await sql`UPDATE resolution_sessions SET expires_at = now() - interval '1 second' WHERE id = ${started.session.id}`;
+    await sweepResolveTimeouts();
+
+    const [session] = await sql<{ status: string }[]>`
+      SELECT status FROM resolution_sessions WHERE id = ${started.session.id}
+    `;
+    expect(session?.status).toBe('expired');
+    const [step] = await sql<{ status: string }[]>`
+      SELECT status FROM resolution_steps WHERE id = ${started.step.id}
+    `;
+    expect(step?.status).toBe('cancelled');
+    const after = await drainStatus(sql);
+    expect(after.path2.openSessions).toBe(before.path2.openSessions - 1);
+    expect(after.blocking).toBe(before.blocking - 1);
+  });
+
+  it('実行中のセッションは閉じない（結果不明を未実行へ置き換えない）', async () => {
+    const started = await startSession();
+    expect((await approveY(started)).statusCode).toBe(200);
+    await deliver();
+    await sql`UPDATE resolution_sessions SET expires_at = now() - interval '1 second' WHERE id = ${started.session.id}`;
+    await sweepResolveTimeouts();
+    const { drainStatus } = await import('../../../../scripts/report-drain-status.mjs');
+    const status = await drainStatus(sql);
+    expect(status.path2.deliveredCommands).toBeGreaterThan(0);
+    expect(status.blocking).toBeGreaterThan(0);
+    const [session] = await sql<{ status: string }[]>`
+      SELECT status FROM resolution_sessions WHERE id = ${started.session.id}
+    `;
+    expect(session?.status).not.toBe('expired');
+  });
+});

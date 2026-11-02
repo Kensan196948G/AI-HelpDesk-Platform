@@ -227,6 +227,11 @@ describe('端末オフライン / 結果タイムアウト', () => {
     expect(stepAfterApprove.timeoutSec).toBeGreaterThan(0);
     expect(stepAfterApprove.deadlineAt).toBeTruthy();
 
+    // 配送の後に結果が返らない場合（配送前は NOT_DELIVERED。real-path の試験）。
+    await sql`
+      UPDATE device_commands SET status = 'delivered', delivered_at = now()
+      WHERE step_id = ${started.step.id}
+    `;
     await sql`
       UPDATE resolution_steps SET deadline_at = now() - interval '1 second'
       WHERE id = ${started.step.id}
