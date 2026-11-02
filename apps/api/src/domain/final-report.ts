@@ -206,6 +206,8 @@ export const FinalReportSchema = z
   .object({
     reportVersion: z.literal(1).default(1),
     kind: z.enum(FINAL_REPORT_KINDS),
+    /** 固定データの診断・修復を経た相談。表示を弱めるだけで、完了の判定には使わない。 */
+    usedDemoData: z.boolean().optional(),
     generatedAt: Iso,
     generatedBy: PersonSchema,
     requester: PersonSchema,
@@ -839,7 +841,10 @@ export interface ReportRenderMeta {
  * 返す HTML はそのままファイル保存してブラウザで開ける。
  */
 export function renderFinalReportHtml(report: FinalReport, meta: ReportRenderMeta): RenderedReport {
-  const kindLabel = KIND_LABEL[report.kind];
+  const kindLabel =
+    report.kind === 'ai_resolved' && report.usedDemoData
+      ? `【デモデータ】${KIND_LABEL.ai_resolved}（実端末の問題の解決を示しません）`
+      : KIND_LABEL[report.kind];
   const color = statusColor(report);
   const safeCaseId = report.case.id.replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 40) || 'case';
   const date = report.generatedAt.slice(0, 10).replace(/[^0-9]/g, '') || 'report';
