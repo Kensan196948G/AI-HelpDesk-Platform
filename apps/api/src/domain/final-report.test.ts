@@ -377,3 +377,27 @@ describe('報告書の出典の出所', () => {
     expect(html).not.toContain('根拠にした承認済みナレッジ');
   });
 });
+
+describe('固定データを経た AI 解決の表示', () => {
+  const META = { id: 'report-1', sha256: 'a'.repeat(64) };
+  const render = (extra: Record<string, unknown>) =>
+    renderFinalReportHtml(FinalReportSchema.parse({ ...sampleReport(), ...extra }), META).html;
+
+  it('見出し・対応結果・title にデモと明記する', () => {
+    const html = render({ kind: 'ai_resolved', usedDemoData: true });
+    const label = '【デモデータ】AIの一次対応で解決（実端末の問題の解決を示しません）';
+    expect(html).toContain(`<h1>${label}</h1>`);
+    expect(html).toContain(`<title>最終報告書 ${sampleReport().case.id} - ${label}</title>`);
+    expect(html.split(label).length - 1).toBeGreaterThanOrEqual(3);
+  });
+
+  it('固定データを使っていない解決と、担当者の解決は変えない', () => {
+    expect(render({ kind: 'ai_resolved', usedDemoData: false })).toContain(
+      '<h1>AIの一次対応で解決</h1>',
+    );
+    expect(render({ kind: 'ai_resolved' })).toContain('<h1>AIの一次対応で解決</h1>');
+    expect(render({ kind: 'helpdesk_resolved', usedDemoData: true })).not.toContain(
+      '【デモデータ】AI',
+    );
+  });
+});
