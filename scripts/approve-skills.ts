@@ -16,9 +16,9 @@ import {
  * Skill の人間レビュー承認を記録する（リポジトリ管理）。
  *
  *   npx tsx scripts/approve-skills.ts --dry-run
- *   npx tsx scripts/approve-skills.ts --by reviewer@example.com --note "2026-11-01 レビュー"
- *   npx tsx scripts/approve-skills.ts --by reviewer@example.com --only folder.summary
- *   npx tsx scripts/approve-skills.ts --by reviewer@example.com --include-verification \
+ *   npx tsx scripts/approve-skills.ts --by skill-reviewer --note "2026-11-01 レビュー"
+ *   npx tsx scripts/approve-skills.ts --by skill-reviewer --only folder.summary
+ *   npx tsx scripts/approve-skills.ts --by skill-reviewer --include-verification \
  *     --manifest /path/to/verification-manifest.json
  *
  * - スクリプトと定義（引数・リスク・スキーマ・verify/rollback・出力ポリシー）の
@@ -33,7 +33,7 @@ const USAGE = `使い方:
   npx tsx scripts/approve-skills.ts --dry-run [--manifest <path>] [--only <id,id>] [--include-verification]
   npx tsx scripts/approve-skills.ts --by <承認者> [--note <文>] [--manifest <path>] [--only <id,id>] [--include-verification]
 
-  --by                    承認者（--dry-run 以外は必須）
+  --by                    承認者の役割名（--dry-run 以外は必須）。公開ファイルに残るのでメールは不可
   --dry-run               差分を表示するだけで書き込まない
   --only                  指定の Skill だけを承認する（カンマ区切り）
   --include-verification  検証用の Skill も対象にする
@@ -65,6 +65,8 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 const dryRun = flag('--dry-run');
 const approvedBy = arg('--by');
 if (!dryRun && !approvedBy) fail('--by（承認者）は必須です。確認だけなら --dry-run を使います。');
+// 公開リポジトリのファイルと履歴に残るので、個人を特定するメールを記録しない。既存の記録は書き換えない。
+if (approvedBy?.includes('@')) fail('--by にはメールでなく役割名を指定します（例: skill-reviewer）。');
 const note = arg('--note') ?? '人間レビュー済み';
 const manifestPath = arg('--manifest') ?? path.join(repoRoot, APPROVAL_MANIFEST_PATH);
 const only = arg('--only')
