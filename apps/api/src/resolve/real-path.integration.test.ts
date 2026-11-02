@@ -419,7 +419,7 @@ describe('N・取消・期限切れの後に進まない', () => {
     // 配送済みなので取り消しと書かず、結果不明のまま残す。
     expect(step.json().step.status).toBe('failed');
     expect(step.json().step.error).toBe('STOPPED_RESULT_UNKNOWN');
-    expect(step.json().step.resultSummary).toBeNull();
+    expect(step.json().step.resultSummary?.resultState).toBe('unknown');
   });
 
   it('N の後の結果後操作は受け付けない', async () => {
