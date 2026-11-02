@@ -104,6 +104,8 @@
 
   function ahName(id) {
     try {
+      // 名簿に無い利用者はデモ人物のまま固定される。報告書にその氏名を書かない。
+      if (ahHonest()?.isUnregisteredUser(id)) return ahHonest().reportPerson(id).name;
       return uname(id);
     } catch (error) {
       return String(id || '');
@@ -386,16 +388,19 @@
       });
     };
     push(c.created, ahName(c.userId), '相談を送信', c.subject || '');
+    // 診断・修復は固定データ。報告書でも実端末の出来事に見せない。
+    const demo = (action) => (ahHonest() ? ahHonest().timelineAction(action) : action);
     if (chat) {
       for (const message of chat.messages) {
         if (!message || message.kind === 'welcome') continue;
         if (message.kind === 'diag')
-          push(message.at, 'AI', '端末を診断（読み取りのみ）', message.title || '');
+          push(message.at, 'AI', demo('端末を診断（読み取りのみ）'), message.title || '');
         if (message.kind === 'kb')
           push(message.at, 'AI', '承認済みナレッジを提示', message.kbId || '');
-        if (message.kind === 'proposal') push(message.at, 'AI', '修復を提案', message.propId || '');
+        if (message.kind === 'proposal')
+          push(message.at, 'AI', demo('修復を提案'), message.propId || '');
         if (message.kind === 'exec')
-          push(message.at, 'PCエージェント', '修復の実行結果', message.state || '');
+          push(message.at, 'PCエージェント', demo('修復の実行結果'), message.state || '');
         if (message.kind === 'ticket')
           push(message.at, 'システム', '担当者へ引き継ぎ', message.ticketId || '');
         if (message.kind === 'consent' && message.state === 'sent') {
@@ -490,15 +495,21 @@
         ].includes(event.event)
       )
         continue;
+      const label = (typeof EV !== 'undefined' && EV[event.event]) || event.event;
       push(
         event.ts,
         ahName(event.actor),
-        (typeof EV !== 'undefined' && EV[event.event]) || event.event,
+        ahHonest()?.DEMO_TIMELINE_EVENTS.includes(event.event) ? demo(label) : label,
         '',
       );
     }
     out.sort((a, b) => String(a.at).localeCompare(String(b.at)));
     return out.slice(-300);
+  }
+
+  /** 報告書の人物。名簿に無い利用者へデモ人物の氏名・部署・社員番号を渡さない。 */
+  function ahReportPerson(userId, person) {
+    return ahHonest() ? ahHonest().reportPerson(userId, person) : person;
   }
 
   function ahReportPayload(c, L) {
@@ -507,12 +518,16 @@
     const inc = L && L.inc;
     const dr = L && L.dr;
     const kb = L && L.kb;
-    const requester = (typeof USERS !== 'undefined' && USERS[c.userId]) || {};
+    const requester = ahReportPerson(
+      c.userId,
+      (typeof USERS !== 'undefined' && USERS[c.userId]) || {},
+    );
     const dept =
       requester.dept && typeof DEPTS !== 'undefined' && DEPTS[requester.dept]
         ? DEPTS[requester.dept].name
         : '';
-    const actor = ahUser() || {};
+    const viewer = ahUser() || {};
+    const actor = Object.assign({}, viewer, ahReportPerson(viewer.id, viewer));
     const actorDept =
       actor.dept && typeof DEPTS !== 'undefined' && DEPTS[actor.dept] ? DEPTS[actor.dept].name : '';
     const sharedKeys = tkt && tkt.shared ? Object.keys(tkt.shared) : [];
@@ -1032,7 +1047,7 @@
     const at = ahFormatHandoverDate(c.handoverApprovedAt);
     const by = String(c.handoverApprovedBy || '');
     if (!at && !by) return '';
-    const kind = Boolean(c.handoverSelfApproved) ? '自己承認' : '別ID承認';
+    const kind = c.handoverSelfApproved ? '自己承認' : '別ID承認';
     const rows = [];
     if (by) rows.push('承認者: ' + ahEsc(by));
     if (at) rows.push('承認日時: ' + ahEsc(at) + '（' + kind + '）');

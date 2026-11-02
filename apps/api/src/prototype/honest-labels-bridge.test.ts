@@ -457,3 +457,89 @@ describe('原本 HTML との対応（文言や関数が変わると置換が黙�
     expect(original).toContain('<span class="r">端末 ${esc(m.device)}</span>');
   });
 });
+
+describe('最終報告書の人物とタイムライン', () => {
+  const bridge = readFileSync(new URL('./assist-bridge.js', import.meta.url), 'utf8');
+
+  /** assist-bridge.js から 1 関数だけ取り出して、honest の結果を通した動作を確かめる。 */
+  function extract(name: string) {
+    const start = bridge.indexOf(`  function ${name}(`);
+    expect(start).toBeGreaterThan(-1);
+    const end = bridge.indexOf('\n  }\n', start) + 5;
+    return bridge.slice(start, end);
+  }
+
+  function honestApi(locked: boolean) {
+    const { sandbox } = createSandbox({ locked });
+    return (sandbox.window as { __AIHD_HONEST__: Record<string, never> }).__AIHD_HONEST__;
+  }
+
+  function timeline(locked: boolean, chat: { messages: Message[] }, audit: Message[]) {
+    const api = honestApi(locked);
+    const context: Record<string, unknown> = {
+      S: { audit, ui: { user: 'u1' } },
+      EV: {
+        diag_run: '端末診断（読み取りのみ）',
+        executed: '実行完了',
+        case_created: '案件を開始',
+      },
+      uname: () => '山田 太郎',
+      ahFmt: (value: unknown) => value,
+      ahHonest: () => api,
+      ahChatOf: () => chat,
+      out: null,
+    };
+    vm.runInNewContext(
+      `${extract('ahName')}\n${extract('ahTimeline')}\nout = ahTimeline({ id: 'c1', userId: 'u1', created: 't0', subject: 's' }, {}, chat);`,
+      Object.assign(context, { chat }),
+    );
+    return context.out as Array<{ actor: string; action: string }>;
+  }
+
+  it('名簿に無い利用者にデモ人物の氏名・部署・社員番号を渡さない', () => {
+    const person = { name: '山田 太郎', dept: 'sales', employeeNo: 'E1' };
+    expect(JSON.stringify(honestApi(true).reportPerson('u1', person))).toBe(
+      JSON.stringify({ name: '名簿未登録の利用者（氏名は未確認）', dept: '', employeeNo: '' }),
+    );
+    // 別の利用者の案件・名簿の本人は変えない。
+    expect(honestApi(true).reportPerson('u2', person).name).toBe('山田 太郎');
+    expect(honestApi(false).reportPerson('u1', person).name).toBe('山田 太郎');
+  });
+
+  it('タイムラインの診断・提案・実行にデモと明記し、他の出来事は変えない', () => {
+    const rows = timeline(
+      false,
+      {
+        messages: [
+          { kind: 'diag', at: 't1', title: 'x' },
+          { kind: 'proposal', at: 't2', propId: 'p' },
+          { kind: 'exec', at: 't3', state: 'done' },
+        ],
+      },
+      [
+        { ts: 't4', actor: 'u1', event: 'diag_run', detail: { case: 'c1' } },
+        { ts: 't5', actor: 'u1', event: 'executed', detail: { case: 'c1' } },
+        { ts: 't6', actor: 'u1', event: 'other_event', detail: { case: 'c1' } },
+      ],
+    );
+    const actions = rows.map((row) => row.action);
+    for (const expected of [
+      '【デモデータ】端末を診断（読み取りのみ）',
+      '【デモデータ】修復を提案',
+      '【デモデータ】修復の実行結果',
+      '【デモデータ】端末診断（読み取りのみ）',
+      '【デモデータ】実行完了',
+    ]) {
+      expect(actions).toContain(expected);
+    }
+    expect(actions).toContain('相談を送信');
+    expect(actions).toContain('other_event');
+  });
+
+  it('名簿に無い利用者のタイムラインにデモ人物の氏名を出さない', () => {
+    const rows = timeline(true, { messages: [] }, [
+      { ts: 't1', actor: 'u1', event: 'other_event', detail: { case: 'c1' } },
+    ]);
+    for (const row of rows) expect(row.actor).toBe('名簿未登録の利用者（氏名は未確認）');
+  });
+});
