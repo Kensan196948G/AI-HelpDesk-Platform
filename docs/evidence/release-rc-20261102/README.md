@@ -1,4 +1,4 @@
-# リリース候補の検証（2026-11-02、コード `2d5b409`）
+# リリース候補の検証（2026-11-02、コード `777caea`）
 
 実データはこの文書と JSON に書かない。**出力は件数とハッシュの一致だけ**である。
 
@@ -19,18 +19,18 @@
 
 | 項目 | SHA | 結果 |
 |---|---|---|
-| vitest | `f008f2c` | 1572 件成功 |
+| vitest | `777caea` | 1576 件成功 |
 | `folder-helper.tests.ps1` | `f008f2c` | 428 成功 |
 | `command-agent.tests.ps1` | `d7e1598` | 217 成功、失敗 0、SKIP 8（Windows 実機が要るもの。実機で 17 件成功） |
-| 通し E2E（スタブ AI、模擬の実行器） | `2d5b409` の直前の作業ツリー | 88 項目、失敗 0（`e2e-dataflow.json`） |
-| wizard E2E（本番モードを含む） | 同上 | 失敗 0（`e2e-wizard.json`） |
-| command-agent E2E（本番モードを含む） | 同上 | 16 項目、失敗 0（`e2e-command-agent.json`） |
-| CI（secret scan、audit 2 種、migrate 2 回、test、build、pwsh） | `2d5b409` | [成功](https://github.com/Kensan196948G/AI-HelpDesk-Platform/actions/runs/41386475762) |
+| 通し E2E（スタブ AI、模擬の実行器） | `777caea` | 88 項目、失敗 0（`e2e-dataflow.json`） |
+| wizard E2E（本番モードを含む） | `777caea` | 65 項目、失敗 0（`e2e-wizard.json`） |
+| command-agent E2E（本番モードを含む） | `777caea` | 16 項目、失敗 0（`e2e-command-agent.json`） |
+| CI（secret scan、audit 2 種、migrate 2 回、test、build、pwsh） | `777caea` | [成功](https://github.com/Kensan196948G/AI-HelpDesk-Platform/actions/runs/41388857808) |
 | `npm audit --audit-level=high`、`scan-secrets.sh` | `2d5b409` | 0 件、検出なし |
 
-`2d5b409` は `f008f2c` からスクリプトの試験の期待と実機用の段だけを変えた。
+`npm audit` と `scan-secrets.sh` のローカル実行は `2d5b409`。`777caea` では CI の同じ手順が成功している。
 
-## 実機（`2d5b409`。`../real-chain-20261102/resend-2d5b409.json`）
+## 実機（`2d5b409`。`777caea` との差は設定の判定と画面の文言で、実機は流し直していない。`../real-chain-20261102/resend-2d5b409.json`）
 
 Windows 1 台、PowerShell 5.1、非昇格、実 DeepSeek、AUTH_MODE=local。Y は条件付きの事前承認で、提案を機械照合してから押した。
 

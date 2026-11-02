@@ -3,7 +3,7 @@
 相談から端末の操作へ進む経路は 3 つあり、**同等ではない**。この文書は、コードの事実と、それぞれに任せてよい範囲を記録する。
 
 - 作成: 2026-11-01。対象は `verify/dataflow-assist-integration`（検証用の統合。#127 の検証統合に #120 と #117 を merge）。
-- **更新（2026-11-02）:** 下の表は統合の時点の記録である。最新の範囲と判定は [docs/68](68-release-rc-20261102.md)、実機は `docs/evidence/real-chain-20261102/` による。②は `RESOLVE_PATH_MODE`（既定 off、production で on は起動拒否）でサーバ側で閉じた。
+- **更新（2026-11-02）:** 下の表は統合の時点の記録である。最新の範囲と判定は [docs/68](68-release-rc-20261102.md)、実機は `docs/evidence/real-chain-20261102/` による。②は `RESOLVE_PATH_MODE`（既定 off、production または Access 認証で on は起動拒否）でサーバ側で閉じた。
 - **統合の時点の記録:** この統合では実機の確認範囲は増えていない。下の表の実機欄は、統合前の各ブランチの記録の引用である（docs/65 §0、docs/66 §5-1、docs/63 §14）。未確認を成功に数えない。
 - 根拠は、特に書かない限りコードの読解である。受入の結果は [docs/evidence/assist-integration-20261101/](evidence/assist-integration-20261101/)。
 
@@ -88,7 +88,7 @@
 - `knowledge` の一覧は `symptom_tags` を読むので、035 を未適用のままコードを反映できない。
 - `sweepFolderAccess` は 1 件の失敗で後続を止める（#117）。
 
-## 追記: 経路②のモード（2026-11-02、候補 `2d5b409`）
+## 追記: 経路②のモード（2026-11-02、候補 `777caea`）
 
 上の「既定のフラグ」「代案」のうち、**案 1 を実装した。** `RESOLVE_PATH_MODE`（off / drain / on）。
 

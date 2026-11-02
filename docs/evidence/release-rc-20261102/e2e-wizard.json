@@ -394,12 +394,6 @@
   "apiLog": {
     "A": [
       {
-        "method": "PUT",
-        "path": "/api/state/cowork",
-        "status": 200,
-        "count": 20
-      },
-      {
         "method": "GET",
         "path": "/api/me",
         "status": 200,
@@ -410,6 +404,12 @@
         "path": "/api/resolve/device-status",
         "status": 200,
         "count": 3
+      },
+      {
+        "method": "PUT",
+        "path": "/api/state/cowork",
+        "status": 200,
+        "count": 21
       },
       {
         "method": "PUT",
@@ -578,11 +578,11 @@
   "ids": [
     {
       "caseId": "CASE-0001",
-      "sessionId": "8d8f9d45-8f0b-440e-b0a4-de0cb5ba7b6c",
-      "stepId": "f073b228-3d34-4d8e-8eef-1a73aebdd155",
-      "commandId": "8107cae4-623d-4625-93d6-9ddb1e8447cc",
+      "sessionId": "29f09bbb-10bb-4eed-870e-d144faa917fc",
+      "stepId": "430fe828-017d-445e-8b3c-eaf0ed925be1",
+      "commandId": "8fd5ea9f-a621-4377-a06d-f2a9a1b52db8",
       "skillId": "spooler.status",
-      "deviceId": "d13a44f7-29c1-412e-adb5-6874791a3ba4",
+      "deviceId": "f5af3573-3c58-47b7-b997-f6778987d6f5",
       "source": "mock",
       "ui": true,
       "api": true,
@@ -591,11 +591,11 @@
     },
     {
       "caseId": "CASE-0001",
-      "sessionId": "8d8f9d45-8f0b-440e-b0a4-de0cb5ba7b6c",
-      "stepId": "02ddada1-6e79-48d7-b7b6-7bdc9700d300",
-      "commandId": "020b9acb-bda7-4244-9b98-ba58b9137e16",
+      "sessionId": "29f09bbb-10bb-4eed-870e-d144faa917fc",
+      "stepId": "19c0c0c3-4092-4034-8dd4-86d511395f59",
+      "commandId": "96b3e288-aec5-4cda-86e9-6d2d5e3a432f",
       "skillId": "os.info",
-      "deviceId": "d13a44f7-29c1-412e-adb5-6874791a3ba4",
+      "deviceId": "f5af3573-3c58-47b7-b997-f6778987d6f5",
       "source": "mock",
       "ui": true,
       "api": true,
