@@ -73,7 +73,7 @@
 | GET | `/knowledge/:id` | 認証済み | 相談者は `approved` のみ |
 | PATCH | `/knowledge/:id` | ヘルプデスク（作成者） | 下書き・差戻しの編集。PII を再伏せ字化 |
 | POST | `/knowledge/:id/submit` | ヘルプデスク（作成者） | 下書き / 差戻し → 承認待ち |
-| POST | `/knowledge/:id/review` | 承認者 | 承認（4 項目すべて true）/ 差戻し（理由必須） |
+| POST | `/knowledge/:id/review` | 承認者 | 承認（4 項目すべて true、`contentHash` 必須。無ければ 400）/ 差戻し（理由必須） |
 
 - **自分の申請は承認できない**（サーバ側で 400）。
 - 承認すると `knowledge.status=approved`、案件は `completed` / step 7、チケットは `closed`。
