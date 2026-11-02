@@ -94,6 +94,9 @@ let configServed = false;
 // 結果へ書かない（docs/65 §0）。
 let publicUrl = '';
 let deviceRouteOpen = true;
+// 実行の結果の報告だけを止める（報告の失敗と実行の失敗を分ける確認）。
+let blockResult = false;
+let resultBlocked = 0;
 
 const FILES = [
   'scripts/windows/command-agent.ps1',
@@ -251,6 +254,13 @@ function startDeviceProxy() {
     }
     if (!deviceRouteOpen || !/^\/api\/device\/(agent(\/|$)|command(\/|$))/.test(url.pathname)) {
       response.statusCode = deviceRouteOpen ? 403 : 503;
+      response.end();
+      return;
+    }
+    if (blockResult && request.method === 'POST' && /\/result$/.test(url.pathname)) {
+      resultBlocked += 1;
+      request.resume();
+      response.statusCode = 503;
       response.end();
       return;
     }
@@ -550,6 +560,75 @@ const STEPS_API = {
       canStop,
       commandsAdded: (await commandCount()) - before,
       session: row.session_status,
+    });
+  },
+
+  // ── 実機の後に入れた修正の確認（ae9bcce の後の分） ──
+  /** 結果の取り込み: Y の直後に画面を離れ、画面が無くてもサーバが結果を取り込むか。 */
+  async recheckResultCapture() {
+    const { page } = await openPersona('requesterA');
+    const caseId = await newCase(page);
+    await startSession(page);
+    const home = page.url();
+    await page.click(`${PANEL} [data-aihd-resolve="approve"][data-decision="Y"]`);
+    await sleep(800);
+    await page.goto('about:blank');
+    let row;
+    let command;
+    const started = Date.now();
+    while (Date.now() - started < 170_000) {
+      row = await latestStep(caseId);
+      if (row?.command_id) {
+        [command] = await sql`SELECT status FROM device_commands WHERE id = ${row.command_id}`;
+      }
+      if (command?.status === 'done' && row.result_summary) break;
+      await sleep(3000);
+    }
+    const seconds = Math.round((Date.now() - started) / 1000);
+    await page.goto(home);
+    return record('recheckResultCapture', {
+      caseId,
+      seconds,
+      commandStatus: command?.status ?? null,
+      stepStatus: row?.step_status ?? null,
+      sessionStatus: row?.session_status ?? null,
+      capturedWithoutPage: Boolean(command?.status === 'done' && row?.result_summary),
+      resultSummary: JSON.stringify(row?.result_summary ?? null).slice(0, 300),
+    });
+  },
+  /** 報告の分離: 結果の報告だけを失敗させ、実行を繰り返さず、エージェントが動き続けるか。 */
+  async recheckReportSplit() {
+    const { page } = await openPersona('requesterA');
+    const caseId = await newCase(page);
+    await startSession(page);
+    const before = await commandCount();
+    blockResult = true;
+    resultBlocked = 0;
+    await page.click(`${PANEL} [data-aihd-resolve="approve"][data-decision="Y"]`);
+    const started = Date.now();
+    while (Date.now() - started < 120_000 && resultBlocked === 0) await sleep(1000);
+    const blocked = resultBlocked;
+    blockResult = false;
+    // 繰り返して実行されるなら、次の取得と報告がここで届く。
+    await sleep(30_000);
+    const row = await latestStep(caseId);
+    const [command] = row?.command_id
+      ? await sql`SELECT status FROM device_commands WHERE id = ${row.command_id}`
+      : [null];
+    const [seen] = await sql`
+      SELECT max(last_used_at) AS last_seen FROM device_tokens WHERE device_id = ${deviceId}
+    `;
+    return record('recheckReportSplit', {
+      caseId,
+      blockedReports: blocked,
+      reportsAfterUnblock: resultBlocked - blocked,
+      commandsAdded: (await commandCount()) - before,
+      commandStatus: command?.status ?? null,
+      stepStatus: row?.step_status ?? null,
+      lastSeenSecondsAgo: seen?.last_seen
+        ? Math.round((Date.now() - new Date(seen.last_seen).getTime()) / 1000)
+        : null,
+      panel: (await panelText(page)).slice(0, 300),
     });
   },
 
