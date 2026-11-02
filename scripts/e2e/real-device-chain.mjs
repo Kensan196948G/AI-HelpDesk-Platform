@@ -88,7 +88,9 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const children = [];
 const dlKey = randomBytes(24).toString('hex');
 const configKey = randomBytes(24).toString('hex');
-const deviceId = randomUUID();
+// 導入済みの端末へ触らずに起動し直すときは、DB の端末とトークンをそのまま使う。
+const reuseDevice = process.env.RDC_REUSE_DEVICE === '1';
+let deviceId = randomUUID();
 const deviceToken = randomBytes(32).toString('hex');
 let configServed = false;
 // 結果へ書かない（docs/65 §0）。
@@ -173,6 +175,15 @@ async function prepareDb() {
     RETURNING id
   `;
   await sql`INSERT INTO user_roles (user_id, role) VALUES (${user.id}, 'approver') ON CONFLICT DO NOTHING`;
+  if (reuseDevice) {
+    const [existing] = await sql`
+      SELECT device_id FROM device_tokens WHERE label = 'real-device-chain'
+      ORDER BY created_at DESC LIMIT 1
+    `;
+    if (!existing) throw new Error('再利用する端末がありません。');
+    deviceId = existing.device_id;
+    return;
+  }
   await sql`
     INSERT INTO device_tokens (token_hash, user_email, label, device_id)
     VALUES (${createHash('sha256').update(deviceToken).digest('hex')}, ${EMAIL.requesterA},
@@ -357,6 +368,17 @@ async function startSession(page) {
     timeout: 90_000,
   });
   return panelText(page);
+}
+
+/** 条件付きの事前承認の機械照合。読み取りの spooler.status、引数なしの提案だけ Y を押す。 */
+function assertPreapproved(panel) {
+  if (
+    !/spooler|スプーラ/.test(panel) ||
+    !/読み取りのみ/.test(panel) ||
+    !/パラメータ: \{\}/.test(panel)
+  ) {
+    throw new Error('事前承認の条件に合いません。Y を押しません。');
+  }
 }
 
 async function commandCount() {
@@ -568,7 +590,9 @@ const STEPS_API = {
   async recheckResultCapture() {
     const { page } = await openPersona('requesterA');
     const caseId = await newCase(page);
-    await startSession(page);
+    assertPreapproved(await startSession(page));
+    const row0 = await latestStep(caseId);
+    if (row0?.skill_id !== 'spooler.status') throw new Error('事前承認の条件に合いません。');
     const home = page.url();
     await page.click(`${PANEL} [data-aihd-resolve="approve"][data-decision="Y"]`);
     await sleep(800);
@@ -600,7 +624,9 @@ const STEPS_API = {
   async recheckReportSplit() {
     const { page } = await openPersona('requesterA');
     const caseId = await newCase(page);
-    await startSession(page);
+    assertPreapproved(await startSession(page));
+    const row0 = await latestStep(caseId);
+    if (row0?.skill_id !== 'spooler.status') throw new Error('事前承認の条件に合いません。');
     const before = await commandCount();
     blockResult = true;
     resultBlocked = 0;
