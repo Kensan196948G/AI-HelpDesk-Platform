@@ -499,7 +499,7 @@ describe('最終報告書の人物とタイムライン', () => {
       out: null,
     };
     vm.runInNewContext(
-      `${extract('ahName')}\n${extract('ahTimeline')}\nout = ahTimeline(caseData, {}, chat);`,
+      `${extract('ahName')}\n${extract('ahUsedDemoFlow')}\n${extract('ahTimeline')}\nout = ahTimeline(caseData, {}, chat);`,
       context,
     );
     return context.out as Array<{ actor: string; action: string }>;

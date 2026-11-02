@@ -376,6 +376,15 @@
     return Array.from(map.values()).slice(0, 50);
   }
 
+  /** 固定データの診断・修復を経た相談か。 */
+  function ahUsedDemoFlow(chat) {
+    return Boolean(
+      chat?.messages.some(
+        (message) => message && ['diag', 'proposal', 'exec'].includes(message.kind),
+      ),
+    );
+  }
+
   function ahTimeline(c, L, chat) {
     const out = [];
     const push = (at, actor, action, detail) => {
@@ -410,13 +419,10 @@
     }
     if (c.closed === 'ai') {
       // 固定データの修復を経た解決は、実端末の問題が直ったことを示さない。
-      const usedDemo = chat?.messages.some(
-        (message) => message && ['diag', 'proposal', 'exec'].includes(message.kind),
-      );
       push(
         c.closedAt || c.created,
         'AI',
-        usedDemo ? demo('AIの一次対応で解決') : 'AIの一次対応で解決',
+        ahUsedDemoFlow(chat) ? demo('AIの一次対応で解決') : 'AIの一次対応で解決',
         '担当者への引継ぎなし',
       );
     }
@@ -567,6 +573,7 @@
     return {
       reportVersion: 1,
       kind: ahReportKind(c, L),
+      usedDemoData: ahUsedDemoFlow(chat),
       generatedAt: ahNow(),
       generatedBy: {
         name: actor.name || '不明',
