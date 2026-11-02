@@ -29,6 +29,10 @@
 
 `continue-on-error` などでゲートを弱めていない。この節の追加は文書だけで、CI は `9435ebd` の結果である。
 
+**追記（2026-11-02）:** 上の failure は `9435ebd` の結果で、後の SHA で解消した。`command-agent.pwsh.test.mjs` の修正後は [`bdc01cb`](https://github.com/Kensan196948G/AI-HelpDesk-Platform/actions/runs/41315289929) と [`5f404ff`](https://github.com/Kensan196948G/AI-HelpDesk-Platform/actions/runs/41318921072) の CI が成功し、Build と pwsh の 2 手順も CI で走った。
+
+main（`056c3ae`、#122 と #124）を取り込んだ後の `1b9d4ec` のローカルの結果: typecheck、lint、build、vitest 全 1537 件が成功、通し E2E は 88 項目で失敗 0（`e2e/result.json`）。**通し E2E はスタブ AI と模擬の実行器で、実機の確認は増えていない。** `POST /api/device/command` の 410 は通し E2E の項目ではなく、統合試験で確かめている。
+
 ## 受入表
 
 「③」は支援セッションの本人ヘルパー、「②」は resolve ループ（[docs/67](../../67-execution-paths.md)）。成功数はこの SHA の vitest の結果を試験名で引いた値である。integration は `apps/api/src/support-session/support-session.integration.test.ts`。
