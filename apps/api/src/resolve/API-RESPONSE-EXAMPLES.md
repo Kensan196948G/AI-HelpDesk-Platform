@@ -229,6 +229,7 @@ N のレスポンス: `{ "ok": true, "step": {status:"rejected"...}, "session": 
 - 承認時に端末の最終応答が `RESOLVE_DEVICE_OFFLINE_SEC`（既定 120 秒）より古いと 409 `DEVICE_OFFLINE`。
 - 承認時に `step.timeoutSec` / `step.deadlineAt` が確定。期限超過は `step.status = "failed"`、
   `step.error = "RESULT_TIMEOUT"`、セッションは `escalated`。期限後の結果は状態を進めない。
+  配送の前に期限が切れたものは `step.error = "NOT_DELIVERED"`（未実行と確定）。配送後の `RESULT_TIMEOUT` は結果不明で、`resultSummary.resultState` は `unknown`。
 - 端末への配信 `/api/device/command` も期限を原子的に確認し、期限切れの step のコマンドは配信しない。
 
 ### fieldsToAi

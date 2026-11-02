@@ -1,0 +1,1256 @@
+{
+  "scope": "検証用。認証は AUTH_MODE=local、名簿は合成、実行器は --mock。Cloudflare Access・実端末・RSP・Mesh は使っていない。",
+  "run": "stub（AI は全経路スタブ）",
+  "share": "既定",
+  "checks": [
+    {
+      "id": "A0",
+      "title": "相談者 A は合成名簿の本人として動く",
+      "ok": true,
+      "note": "合成 相談者A"
+    },
+    {
+      "id": "A1",
+      "title": "印刷の相談は /api/ai/answer を呼ばない（固定ルールでも AI でもなく解決ループへ）",
+      "ok": true,
+      "note": "PUT /api/state/cowork 200 / GET /api/me 200 / GET /api/resolve/device-status 200 / PUT /api/state/helpdesk 200"
+    },
+    {
+      "id": "A2",
+      "title": "デモの診断・確認カードを出さない",
+      "ok": true,
+      "note": "welcome,user,ai,ai"
+    },
+    {
+      "id": "A3",
+      "title": "押すまでセッションを作らない",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "A4",
+      "title": "Y の前は端末コマンドが 0 件",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "A5",
+      "title": "--mock の結果は模擬と表示する",
+      "ok": true,
+      "note": "mock"
+    },
+    {
+      "id": "A6",
+      "title": "読取成功で解決と断定しない",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "A7",
+      "title": "読取成功だけで解決済みにならない（DB・画面）",
+      "ok": true,
+      "note": "waiting_continue/null"
+    },
+    {
+      "id": "A8",
+      "title": "DB の結果に出所 mock を保存する",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "A9",
+      "title": "実行は spooler.status のみ",
+      "ok": true,
+      "note": "spooler.status"
+    },
+    {
+      "id": "H1",
+      "title": "同意画面に結果を出所付きで出す",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "H2",
+      "title": "同意画面にデモ値を出さない",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "H3",
+      "title": "宛先の選択から案件を共有できる",
+      "ok": true,
+      "note": "200"
+    },
+    {
+      "id": "H4",
+      "title": "引継ぎの DB スナップショットに実行 ID が入る",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "H5",
+      "title": "引継ぎの DB スナップショットに「模擬」が入る",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "H6",
+      "title": "引継ぎの DB スナップショットにデモ値が無い",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "S1",
+      "title": "担当者が受信箱から引き受ける（画面）",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "S2",
+      "title": "担当者の状態に案件が入る",
+      "ok": true,
+      "note": "TKT-2026-0002"
+    },
+    {
+      "id": "S5",
+      "title": "担当者の画面にデモ値が無い",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "S7",
+      "title": "担当者欄の既定値がログイン本人である（デモの担当者名でない）",
+      "ok": true,
+      "note": "合成 担当者"
+    },
+    {
+      "id": "S8",
+      "title": "担当者欄で本人を選べる",
+      "ok": true,
+      "note": "1"
+    },
+    {
+      "id": "S3",
+      "title": "担当者の AI 文脈に結果が出所付きで入る（画面から）",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "S4",
+      "title": "担当者の AI 文脈にデモ値が無い",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "K18",
+      "title": "下書きの画面に A の端末 ID と PC 基本情報が入らない",
+      "ok": true,
+      "note": "印刷ができません"
+    },
+    {
+      "id": "K1",
+      "title": "申請で DB に pending の行ができる（作成者=担当者）",
+      "ok": true,
+      "note": "pending/KB-2026-0101"
+    },
+    {
+      "id": "K2",
+      "title": "KB 下書きにデモ値が無い",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "K3",
+      "title": "KB 下書きに担当者の入力が入る",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "K4",
+      "title": "承認前は pending の KB が AI 入力に入らない",
+      "ok": true,
+      "note": "KB-2026-0101"
+    },
+    {
+      "id": "K5",
+      "title": "相談者の承認は 403",
+      "ok": true,
+      "note": "403"
+    },
+    {
+      "id": "K6",
+      "title": "担当者（approver なし）の承認は 403",
+      "ok": true,
+      "note": "403"
+    },
+    {
+      "id": "U1",
+      "title": "DX 推進部以外の承認者は原本の役割の選択には出ない（docs/61 §7。入口は U2 の承認者パネル）",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "U2",
+      "title": "所属外の承認者が画面のボタンで承認者のパネルを開ける（完了承認と公開承認が別の見出し）",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "K19",
+      "title": "承認者の画面に症状・原因・手順が出る（確認しないまま承認させない）",
+      "ok": true,
+      "note": "KB-2026-0101 印刷ができませんときの対処\n作成者 synth.staff@example.test／状態 pending／作成 2026-11-01T11:40:50.557Z\n症状\n印刷ができません\n原因\n印刷スプーラの待機ジ"
+    },
+    {
+      "id": "K7",
+      "title": "別人の承認者が画面から承認し、承認者 ≠ 作成者で DB に残る",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "K8",
+      "title": "承認で版が 1 以上になる",
+      "ok": true,
+      "note": "2"
+    },
+    {
+      "id": "K9",
+      "title": "KB の承認は引継ぎの完了承認を兼ねない（引継ぎは未完了のまま）",
+      "ok": true,
+      "note": "resolved"
+    },
+    {
+      "id": "K10",
+      "title": "B の自由記述の相談で AI 入力に [KB-2026-0101 v2] が入る",
+      "ok": true,
+      "note": "[KB-2026-0101 v2]"
+    },
+    {
+      "id": "K11",
+      "title": "B の AI 入力にデモ値が無い",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "K12",
+      "title": "B の AI 入力に A の案件の実行 ID・相談者名が無い",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "K14",
+      "title": "B の AI 入力の KB に A の端末 ID が入らない",
+      "ok": true,
+      "note": "WEB-9B8FCA35"
+    },
+    {
+      "id": "K15",
+      "title": "B の AI 入力の KB に A の PC 基本情報が入らない",
+      "ok": true,
+      "note": "[KB-2026-0101 v2] 印刷ができませんときの対処\n出所: 別の担当者が承認\n症状: 印刷ができません\n原因: 印刷スプーラの待機ジョブが滞留していた（検証用の記録）\n手順:\nスプーラの状態を読み取って確認する\n待機ジョブの有無"
+    },
+    {
+      "id": "K16",
+      "title": "B の AI 入力の KB に A の実行 ID が入らない",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "K13",
+      "title": "B の相談から /api/ai/answer が呼ばれる",
+      "ok": true,
+      "note": "200"
+    },
+    {
+      "id": "K17",
+      "title": "自己承認の KB は AI 入力に入らない（API 直接）",
+      "ok": true,
+      "note": "200/aiUsable=false"
+    },
+    {
+      "id": "I1",
+      "title": "B のブラウザの state に active KB を入れる",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "I2",
+      "title": "注入した KB は B の state として DB に保存される（前提の確認）",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "I3",
+      "title": "注入した KB は AI 入力に入らない（画面から相談）",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "I4",
+      "title": "注入した KB は出典に出ない",
+      "ok": true,
+      "note": "[\"KB-2026-0003\",\"KB-2026-0101\"]"
+    },
+    {
+      "id": "I5",
+      "title": "注入後も承認済み KB は AI 入力に入る",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "I6",
+      "title": "注入した KB は画面でも承認済みと表示しない",
+      "ok": true,
+      "note": "{\"owner\":\"画面内の資料（DB で未承認）\",\"src\":\"local\"}"
+    },
+    {
+      "id": "N0",
+      "title": "エージェント未接続でも、端末を操作せず承認済み KB を画面で案内する",
+      "ok": true,
+      "note": "kb=true sessions=0"
+    },
+    {
+      "id": "N0b",
+      "title": "案内の外部 AI 呼び出しなし（/api/ai/answer を呼ばない）",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "N0c",
+      "title": "エージェント未接続でも担当者へ引き継ぐ導線が残る",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "N1",
+      "title": "印刷の相談の提案の AI 入力に [KB-2026-0101 v2] の参照が入る",
+      "ok": true,
+      "note": "[\"KB-2026-0003\",\"KB-2026-0101\"]"
+    },
+    {
+      "id": "N2",
+      "title": "提案の AI 入力に注入した state の KB と A の端末情報が入らない",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "N3",
+      "title": "実診断の後の案内に KB 番号・版・題名を出す",
+      "ok": true,
+      "note": "🧭 解決ループ（読み取り診断）\nステップ 1/6・waiting_continue\n結果：模擬（実端末の結果ではありません）\n読み取りの結果です。まだ解決とは判定していません。解決したかどうかはご本人が確認してください。\n{\"name\":\"Spooler\",\"displayName\":\"Print Spooler\",\"status\":\"Running\",\"startType\":\"Auto\"}\n\n"
+    },
+    {
+      "id": "N4",
+      "title": "AI が使っていないときに「AI が参照」と表示しない",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "N7",
+      "title": "結果カードの出所: この流れの KB は別の担当者、シードは初期登録と区別する",
+      "ok": true,
+      "note": "{\"KB-2026-0003\":\"seed\",\"KB-2026-0101\":\"other_person\"}"
+    },
+    {
+      "id": "N5",
+      "title": "AI が usedKnowledge で示した KB だけ「AI が参照」と表示する",
+      "ok": true,
+      "note": "🧭 解決ループ（読み取り診断）\nステップ 2/6・waiting_continue\n結果：模擬（実端末の結果ではありません）\n読み取りの結果です。まだ解決とは判定していません。解決したかどうかはご本人が確認してください。\n{\"osName\":\"Microsoft Windows 11 Pro\",\"version\":\"10.0.22631\",\"buildNumber\":\"22631\",\"archi"
+    },
+    {
+      "id": "N6",
+      "title": "案内を出しても解決にしない",
+      "ok": true,
+      "note": "waiting_continue"
+    },
+    {
+      "id": "C1",
+      "title": "別人の承認者の状態に案件が無くても、完了承認の導線が画面にある",
+      "ok": true,
+      "note": "staffHasDraft=true"
+    },
+    {
+      "id": "C2",
+      "title": "完了承認を画面のボタンで行う（API 直接ではない）",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "R1",
+      "title": "完了後に相談者 A の画面に報告書の出力が出る",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "R2",
+      "title": "報告書を画面から出力できる",
+      "ok": true,
+      "note": "200"
+    },
+    {
+      "id": "R3",
+      "title": "報告書の DB 記録に「模擬」が入る",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "R4",
+      "title": "報告書にデモ値が無い",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "R5",
+      "title": "報告書に実端末と書かない",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "R6",
+      "title": "報告書に実行 ID が入る",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "X1",
+      "title": "UI / API / DB / エージェント / 引継ぎの ID が一致する",
+      "ok": true,
+      "note": "{\"ui\":true,\"api\":true,\"db\":true,\"agent\":true}"
+    },
+    {
+      "id": "D1",
+      "title": "他の相談者の Y は 404",
+      "ok": true,
+      "note": "404"
+    },
+    {
+      "id": "D2",
+      "title": "担当者の Y も 404",
+      "ok": true,
+      "note": "404"
+    },
+    {
+      "id": "D3",
+      "title": "違うハッシュは 400 APPROVAL_MISMATCH",
+      "ok": true,
+      "note": "400"
+    },
+    {
+      "id": "D4",
+      "title": "ハッシュなしの Y は 400",
+      "ok": true,
+      "note": "400"
+    },
+    {
+      "id": "D5",
+      "title": "拒否の間はコマンド 0 件",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "D6",
+      "title": "同時の二重 Y は 1 回だけ通る",
+      "ok": true,
+      "note": "200,409"
+    },
+    {
+      "id": "D7",
+      "title": "二重 Y でもコマンドは 1 件",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "D8",
+      "title": "前のステップのハッシュは次のステップに使えない",
+      "ok": true,
+      "note": "400"
+    },
+    {
+      "id": "D9",
+      "title": "次のステップはコマンドを作らない",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "D10",
+      "title": "N で停止しコマンドを作らない",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "D11",
+      "title": "N の後の Y は 409",
+      "ok": true,
+      "note": "409"
+    },
+    {
+      "id": "D12",
+      "title": "取消の後の Y は 409 でコマンドなし",
+      "ok": true,
+      "note": "409"
+    },
+    {
+      "id": "D13",
+      "title": "Y の後の取消で未取得のコマンドは実行しない",
+      "ok": true,
+      "note": "expired"
+    },
+    {
+      "id": "D14",
+      "title": "取消の後に届いた応答で状態を進めない",
+      "ok": true,
+      "note": "200/cancelled"
+    },
+    {
+      "id": "Z1",
+      "title": "外部への通信が無い（ブラウザ）",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "Z2",
+      "title": "ページエラーが無い",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "Z3",
+      "title": "スタブが受けた全 AI 入力にデモ値が無い",
+      "ok": true,
+      "note": ""
+    }
+  ],
+  "apiLog": {
+    "A_consult": [
+      {
+        "method": "PUT",
+        "path": "/api/state/cowork",
+        "status": 200,
+        "count": 13
+      },
+      {
+        "method": "GET",
+        "path": "/api/me",
+        "status": 200,
+        "count": 1
+      },
+      {
+        "method": "GET",
+        "path": "/api/resolve/device-status",
+        "status": 200,
+        "count": 2
+      },
+      {
+        "method": "PUT",
+        "path": "/api/state/helpdesk",
+        "status": 200,
+        "count": 1
+      }
+    ],
+    "A_handover": [
+      {
+        "method": "POST",
+        "path": "/api/resolve/sessions/:id/escalate",
+        "status": 200,
+        "count": 1
+      },
+      {
+        "method": "PUT",
+        "path": "/api/state/cowork",
+        "status": 200,
+        "count": 3
+      },
+      {
+        "method": "PUT",
+        "path": "/api/state/helpdesk",
+        "status": 200,
+        "count": 1
+      },
+      {
+        "method": "GET",
+        "path": "/api/case-handovers/recipients",
+        "status": 200,
+        "count": 1
+      },
+      {
+        "method": "POST",
+        "path": "/api/case-handovers",
+        "status": 200,
+        "count": 1
+      }
+    ],
+    "B_preApproval": [
+      {
+        "method": "PUT",
+        "path": "/api/state/cowork",
+        "status": 200,
+        "count": 13
+      },
+      {
+        "method": "GET",
+        "path": "/api/me",
+        "status": 200,
+        "count": 1
+      },
+      {
+        "method": "GET",
+        "path": "/api/resolve/device-status",
+        "status": 200,
+        "count": 1
+      },
+      {
+        "method": "PUT",
+        "path": "/api/state/helpdesk",
+        "status": 200,
+        "count": 1
+      },
+      {
+        "method": "POST",
+        "path": "/api/ai/answer",
+        "status": 200,
+        "count": 1
+      }
+    ],
+    "outside_all": [
+      {
+        "method": "GET",
+        "path": "/api/me",
+        "status": 200,
+        "count": 3
+      },
+      {
+        "method": "GET",
+        "path": "/api/employees",
+        "status": 200,
+        "count": 1
+      },
+      {
+        "method": "GET",
+        "path": "/api/knowledge/approved-refs",
+        "status": 200,
+        "count": 1
+      },
+      {
+        "method": "PUT",
+        "path": "/api/state/cowork",
+        "status": 200,
+        "count": 4
+      },
+      {
+        "method": "PUT",
+        "path": "/api/state/helpdesk",
+        "status": 200,
+        "count": 3
+      },
+      {
+        "method": "POST",
+        "path": "/api/device/browser",
+        "status": 200,
+        "count": 1
+      },
+      {
+        "method": "GET",
+        "path": "/api/knowledge/pending",
+        "status": 200,
+        "count": 1
+      },
+      {
+        "method": "GET",
+        "path": "/api/case-handovers/awaiting-approval",
+        "status": 200,
+        "count": 1
+      }
+    ],
+    "B_consult": [
+      {
+        "method": "PUT",
+        "path": "/api/state/cowork",
+        "status": 200,
+        "count": 12
+      },
+      {
+        "method": "POST",
+        "path": "/api/ai/answer",
+        "status": 200,
+        "count": 1
+      },
+      {
+        "method": "GET",
+        "path": "/api/resolve/device-status",
+        "status": 200,
+        "count": 1
+      }
+    ],
+    "B_printConsult_noAgent": [
+      {
+        "method": "GET",
+        "path": "/api/employees",
+        "status": 200,
+        "count": 1
+      },
+      {
+        "method": "GET",
+        "path": "/api/knowledge/approved-refs",
+        "status": 200,
+        "count": 1
+      },
+      {
+        "method": "GET",
+        "path": "/api/me",
+        "status": 200,
+        "count": 3
+      },
+      {
+        "method": "PUT",
+        "path": "/api/state/cowork",
+        "status": 200,
+        "count": 16
+      },
+      {
+        "method": "GET",
+        "path": "/api/resolve/device-status",
+        "status": 200,
+        "count": 2
+      },
+      {
+        "method": "PUT",
+        "path": "/api/state/helpdesk",
+        "status": 200,
+        "count": 4
+      },
+      {
+        "method": "POST",
+        "path": "/api/device/browser",
+        "status": 200,
+        "count": 1
+      },
+      {
+        "method": "POST",
+        "path": "/api/resolve/knowledge-guide",
+        "status": 200,
+        "count": 1
+      }
+    ],
+    "B_printConsult_agent": [
+      {
+        "method": "PUT",
+        "path": "/api/state/cowork",
+        "status": 200,
+        "count": 14
+      },
+      {
+        "method": "GET",
+        "path": "/api/resolve/device-status",
+        "status": 200,
+        "count": 1
+      },
+      {
+        "method": "POST",
+        "path": "/api/resolve/sessions",
+        "status": 200,
+        "count": 1
+      },
+      {
+        "method": "POST",
+        "path": "/api/resolve/steps/:id/approve",
+        "status": 200,
+        "count": 2
+      },
+      {
+        "method": "GET",
+        "path": "/api/resolve/steps/:id",
+        "status": 200,
+        "count": 2
+      },
+      {
+        "method": "POST",
+        "path": "/api/resolve/steps/:id/continue",
+        "status": 200,
+        "count": 1
+      }
+    ],
+    "staff_all": [
+      {
+        "method": "GET",
+        "path": "/api/me",
+        "status": 200,
+        "count": 8
+      },
+      {
+        "method": "GET",
+        "path": "/api/employees",
+        "status": 200,
+        "count": 3
+      },
+      {
+        "method": "GET",
+        "path": "/api/knowledge/approved-refs",
+        "status": 200,
+        "count": 6
+      },
+      {
+        "method": "PUT",
+        "path": "/api/state/helpdesk",
+        "status": 200,
+        "count": 14
+      },
+      {
+        "method": "PUT",
+        "path": "/api/state/cowork",
+        "status": 200,
+        "count": 20
+      },
+      {
+        "method": "GET",
+        "path": "/api/case-handovers/inbox",
+        "status": 200,
+        "count": 3
+      },
+      {
+        "method": "POST",
+        "path": "/api/device/browser",
+        "status": 200,
+        "count": 3
+      },
+      {
+        "method": "POST",
+        "path": "/api/case-handovers/:id/claim",
+        "status": 200,
+        "count": 1
+      },
+      {
+        "method": "GET",
+        "path": "/api/resolve/device-status",
+        "status": 200,
+        "count": 1
+      },
+      {
+        "method": "GET",
+        "path": "/api/case-handovers/:id",
+        "status": 200,
+        "count": 5
+      },
+      {
+        "method": "GET",
+        "path": "/api/terminal/sessions",
+        "status": 404,
+        "count": 1
+      },
+      {
+        "method": "GET",
+        "path": "/api/terminal/sessions",
+        "status": 200,
+        "count": 1
+      },
+      {
+        "method": "POST",
+        "path": "/api/ai/answer-case",
+        "status": 200,
+        "count": 1
+      },
+      {
+        "method": "GET",
+        "path": "/api/knowledge/pending",
+        "status": 200,
+        "count": 2
+      },
+      {
+        "method": "POST",
+        "path": "/api/knowledge/ui-sync",
+        "status": 200,
+        "count": 1
+      },
+      {
+        "method": "PATCH",
+        "path": "/api/case-handovers/:id",
+        "status": 200,
+        "count": 1
+      },
+      {
+        "method": "POST",
+        "path": "/api/knowledge/ui-sync",
+        "status": 403,
+        "count": 1
+      },
+      {
+        "method": "POST",
+        "path": "/api/resolve/steps/:id/approve",
+        "status": 404,
+        "count": 1
+      }
+    ],
+    "approver_all": [
+      {
+        "method": "GET",
+        "path": "/api/me",
+        "status": 200,
+        "count": 5
+      },
+      {
+        "method": "GET",
+        "path": "/api/employees",
+        "status": 200,
+        "count": 2
+      },
+      {
+        "method": "GET",
+        "path": "/api/knowledge/approved-refs",
+        "status": 200,
+        "count": 4
+      },
+      {
+        "method": "PUT",
+        "path": "/api/state/helpdesk",
+        "status": 200,
+        "count": 9
+      },
+      {
+        "method": "PUT",
+        "path": "/api/state/cowork",
+        "status": 200,
+        "count": 12
+      },
+      {
+        "method": "GET",
+        "path": "/api/case-handovers/inbox",
+        "status": 200,
+        "count": 1
+      },
+      {
+        "method": "POST",
+        "path": "/api/device/browser",
+        "status": 200,
+        "count": 2
+      },
+      {
+        "method": "GET",
+        "path": "/api/knowledge/pending",
+        "status": 200,
+        "count": 4
+      },
+      {
+        "method": "POST",
+        "path": "/api/knowledge/ui-sync",
+        "status": 200,
+        "count": 3
+      },
+      {
+        "method": "GET",
+        "path": "/api/case-handovers/awaiting-approval",
+        "status": 200,
+        "count": 2
+      },
+      {
+        "method": "POST",
+        "path": "/api/case-handovers/:id/approve",
+        "status": 200,
+        "count": 1
+      }
+    ],
+    "A_all": [
+      {
+        "method": "GET",
+        "path": "/api/me",
+        "status": 200,
+        "count": 10
+      },
+      {
+        "method": "GET",
+        "path": "/api/employees",
+        "status": 200,
+        "count": 3
+      },
+      {
+        "method": "GET",
+        "path": "/api/knowledge/approved-refs",
+        "status": 200,
+        "count": 6
+      },
+      {
+        "method": "PUT",
+        "path": "/api/state/cowork",
+        "status": 200,
+        "count": 45
+      },
+      {
+        "method": "PUT",
+        "path": "/api/state/helpdesk",
+        "status": 200,
+        "count": 13
+      },
+      {
+        "method": "POST",
+        "path": "/api/device/browser",
+        "status": 200,
+        "count": 3
+      },
+      {
+        "method": "GET",
+        "path": "/api/resolve/device-status",
+        "status": 200,
+        "count": 13
+      },
+      {
+        "method": "POST",
+        "path": "/api/resolve/sessions",
+        "status": 200,
+        "count": 6
+      },
+      {
+        "method": "POST",
+        "path": "/api/resolve/steps/:id/approve",
+        "status": 200,
+        "count": 5
+      },
+      {
+        "method": "GET",
+        "path": "/api/resolve/steps/:id",
+        "status": 200,
+        "count": 3
+      },
+      {
+        "method": "POST",
+        "path": "/api/resolve/sessions/:id/escalate",
+        "status": 200,
+        "count": 1
+      },
+      {
+        "method": "GET",
+        "path": "/api/case-handovers/recipients",
+        "status": 200,
+        "count": 1
+      },
+      {
+        "method": "POST",
+        "path": "/api/case-handovers",
+        "status": 200,
+        "count": 1
+      },
+      {
+        "method": "GET",
+        "path": "/api/case-handovers/:id",
+        "status": 200,
+        "count": 5
+      },
+      {
+        "method": "POST",
+        "path": "/api/reports/final",
+        "status": 200,
+        "count": 1
+      },
+      {
+        "method": "GET",
+        "path": "/api/reports/final/:id/html",
+        "status": 200,
+        "count": 1
+      },
+      {
+        "method": "POST",
+        "path": "/api/resolve/steps/:id/approve",
+        "status": 400,
+        "count": 3
+      },
+      {
+        "method": "POST",
+        "path": "/api/resolve/steps/:id/approve",
+        "status": 409,
+        "count": 3
+      },
+      {
+        "method": "POST",
+        "path": "/api/resolve/steps/:id/continue",
+        "status": 200,
+        "count": 1
+      },
+      {
+        "method": "POST",
+        "path": "/api/resolve/sessions/:id/stop",
+        "status": 200,
+        "count": 4
+      }
+    ],
+    "B_all": [
+      {
+        "method": "GET",
+        "path": "/api/me",
+        "status": 200,
+        "count": 10
+      },
+      {
+        "method": "GET",
+        "path": "/api/employees",
+        "status": 200,
+        "count": 3
+      },
+      {
+        "method": "GET",
+        "path": "/api/knowledge/approved-refs",
+        "status": 200,
+        "count": 5
+      },
+      {
+        "method": "PUT",
+        "path": "/api/state/cowork",
+        "status": 200,
+        "count": 73
+      },
+      {
+        "method": "PUT",
+        "path": "/api/state/helpdesk",
+        "status": 200,
+        "count": 13
+      },
+      {
+        "method": "POST",
+        "path": "/api/device/browser",
+        "status": 200,
+        "count": 3
+      },
+      {
+        "method": "GET",
+        "path": "/api/resolve/device-status",
+        "status": 200,
+        "count": 8
+      },
+      {
+        "method": "POST",
+        "path": "/api/ai/answer",
+        "status": 200,
+        "count": 4
+      },
+      {
+        "method": "POST",
+        "path": "/api/knowledge/ui-sync",
+        "status": 403,
+        "count": 1
+      },
+      {
+        "method": "POST",
+        "path": "/api/resolve/knowledge-guide",
+        "status": 200,
+        "count": 1
+      },
+      {
+        "method": "POST",
+        "path": "/api/resolve/sessions",
+        "status": 200,
+        "count": 1
+      },
+      {
+        "method": "POST",
+        "path": "/api/resolve/steps/:id/approve",
+        "status": 200,
+        "count": 2
+      },
+      {
+        "method": "GET",
+        "path": "/api/resolve/steps/:id",
+        "status": 200,
+        "count": 2
+      },
+      {
+        "method": "POST",
+        "path": "/api/resolve/steps/:id/continue",
+        "status": 200,
+        "count": 1
+      },
+      {
+        "method": "POST",
+        "path": "/api/resolve/steps/:id/approve",
+        "status": 404,
+        "count": 1
+      }
+    ]
+  },
+  "ids": {
+    "workspaceAssigneeDefault": "合成 担当者",
+    "draftView": {
+      "title": "印刷ができませんときの対処",
+      "symptom": "印刷ができません",
+      "cause": "印刷スプーラの待機ジョブが滞留していた（検証用の記録）",
+      "steps": "スプーラの状態を読み取って確認する\n待機ジョブの有無を担当者が確認する"
+    },
+    "handoverStatusAfterStaffResolve": "resolved",
+    "handoverStatusAfterKbApproval": "resolved",
+    "knowledgeSegmentHead": "[KB-2026-0101 v2] 印刷ができませんときの対処\n出所: 別の担当者が承認\n症状: 印刷ができません\n原因: 印刷スプーラの待機ジョブが滞留していた（検証用の記録）\n手順:\nスプーラの状態を読み取って確認する\n待機ジョブの有無を担当者が確認する",
+    "printNoAgentShowsKb": true,
+    "cardOrigins": {
+      "KB-2026-0003": "seed",
+      "KB-2026-0101": "other_person"
+    },
+    "flow": {
+      "caseId": "CASE-0001",
+      "sessionId": "6ea77163-5ddd-4a4c-84c6-d0dd3ccef8e7",
+      "proposalStepId": "64b8bff2-c516-4c65-821d-1b81c2d52d74",
+      "commandId": "605b2167-7cd3-4b8e-aa8c-8501c97d5f13",
+      "deviceId": "9b8fca35-b7fe-4006-be54-a257f5cc0550",
+      "source": "mock",
+      "ui": true,
+      "api": true,
+      "db": true,
+      "agent": true,
+      "handoverSnapshot": true
+    },
+    "handoverId": "4009c85f-59b0-4c41-a2f0-a592376a478f",
+    "knowledge": {
+      "id": "228c9964-32d2-4b56-ae51-129210b97b6a",
+      "kbNo": "KB-2026-0101",
+      "version": 2,
+      "approverIsNotAuthor": true,
+      "labelInAiInput": true,
+      "caseB": "CASE-0002"
+    }
+  },
+  "aiInputs": {
+    "staff": {
+      "api": "/api/ai/answer-case",
+      "containsMock": true,
+      "containsCommandId": false
+    },
+    "requesterB": {
+      "api": "/api/ai/answer",
+      "consult": "スプーラが止まっているようで書類が出てきません",
+      "kbLabels": [
+        {
+          "label": "[KB-2026-0003 v1]",
+          "origin": "シード（scripts/seed.ts）"
+        },
+        {
+          "label": "[KB-2026-0101 v2]",
+          "origin": "この流れで承認した KB"
+        }
+      ]
+    },
+    "printPropose": {
+      "api": "POST /api/resolve/sessions",
+      "knowledgeRefs": [
+        {
+          "kbNo": "KB-2026-0003",
+          "version": 1,
+          "stepsSummaryLength": 58,
+          "origin": "シード（scripts/seed.ts）"
+        },
+        {
+          "kbNo": "KB-2026-0101",
+          "version": 2,
+          "stepsSummaryLength": 37,
+          "origin": "この流れで承認した KB"
+        }
+      ]
+    }
+  },
+  "findings": [
+    {
+      "id": "N0-old",
+      "text": "（修正前）端末エージェント未接続の印刷の相談は解決ループへ進まないので、承認済み KB は案内されない（画面に KB 番号: true）。"
+    }
+  ],
+  "realAi": {
+    "executed": false,
+    "reason": "DATAFLOW_REAL_AI_CONF 未指定"
+  },
+  "aiCalls": {
+    "answer": 5,
+    "propose": 9
+  }
+}

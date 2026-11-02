@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { authenticateUi } from '../auth/ui.js';
+import { config } from '../config.js';
 import { sql } from '../db.js';
 import {
   agentInputToInventory,
@@ -17,6 +18,7 @@ import {
 } from '../lib/device-inventory.js';
 import { jsonbValue } from '../lib/jsonb-value.js';
 import { checkRateLimit, clientAddress } from '../lib/rate-limit.js';
+import { executionSourceOf, resultSourceAccepted } from '../resolve/execution-source.js';
 
 const Int = (min: number, max: number) => z.number().int().min(min).max(max);
 const Num = (min: number, max: number) => z.number().min(min).max(max);
@@ -333,10 +335,6 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
   // ── 実端末コマンド（許可リストのみ） ─────────────────────────────
   // UI が提案の Y 承認後に登録し、端末エージェントが取りに来て実行する。
   // 端末エージェントの経路は Access のサービスドメイン + デバイストークンで守る。
-  const CommandBodySchema = z.object({
-    opId: z.enum(['SPOOLER_RESTART']),
-    params: z.record(z.string(), z.unknown()).optional(),
-  });
   const CommandResultSchema = z.object({
     ok: z.boolean(),
     result: z.unknown().optional(),
@@ -344,29 +342,15 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
   });
   const CommandIdSchema = z.object({ id: z.string().uuid() });
 
-  app.post(
-    '/device/command',
-    { preHandler: authenticateUi, bodyLimit: 8 * 1024 },
-    async (request) => {
-      if (!request.uiEmail) throw badRequest('UI の認証情報がありません。');
-      if (!checkRateLimit(`device-command:${request.uiEmail}`, 10, 60_000)) {
-        throw new ApiError(429, 'RATE_LIMITED', 'コマンドの要求が多すぎます。少し待ってください。');
-      }
-      const input = CommandBodySchema.parse(request.body);
-      const inventory = await loadClientInventory(request.uiEmail).catch(() => null);
-      const rows = await sql<{ id: string }[]>`
-      INSERT INTO device_commands (user_email, device_id, op_id, params)
-      VALUES (
-        ${request.uiEmail},
-        ${inventory?.deviceId ?? null},
-        ${input.opId},
-        ${jsonbValue(input.params ?? {})}
-      )
-      RETURNING id, op_id, status, device_id, created_at
-    `;
-      return { ok: true, command: rows[0] };
-    },
-  );
+  // 画面から端末コマンドを作る経路は閉じた（ユーザーの判断。docs/67）。Skill、本人の Y、承認のハッシュ、
+  // 期限のどれも通らずに端末へ届くため。端末の操作は解決ループの承認を通す。
+  app.post('/device/command', { preHandler: authenticateUi }, async () => {
+    throw new ApiError(
+      410,
+      'DEVICE_COMMAND_CLOSED',
+      'この経路は閉じました。端末の操作は本人の承認を通す経路で行います。',
+    );
+  });
 
   // 端末エージェントが次のコマンドを取得する（1件だけ・配信済みに更新）。
   //
@@ -382,6 +366,8 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
     const { email, deviceId, privilege } = await authenticateDeviceToken(request, {
       requireDevice: true,
     });
+    // 経路②が on でなければ配送しない（docs/67）。結果の受付は下で動かし続ける。
+    if (config.RESOLVE_PATH_MODE !== 'on') return reply.code(204).send();
     const rows = await sql<{ id: string }[]>`
       UPDATE device_commands
       SET status = 'delivered', delivered_at = now(),
@@ -435,8 +421,10 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
     });
     const { id } = CommandIdSchema.parse(request.params);
     const input = CommandResultSchema.parse(request.body);
-    const existing = await sql<{ device_id: string | null; requires_elevation: boolean }[]>`
-      SELECT dc.device_id,
+    const existing = await sql<
+      { device_id: string | null; skill_id: string | null; requires_elevation: boolean }[]
+    >`
+      SELECT dc.device_id, dc.skill_id,
         EXISTS (
           SELECT 1 FROM skills sk
           WHERE sk.id = dc.skill_id
@@ -459,6 +447,29 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
         'このコマンドの要求権限とエージェントの権限が一致しません。',
       );
     }
+    // 模擬・出所不明の Skill 結果は本番へ入れない。保存せず失敗として閉じ、案件は担当者へ回す。
+    // skill_id の無い既存経路（SPOOLER_RESTART）と、結果を持たない失敗報告は対象外。
+    const source = executionSourceOf(input.result);
+    if (
+      existing[0].skill_id &&
+      input.ok &&
+      !resultSourceAccepted(source, { nodeEnv: config.NODE_ENV, authMode: config.AUTH_MODE })
+    ) {
+      const message =
+        source === 'mock'
+          ? '模擬の結果は本番では受け付けません（実端末で実行されていません）。'
+          : '実行元を確認できない結果は本番では受け付けません。端末エージェントを更新してください。';
+      await sql`
+        UPDATE device_commands
+        SET status = 'failed', result = NULL, error = ${message}, completed_at = now()
+        WHERE id = ${id} AND user_email = ${email} AND status = 'delivered'
+      `;
+      throw new ApiError(
+        403,
+        source === 'mock' ? 'MOCK_RESULT_FORBIDDEN' : 'UNVERIFIED_RESULT_SOURCE',
+        message,
+      );
+    }
     const rows = await sql<{ id: string }[]>`
       UPDATE device_commands
       SET status = ${input.ok ? 'done' : 'failed'},
@@ -468,7 +479,22 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
       WHERE id = ${id} AND user_email = ${email} AND status = 'delivered'
       RETURNING id, status, result, error, completed_at
     `;
-    if (!rows[0]) throw new ApiError(404, 'NOT_FOUND', '対象のコマンドが見つかりません。');
+    if (!rows[0]) {
+      // 結果の再送（docs/66 §10）。同じ内容は受領済みとして返し、違う内容は上書きしない。
+      const [same] = await sql<{ status: string; same: boolean }[]>`
+        SELECT status,
+               status = ${input.ok ? 'done' : 'failed'}
+                 AND result IS NOT DISTINCT FROM ${jsonbValue(input.result ?? null)}
+                 AND error IS NOT DISTINCT FROM ${input.error ?? null} AS same
+        FROM device_commands
+        WHERE id = ${id} AND user_email = ${email} AND status IN ('done', 'failed')
+      `;
+      if (same?.same) return { ok: true, duplicate: true };
+      if (same) {
+        throw new ApiError(409, 'RESULT_CONFLICT', 'このコマンドには別の結果を受領済みです。');
+      }
+      throw new ApiError(404, 'NOT_FOUND', '対象のコマンドが見つかりません。');
+    }
     const command = rows[0] as { result?: unknown };
     return { ok: true, command: { ...command, result: asJsonValue(command.result) } };
   });

@@ -1,0 +1,3 @@
+対象: 修正後（API の修正を含む作業ツリー）
+ ✓ apps/api/src/routes/knowledge-approval-binding.integration.test.ts (15 tests)
+      Tests  15 passed (15)

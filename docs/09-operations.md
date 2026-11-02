@@ -113,7 +113,7 @@ systemctl --user list-timers ai-helpdesk-backup.timer
 
 `api.conf` への `SHARED_IDENTITY_GROUPS=a|b` の追加（2026-10-28）以降、`backup-db.sh` が設定をシェルとして読み込んだ際に `|` をパイプと解釈し、終了コード 127 で失敗し続けた。最後の成功は 2026-10-28 02:30。失敗の間、誰にも通知されなかった。再発防止として通知を追加した（§4-4）。
 
-`set-smtp-password.sh` にも同じ読み込みがあり修正済み。`set -a; . ~/.config/ai-helpdesk/api.conf` と書いた手順（本書 §6-1、`docs/08-deployment.md`、`docs/22-remote-assist-handover.md`、`README.md`）は未修正。今の `api.conf` では、対話シェルなら `command not found` を出したまま続行し、`|` を含む変数が未設定になる（`set -e` の下では止まる）。後続のコマンドがその変数に依存する場合に注意する。
+`set-smtp-password.sh` にも同じ読み込みがあり修正済み。`set -a; . ~/.config/ai-helpdesk/api.conf` と書いた手順（本書 §6-1、`docs/08-deployment.md`、`docs/22-remote-assist-handover.md`、`README.md`）は `scripts/run-with-env-file.mjs` へ置き換えた（2026-11-02）。以下は当時の記録。今の `api.conf` では、対話シェルなら `command not found` を出したまま続行し、`|` を含む変数が未設定になる（`set -e` の下では止まる）。後続のコマンドがその変数に依存する場合に注意する。
 
 ### 4-4. 通知の反映手順
 
@@ -175,11 +175,10 @@ tail -n 1 ~/backups/ai-helpdesk/backup.log
 ## 6-1. 端末エージェント運用
 
 ```bash
-# サービス環境を読み込む（秘密値は表示しない）
-set -a; . ~/.config/ai-helpdesk/api.conf; set +a
-
-# 発行（既存設定に deviceToken を追記。値は画面へ出さない）
-NODE_ENV=production npx tsx scripts/issue-device-token.ts \
+# 発行（既存設定に deviceToken を追記。値は画面へ出さない）。
+# api.conf は EnvironmentFile の形式なので、シェルで読み込まない（§4-3）。
+NODE_ENV=production node scripts/run-with-env-file.mjs ~/.config/ai-helpdesk/api.conf -- \
+  npx tsx scripts/issue-device-token.ts \
   --email user@mirai-const.co.jp --out ~/.config/ai-helpdesk/device-agent.json
 
 # 対象PCで1回送信（画面の WEB-XXXXXXXX を指定してブラウザ端末へリンク）

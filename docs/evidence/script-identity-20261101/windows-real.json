@@ -1,0 +1,103 @@
+{
+ "sha": "ae9bcce",
+ "device": "検証用 Windows 端末 1 台",
+ "user": "検証ユーザー、非昇格、切断セッションのタスク",
+ "schema": 1,
+ "ok": true,
+ "platformValid": true,
+ "reason": "",
+ "psVersion": "5.1.26100.9444",
+ "psEdition": "Desktop",
+ "childPsVersion": "5.1.26100.9444",
+ "isElevated": false,
+ "passed": 17,
+ "failed": 0,
+ "skipped": 0,
+ "checks": [
+  {
+   "name": "child_opens_while_handle_held",
+   "status": "PASS",
+   "detail": ""
+  },
+  {
+   "name": "set_content",
+   "status": "PASS",
+   "detail": "IOException"
+  },
+  {
+   "name": "write_all_bytes",
+   "status": "PASS",
+   "detail": "MethodInvocationException>IOException"
+  },
+  {
+   "name": "copy_item_overwrite",
+   "status": "PASS",
+   "detail": "IOException"
+  },
+  {
+   "name": "remove_item",
+   "status": "PASS",
+   "detail": "IOException"
+  },
+  {
+   "name": "move_item_rename",
+   "status": "PASS",
+   "detail": "IOException"
+  },
+  {
+   "name": "move_item_replace",
+   "status": "PASS",
+   "detail": "IOException"
+  },
+  {
+   "name": "file_replace",
+   "status": "PASS",
+   "detail": "MethodInvocationException>IOException"
+  },
+  {
+   "name": "rename_parent_folder",
+   "status": "PASS",
+   "detail": "IOException"
+  },
+  {
+   "name": "rename_grandparent_folder",
+   "status": "PASS",
+   "detail": "IOException"
+  },
+  {
+   "name": "swap_other_content",
+   "status": "PASS",
+   "detail": "MethodInvocationException>IOException"
+  },
+  {
+   "name": "swap_lf_to_crlf",
+   "status": "PASS",
+   "detail": "MethodInvocationException>IOException"
+  },
+  {
+   "name": "swap_new_version",
+   "status": "PASS",
+   "detail": "MethodInvocationException>IOException"
+  },
+  {
+   "name": "fail_closed_when_writer_open",
+   "status": "PASS",
+   "detail": ""
+  },
+  {
+   "name": "handle_released_after_timeout",
+   "status": "PASS",
+   "detail": ""
+  },
+  {
+   "name": "junction_refused",
+   "status": "PASS",
+   "detail": ""
+  },
+  {
+   "name": "elevated_branch_refused",
+   "status": "PASS",
+   "detail": ""
+  }
+ ]
+}

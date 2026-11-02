@@ -8,8 +8,13 @@ import { sql } from '../db.js';
 import { resetRateLimits } from '../lib/rate-limit.js';
 import { buildServer } from '../server.js';
 import {
+  ASSIGNEE_ORIGINAL,
   ENSURE_CASE_USERS,
+  KB_DRAFT_BODY_ORIGINAL,
+  KB_LABEL_PATCHES,
   patchCaseUserResolution,
+  patchKbDraftBody,
+  patchKbLabels,
   patchStateLoad,
   STATE_DEFAULTS_PATCH,
 } from './prototype.js';
@@ -130,7 +135,7 @@ describe('prototype UI integration', () => {
     expect(body.prompt.user).toContain('共有フォルダ');
   });
 
-  it('画面で承認したナレッジ（helpdesk 状態の active KB）を AI 回答の根拠に使う', async () => {
+  it('helpdesk 状態の active KB は AI 回答の根拠にしない（ブラウザが送る JSON のため）', async () => {
     const kbNo = `KB-T${Date.now().toString(36)}`;
     const put = await app.inject({
       method: 'PUT',
@@ -160,8 +165,8 @@ describe('prototype UI integration', () => {
     });
     expect(response.statusCode, response.body).toBe(200);
     const body = response.json();
-    expect(body.sources.map((source: { kbNo: string }) => source.kbNo)).toContain(kbNo);
-    expect(body.answer).toContain(kbNo);
+    expect(body.sources.map((source: { kbNo: string }) => source.kbNo)).not.toContain(kbNo);
+    expect(body.answer).not.toContain(kbNo);
   });
 
   it('状態に $ を含んでも HTML が壊れず、$$ が縮まない（String.replace の特殊パターン対策）', async () => {
@@ -269,6 +274,64 @@ describe('保存済み状態の欠落キー補完', () => {
     expect(state.devices).toEqual({});
   });
 
+  it('フォルダ一覧のブリッジは機能フラグが有効なときだけ配信する（docs/62）', async () => {
+    const original = config.FOLDER_ACCESS_ENABLED;
+    try {
+      config.FOLDER_ACCESS_ENABLED = false;
+      const off = (await app.inject({ method: 'GET', url: '/' })).body;
+      expect(off).not.toContain('__AIHD_FOLDER_ACCESS_BRIDGE__');
+      expect(off).not.toContain('folder-access');
+      // 既存のブリッジは影響を受けない。
+      expect(off).toContain('__AIHD_REMOTE_SUPPORT_BRIDGE__');
+
+      config.FOLDER_ACCESS_ENABLED = true;
+      const on = (await app.inject({ method: 'GET', url: '/' })).body;
+      expect(on).toContain('__AIHD_FOLDER_ACCESS_BRIDGE__');
+      expect(on).toContain('__AIHD_REMOTE_SUPPORT_BRIDGE__');
+
+      config.FOLDER_ACCESS_ENABLED = false;
+      const offAgain = (await app.inject({ method: 'GET', url: '/' })).body;
+      expect(offAgain).not.toContain('__AIHD_FOLDER_ACCESS_BRIDGE__');
+    } finally {
+      config.FOLDER_ACCESS_ENABLED = original;
+    }
+  });
+
+  it('共通支援セッションのブリッジは両方のフラグが有効なときだけ配信する（docs/63）', async () => {
+    const folder = config.FOLDER_ACCESS_ENABLED;
+    const assist = config.ASSIST_SESSION_ENABLED;
+    try {
+      config.FOLDER_ACCESS_ENABLED = true;
+      config.ASSIST_SESSION_ENABLED = false;
+      const off = (await app.inject({ method: 'GET', url: '/' })).body;
+      expect(off).not.toContain('__AIHD_SUPPORT_SESSION_BRIDGE__');
+      expect(off).toContain('__AIHD_FOLDER_ACCESS_BRIDGE__');
+
+      config.ASSIST_SESSION_ENABLED = true;
+      const on = (await app.inject({ method: 'GET', url: '/' })).body;
+      expect(on).toContain('__AIHD_SUPPORT_SESSION_BRIDGE__');
+
+      // 受付の停止中も、本人が既存のセッションを取り消せるよう配信する。
+      config.ASSIST_SESSION_ENABLED = false;
+      config.ASSIST_SESSION_MODE = 'drain';
+      const drain = (await app.inject({ method: 'GET', url: '/' })).body;
+      expect(drain).toContain('__AIHD_SUPPORT_SESSION_BRIDGE__');
+      config.ASSIST_SESSION_MODE = 'off';
+      const modeOff = (await app.inject({ method: 'GET', url: '/' })).body;
+      expect(modeOff).not.toContain('__AIHD_SUPPORT_SESSION_BRIDGE__');
+      config.ASSIST_SESSION_MODE = undefined;
+
+      config.ASSIST_SESSION_ENABLED = true;
+      config.FOLDER_ACCESS_ENABLED = false;
+      const noFolder = (await app.inject({ method: 'GET', url: '/' })).body;
+      expect(noFolder).not.toContain('__AIHD_SUPPORT_SESSION_BRIDGE__');
+    } finally {
+      config.FOLDER_ACCESS_ENABLED = folder;
+      config.ASSIST_SESSION_ENABLED = assist;
+      config.ASSIST_SESSION_MODE = undefined;
+    }
+  });
+
   it('依頼者以外の操作でも落ちないよう、依頼者の解決と表示フォールバックを差し込む', () => {
     const html =
       '<script>function renderView(){syncHd();var a=DEPTS[USERS[c.userId].dept].name;var b=USERS[c.userId].device;</script>';
@@ -344,5 +407,54 @@ describe('保存済み状態の欠落キー補完', () => {
     expect(r.undefinedName).toBe('（未定）');
     expect(r.mk).toBe('佐藤 奨太');
     expect(r.named).toBe('田中');
+  });
+});
+
+describe('画面の KB 表示の差し替え（DB で未承認を承認済みと表示しない）', () => {
+  const html = readFileSync(
+    path.join(repoRoot, 'Mirai_AIHelpdesk_Cowork_StepWizard_V3.1_PCinfo_Offline.html'),
+    'utf8',
+  );
+
+  it('差し替え元の文字列が原本にあり、配信時に残らない', () => {
+    const patched = patchKbLabels(html);
+    for (const [from, to] of KB_LABEL_PATCHES) {
+      expect(html, from).toContain(from);
+      expect(patched, from).not.toContain(from);
+      expect(patched).toContain(to);
+    }
+  });
+
+  it('KB 下書きの症状は引継ぎ本文をそのまま使わない（配信時に差し替える）', () => {
+    const patched = patchKbDraftBody(html);
+    expect(html).toContain(KB_DRAFT_BODY_ORIGINAL);
+    expect(patched).not.toContain(KB_DRAFT_BODY_ORIGINAL);
+    expect(patched).toContain('__AIHD_KB_CONSULT__');
+  });
+
+  it('原本の「③ 引継ぎ」の担当者欄の既定値も差し替える', () => {
+    const patched = patchKbDraftBody(html);
+    expect(html).toContain(ASSIGNEE_ORIGINAL);
+    expect(patched).not.toContain(ASSIGNEE_ORIGINAL);
+    expect(patched).toContain('__AIHD_ASSIGNEE__');
+    // 本人が選択肢に無いとき、先頭のデモ担当者が選ばれたままにならない。
+    expect(patched).toContain('__AIHD_ASSIGNEE_BLANK__');
+  });
+
+  it('差し替え後の行は JavaScript として解釈でき、判定関数の結果を表示する', () => {
+    const [, expression] = KB_LABEL_PATCHES[0] as readonly [string, string];
+    const render = runInNewContext(`(k)=>{const esc=(v)=>String(v);return \`${expression}\`}`, {
+      __AIHD_KB_APPROVAL__: () => 'DB 未承認',
+    }) as (k: unknown) => string;
+    expect(render({ approvedBy: '渡辺' })).toBe('（DB 未承認）');
+  });
+
+  it('ブリッジが読み込まれていなくても「承認：」を出さない', () => {
+    const [, expression] = KB_LABEL_PATCHES[0] as readonly [string, string];
+    const render = runInNewContext(
+      `(k)=>{const esc=(v)=>String(v);return \`${expression}\`}`,
+      {},
+    ) as (k: unknown) => string;
+    expect(render({ approvedBy: '渡辺' })).toBe('（DB 未承認）');
   });
 });

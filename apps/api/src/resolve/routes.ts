@@ -10,6 +10,7 @@ import { ApiError, badRequest, notFound } from '../errors.js';
 import { appendAudit } from '../lib/audit-log.js';
 import { jsonbValue } from '../lib/jsonb-value.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
+import { symptomStatusOf } from '../support-session/case-facts.js';
 import { isResolveAdmin } from './admin.js';
 import {
   type AdminApprovalPayload,
@@ -21,6 +22,8 @@ import {
   computeApprovalHash,
   newNonce,
 } from './approval.js';
+import { type ExecutionSource, executionSourceOf, resultShapeOk } from './execution-source.js';
+import { knowledgeGuideForCase, knowledgeRefsForCase } from './knowledge-refs.js';
 import {
   escalationReasonForDecision,
   type Proposal,
@@ -68,6 +71,8 @@ const AdminApproveSchema = z.object({
   approvalHash: z.string().trim().max(128).optional(),
 });
 const ManualCloseSchema = z.object({ reason: z.string().trim().max(500).optional() }).default({});
+const KnowledgeGuideSchema = z.object({ caseId: z.string().trim().min(1).max(120) });
+const DeviceStatusQuerySchema = z.object({ deviceId: z.string().trim().min(1).max(120) });
 
 interface SessionRow {
   id: string;
@@ -86,6 +91,7 @@ interface SessionRow {
 
 interface StepRow {
   id: string;
+  knowledge_refs?: unknown;
   session_id: string;
   seq: number;
   skill_id: string;
@@ -307,6 +313,20 @@ async function deviceLastSeenAt(email: string, deviceId: string): Promise<number
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+/** 読み取り Skill を受け取る standard エージェントの最終応答。admin だけでは実行できない。 */
+async function standardAgentLastSeenAt(email: string, deviceId: string): Promise<number | null> {
+  const rows = await sql<{ last_seen: Date | string | null }[]>`
+    SELECT max(last_used_at) AS last_seen
+    FROM device_tokens
+    WHERE user_email = ${email} AND device_id = ${deviceId}
+      AND revoked_at IS NULL AND privilege = 'standard'
+  `;
+  const raw = rows[0]?.last_seen ?? null;
+  if (!raw) return null;
+  const parsed = new Date(raw).getTime();
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 /** 設計 §4-3「端末オフライン（2 分応答なし）」。最終応答が無い端末は offline 扱い。 */
 function isDeviceOnline(lastSeenAt: number | null): boolean {
   if (lastSeenAt === null) return false;
@@ -381,6 +401,12 @@ async function loadLastVerifyResult(sessionId: string): Promise<unknown | null> 
   return effectiveVerifyForAi(row, { verify_result: row.parent_verify_result });
 }
 
+/** result_summary の出所。結果が無いステップは null、申告の無い古い結果は unknown。 */
+function resultExecutionSource(row: StepRow): ExecutionSource | null {
+  const summary = jsonObjectOrNull(row.result_summary);
+  return summary ? executionSourceOf(summary) : null;
+}
+
 function stepDto(row: StepRow, session: SessionRow) {
   const skill = skillFromStep(row);
   return {
@@ -410,11 +436,15 @@ function stepDto(row: StepRow, session: SessionRow) {
       : null,
     params: jsonObject(row.params),
     rationale: row.rationale,
+    // 照合した KB の参照。used は AI が使ったと答えたものだけ。
+    knowledgeRefs: jsonObjectOrNull(row.knowledge_refs) ?? { matched: [], used: [] },
     riskLevel: Number(row.risk_level),
     status: row.status,
     approvalChallenge: approvalChallengeFor(row, session),
     commandId: row.command_id,
     resultSummary: jsonObjectOrNull(row.result_summary),
+    // 結果の出所（endpoint_agent / mock / unknown）。結果が無ければ null。
+    executionSource: resultExecutionSource(row),
     resultFull: jsonObjectOrNull(row.result_full),
     // fieldsToAi を適用した AI 入力用の結果（生ログは含めない）。
     resultAi: jsonObjectOrNull(row.result_ai),
@@ -444,6 +474,7 @@ function stepSummaryDto(row: StepRow) {
     status: row.status,
     commandId: row.command_id,
     resultSummary: jsonObjectOrNull(row.result_summary),
+    executionSource: resultExecutionSource(row),
     verifyResult: jsonObjectOrNull(row.verify_result),
     error: row.error,
     createdAt: toIso(row.created_at),
@@ -633,11 +664,12 @@ async function insertProposedStep(
   const rows = await tx<{ id: string }[]>`
     INSERT INTO resolution_steps (
       session_id, seq, skill_id, skill_version, skill_content_hash, params, rationale,
-      risk_level, status, nonce, approval_expires_at, admin_nonce, admin_expires_at
+      risk_level, status, nonce, approval_expires_at, admin_nonce, admin_expires_at, knowledge_refs
     ) VALUES (
       ${session.id}, ${seq}, ${skill.id}, ${skill.version}, ${skill.contentHash ?? 'sha256:unknown'},
       ${jsonbValue(proposal.params)}, ${proposal.rationale}, ${skill.riskLevel}, 'proposed',
-      ${nonce}, ${STEP_APPROVAL_TTL_SQL}, ${adminNonce}, ${ADMIN_APPROVAL_TTL_SQL}
+      ${nonce}, ${STEP_APPROVAL_TTL_SQL}, ${adminNonce}, ${ADMIN_APPROVAL_TTL_SQL},
+      ${jsonbValue(proposal.knowledge ?? { matched: [], used: [] })}
     )
     RETURNING id
   `;
@@ -956,9 +988,10 @@ async function applyCommandOutcome(email: string, stepId: string): Promise<void>
           verify: unknown;
           rollback: unknown;
           risk_level: number;
+          result_schema: unknown;
         }[]
       >`
-        SELECT output_policy, content_hash, verify, rollback, risk_level FROM skills
+        SELECT output_policy, content_hash, verify, rollback, risk_level, result_schema FROM skills
         WHERE id = ${step.skill_id} AND version = ${step.skill_version} AND status = 'approved'
         LIMIT 1
       `;
@@ -972,6 +1005,10 @@ async function applyCommandOutcome(email: string, stepId: string): Promise<void>
         true,
         policyMatches ? policyRow?.output_policy : null,
       );
+      // 結果の形の機械検証（下限）。解決の判定には使わない。
+      summary.resultShapeOk = policyMatches
+        ? resultShapeOk(normalizeJsonValue(policyRow?.result_schema), summary.normalized)
+        : null;
       // verify はサーバが決定的に評価する（AI には判定させない）。ok=null も「評価不能」の
       // 情報として必ず保存する。script 形態の verify は追加実行が要るため評価不能のまま。
       const verifyResult = evaluateVerify(
@@ -1020,6 +1057,8 @@ async function applyCommandOutcome(email: string, stepId: string): Promise<void>
       // 追撃ステップを自動承認で積む（追撃の追撃は作らない）。
       // 承認後に Skill 定義が変わっていたら（content_hash 不一致）は積まない（fail-closed）。
       const followup =
+        // 受付を止めている間は、確認の追撃も新しく作らない（配送しないので引継ぎへ流れてしまう）。
+        config.RESOLVE_PATH_MODE === 'on' &&
         verifyResult.reason === 'requires_followup' &&
         !step.verify_for_step_id &&
         !sessionExpired(session) &&
@@ -1215,6 +1254,7 @@ function buildResultPayload(
 } {
   const raw = normalizeJsonValue(result);
   const record = jsonObjectOrNull(raw);
+  const executionSource = executionSourceOf(record);
   const exitCode = typeof record?.exitCode === 'number' ? record.exitCode : null;
   const normalized = record?.normalized ?? null;
   const summaryText =
@@ -1227,6 +1267,7 @@ function buildResultPayload(
           : '';
   const redactedSummary = redactPII(summaryText).text.slice(0, 2000);
   const summary: Record<string, unknown> = {
+    executionSource,
     ok,
     exitCode,
     summary: redactedSummary,
@@ -1248,7 +1289,9 @@ function buildResultPayload(
     : isStructuredJsonText(summaryText)
       ? JSON.stringify(filteredNormalized ?? {}).slice(0, 2000)
       : redactedSummary;
+  // 出所は先頭に置く（次提案へ渡す際に 1000 字で切っても必ず残す）。
   const ai: Record<string, unknown> = {
+    executionSource,
     ok,
     exitCode,
     summary: aiSummary,
@@ -1305,6 +1348,22 @@ async function ownsDevice(email: string, deviceId: string): Promise<boolean> {
 }
 
 /**
+ * 経路②の新しい実行につながる操作を止める（docs/67）。画面ではなくサーバで止める。
+ * 結果の受付、本人の N、停止、参照は呼ばない。
+ */
+function assertResolvePathOpen(): void {
+  if (config.RESOLVE_PATH_MODE === 'on') return;
+  if (config.RESOLVE_PATH_MODE === 'drain') {
+    throw new ApiError(
+      409,
+      'RESOLVE_PATH_DRAINING',
+      'この経路は受付を止めています。実行中の処理の終了だけを行います。',
+    );
+  }
+  throw new ApiError(404, 'RESOLVE_PATH_DISABLED', 'この経路は無効です。');
+}
+
+/**
  * セッションを停止/期限切れにし、未実行の step と queued の端末コマンドを無効化する。
  * 承認済みでも、端末がまだ取得していないコマンドは実行させない（H-3）。
  */
@@ -1313,6 +1372,26 @@ async function cancelSessionWork(
   sessionId: string,
   stepStatus: 'cancelled' | 'failed' = 'cancelled',
 ): Promise<void> {
+  // 配送済みのコマンドは、止まったと確認できない（実行中の子プロセスを止める指示は無い。docs/67）。
+  // 「取り消し」や「未実行」と書かず、結果不明として残す。
+  const unknown = {
+    ok: false,
+    exitCode: null,
+    summary: '停止しました。端末で実行されたかどうかは不明です。',
+    normalized: null,
+    resultState: 'unknown',
+  };
+  await tx`
+    UPDATE resolution_steps st
+    SET status = 'failed', error = 'STOPPED_RESULT_UNKNOWN',
+        executed_at = COALESCE(st.executed_at, now()),
+        result_summary = ${jsonbValue(unknown)}
+    WHERE st.session_id = ${sessionId}
+      AND st.status IN ('approved', 'executing')
+      AND EXISTS (
+        SELECT 1 FROM device_commands c WHERE c.step_id = st.id AND c.status = 'delivered'
+      )
+  `;
   await tx`
     UPDATE resolution_steps SET status = ${stepStatus}
     WHERE session_id = ${sessionId} AND status IN ('proposed', 'approved', 'executing')
@@ -1330,6 +1409,26 @@ async function cancelSessionWork(
  */
 export async function sweepResolveTimeouts(): Promise<number> {
   let swept = 0;
+  // 実行が終わっているのに結果を見る画面が無かったものは、タイムアウトにせず結果を取り込む。
+  // 実端末の結果を「返らなかった」として引継ぎへ流さない（docs/65 §0-1）。
+  const finished = await sql<{ id: string; user_email: string }[]>`
+    SELECT st.id, s.user_email
+    FROM resolution_steps st
+    JOIN resolution_sessions s ON s.id = st.session_id
+    JOIN device_commands c ON c.id = st.command_id
+    WHERE st.status IN ('approved', 'executing')
+      AND st.deadline_at IS NOT NULL
+      AND st.deadline_at < now()
+      AND c.status IN ('done', 'failed')
+    ORDER BY st.deadline_at
+    LIMIT 50
+  `;
+  for (const step of finished) {
+    // 1 件の失敗で後続のタイムアウト処理を止めない。
+    await applyCommandOutcome(step.user_email, step.id).catch((error) => {
+      console.warn('[resolve] 結果の取り込みに失敗しました', step.id, error?.code ?? 'unknown');
+    });
+  }
   // 対象セッションを先に特定し、session → step の固定順でロックする。
   const candidates = await sql<{ session_id: string }[]>`
     SELECT DISTINCT session_id FROM resolution_steps
@@ -1339,13 +1438,15 @@ export async function sweepResolveTimeouts(): Promise<number> {
     LIMIT 50
   `;
   for (const candidate of candidates) {
-    await sql.begin(async (tx) => {
-      const sessionRows = await tx<SessionRow[]>`
+    // 1 件の失敗で他の案件の期限処理を止めない。
+    try {
+      await sql.begin(async (tx) => {
+        const sessionRows = await tx<SessionRow[]>`
         SELECT * FROM resolution_sessions WHERE id = ${candidate.session_id} FOR UPDATE
       `;
-      const session = sessionRows[0];
-      if (!session) return;
-      const rows = await tx<StepRow[]>`
+        const session = sessionRows[0];
+        if (!session) return;
+        const rows = await tx<StepRow[]>`
         SELECT * FROM resolution_steps
         WHERE session_id = ${candidate.session_id}
           AND status IN ('approved', 'executing')
@@ -1353,41 +1454,137 @@ export async function sweepResolveTimeouts(): Promise<number> {
           AND deadline_at < now()
         FOR UPDATE
       `;
-      for (const step of rows) {
-        const message = '端末から結果が返りませんでした（タイムアウト）。担当者へ引き継ぎます。';
-        const summary = { ok: false, exitCode: null, summary: message, normalized: null };
-        const ai = { ok: false, exitCode: null, summary: message, normalized: null };
-        const updated = await tx<{ id: string }[]>`
+        for (const step of rows) {
+          // 配送していなければ未実行と確定できる。配送後は実行されたかどうか分からないので「不明」と書く。
+          // 配送と競合しないよう行をロックしてから判定する。
+          const commandRows = await tx<{ status: string }[]>`
+            SELECT status FROM device_commands WHERE step_id = ${step.id} LIMIT 1 FOR UPDATE
+          `;
+          const commandStatus = commandRows[0]?.status;
+          const notDelivered = commandStatus === 'queued';
+          const reported = commandStatus === 'done' || commandStatus === 'failed';
+          const resultState = notDelivered ? 'not_delivered' : reported ? 'reported' : 'unknown';
+          const message = notDelivered
+            ? '端末へ配送していません（未実行）。担当者へ引き継いでください。'
+            : reported
+              ? '端末の結果は届いていますが、期限内に確認できませんでした。担当者へ引き継いでください。'
+              : '端末から結果が返りませんでした。実行されたかどうかは不明です。担当者へ引き継いでください。';
+          const summary = {
+            ok: false,
+            exitCode: null,
+            summary: message,
+            normalized: null,
+            resultState,
+          };
+          const ai = { ok: false, exitCode: null, summary: message, normalized: null };
+          const updated = await tx<{ id: string }[]>`
           UPDATE resolution_steps
           SET status = 'failed', executed_at = COALESCE(executed_at, now()),
               result_summary = ${jsonbValue(summary)}, result_ai = ${jsonbValue(ai)},
-              error = 'RESULT_TIMEOUT'
+              error = ${notDelivered ? 'NOT_DELIVERED' : 'RESULT_TIMEOUT'}
           WHERE id = ${step.id} AND status IN ('approved', 'executing')
           RETURNING id
         `;
-        if (!updated[0]) continue;
-        await tx`
+          if (!updated[0]) continue;
+          await tx`
           UPDATE device_commands SET status = 'expired', completed_at = now()
           WHERE step_id = ${step.id} AND status = 'queued'
         `;
-        if (session.status === 'executing') {
-          await tx`
+          if (session.status === 'executing') {
+            await tx`
             UPDATE resolution_sessions SET status = 'escalated', updated_at = now()
             WHERE id = ${session.id}
           `;
+          }
+          await appendResolveAudit(tx, {
+            action: 'resolution.timeout',
+            sessionId: step.session_id,
+            actorEmail: session.user_email,
+            stepId: step.id,
+            detail: { by: 'system', reason: 'result_timeout', resultState },
+          });
+          swept += 1;
         }
-        await appendResolveAudit(tx, {
-          action: 'resolution.timeout',
-          sessionId: step.session_id,
-          actorEmail: session.user_email,
-          stepId: step.id,
-          detail: { by: 'system', reason: 'result_timeout' },
-        });
-        swept += 1;
-      }
-    });
+      });
+    } catch (error) {
+      console.warn(
+        '[resolve] 期限切れの処理に失敗しました',
+        candidate.session_id,
+        (error as { code?: string })?.code ?? 'unknown',
+      );
+    }
+  }
+  swept += await closeAbandonedSessions();
+  // 受付を止めた後は、画面から作られた古いコマンド（セッション無し）を残さない。配送もしない。
+  if (config.RESOLVE_PATH_MODE !== 'on') {
+    await sql`
+      UPDATE device_commands SET status = 'expired', completed_at = now()
+      WHERE session_id IS NULL AND status = 'queued'
+    `;
   }
   return swept;
+}
+
+/**
+ * 期限を過ぎた提案のセッションを閉じる。誰も画面を開かないと提案が残り続け、off へ進む前の確認で
+ * 「残り」に数えられたままになる（docs/68 §7）。提案は未実行のまま取り消す。
+ * 実行の後の waiting_continue は閉じない（本人の「解決した」「担当者へ」を奪わない）。
+ */
+async function closeAbandonedSessions(): Promise<number> {
+  const due = await sql<{ id: string }[]>`
+    SELECT s.id FROM resolution_sessions s
+    WHERE s.status IN ('active', 'waiting_execute')
+      AND s.expires_at <= now()
+      AND NOT EXISTS (
+        SELECT 1 FROM resolution_steps st
+        WHERE st.session_id = s.id AND st.status IN ('approved', 'executing')
+      )
+    ORDER BY s.expires_at
+    LIMIT 50
+  `;
+  let closed = 0;
+  for (const { id } of due) {
+    try {
+      await sql.begin(async (tx) => {
+        const [session] = await tx<SessionRow[]>`
+          SELECT * FROM resolution_sessions
+          WHERE id = ${id} AND status IN ('active', 'waiting_execute') AND expires_at <= now()
+          FOR UPDATE
+        `;
+        if (!session) return;
+        // 選んだ後に承認された行を壊さない（ロックを取ってから見直す）。
+        const running = await tx<{ id: string }[]>`
+          SELECT id FROM resolution_steps
+          WHERE session_id = ${id} AND status IN ('approved', 'executing')
+          LIMIT 1
+        `;
+        if (running[0]) return;
+        await tx`
+          UPDATE resolution_steps SET status = 'cancelled'
+          WHERE session_id = ${id} AND status = 'proposed'
+        `;
+        await tx`
+          UPDATE device_commands SET status = 'expired', completed_at = now()
+          WHERE session_id = ${id} AND status = 'queued'
+        `;
+        await tx`UPDATE resolution_sessions SET status = 'expired', updated_at = now() WHERE id = ${id}`;
+        await appendResolveAudit(tx, {
+          action: 'resolution.expired',
+          sessionId: id,
+          actorEmail: session.user_email,
+          detail: { by: 'system', reason: 'session_expired' },
+        });
+        closed += 1;
+      });
+    } catch (error) {
+      console.warn(
+        '[resolve] 期限切れのセッションを閉じられませんでした',
+        id,
+        (error as { code?: string })?.code ?? 'unknown',
+      );
+    }
+  }
+  return closed;
 }
 
 /** 本人操作による「解決した」「担当者へ」。監査に理由を残し、未実行の作業を止める。 */
@@ -1470,6 +1667,39 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
     };
   });
 
+  // 端末エージェントが無い相談者への案内（docs/14 §2-18）。外部 AI へ送らず、端末も操作しない。
+  // 本文は本人の案件からサーバが読み、クライアントの文字列を使わない。
+  app.post('/resolve/knowledge-guide', { preHandler: authenticateUi }, async (request) => {
+    const email = requireEmail(request);
+    enforceRateLimit(`resolve-kb-guide:${email}`, 30, 'ナレッジの案内の取得が多すぎます。');
+    const { caseId } = KnowledgeGuideSchema.parse(request.body);
+    const ownedCase = await findOwnedCase(email, caseId);
+    if (!ownedCase) throw notFound('案件が見つかりません。');
+    return { ok: true, items: await knowledgeGuideForCase(caseText(ownedCase)) };
+  });
+
+  // 相談者の導線の分岐に使う（docs/25 §20）。本人の端末だけを返し、トークンの情報は返さない。
+  // 実行の可否は承認時に改めて DEVICE_OFFLINE で判定する（ここは案内のための参考値）。
+  app.get('/resolve/device-status', { preHandler: authenticateUi }, async (request) => {
+    const email = requireEmail(request);
+    enforceRateLimit(`resolve-device-status:${email}`, 120, '端末の状態確認が多すぎます。');
+    const { deviceId } = DeviceStatusQuerySchema.parse(request.query);
+    const owned = await ownsDevice(email, deviceId);
+    const lastSeen = owned ? await standardAgentLastSeenAt(email, deviceId) : null;
+    // 検証専用の経路なので既定は案内しない（docs/67）。相談者と Windows ユーザーを照合していない。
+    return {
+      ok: true,
+      deviceId,
+      owned,
+      // 経路を閉じているときに「未接続」と誤って案内しないよう、画面へ区別を渡す。
+      pathEnabled: config.RESOLVE_PATH_MODE === 'on' && config.RESOLVE_REQUESTER_DIAGNOSIS_ENABLED,
+      agentConnected:
+        config.RESOLVE_PATH_MODE === 'on' &&
+        config.RESOLVE_REQUESTER_DIAGNOSIS_ENABLED &&
+        isDeviceOnline(lastSeen),
+    };
+  });
+
   // IT 管理者の承認待ち（リスク 4 以上）。管理者以外には存在を返さない。
   app.get('/resolve/admin/pending', { preHandler: authenticateUi }, async (request) => {
     const email = requireEmail(request);
@@ -1535,6 +1765,7 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
       }
       const { id: stepId } = StepIdParamsSchema.parse(request.params);
       const input = AdminApproveSchema.parse(request.body);
+      if (input.decision === 'Y') assertResolvePathOpen();
 
       const outcome = await sql.begin(async (tx) => {
         // ロック順は session → step に固定する（停止・スイープとのデッドロック回避）。
@@ -1704,6 +1935,7 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
         20,
         '解決ループの開始が多すぎます。少し待ってから再試行してください。',
       );
+      assertResolvePathOpen();
       const input = CreateSessionSchema.parse(request.body);
       if (await isEstopOn(email)) {
         throw new ApiError(409, 'ESTOP_ACTIVE', '緊急停止中です。解除してからやり直してください。');
@@ -1713,6 +1945,14 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
       }
       const ownedCase = await findOwnedCase(email, input.caseId);
       if (!ownedCase) throw notFound('案件が見つかりません。');
+      // 否定や解消が書かれた相談へ端末の操作を提案しない（#120 の判定を使う。docs/67）。
+      if (symptomStatusOf(caseText(ownedCase)) === 'retracted') {
+        throw new ApiError(
+          409,
+          'NO_ACTIVE_SYMPTOM',
+          '相談文から、いま続いている症状を読み取れませんでした。続いている場合は症状を書き直すか、担当者へ引き継いでください。',
+        );
+      }
 
       const skills = await listApprovedSkills();
       const proposal = await proposeNext({
@@ -1720,6 +1960,7 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
         lastSummary: null,
         history: [],
         skills,
+        knowledgeRefs: await knowledgeRefsForCase(caseText(ownedCase)),
       });
       if (!proposal || proposal.decision) {
         // 初回提案で AI が終了宣言（stop / escalate）を返した場合も、新規セッションは
@@ -1789,6 +2030,7 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
       );
       const { id: stepId } = StepIdParamsSchema.parse(request.params);
       const input = ApproveSchema.parse(request.body);
+      if (input.decision === 'Y') assertResolvePathOpen();
       if (await isEstopOn(email)) {
         throw new ApiError(409, 'ESTOP_ACTIVE', '緊急停止中です。解除してからやり直してください。');
       }
@@ -2148,6 +2390,7 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
       );
       const { id: stepId } = StepIdParamsSchema.parse(request.params);
       const input = ContinueSchema.parse(request.body);
+      if (input.decision === 'Y') assertResolvePathOpen();
       const current = await loadStepAndSession(email, stepId);
       if (current.step.status !== 'done') {
         throw new ApiError(
@@ -2211,13 +2454,20 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
       // AI に渡すのは fieldsToAi 適用後の result_ai だけ。旧データ（result_ai なし）は
       // 未フィルターの last_summary へ退避せず、何も渡さない（fail-closed）。
       const lastResultAi = await loadLastResultAi(current.session.id);
-      const lastResultAiText = lastResultAi ? JSON.stringify(lastResultAi).slice(0, 1000) : '';
+      // jsonb はキー順を保たないので、1000 字で切っても出所が残るよう先頭へ置き直す。
+      const lastResultAiText = lastResultAi
+        ? JSON.stringify({
+            executionSource: executionSourceOf(lastResultAi),
+            ...jsonObject(lastResultAi),
+          }).slice(0, 1000)
+        : '';
       const proposal = await proposeNext({
         text: caseText(ownedCase),
         lastSummary: lastResultAiText,
         lastVerify,
         history,
         skills,
+        knowledgeRefs: await knowledgeRefsForCase(caseText(ownedCase)),
       });
 
       const outcome = await sql.begin(async (tx) => {

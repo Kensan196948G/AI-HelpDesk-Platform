@@ -1,0 +1,44 @@
+# 修正前の command-agent.ps1（最終変更 0e654f0）に対する試験の結果。Linux の pwsh 7.6.9。
+# 実行: pwsh -NoProfile -NonInteractive -File scripts/windows/tests/command-agent.tests.ps1（終了コード 1）
+# 着目: 差替え・改行変更・配布更新の書込みが通り（written）、承認外のバイト列（evil / v2 / CRLF）が実行された。
+# FAIL と SKIP と集計の行だけを残した。Skill はスタブで、Windows では実行していない。
+FAIL swap(Linux は排他オープンの書込み) 差替え（別の内容）: 書込みを拒否 : expected [denied] got [written]
+FAIL swap(Linux は排他オープンの書込み) 差替え（別の内容）: 承認の版を実行 : expected [approved] got [evil]
+FAIL swap(Linux は排他オープンの書込み) 差替え（別の内容）: 実行したバイト列 : expected [sha256:3366751ff9e2678e0f2a2a9b5dcf587badf518af19e9c327b3be573e2a39f0af] got [sha256:db3f2b4d51ea00f1040845ad5c2da76fa44ca63f34d4b1f4af162d3f7cf73f45]
+FAIL swap(Linux は排他オープンの書込み) 差替え（別の内容）: ファイルは変わらない : expected [sha256:3366751ff9e2678e0f2a2a9b5dcf587badf518af19e9c327b3be573e2a39f0af] got [sha256:db3f2b4d51ea00f1040845ad5c2da76fa44ca63f34d4b1f4af162d3f7cf73f45]
+FAIL swap(Linux は排他オープンの書込み) 差替え（別の内容）: 子の実行中はハンドルが開いている : expected [True] got [False]
+FAIL swap(Linux は排他オープンの書込み) 差替え（別の内容）: 子の終了時点でハンドルが開いている : expected [True] got [False]
+FAIL swap(Linux は排他オープンの書込み) 改行変更（LF→CRLF）: 書込みを拒否 : expected [denied] got [written]
+FAIL swap(Linux は排他オープンの書込み) 改行変更（LF→CRLF）: 実行したバイト列 : expected [sha256:3366751ff9e2678e0f2a2a9b5dcf587badf518af19e9c327b3be573e2a39f0af] got [sha256:07425360f0809b1bf2aaf4d306eb95f09c70ccc9c2d1f52de9d3d76db0762a8c]
+FAIL swap(Linux は排他オープンの書込み) 改行変更（LF→CRLF）: ファイルは変わらない : expected [sha256:3366751ff9e2678e0f2a2a9b5dcf587badf518af19e9c327b3be573e2a39f0af] got [sha256:07425360f0809b1bf2aaf4d306eb95f09c70ccc9c2d1f52de9d3d76db0762a8c]
+FAIL swap(Linux は排他オープンの書込み) 改行変更（LF→CRLF）: 子の実行中はハンドルが開いている : expected [True] got [False]
+FAIL swap(Linux は排他オープンの書込み) 改行変更（LF→CRLF）: 子の終了時点でハンドルが開いている : expected [True] got [False]
+FAIL swap(Linux は排他オープンの書込み) 配布更新（新版への上書き）: 書込みを拒否 : expected [denied] got [written]
+FAIL swap(Linux は排他オープンの書込み) 配布更新（新版への上書き）: 承認の版を実行 : expected [approved] got [v2]
+FAIL swap(Linux は排他オープンの書込み) 配布更新（新版への上書き）: 実行したバイト列 : expected [sha256:3366751ff9e2678e0f2a2a9b5dcf587badf518af19e9c327b3be573e2a39f0af] got [sha256:0fcc7c5d3a2aa7da0691e6839f6568e5753394addd26a03c6c74d623ea89d5f4]
+FAIL swap(Linux は排他オープンの書込み) 配布更新（新版への上書き）: ファイルは変わらない : expected [sha256:3366751ff9e2678e0f2a2a9b5dcf587badf518af19e9c327b3be573e2a39f0af] got [sha256:0fcc7c5d3a2aa7da0691e6839f6568e5753394addd26a03c6c74d623ea89d5f4]
+FAIL swap(Linux は排他オープンの書込み) 配布更新（新版への上書き）: 子の実行中はハンドルが開いている : expected [True] got [False]
+FAIL swap(Linux は排他オープンの書込み) 配布更新（新版への上書き）: 子の終了時点でハンドルが開いている : expected [True] got [False]
+FAIL handle: ハンドルの中身が承認外なら、パスが正しくても拒否 
+FAIL handle: 照合の対象はハンドルの中身（パスの中身は見ない） Skill スクリプトのハッシュが一致しません: os.info@1.0.0
+FAIL fail-closed: 同じ形で失敗を報告 Exception calling "ReadAllBytes" with "1" argument(s): "The process cannot access the file '/tmp/cmd-agent-8944fc8368464d919b4ab33bb27e9478/scripts/skills/windows/os-info.ps1' because it is being used by another process."
+FAIL fail-closed: パスを報告に出さない 
+FAIL reparse: ファイルがリンクなら実行しない 
+FAIL reparse: フォルダがリンクなら実行しない 
+FAIL elevated: Skill を実行しない 
+FAIL elevated: 失敗を報告 
+FAIL elevated: 判定に失敗したら Skill を実行しない 
+FAIL close: タイムアウトの停止までハンドルが開いている : expected [True] got [False]
+FAIL close: 出力超過の停止までハンドルが開いている : expected [True] got [False]
+FAIL close: 例外の時点ではハンドルが開いている : expected [True] got [False]
+SKIP Set-Content の拒否 : Windows 実機が要る（scripts/windows/tests/script-identity-windows.ps1）
+SKIP [IO.File]::WriteAllBytes の拒否 : Windows 実機が要る（scripts/windows/tests/script-identity-windows.ps1）
+SKIP Copy-Item の上書きの拒否 : Windows 実機が要る（scripts/windows/tests/script-identity-windows.ps1）
+SKIP Remove-Item の拒否 : Windows 実機が要る（scripts/windows/tests/script-identity-windows.ps1）
+SKIP Move-Item（改名）の拒否 : Windows 実機が要る（scripts/windows/tests/script-identity-windows.ps1）
+SKIP 別ファイルの移動による置換の拒否 : Windows 実機が要る（scripts/windows/tests/script-identity-windows.ps1）
+SKIP 親フォルダの改名の可否 : Windows 実機が要る（scripts/windows/tests/script-identity-windows.ps1）
+SKIP powershell.exe -File（5.1）がハンドルを持ったまま開ける : Windows 実機が要る（scripts/windows/tests/script-identity-windows.ps1）
+FAIL source: パスからの読み直しで照合しない 
+FAIL source: 共有は読み取りだけ 
+passed=153 failed=31 skipped=8

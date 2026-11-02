@@ -60,6 +60,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\windows\command-agent.ps1 `
 - 管理者権限が必要な場合があります。
 - 設定は既存の `device-agent-windows.json`（`url` / `deviceToken` / `cfAccessClientId` / `cfAccessClientSecret` / `proxySecret`）を共用。
 
+Skill の実行、配置、停止、確認できていないことは [docs/66](66-windows-command-agent.md)。
+
 ### 4-3. Cloudflare Access
 
 端末エージェントは Access のログイン画面を通れないため、`/api/device/agent` と同様に

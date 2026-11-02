@@ -73,7 +73,7 @@
 | GET | `/knowledge/:id` | 認証済み | 相談者は `approved` のみ |
 | PATCH | `/knowledge/:id` | ヘルプデスク（作成者） | 下書き・差戻しの編集。PII を再伏せ字化 |
 | POST | `/knowledge/:id/submit` | ヘルプデスク（作成者） | 下書き / 差戻し → 承認待ち |
-| POST | `/knowledge/:id/review` | 承認者 | 承認（4 項目すべて true）/ 差戻し（理由必須） |
+| POST | `/knowledge/:id/review` | 承認者 | 承認（4 項目すべて true、`contentHash` 必須。無ければ 400）/ 差戻し（理由必須） |
 
 - **自分の申請は承認できない**（サーバ側で 400）。
 - 承認すると `knowledge.status=approved`、案件は `completed` / step 7、チケットは `closed`。
@@ -130,7 +130,7 @@
 - `GET /api/device/inventory` は `?deviceId=<browser UUID>` を指定するとそのブラウザ端末を基準にする。省略時は最新のブラウザ端末。
 - `/api/device/agent` だけは Cloudflare Access のパス限定 bypass（アプリ ID `250fa30a-d49c-4a83-b773-8fbdec3c0b6a`）。人間の UI / API は Access 必須。
 - `/api/ai/answer` の応答に `device: {source, collectedAt}` を含む。PC コンテキストから IP・シリアル・資産番号・メールは除外する。
-- `/api/ai/answer` の根拠は、DB の承認済みナレッジに加え、**本人の helpdesk 画面状態で承認済み（`status: active`）のナレッジ**も対象にする。`sources[].kbNo` は画面の KB 番号（例: `KB-111`）と一致する。使用停止中・形式不正の要素は除外し、他ユーザーの状態は参照しない（`lib/prototype-knowledge.ts`）。
+- `/api/ai/answer` の根拠は DB の承認済みナレッジだけ（承認者 ≠ 作成者、承認後の更新なし）。全相談者に共通で、`sources[]` に `version` を含む。ブラウザが送る `prototype_states` の KB は根拠にしない（[docs/64](./64-kb-approved-provenance.md)）。
 
 ## 6-3. 最終報告書 / 遠隔支援
 
@@ -156,9 +156,10 @@ AI は Skill ID とパラメータだけを提案し、コマンド文字列は�
 | Method | Path | 権限 | 説明 |
 |---|---|---|---|
 | GET | `/api/resolve/skills` | Access 認証 | 承認済み Skill の一覧（読み取り専用の 5 件） |
+| GET | `/api/resolve/device-status?deviceId=` | 本人 | `{owned, agentConnected}`。導線の案内用の参考値（docs/25 §20） |
 | POST | `/api/resolve/sessions` | 本人 | `{caseId, deviceId}` でセッション開始＋初回提案。`step.approvalChallenge` を返す |
 | POST | `/api/resolve/steps/:id/approve` | 本人 | `{decision:'Y'|'N', approvalHash}`。Y は承認ハッシュ検証後 `device_commands` に登録 |
-| GET | `/api/resolve/steps/:id` | 本人 | 実行状態。`done` / `failed` を検知してセッションを更新 |
+| GET | `/api/resolve/steps/:id` | 本人 | 実行状態。`done` / `failed` を検知してセッションを更新。`step.executionSource` は結果の出所（`endpoint_agent` / `mock` / `unknown`） |
 | POST | `/api/resolve/steps/:id/continue` | 本人 | 結果後の Y/N。Y は次の提案、N は停止 |
 | POST | `/api/resolve/sessions/:id/stop` | 本人 | 中止 |
 | GET | `/api/resolve/sessions/:id` | 本人 | セッションとステップ概要 |

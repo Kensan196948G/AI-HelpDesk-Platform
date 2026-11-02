@@ -1,3 +1,5 @@
+import type { ApprovalOrigin } from './approval-origin.js';
+import { approvalOriginLabel } from './approval-origin.js';
 import type { Category, PcSnapshot, SignalColor } from './pc.js';
 import { hasSecurityConcern } from './signal.js';
 
@@ -9,6 +11,10 @@ export interface KnowledgeLike {
   cause: string;
   steps: string;
   keywords: string[];
+  /** 承認された版（DB の knowledge.version）。出典とプロンプトに示す。 */
+  version?: number;
+  /** 承認の出所（docs/64 §9）。 */
+  approvalOrigin?: ApprovalOrigin;
 }
 
 export type IntentId =
@@ -32,6 +38,8 @@ export interface AiSource {
   id: string;
   kbNo: string;
   title: string;
+  approvalOrigin?: ApprovalOrigin;
+  approvalOriginLabel?: string;
 }
 
 export interface AiAssessment {
@@ -218,9 +226,17 @@ export function composeAssessment(input: {
     return {
       intent,
       signal: 'blue',
-      answer: `承認済みナレッジ「${best.title}」を根拠に、次の手順を案内します。上から順に試してください。`,
+      answer: `ナレッジ「${best.title}」（${approvalOriginLabel(best.approvalOrigin)}）を根拠に、次の手順を案内します。上から順に試してください。`,
       steps: steps.length > 0 ? steps : GENERIC_STEPS[intent.id],
-      sources: [{ id: best.id, kbNo: best.kbNo, title: best.title }],
+      sources: [
+        {
+          id: best.id,
+          kbNo: best.kbNo,
+          title: best.title,
+          approvalOrigin: best.approvalOrigin,
+          approvalOriginLabel: approvalOriginLabel(best.approvalOrigin),
+        },
+      ],
       recommendHandoff: false,
       security: false,
       pcSummary,
@@ -238,7 +254,7 @@ export function composeAssessment(input: {
   return {
     intent,
     signal: 'amber',
-    answer: `承認済みナレッジに一致する手順が見つかりませんでした。推測で答えず、担当者へ引き継ぎます。${concernText}`,
+    answer: `ナレッジに一致する手順が見つかりませんでした。推測で答えず、担当者へ引き継ぎます。${concernText}`,
     steps: GENERIC_STEPS[intent.id],
     sources: [],
     recommendHandoff: true,

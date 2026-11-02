@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { z } from 'zod';
 import { config } from '../config.js';
+import { approvalOriginLabel } from './approval-origin.js';
 import { redactPII } from './pii.js';
 
 /**
@@ -59,7 +60,8 @@ const DiagnosisSchema = z.object({
       z.object({
         k: z.string().max(120),
         v: z.string().max(500),
-        lv: z.enum(['ok', 'warn', 'ng']).default('ok'),
+        // none: 値を判定していない（解決ループの読み取り結果）。
+        lv: z.enum(['ok', 'warn', 'ng', 'none']).default('ok'),
       }),
     )
     .max(50)
@@ -81,6 +83,8 @@ const SourceSchema = z.object({
   id: z.string().max(60),
   kbNo: z.string().max(60),
   title: z.string().max(300),
+  // 承認の出所。local は画面内（state）の資料で DB の承認ではない。
+  approvalOrigin: z.enum(['other_person', 'shared_identity', 'seed', 'local']).optional(),
 });
 
 const HandoverSchema = z.object({
@@ -340,6 +344,7 @@ const PF = {
   ok: ['正常', '#1d7a4d'],
   warn: ['注意', '#a36400'],
   ng: ['異常', '#b42318'],
+  none: ['判定なし', '#667085'],
 } as const;
 
 function escapeHtml(value: string): string {
@@ -569,11 +574,16 @@ function renderAi(report: FinalReport): string {
     .join('');
 
   const sources = ai.sources.length
-    ? `<h3>根拠にした承認済みナレッジ</h3>${table(
-        ['ID', 'タイトル'],
+    ? `<h3>根拠にしたナレッジ</h3>${table(
+        ['ID', 'タイトル', '出所'],
         ai.sources.map((source) => [
           escapeHtml(source.kbNo || source.id),
           escapeHtml(source.title),
+          escapeHtml(
+            source.approvalOrigin === 'local'
+              ? '画面内の資料（DB で未承認）'
+              : approvalOriginLabel(source.approvalOrigin),
+          ),
         ]),
       )}`
     : '';
@@ -811,6 +821,7 @@ th { background: #f0f4f8; font-weight: 700; white-space: nowrap; }
 .dot.ok { background: #1d7a4d; }
 .dot.warn { background: #d97706; }
 .dot.ng { background: #b42318; }
+.dot.none { background: #667085; }
 .chat { display: grid; gap: 2.5mm; }
 .msg { border: 1px solid #d9e2ec; border-radius: 2mm; padding: 2.5mm 3mm; page-break-inside: avoid; }
 .msg.user { background: #f7f9fb; }

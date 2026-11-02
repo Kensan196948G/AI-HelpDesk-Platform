@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { findApprovedKnowledge } from './knowledge-search.js';
+import { findApprovedKnowledge, keywordsFromTitle, scoreKnowledge } from './knowledge-search.js';
 
 const rows = [
   {
@@ -64,5 +64,58 @@ describe('findApprovedKnowledge', () => {
       '保存',
     ]);
     expect(result.some((knowledge) => knowledge.kbNo === 'KB-2026-0005')).toBe(true);
+  });
+});
+
+describe('findApprovedKnowledge の条件', () => {
+  it('SQL は承認者≠作成者・承認時刻・承認後の更新なしを要求する', async () => {
+    let query = '';
+    const tx = (strings: TemplateStringsArray) => {
+      query = strings.join('?');
+      return Promise.resolve([]);
+    };
+    await findApprovedKnowledge(tx, 'x', []);
+    expect(query).toContain("k.status = 'approved'");
+    expect(query).toContain('k.approver_id <> k.author_id');
+    expect(query).toContain('k.approved_at IS NOT NULL');
+    expect(query).toContain('k.updated_at <= k.approved_at');
+  });
+
+  it('keywords が空の行は題名の語で照合する（2 文字の一般語では拾わない）', async () => {
+    const tx = () =>
+      Promise.resolve([
+        {
+          id: '9',
+          kb_no: 'KB-2026-0099',
+          title: '工事写真台帳アプリが起動しないときの対処',
+          symptom: 's',
+          cause: 'c',
+          steps: 'st',
+          keywords: [],
+          version: 2,
+        },
+      ]);
+    const hit = await findApprovedKnowledge(tx, '工事写真台帳アプリが開けません', []);
+    expect(hit.map((k) => [k.kbNo, k.version])).toEqual([['KB-2026-0099', 2]]);
+    expect(keywordsFromTitle('工事写真台帳アプリが起動しないときの対処')).toEqual([
+      '工事写真台帳アプリ',
+    ]);
+    expect(await findApprovedKnowledge(tx, 'パソコンが起動しません', [])).toEqual([]);
+  });
+
+  it('意図語が原因欄に 1 回出るだけの KB は根拠にしない', () => {
+    const kb = {
+      id: '1',
+      kbNo: 'KB-1',
+      title: '題名',
+      symptom: '症状',
+      cause: 'ネットの設定',
+      steps: '手順',
+      keywords: [],
+    };
+    expect(scoreKnowledge([kb], '相談', ['ネット'])).toEqual([]);
+    expect(scoreKnowledge([{ ...kb, symptom: 'ネットが遅い' }], '相談', ['ネット'])).toHaveLength(
+      1,
+    );
   });
 });

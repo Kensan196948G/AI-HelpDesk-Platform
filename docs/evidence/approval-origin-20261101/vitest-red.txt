@@ -1,0 +1,18 @@
+修正前（2026-11-01）: 承認の出所と保持期限を再現する試験の結果
+      Tests  12 failed | 106 passed (118)
+ FAIL  apps/api/src/domain/approval-origin.test.ts [ apps/api/src/domain/approval-origin.test.ts ]
+ FAIL  apps/api/src/domain/final-report.test.ts > 報告書の出典の出所 > 承認の出所を事実のまま表に出す
+ FAIL  apps/api/src/prototype/assist-bridge.test.ts > assist-bridge: F-06 承認者向けサーバ下書き（別ID承認） > 報告書の出典は D
+ FAIL  apps/api/src/prototype/handover-workspace-assignee.test.ts > 解決ループのカードの出典の見出し > 全件を「別の担当者が�
+ FAIL  apps/api/src/resolve/real-path.integration.test.ts > 解決ループの提案と承認済み KB > 参照に承認の出所を付け、プロン
+ FAIL  apps/api/src/routes/knowledge-ai-provenance.integration.test.ts > 承認済み KB は全体で参照する（次の人へ） > シードの KB 
+ FAIL  apps/api/src/routes/knowledge-ai-provenance.integration.test.ts > 承認済み KB は全体で参照する（次の人へ） > 外部 AI なし
+ FAIL  apps/api/src/routes/knowledge-ai-provenance.integration.test.ts > 承認済み KB は全体で参照する（次の人へ） > 同一人物の�
+ FAIL  apps/api/src/routes/knowledge-ai-provenance.integration.test.ts > 承認済み KB は全体で参照する（次の人へ） > 別人の承認�
+ FAIL  scripts/report-state-kb-provenance.test.mjs > report-state-kb-provenance > state の active KB を分類し、件数だけを返す
+ FAIL  scripts/report-state-kb-provenance.test.mjs > 承認の出所の件数（docs/64 §9） > seed、shared_identity、other_person を数え、使
+ FAIL  scripts/report-state-kb-provenance.test.mjs > 承認の出所の件数（docs/64 §9） > シードの利用者の ID はサーバの判定と�
+ FAIL  scripts/windows/tests/command-agent.pwsh.test.mjs > command-agent.ps1（pwsh） > スタブの HTTP サーバと Skill で fail-closed を確�
+ Test Files  8 failed (8)
+--- pwsh の失敗
+FAIL retention

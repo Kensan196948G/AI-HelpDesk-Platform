@@ -211,7 +211,13 @@ describe('F-06: 画面ナレッジのサーバ永続化', () => {
     const id = pending.json().knowledge.id as string;
 
     config.DEV_AUTH_EMAIL = DX2_EMAIL;
-    const approved = await sync(draftPayload({ status: 'approved', checklist: FULL_CHECKLIST }));
+    const approved = await sync(
+      draftPayload({
+        status: 'approved',
+        checklist: FULL_CHECKLIST,
+        contentHash: pending.json().knowledge.contentHash,
+      }),
+    );
     expect(approved.statusCode, approved.body).toBe(200);
     expect(approved.json().selfApproved).toBe(false);
 

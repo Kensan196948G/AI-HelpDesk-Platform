@@ -79,3 +79,9 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      # OS 依存部をスタブにした結合テストと純粋関数のテスト（失敗時は exit 1）。
+      - name: Folder helper tests (pwsh)
+        run: pwsh -NoProfile -NonInteractive -File scripts/windows/tests/folder-helper.tests.ps1
+      - name: Skill executor tests (pwsh)
+        run: pwsh -NoProfile -NonInteractive -File scripts/windows/tests/skill-run.tests.ps1

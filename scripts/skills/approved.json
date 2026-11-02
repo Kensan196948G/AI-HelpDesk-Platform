@@ -144,6 +144,15 @@
       "approvedBy": "kensan1969@gmail.com",
       "approvedAt": "2026-10-26T01:06:54.426Z",
       "note": "2026-10-26 Phase7: 修復Skill4件（service.restart / network.adapter.restart / defender.update / recyclebin.clear）を承認"
+    },
+    {
+      "id": "folder.summary",
+      "version": "1.0.0",
+      "scriptHash": "sha256:971b06bfc0f58ec6903a010eab865762231bedd4a324fd4e1161e729155250b7",
+      "contentHash": "sha256:fe06357a8df55ade2d2823249404c466437baf8328bcda68af07ac27bed53c56",
+      "approvedBy": "kensan1969@gmail.com",
+      "approvedAt": "2026-11-01T01:25:17.447Z",
+      "note": "読取診断として承認"
     }
   ]
 }

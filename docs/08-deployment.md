@@ -49,10 +49,10 @@
     "intervalMinutes": 60
   }
   ```
-- トークン発行（管理者・1回。事前にサービス環境を読み込む）:
+- トークン発行（管理者・1回。`api.conf` は systemd の EnvironmentFile なので、シェルで読み込まず専用のローダーを使う）:
   ```bash
-  set -a; . ~/.config/ai-helpdesk/api.conf; set +a
-  NODE_ENV=production npx tsx scripts/issue-device-token.ts \
+  NODE_ENV=production node scripts/run-with-env-file.mjs ~/.config/ai-helpdesk/api.conf -- \
+    npx tsx scripts/issue-device-token.ts \
     --email user@mirai-const.co.jp --out ~/.config/ai-helpdesk/device-agent.json
   ```
 - 実行（対象PC上）:

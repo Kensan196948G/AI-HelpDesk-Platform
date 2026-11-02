@@ -319,7 +319,7 @@ API:
 
 ```bash
 # 1) 検証用サービス（例: 127.0.0.1:18952 / DB ai_helpdesk_verify_api）を起動しておく
-set -a; . ~/.config/ai-helpdesk/api.conf; set +a   # DATABASE_URL などの取得元
+# 環境の読み込みには node scripts/run-with-env-file.mjs を使う（api.conf をシェルで読まない）
 AIHD_E2E_ALLOW=1 \
 AIHD_E2E_CONFIRM_DB=ai_helpdesk_verify_api \
 AIHD_E2E_BASE=http://127.0.0.1:18952 \

@@ -154,15 +154,27 @@
           }
           if (data.provider === 'fallback') {
             html +=
-              '<p class="small muted">承認済みナレッジから回答しています（DeepSeek は使っていません）。</p>';
+              '<p class="small muted">社内ナレッジから回答しています（DeepSeek は使っていません）。</p>';
           }
           const sources = (data.sources || []).map((source) => source.kbNo);
+          // 出典は承認の出所と一緒に出す（サーバの判定。AI の根拠にしたかは回答の「根拠:」行）。
+          for (const source of data.sources || []) {
+            const label =
+              String(source.kbNo || '').replace(/[&<>"']/g, '') +
+              (source.version ? ' v' + Number(source.version) : '');
+            const origin = String(source.approvalOriginLabel || '出所を確認できません').replace(
+              /[&<>"']/g,
+              '',
+            );
+            html += '<p class="small muted">出典 ' + label + '：' + origin + '</p>';
+          }
           try {
             // provider は最終報告書の「生成元」表示に使う（UI のモデル表示は変えない）。
             ai(chat, html, {
               conf: data.confidence || '—',
               src: sources,
               provider: data.provider,
+              sourceDetails: data.sources || [],
             });
             save();
             refresh();
@@ -179,7 +191,7 @@
           }
           notifyFailure(
             'ai',
-            'AIに接続できませんでした。承認済みナレッジ（画面内のルール）で回答します。',
+            'AIに接続できませんでした。画面内の資料（DB で未承認のものを含む）で回答します。',
           );
           originalKb(chat, text, atts, user);
         });

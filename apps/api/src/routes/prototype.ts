@@ -10,6 +10,7 @@ import { sql } from '../db.js';
 import { ApiError, badRequest } from '../errors.js';
 import { jsonbValue } from '../lib/jsonb-value.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
+import { assistEnabled } from '../support-session/propagate.js';
 
 const PROTOTYPE_FILE = 'Mirai_AIHelpdesk_Cowork_StepWizard_V3.1_PCinfo_Offline.html';
 const BRIDGE_FILES = [
@@ -23,6 +24,22 @@ const BRIDGE_FILES = [
   path.join('apps', 'api', 'src', 'prototype', 'remote-support-bridge.js'),
   path.join('apps', 'api', 'src', 'prototype', 'handover-workspace-bridge.js'),
 ];
+// 機能フラグが有効なときだけ配信する（無効時は読み込まれず、何も描画しない。docs/62）。
+const FOLDER_ACCESS_BRIDGE_FILE = path.join(
+  'apps',
+  'api',
+  'src',
+  'prototype',
+  'folder-access-bridge.js',
+);
+// 共通支援セッションの本人パネル（docs/63）。両方のフラグが有効なときだけ配信する。
+const SUPPORT_SESSION_BRIDGE_FILE = path.join(
+  'apps',
+  'api',
+  'src',
+  'prototype',
+  'support-session-bridge.js',
+);
 const COWORK_KEY = 'mirai-wizard-v31-cowork';
 const HELPDESK_KEY = 'mirai-wizard-v31-helpdesk';
 
@@ -46,6 +63,54 @@ export function patchStateLoad(html: string): string {
   const marker = 'if(o&&o.v===31){S=o}';
   if (!html.includes(marker)) return html;
   return html.replace(marker, () => `if(o&&o.v===31){S=o;${STATE_DEFAULTS_PATCH}}`);
+}
+
+/**
+ * ヘルプデスク画面の KB は state（ブラウザのデータ）で、DB で承認されたとは限らない。
+ * 配信時に表示だけ差し替え、判定は assist-bridge の __AIHD_KB_APPROVAL__ に任せる（docs/14 §2-14）。
+ */
+const KB_APPROVAL_EXPR =
+  "${esc(typeof __AIHD_KB_APPROVAL__==='function'?__AIHD_KB_APPROVAL__(k):'DB 未承認')}";
+export const KB_LABEL_PATCHES: ReadonlyArray<readonly [string, string]> = [
+  ['（承認：${esc(k.approvedBy)}）', `（${KB_APPROVAL_EXPR}）`],
+  ['<td>${esc(k.approvedBy)}</td>', `<td>${KB_APPROVAL_EXPR}</td>`],
+  [
+    '承認者が承認したナレッジだけが保存され、AIの回答に使われます。',
+    'この一覧はブラウザ内のデータです。AIの回答に使われるのは、DB で別の承認者が承認したものだけです。',
+  ],
+  ['――― 根拠（承認済みナレッジ）―――', '――― 根拠（画面内のナレッジ）―――'],
+];
+
+export function patchKbLabels(html: string): string {
+  let out = html;
+  for (const [from, to] of KB_LABEL_PATCHES) out = out.split(from).join(to);
+  return out;
+}
+
+/**
+ * 原本の createDraft は引継ぎ本文をそのまま KB の症状にする。引継ぎ本文には相談者の端末 ID と
+ * PC 基本情報が入り、KB は承認後に別の相談者と外部 AI へ渡るので、相談内容だけを使う（docs/64 §8）。
+ * 原本の「③ 引継ぎ」の担当者欄の既定値も本人にする（docs/14 §2-15）。
+ */
+export const KB_DRAFT_BODY_ORIGINAL = 'const body=t.body+((t.extra&&t.extra.length)';
+const KB_DRAFT_BODY_PATCH =
+  "const body=(typeof __AIHD_KB_CONSULT__==='function'?__AIHD_KB_CONSULT__(t):String(t.subject||''))+((t.extra&&t.extra.length)";
+export const ASSIGNEE_ORIGINAL = "<option value=\"${s.name}\" ${s.name===t.suggest?'selected':''}>";
+const ASSIGNEE_PATCH =
+  "<option value=\"${s.name}\" ${(typeof __AIHD_ASSIGNEE__==='function'?__AIHD_ASSIGNEE__(s.name,t.suggest):s.name===t.suggest)?'selected':''}>";
+
+const ASSIGNEE_SELECT_ORIGINAL = '<select id="q_as">${STAFF.filter';
+const ASSIGNEE_SELECT_PATCH =
+  "<select id=\"q_as\">${typeof __AIHD_ASSIGNEE_BLANK__==='function'?__AIHD_ASSIGNEE_BLANK__():''}${STAFF.filter";
+
+export function patchKbDraftBody(html: string): string {
+  return html
+    .split(ASSIGNEE_SELECT_ORIGINAL)
+    .join(ASSIGNEE_SELECT_PATCH)
+    .split(KB_DRAFT_BODY_ORIGINAL)
+    .join(KB_DRAFT_BODY_PATCH)
+    .split(ASSIGNEE_ORIGINAL)
+    .join(ASSIGNEE_PATCH);
 }
 
 /**
@@ -145,6 +210,8 @@ const CSP = [
 
 let cachedHtml: string | null = null;
 let cachedBridge: string | null = null;
+let cachedFolderAccessBridge: string | null = null;
+let cachedSupportSessionBridge: string | null = null;
 
 function readSource(): string {
   if (!cachedHtml) {
@@ -159,7 +226,20 @@ function readBridge(): string {
       '\n\n',
     );
   }
-  return cachedBridge;
+  if (!config.FOLDER_ACCESS_ENABLED) return cachedBridge;
+  if (!cachedFolderAccessBridge) {
+    cachedFolderAccessBridge = readFileSync(path.join(repoRoot, FOLDER_ACCESS_BRIDGE_FILE), 'utf8');
+  }
+  const withFolderAccess = `${cachedBridge}\n\n${cachedFolderAccessBridge}`;
+  // 受付の停止中も配信する。本人が既存のセッションを取り消し、結果を確認できるようにする。
+  if (!assistEnabled()) return withFolderAccess;
+  if (!cachedSupportSessionBridge) {
+    cachedSupportSessionBridge = readFileSync(
+      path.join(repoRoot, SUPPORT_SESSION_BRIDGE_FILE),
+      'utf8',
+    );
+  }
+  return `${withFolderAccess}\n\n${cachedSupportSessionBridge}`;
 }
 
 function normalizeState(value: unknown): Record<string, unknown> | null {
@@ -240,6 +320,8 @@ function renderPrototype(boot: {
   // 古い・欠けた状態を読み込んでも白画面にならないよう、欠落キーを補完する。
   html = patchStateLoad(html);
   html = patchCaseUserResolution(html);
+  html = patchKbLabels(html);
+  html = patchKbDraftBody(html);
   // 最初のアプリ <script> の直前に、サーバー保持の状態を localStorage へ入れる。
   // 置換文字列は `$'` `$&` `$$` を特殊パターンとして解釈するため、利用者データを含む文字列は関数で渡す。
   html = html.replace('<script>', () => `${bootScript}<script>`);

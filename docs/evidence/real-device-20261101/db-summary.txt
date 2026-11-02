@@ -1,0 +1,10 @@
+spooler.status | done | endpoint_agent
+spooler.status | done | endpoint_agent
+case_handover.create | 1
+resolution.approved | 2
+resolution.escalated | 1
+resolution.executed | 2
+resolution.proposed | 3
+resolution.result | 2
+resolution.session_started | 3
+resolution.stopped | 1

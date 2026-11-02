@@ -1,4 +1,5 @@
 import { config } from '../config.js';
+import { parseSharedIdentityGroups } from '../domain/approval-origin.js';
 
 /**
  * 「別アカウントだが同じ人物」の対応表（`SHARED_IDENTITY_GROUPS`）。
@@ -10,17 +11,7 @@ import { config } from '../config.js';
  * 背景: 別名を解除してアカウントを分けると `self_approved=false` になるが、それは
  * 「別アカウント」の意味であって「別人物」ではない。読み手が誤解しないよう記録する。
  */
-export function parseSharedIdentityGroups(raw: string): string[][] {
-  return String(raw || '')
-    .split(';')
-    .map((group) =>
-      group
-        .split('|')
-        .map((value) => value.trim().toLowerCase())
-        .filter(Boolean),
-    )
-    .filter((group) => group.length >= 2);
-}
+export { parseSharedIdentityGroups };
 
 /** a と b が「別アカウントだが同一人物」か。同じ文字列なら false（別アカウントではない）。 */
 export function sameHuman(

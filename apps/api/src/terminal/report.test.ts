@@ -189,6 +189,36 @@ describe('RSP実行セッションの報告書', () => {
     expect(content.steps.length).toBeLessThanOrEqual(8000);
   });
 
+  it('件名に端末情報があっても keywords に残さず、語の前後に空白を残さない', () => {
+    const handover = handoverRow();
+    (handover.snapshot as any).case.subject = 'DESKTOP-AB12CD3 で印刷不可';
+    const content = buildKnowledgeDraft({
+      handover,
+      session: sessionRow(),
+      steps: [step(1, { intent: `${'あ'.repeat(39)} い` })],
+    });
+    expect(content.keywords.join(' ')).not.toContain('DESKTOP-AB12CD3');
+    for (const keyword of content.keywords) expect(keyword).toBe(keyword.trim());
+  });
+
+  it('ナレッジ下書きに端末 ID とホスト名を残さない（実行記録の出力を含む）', () => {
+    const content = buildKnowledgeDraft({
+      handover: handoverRow(),
+      session: sessionRow(),
+      steps: [
+        step(1, {
+          output: 'コンピュータ名：DESKTOP-AB12CD3 端末 WEB-2B6D41AA',
+          note: 'MRK-MK9101 のスプーラ停止',
+        }),
+      ],
+    });
+    const text = [content.title, content.symptom, content.cause, content.steps].join('\n');
+    expect(text).not.toContain('DESKTOP-AB12CD3');
+    expect(text).not.toContain('WEB-2B6D41AA');
+    expect(text).not.toContain('MRK-MK9101');
+    expect(text).toContain('Get-Service Spooler');
+  });
+
   it('原因が無いときは推測せず、補足を促す文を入れる', () => {
     const content = buildKnowledgeDraft({
       handover: handoverRow(),
