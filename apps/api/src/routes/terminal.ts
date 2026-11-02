@@ -1034,14 +1034,17 @@ export async function terminalRoutes(app: FastifyInstance): Promise<void> {
       const inserted = await sql.begin(async (tx) => {
         const kbNo = await nextKbNo(tx);
         // プロトタイプの案件 ID は uuid ではないため、cases への外部キーは張らない。
+        // 画面に下書きを編集する導線はなく、作成の時点で「承認待ち」と表示している。承認者の一覧
+        // （/knowledge/pending は client_ref のある行だけ）に出るよう、申請済みとして保存する。
         const rows = await tx<
           { id: string; kb_no: string; title: string; status: string; version: number }[]
         >`
           INSERT INTO knowledge (
-            kb_no, case_id, title, symptom, cause, steps, keywords, status, author_id, version
+            kb_no, case_id, client_ref, title, symptom, cause, steps, keywords, status, author_id,
+            version
           ) VALUES (
-            ${kbNo}, NULL, ${content.title}, ${content.symptom}, ${content.cause},
-            ${content.steps}, ${content.keywords}, 'draft', ${authorId}, 1
+            ${kbNo}, NULL, ${`terminal-${session.id}`}, ${content.title}, ${content.symptom},
+            ${content.cause}, ${content.steps}, ${content.keywords}, 'pending', ${authorId}, 1
           )
           RETURNING id, kb_no, title, status, version
         `;
