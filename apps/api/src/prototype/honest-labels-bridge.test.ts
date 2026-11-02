@@ -458,6 +458,11 @@ describe('原本 HTML との対応（文言や関数が変わると置換が黙�
   });
 });
 
+type HonestApi = {
+  isUnregisteredUser: (id: string) => boolean;
+  reportPerson: (id: string, person?: Record<string, string>) => Record<string, string>;
+};
+
 describe('最終報告書の人物とタイムライン', () => {
   const bridge = readFileSync(new URL('./assist-bridge.js', import.meta.url), 'utf8');
 
@@ -469,9 +474,13 @@ describe('最終報告書の人物とタイムライン', () => {
     return bridge.slice(start, end);
   }
 
-  function honestApi(locked: boolean) {
+  function honestApi(locked: boolean, extra: Record<string, unknown> = {}) {
     const { sandbox } = createSandbox({ locked });
-    return (sandbox.window as { __AIHD_HONEST__: Record<string, never> }).__AIHD_HONEST__;
+    Object.assign(sandbox, {
+      USERS: { u1: { name: '山田 太郎' }, u2: { name: '佐藤 花子' }, 'emp:1': { real: true } },
+      ...extra,
+    });
+    return (sandbox.window as unknown as { __AIHD_HONEST__: HonestApi }).__AIHD_HONEST__;
   }
 
   function timeline(
@@ -542,6 +551,24 @@ describe('最終報告書の人物とタイムライン', () => {
     // 別の利用者の案件・名簿の本人は変えない。
     expect(honestApi(true).reportPerson('u2', person).name).toBe('山田 太郎');
     expect(honestApi(false).reportPerson('u1', person).name).toBe('山田 太郎');
+  });
+
+  it('名簿の本人は固定中でも未登録と書かない（/api/me の一時障害）', () => {
+    const api = honestApi(true, { S: { ui: { user: 'emp:1' } } });
+    expect(api.isUnregisteredUser('emp:1')).toBe(false);
+    expect(api.reportPerson('emp:1', { name: '本人', employeeNo: 'E9' }).employeeNo).toBe('E9');
+  });
+
+  it('本番では担当者が開いた案件でもデモ人物の氏名を書かない', () => {
+    const api = honestApi(false, { SWITCH_MODE: 'self', S: { ui: { user: 'emp:1' } } });
+    expect(api.isUnregisteredUser('u1')).toBe(true);
+    expect(api.isUnregisteredUser('emp:1')).toBe(false);
+    expect(api.isUnregisteredUser('unknown')).toBe(false);
+  });
+
+  it('本番以外の固定されていない切替ではデモ人物をそのまま出す', () => {
+    const api = honestApi(false, { SWITCH_MODE: 'any', S: { ui: { user: 'u1' } } });
+    expect(api.isUnregisteredUser('u1')).toBe(false);
   });
 
   it('報告書の出力者と遠隔支援の承認者にデモ人物を書かない', () => {

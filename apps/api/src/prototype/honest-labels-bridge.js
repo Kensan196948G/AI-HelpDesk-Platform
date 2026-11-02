@@ -346,10 +346,16 @@
     return result;
   });
 
-  /** 表示中の利用者が、名簿に無くデモ利用者へ固定されているか。 */
+  /**
+   * デモ人物の ID か。名簿の本人（USERS[id].real）は /api/me の一時障害で固定されても対象にしない。
+   * 本番（self モード）で案件に残るデモ ID は、担当者が開いても実在の人物ではない。
+   */
   function isUnregisteredUser(userId) {
+    const user = typeof USERS !== 'undefined' && userId ? USERS[userId] : null;
+    if (!user || user.real) return false;
+    if (typeof SWITCH_MODE !== 'undefined' && SWITCH_MODE === 'self') return true;
     const locked = typeof PERSONA_LOCKED !== 'undefined' && PERSONA_LOCKED;
-    return Boolean(locked && userId && typeof S !== 'undefined' && S.ui && S.ui.user === userId);
+    return Boolean(locked && typeof S !== 'undefined' && S.ui && S.ui.user === userId);
   }
 
   /** 報告書に書く人物。名簿に無い利用者へデモ人物の氏名・部署・社員番号を渡さない。 */
