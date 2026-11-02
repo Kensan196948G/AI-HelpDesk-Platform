@@ -630,3 +630,145 @@ describe('解決ループの提案と承認済み KB', () => {
     expect(input).not.toContain('WEB-2B6D41AA');
   });
 });
+
+describe('経路②のモード（docs/67）', () => {
+  afterEach(() => {
+    config.RESOLVE_PATH_MODE = 'on';
+  });
+
+  const commandCount = async () => {
+    const [row] = await sql<{ n: number }[]>`
+      SELECT count(*)::int AS n FROM device_commands WHERE user_email = ${EMAIL}
+    `;
+    return row?.n ?? 0;
+  };
+
+  for (const [mode, status, code] of [
+    ['off', 404, 'RESOLVE_PATH_DISABLED'],
+    ['drain', 409, 'RESOLVE_PATH_DRAINING'],
+  ] as const) {
+    it(`${mode}: API を直接呼んでも新しい実行が生まれない`, async () => {
+      const started = await startSession();
+      config.RESOLVE_PATH_MODE = mode;
+      const before = await commandCount();
+
+      const created = await post('/api/resolve/sessions', { caseId: CASE_ID, deviceId: DEVICE });
+      expect(created.statusCode, created.body).toBe(status);
+      expect(created.json().error.code).toBe(code);
+
+      const yes = await approveY(started);
+      expect(yes.statusCode, yes.body).toBe(status);
+      expect(yes.json().error.code).toBe(code);
+      expect(await commandCount()).toBe(before);
+
+      const next = await post(`/api/resolve/steps/${started.step.id}/continue`, { decision: 'Y' });
+      expect(next.statusCode, next.body).toBe(status);
+
+      const device = await app.inject({
+        method: 'GET',
+        url: `/api/resolve/device-status?deviceId=${DEVICE}`,
+      });
+      expect(device.json().agentConnected).toBe(false);
+    });
+
+    it(`${mode}: 承認済みでも配送せず、配送済みの結果の受付、N、停止、参照は止めない`, async () => {
+      const first = await startSession();
+      expect((await approveY(first)).statusCode).toBe(200);
+      const delivered = await deliver();
+      config.RESOLVE_PATH_MODE = mode;
+
+      const none = await app.inject({
+        method: 'GET',
+        url: '/api/device/command',
+        headers: AGENT_HEADERS,
+      });
+      expect(none.statusCode).toBe(204);
+
+      const result = await report(delivered.id, SPOOLER_RESULT);
+      expect(result.statusCode, result.body).toBe(200);
+      const step = await getStep(first.step.id);
+      expect(step.statusCode).toBe(200);
+      expect(step.json().step.status).toBe('done');
+
+      const stop = await post(`/api/resolve/sessions/${first.session.id}/stop`);
+      expect(stop.statusCode, stop.body).toBe(200);
+    });
+
+    it(`${mode}: 本人の N は受け付ける`, async () => {
+      const started = await startSession();
+      config.RESOLVE_PATH_MODE = mode;
+      const no = await post(`/api/resolve/steps/${started.step.id}/approve`, { decision: 'N' });
+      expect(no.statusCode, no.body).toBe(200);
+      expect(await commandCount()).toBe(0);
+    });
+  }
+
+  it('off: 承認済みで配送前のコマンドは、未実行と確定して閉じる（結果不明と混ぜない）', async () => {
+    const started = await startSession();
+    expect((await approveY(started)).statusCode).toBe(200);
+    config.RESOLVE_PATH_MODE = 'off';
+    await sql`UPDATE resolution_steps SET deadline_at = now() - interval '1 second' WHERE id = ${started.step.id}`;
+    await sweepResolveTimeouts();
+    const step = (await getStep(started.step.id)).json().step;
+    expect(step.status).toBe('failed');
+    expect(step.error).toBe('NOT_DELIVERED');
+    const [command] = await sql<{ status: string }[]>`
+      SELECT status FROM device_commands WHERE step_id = ${started.step.id}
+    `;
+    expect(command?.status).toBe('expired');
+  });
+});
+
+describe('結果の再送の契約（docs/66 §10）', () => {
+  it('配送後に結果が返らなければ「不明」と記録し、成功にも未実行にもしない', async () => {
+    const started = await startSession();
+    expect((await approveY(started)).statusCode).toBe(200);
+    await deliver();
+    await sql`UPDATE resolution_steps SET deadline_at = now() - interval '1 second' WHERE id = ${started.step.id}`;
+    await sweepResolveTimeouts();
+    const [row] = await sql<{ status: string; error: string; state: string }[]>`
+      SELECT status, error, result_summary->>'resultState' AS state
+      FROM resolution_steps WHERE id = ${started.step.id}
+    `;
+    expect(row).toMatchObject({ status: 'failed', error: 'RESULT_TIMEOUT', state: 'unknown' });
+  });
+
+  it('同じ結果の再送は受領済みで返し、実行し直さない。違う内容は上書きしない', async () => {
+    const started = await startSession();
+    expect((await approveY(started)).statusCode).toBe(200);
+    const command = await deliver();
+    expect((await report(command.id, SPOOLER_RESULT)).statusCode).toBe(200);
+
+    const again = await report(command.id, SPOOLER_RESULT);
+    expect(again.statusCode, again.body).toBe(200);
+    expect(again.json().duplicate).toBe(true);
+
+    const other = await report(command.id, { ...SPOOLER_RESULT, exitCode: 1 });
+    expect(other.statusCode, other.body).toBe(409);
+    expect(other.json().error.code).toBe('RESULT_CONFLICT');
+    const [row] = await sql<{ exit_code: number }[]>`
+      SELECT (result->>'exitCode')::int AS exit_code FROM device_commands WHERE id = ${command.id}
+    `;
+    expect(row?.exit_code).toBe(0);
+
+    const next = await app.inject({
+      method: 'GET',
+      url: '/api/device/command',
+      headers: AGENT_HEADERS,
+    });
+    expect(next.statusCode).toBe(204);
+  });
+
+  it('期限後に届いた結果は記録するが、ステップを成功に変えない', async () => {
+    const started = await startSession();
+    expect((await approveY(started)).statusCode).toBe(200);
+    const command = await deliver();
+    await sql`UPDATE resolution_steps SET deadline_at = now() - interval '1 second' WHERE id = ${started.step.id}`;
+    await sweepResolveTimeouts();
+    expect((await report(command.id, SPOOLER_RESULT)).statusCode).toBe(200);
+    const step = (await getStep(started.step.id)).json().step;
+    expect(step.status).toBe('failed');
+    expect(step.error).toBe('RESULT_TIMEOUT');
+  });
+});
+

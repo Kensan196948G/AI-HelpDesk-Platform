@@ -1369,6 +1369,22 @@ async function cancelSessionWork(
  * GET からの遅延呼び出しと、resolveRoutes の定期実行の両方から使う。
  * 期限後に届いた結果は step が failed のため applyCommandOutcome が状態を進めない。
  */
+/**
+ * 経路②の新しい実行につながる操作を止める（docs/67）。画面ではなくサーバで止める。
+ * 結果の受付、本人の N、停止、参照は呼ばない。
+ */
+function assertResolvePathOpen(): void {
+  if (config.RESOLVE_PATH_MODE === 'on') return;
+  if (config.RESOLVE_PATH_MODE === 'drain') {
+    throw new ApiError(
+      409,
+      'RESOLVE_PATH_DRAINING',
+      'この経路は受付を止めています。実行中の処理の終了だけを行います。',
+    );
+  }
+  throw new ApiError(404, 'RESOLVE_PATH_DISABLED', 'この経路は無効です。');
+}
+
 export async function sweepResolveTimeouts(): Promise<number> {
   let swept = 0;
   // 実行が終わっているのに結果を見る画面が無かったものは、タイムアウトにせず結果を取り込む。
@@ -1400,13 +1416,15 @@ export async function sweepResolveTimeouts(): Promise<number> {
     LIMIT 50
   `;
   for (const candidate of candidates) {
-    await sql.begin(async (tx) => {
-      const sessionRows = await tx<SessionRow[]>`
+    // 1 件の失敗で他の案件の期限処理を止めない。
+    try {
+      await sql.begin(async (tx) => {
+        const sessionRows = await tx<SessionRow[]>`
         SELECT * FROM resolution_sessions WHERE id = ${candidate.session_id} FOR UPDATE
       `;
-      const session = sessionRows[0];
-      if (!session) return;
-      const rows = await tx<StepRow[]>`
+        const session = sessionRows[0];
+        if (!session) return;
+        const rows = await tx<StepRow[]>`
         SELECT * FROM resolution_steps
         WHERE session_id = ${candidate.session_id}
           AND status IN ('approved', 'executing')
@@ -1414,39 +1432,60 @@ export async function sweepResolveTimeouts(): Promise<number> {
           AND deadline_at < now()
         FOR UPDATE
       `;
-      for (const step of rows) {
-        const message = '端末から結果が返りませんでした（タイムアウト）。担当者へ引き継ぎます。';
-        const summary = { ok: false, exitCode: null, summary: message, normalized: null };
-        const ai = { ok: false, exitCode: null, summary: message, normalized: null };
-        const updated = await tx<{ id: string }[]>`
+        for (const step of rows) {
+          // 配送していなければ未実行と確定できる。配送後は実行されたかどうか分からないので「不明」と書く。
+          const commandRows = await tx<{ status: string }[]>`
+          SELECT status FROM device_commands WHERE step_id = ${step.id} LIMIT 1
+        `;
+          const notDelivered = commandRows[0]?.status === 'queued';
+          const resultState = notDelivered ? 'not_delivered' : 'unknown';
+          const message = notDelivered
+            ? '端末へ配送していません（未実行）。担当者へ引き継いでください。'
+            : '端末から結果が返りませんでした。実行されたかどうかは不明です。担当者へ引き継いでください。';
+          const summary = {
+            ok: false,
+            exitCode: null,
+            summary: message,
+            normalized: null,
+            resultState,
+          };
+          const ai = { ok: false, exitCode: null, summary: message, normalized: null };
+          const updated = await tx<{ id: string }[]>`
           UPDATE resolution_steps
           SET status = 'failed', executed_at = COALESCE(executed_at, now()),
               result_summary = ${jsonbValue(summary)}, result_ai = ${jsonbValue(ai)},
-              error = 'RESULT_TIMEOUT'
+              error = ${notDelivered ? 'NOT_DELIVERED' : 'RESULT_TIMEOUT'}
           WHERE id = ${step.id} AND status IN ('approved', 'executing')
           RETURNING id
         `;
-        if (!updated[0]) continue;
-        await tx`
+          if (!updated[0]) continue;
+          await tx`
           UPDATE device_commands SET status = 'expired', completed_at = now()
           WHERE step_id = ${step.id} AND status = 'queued'
         `;
-        if (session.status === 'executing') {
-          await tx`
+          if (session.status === 'executing') {
+            await tx`
             UPDATE resolution_sessions SET status = 'escalated', updated_at = now()
             WHERE id = ${session.id}
           `;
+          }
+          await appendResolveAudit(tx, {
+            action: 'resolution.timeout',
+            sessionId: step.session_id,
+            actorEmail: session.user_email,
+            stepId: step.id,
+            detail: { by: 'system', reason: 'result_timeout', resultState },
+          });
+          swept += 1;
         }
-        await appendResolveAudit(tx, {
-          action: 'resolution.timeout',
-          sessionId: step.session_id,
-          actorEmail: session.user_email,
-          stepId: step.id,
-          detail: { by: 'system', reason: 'result_timeout' },
-        });
-        swept += 1;
-      }
-    });
+      });
+    } catch (error) {
+      console.warn(
+        '[resolve] 期限切れの処理に失敗しました',
+        candidate.session_id,
+        (error as { code?: string })?.code ?? 'unknown',
+      );
+    }
   }
   return swept;
 }
@@ -1555,7 +1594,10 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
       ok: true,
       deviceId,
       owned,
-      agentConnected: config.RESOLVE_REQUESTER_DIAGNOSIS_ENABLED && isDeviceOnline(lastSeen),
+      agentConnected:
+        config.RESOLVE_PATH_MODE === 'on' &&
+        config.RESOLVE_REQUESTER_DIAGNOSIS_ENABLED &&
+        isDeviceOnline(lastSeen),
     };
   });
 
@@ -1622,6 +1664,7 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
       if (!isResolveAdmin(email)) {
         throw new ApiError(403, 'FORBIDDEN', 'IT 管理者のみ承認できます。');
       }
+      assertResolvePathOpen();
       const { id: stepId } = StepIdParamsSchema.parse(request.params);
       const input = AdminApproveSchema.parse(request.body);
 
@@ -1793,6 +1836,7 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
         20,
         '解決ループの開始が多すぎます。少し待ってから再試行してください。',
       );
+      assertResolvePathOpen();
       const input = CreateSessionSchema.parse(request.body);
       if (await isEstopOn(email)) {
         throw new ApiError(409, 'ESTOP_ACTIVE', '緊急停止中です。解除してからやり直してください。');
@@ -1887,6 +1931,7 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
       );
       const { id: stepId } = StepIdParamsSchema.parse(request.params);
       const input = ApproveSchema.parse(request.body);
+      if (input.decision === 'Y') assertResolvePathOpen();
       if (await isEstopOn(email)) {
         throw new ApiError(409, 'ESTOP_ACTIVE', '緊急停止中です。解除してからやり直してください。');
       }
@@ -2246,6 +2291,7 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
       );
       const { id: stepId } = StepIdParamsSchema.parse(request.params);
       const input = ContinueSchema.parse(request.body);
+      if (input.decision === 'Y') assertResolvePathOpen();
       const current = await loadStepAndSession(email, stepId);
       if (current.step.status !== 'done') {
         throw new ApiError(

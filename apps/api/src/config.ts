@@ -89,6 +89,10 @@ const EnvSchema = z.object({
 
   // 解決ループ（Phase C）: 端末オフライン判定の閾値（秒）。設計 §4-3 の「2 分応答なし」。
   RESOLVE_DEVICE_OFFLINE_SEC: z.coerce.number().int().positive().default(120),
+  // 経路②（解決ループ + 端末コマンド。docs/67）の動作モード。本人と Windows ユーザーを照合しない検証専用の経路。
+  // off: 開始・提案・Y・管理者承認は 404、配送しない。drain: 同じ操作を 409 で止め、配送しない。
+  // on: 通常。どのモードでも結果の受付、本人の N、停止、期限の処理、参照は動かす。production では on を起動時に拒否する。
+  RESOLVE_PATH_MODE: z.enum(['off', 'drain', 'on']).default('off'),
   // 相談者の画面から解決ループの読取診断へ案内するか（docs/67 の経路②。既定は案内しない）。
   // 案内を止めるだけで API を閉じない。止める保証として数えない。
   RESOLVE_REQUESTER_DIAGNOSIS_ENABLED: z
@@ -197,6 +201,10 @@ if (parsed.data.ASSIST_SESSION_MODE === 'on' && process.env.ASSIST_SESSION_ENABL
   process.exit(1);
 }
 // 貸与情報の検証を省く検証用フラグを本番で有効にさせない（fail-closed）。
+if (isProduction && parsed.data.RESOLVE_PATH_MODE === 'on') {
+  console.error('[config] NODE_ENV=production では RESOLVE_PATH_MODE=on を使えません（docs/67）。');
+  process.exit(1);
+}
 if (isProduction && parsed.data.FOLDER_ACCESS_ALLOW_UNVERIFIED_LEASE) {
   console.error(
     '[config] NODE_ENV=production では FOLDER_ACCESS_ALLOW_UNVERIFIED_LEASE=true を使えません。',

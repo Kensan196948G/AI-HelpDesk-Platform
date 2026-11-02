@@ -14,7 +14,7 @@ import { checkRateLimit, resetRateLimits } from '../lib/rate-limit.js';
 import { DEVICE_IDENTITY_PROBE_COMMAND } from '../remote-support/rsp.js';
 import { buildServer } from '../server.js';
 import { resetAddressLimits } from './address-limit.js';
-import { loadContext, sweepFolderAccess } from './service.js';
+import { loadContext, sweepFolderAccess, sweepHooks } from './service.js';
 import { auditRef, canonicalOpJson, hashSid, signOp } from './sign.js';
 import { LIMITS } from './state.js';
 
@@ -1234,6 +1234,55 @@ describe('同意と毎操作の検証（Mock: RSP）', () => {
     expect(await resultCount(id)).toBe(0);
     const actions = (await auditRows(id)).map((row) => row.action);
     expect(actions).toContain('folder_access.expire');
+  });
+
+  it('掃除: 1 件が失敗しても、他の案件の期限切れと識別子の消去を続ける', async () => {
+    const first = await deliveredOp();
+    const second = await createRequest(await makeHandover());
+    await sql`
+      UPDATE folder_access_requests SET consent_expires_at = now() - interval '1 second'
+      WHERE id = ${first.id}
+    `;
+    await sql`
+      UPDATE folder_access_requests SET request_expires_at = now() - interval '1 second'
+      WHERE id = ${second.id}
+    `;
+    const original = sweepHooks.endRequest;
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    sweepHooks.endRequest = async (id, run) => {
+      if (id === first.id) throw new Error('注入した失敗');
+      await run();
+    };
+    try {
+      await sweepFolderAccess();
+    } finally {
+      sweepHooks.endRequest = original;
+      warn.mockRestore();
+    }
+    expect((await requestRow(first.id))?.status).toBe('active');
+    expect((await requestRow(second.id))?.status).toBe('expired');
+    // 次の掃除で失敗した案件も閉じる。
+    await sweepFolderAccess();
+    expect((await requestRow(first.id))?.status).toBe('expired');
+  });
+
+  it('経路②のデバイストークンでは、ヘルパーの API を通せない', async () => {
+    const token = 'path2-device-token-00000000000000';
+    const helperRoutes = await app.inject({
+      method: 'POST',
+      url: '/api/device/agent/folder-helper/poll',
+      headers: { 'x-device-token': token, 'x-device-id': 'path2-device' },
+      payload: {},
+    });
+    expect(helperRoutes.statusCode).not.toBe(200);
+    expect([401, 403, 404]).toContain(helperRoutes.statusCode);
+    const asHelperToken = await app.inject({
+      method: 'POST',
+      url: '/api/device/agent/folder-helper/poll',
+      headers: { 'x-folder-helper-token': token },
+      payload: {},
+    });
+    expect([401, 403, 404]).toContain(asHelperToken.statusCode);
   });
 
   it('期限切れ: 同意前の依頼も期限で終わり、未ペアの登録情報は掃除で消える', async () => {

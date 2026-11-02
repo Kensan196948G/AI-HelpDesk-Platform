@@ -183,6 +183,7 @@ async function main() {
   const dev = await startApi('dev', {
     NODE_ENV: 'development',
     AUTH_MODE: 'local',
+    RESOLVE_PATH_MODE: 'on',
     DEV_AUTH_EMAIL: EMAIL,
   });
   const api = async (method, url, body) => {

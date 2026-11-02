@@ -208,6 +208,7 @@ async function startApi(role) {
       MIRAI_INFO_DATABASE_URL: dbUrl,
       SESSION_SECRET: randomBytes(32).toString('hex'),
       AUTH_MODE: 'local',
+      RESOLVE_PATH_MODE: 'on',
       RESOLVE_REQUESTER_DIAGNOSIS_ENABLED: 'true',
       DEV_AUTH_EMAIL: EMAIL[role],
       ALLOW_SELF_APPROVAL: 'false',

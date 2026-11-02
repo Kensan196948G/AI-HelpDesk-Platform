@@ -632,6 +632,24 @@ async function requeueProbe(
 
 // ── 定期掃除（常駐側。RSP には触れない） ─────────────────────────
 
+/** 掃除の 1 段を隔離する。識別子や ID を出さず、段の名前とエラーコードだけを残す。 */
+async function sweepStep(step: string, run: () => PromiseLike<unknown>): Promise<void> {
+  try {
+    await run();
+  } catch (error) {
+    console.warn(
+      '[folder-access] 期限処理の 1 段に失敗しました',
+      step,
+      (error as { code?: string })?.code ?? 'unknown',
+    );
+  }
+}
+
+/** 試験で 1 件だけ失敗させるための差し込み口。 */
+export const sweepHooks = {
+  endRequest: (_id: string, run: () => Promise<void>): Promise<void> => run(),
+};
+
 /**
  * 期限切れの同意を終了し、結果を消す。誰も画面を開かなくてもファイル名を残さないための掃除。
  * DB だけを触る。機能フラグが無効でも実行する（無効化後に結果を残さない）。
@@ -651,36 +669,50 @@ export async function sweepFolderAccess(): Promise<number> {
            AND r.request_expires_at <= now())
   `;
   let ended = 0;
+  // 1 件の失敗で、他の案件の期限切れ、失効、識別子の消去を止めない。
   for (const { id } of due) {
-    await sql.begin(async (tx) => {
-      const ctx = await loadContext(tx, id);
-      if (!ctx) return;
-      const before = ctx.status;
-      await applyExpiryAndBinding(tx, ctx, 'system:sweep');
-      if (ctx.status !== before) ended += 1;
-    });
+    await sweepStep('request', () =>
+      sweepHooks.endRequest(id, async () => {
+        await sql.begin(async (tx) => {
+          const ctx = await loadContext(tx, id);
+          if (!ctx) return;
+          const before = ctx.status;
+          await applyExpiryAndBinding(tx, ctx, 'system:sweep');
+          if (ctx.status !== before) ended += 1;
+        });
+      }),
+    );
   }
-  await sql`
+  await sweepStep(
+    'expire_ops',
+    () => sql`
     UPDATE folder_access_ops
     SET status = 'expired', completed_at = now()
     WHERE status IN ('queued', 'delivered') AND expires_at <= now()
-  `;
+  `,
+  );
   // ペアリングされないまま期限が切れたヘルパーは失効させ、登録情報を消す。
   // 行は残す（次の poll で revoked:true を返すと、ヘルパーが自動で再登録せずに止まる）。
-  await sql`
+  await sweepStep(
+    'revoke_unpaired',
+    () => sql`
     UPDATE folder_access_helpers
     SET revoked_at = COALESCE(revoked_at, now()), user_name = NULL, hostname = NULL,
         pairing_code_hash = NULL
     WHERE request_id IS NULL AND pairing_expires_at <= now()
       AND (revoked_at IS NULL OR user_name IS NOT NULL)
-  `;
+  `,
+  );
   // 登録は未認証で行えるので、残骸を際限なく増やさない。
-  await sql`
+  await sweepStep(
+    'delete_unpaired',
+    () => sql`
     DELETE FROM folder_access_helpers
     WHERE request_id IS NULL
       AND pairing_expires_at <= now() - (${LIMITS.unpairedRetentionMinutes}::int * interval '1 minute')
-  `;
-  await scrubExpiredIdentifiers();
+  `,
+  );
+  await sweepStep('scrub', () => scrubExpiredIdentifiers());
   return ended;
 }
 

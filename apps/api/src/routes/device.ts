@@ -366,6 +366,8 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
     const { email, deviceId, privilege } = await authenticateDeviceToken(request, {
       requireDevice: true,
     });
+    // 経路②が on でなければ配送しない（docs/67）。結果の受付は下で動かし続ける。
+    if (config.RESOLVE_PATH_MODE !== 'on') return reply.code(204).send();
     const rows = await sql<{ id: string }[]>`
       UPDATE device_commands
       SET status = 'delivered', delivered_at = now(),
@@ -477,7 +479,22 @@ export async function deviceRoutes(app: FastifyInstance): Promise<void> {
       WHERE id = ${id} AND user_email = ${email} AND status = 'delivered'
       RETURNING id, status, result, error, completed_at
     `;
-    if (!rows[0]) throw new ApiError(404, 'NOT_FOUND', '対象のコマンドが見つかりません。');
+    if (!rows[0]) {
+      // 結果の再送（docs/66 §10）。同じ内容は受領済みとして返し、違う内容は上書きしない。
+      const [same] = await sql<{ status: string; same: boolean }[]>`
+        SELECT status,
+               status = ${input.ok ? 'done' : 'failed'}
+                 AND result IS NOT DISTINCT FROM ${jsonbValue(input.result ?? null)}
+                 AND error IS NOT DISTINCT FROM ${input.error ?? null} AS same
+        FROM device_commands
+        WHERE id = ${id} AND user_email = ${email} AND status IN ('done', 'failed')
+      `;
+      if (same?.same) return { ok: true, duplicate: true };
+      if (same) {
+        throw new ApiError(409, 'RESULT_CONFLICT', 'このコマンドには別の結果を受領済みです。');
+      }
+      throw new ApiError(404, 'NOT_FOUND', '対象のコマンドが見つかりません。');
+    }
     const command = rows[0] as { result?: unknown };
     return { ok: true, command: { ...command, result: asJsonValue(command.result) } };
   });

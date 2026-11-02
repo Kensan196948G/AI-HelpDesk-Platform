@@ -218,6 +218,8 @@ function Invoke-LocalRetention {
   try {
     Remove-Item -LiteralPath $ConfigPath -Force
     if (Test-Path -LiteralPath $contactPath) { Remove-Item -LiteralPath $contactPath -Force }
+    $pendingPath = Get-PendingResultDirectory
+    if (Test-Path -LiteralPath $pendingPath) { Remove-Item -LiteralPath $pendingPath -Recurse -Force }
     Write-AgentLog ($notice + '設定ファイル（トークン）を消しました。再開にはトークンの再発行が要ります')
   } catch {
     Write-AgentLog ($notice + '設定ファイルを消せませんでした。手動で消してください')
@@ -607,7 +609,76 @@ function Send-CommandResult {
   Invoke-AgentRequest -Method 'Post' -Uri "$($script:CommandUrl)/$Id/result" -Payload $Outcome | Out-Null
 }
 
+# 結果の再送（docs/66 §10）。実行の結果を先にファイルへ残し、報告だけをやり直す。コマンドは実行し直さない。
+$script:PendingResultRetentionHours = 48
+
+function Get-PendingResultDirectory {
+  return "$ConfigPath.pending-results"
+}
+
+function Save-PendingResult {
+  param([string]$Id, [object]$Outcome)
+  if ($Id -notmatch '^[0-9a-fA-F-]{36}$') { throw '不正なコマンド ID です' }
+  $directory = Get-PendingResultDirectory
+  if (-not (Test-Path -LiteralPath $directory -PathType Container)) {
+    New-Item -ItemType Directory -Path $directory -Force | Out-Null
+  }
+  $record = @{ id = $Id; savedAt = [DateTimeOffset]::UtcNow.ToString('o'); outcome = $Outcome }
+  $path = Join-Path $directory "$Id.json"
+  [IO.File]::WriteAllText("$path.tmp", ($record | ConvertTo-Json -Depth 20 -Compress))
+  Move-Item -LiteralPath "$path.tmp" -Destination $path -Force
+}
+
+function Get-HttpStatusOfError {
+  param([object]$ErrorRecord)
+  $exception = $ErrorRecord.Exception
+  if ($exception.PSObject.Properties['Response'] -and $exception.Response) {
+    return [int]$exception.Response.StatusCode
+  }
+  return 0
+}
+
+# 保存した結果を古い順に報告する。届かなければ次の周回へ残す。応答ごとの扱いは次のとおり。
+# 受領（重複を含む）: 消す。404、403、409、410: 受け取られないと確定したので、ログに残して消す。それ以外: 残す。
+function Invoke-PendingResultFlush {
+  param([DateTimeOffset]$Now = [DateTimeOffset]::UtcNow)
+  $directory = Get-PendingResultDirectory
+  if (-not (Test-Path -LiteralPath $directory -PathType Container)) { return }
+  $files = @(Get-ChildItem -LiteralPath $directory -Filter '*.json' -File | Sort-Object LastWriteTimeUtc)
+  foreach ($file in $files) {
+    try {
+      $record = [IO.File]::ReadAllText($file.FullName) | ConvertFrom-Json
+      $id = [string]$record.id
+      $saved = [DateTimeOffset]::Parse([string]$record.savedAt)
+    } catch {
+      Write-AgentLog "report dropped (unreadable) $($file.BaseName)"
+      Remove-Item -LiteralPath $file.FullName -Force
+      continue
+    }
+    if ($saved.AddHours($script:PendingResultRetentionHours) -lt $Now) {
+      Write-AgentLog "report dropped (expired) $id"
+      Remove-Item -LiteralPath $file.FullName -Force
+      continue
+    }
+    try {
+      Send-CommandResult -Id $id -Outcome $record.outcome
+      Remove-Item -LiteralPath $file.FullName -Force
+    } catch {
+      $status = Get-HttpStatusOfError -ErrorRecord $_
+      if (@(403, 404, 409, 410) -contains $status) {
+        Write-AgentLog "report rejected $status $id"
+        Remove-Item -LiteralPath $file.FullName -Force
+        continue
+      }
+      Write-AgentLog "report error $id"
+      return
+    }
+  }
+}
+
 function Invoke-CommandTick {
+  # 再起動の前に残した結果も、ここで送り直す。
+  Invoke-PendingResultFlush
   try {
     $response = Invoke-AgentRequest -Method 'Get' -Uri $script:CommandUrl -Payload $null
   } catch {
@@ -649,9 +720,16 @@ function Invoke-CommandTick {
     Write-AgentLog "failed ${id}: $message"
   }
   try {
-    Send-CommandResult -Id $id -Outcome $outcome
+    Save-PendingResult -Id $id -Outcome $outcome
+    Invoke-PendingResultFlush
   } catch {
-    Write-AgentLog "report error $id"
+    # 保存できないときも、結果は 1 回送る。コマンドは実行し直さない。
+    Write-AgentLog "report store error $id"
+    try {
+      Send-CommandResult -Id $id -Outcome $outcome
+    } catch {
+      Write-AgentLog "report error $id"
+    }
   }
 }
 

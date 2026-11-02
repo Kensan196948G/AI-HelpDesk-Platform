@@ -503,7 +503,44 @@ try {
   Invoke-CommandTick
   Assert-Equal 'report: 報告の失敗で送り直さない' 1 $script:SendCount
   Assert-True 'report: 送った結果は成功のまま' ($script:LastOutcome.ok -eq $true)
+  # 再送: 結果は端末に残り、コマンドは実行し直さず、次の周回で結果だけを送る。
+  $pendingDir = Get-PendingResultDirectory
+  Assert-Equal 'resend: 結果を保存する' 1 @(Get-ChildItem -LiteralPath $pendingDir -Filter '*.json').Count
+  $script:RestartCount = 0
+  function Restart-Service { param($Name, [switch]$Force) $script:RestartCount += 1 }
+  $state.Command = $null
+  $script:SendCount = 0
+  Invoke-CommandTick
+  Assert-Equal 'resend: 再度の失敗でも残る' 1 @(Get-ChildItem -LiteralPath $pendingDir -Filter '*.json').Count
+  Assert-Equal 'resend: 再度の周回で 1 回送る' 1 $script:SendCount
+  Assert-Equal 'resend: コマンドを実行し直さない' 0 $script:RestartCount
+  # 再起動の後の回収: 保存した結果を、同じ内容で送り直して消す。
   ${function:Send-CommandResult} = $originalSend
+  $state.Results.Clear()
+  Invoke-CommandTick
+  Assert-Equal 'recover: 結果だけを送る' 1 $state.Results.Count
+  Assert-True 'recover: 成功のまま' (($state.Results[0].body | ConvertFrom-Json).ok -eq $true)
+  Assert-Equal 'recover: 受領で消す' 0 @(Get-ChildItem -LiteralPath $pendingDir -Filter '*.json').Count
+  Assert-Equal 'recover: 実行は増えない' 0 $script:RestartCount
+  # 受け取られないと確定した応答では消す。一時的な失敗では残す。
+  function New-RejectedError { param([int]$Status) $e = [Exception]::new('rejected'); $e | Add-Member -NotePropertyName Response -NotePropertyValue ([pscustomobject]@{ StatusCode = $Status }); return $e }
+  $rejectId = [Guid]::NewGuid().ToString()
+  Save-PendingResult -Id $rejectId -Outcome @{ ok = $true }
+  function Send-CommandResult { param($Id, $Outcome) throw (New-RejectedError -Status 409) }
+  Invoke-PendingResultFlush
+  Assert-Equal 'resend: 409 は消す' 0 @(Get-ChildItem -LiteralPath $pendingDir -Filter '*.json').Count
+  Save-PendingResult -Id $rejectId -Outcome @{ ok = $true }
+  function Send-CommandResult { param($Id, $Outcome) throw (New-RejectedError -Status 503) }
+  Invoke-PendingResultFlush
+  Assert-Equal 'resend: 503 は残す' 1 @(Get-ChildItem -LiteralPath $pendingDir -Filter '*.json').Count
+  # 保持期限を過ぎた結果は送らずに消す（結果の不明は、サーバ側の記録のまま）。
+  $script:SendCount = 0
+  function Send-CommandResult { param($Id, $Outcome) $script:SendCount += 1 }
+  Invoke-PendingResultFlush -Now ([DateTimeOffset]::UtcNow.AddHours(49))
+  Assert-Equal 'resend: 期限切れは送らない' 0 $script:SendCount
+  Assert-Equal 'resend: 期限切れは消す' 0 @(Get-ChildItem -LiteralPath $pendingDir -Filter '*.json').Count
+  ${function:Send-CommandResult} = $originalSend
+  function Restart-Service { param($Name, [switch]$Force) $script:RestartArgs = "$Name/$Force" }
 
   # ── 検査と実行の同一性（TOCTOU。docs/66 §8） ─────────────────────
   # ここより後ろで $agentSource を読み込むと本物の Skill を指す。差替えは一時配置だけに行う。
