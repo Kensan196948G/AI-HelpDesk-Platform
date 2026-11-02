@@ -21,18 +21,6 @@
   const DEMO_INLINE = 'デモデータ：実端末の結果ではありません';
   const DEMO_PREFIX = '【デモデータ】';
   const UNREGISTERED_NAME = '名簿未登録の利用者（氏名は未確認）';
-  const DEMO_TIMELINE_EVENTS = [
-    'diag_run',
-    'proposal_created',
-    'user_approved',
-    'user_rejected',
-    'exec_denied',
-    'exec_started',
-    'executed',
-    'exec_failed',
-    'exec_aborted',
-    'rolled_back',
-  ];
   const NO_REAL_DEVICE = '未取得（実端末の情報はありません）';
   // 画面の固定値ではなく、由来が別に分かっているメッセージのモデル欄はそのまま出す。
   const PASS_THROUGH_MODELS = new Set([
@@ -366,17 +354,15 @@
 
   /** 報告書に書く人物。名簿に無い利用者へデモ人物の氏名・部署・社員番号を渡さない。 */
   function reportPerson(userId, person) {
-    if (isUnregisteredUser(userId)) return { name: UNREGISTERED_NAME, dept: '', employeeNo: '' };
+    if (isUnregisteredUser(userId)) {
+      return { name: UNREGISTERED_NAME, role: '', dept: '', employeeNo: '' };
+    }
     return {
       name: (person && person.name) || '',
+      role: (person && person.role) || '',
       dept: (person && person.dept) || '',
       employeeNo: (person && person.employeeNo) || '',
     };
-  }
-
-  /** 報告書のタイムラインの出来事。固定データの診断・修復を実端末の出来事に見せない。 */
-  function timelineAction(action) {
-    return DEMO_PREFIX + action;
   }
 
   // 名簿に無い利用者は画面既定のデモ利用者のまま固定される。実名に見せて担当者へ渡さない。
@@ -398,11 +384,9 @@
     REAL_MODEL,
     RULE_LABEL,
     DEMO_PREFIX,
-    DEMO_TIMELINE_EVENTS,
     honestMeta,
     isUnregisteredUser,
     reportPerson,
-    timelineAction,
     whoFor,
     usedRealAi,
     reportModel,

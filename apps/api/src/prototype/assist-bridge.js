@@ -389,7 +389,7 @@
     };
     push(c.created, ahName(c.userId), '相談を送信', c.subject || '');
     // 診断・修復は固定データ。報告書でも実端末の出来事に見せない。
-    const demo = (action) => (ahHonest() ? ahHonest().timelineAction(action) : action);
+    const demo = (action) => (ahHonest() ? ahHonest().DEMO_PREFIX : '') + action;
     if (chat) {
       for (const message of chat.messages) {
         if (!message || message.kind === 'welcome') continue;
@@ -408,8 +408,18 @@
         }
       }
     }
-    if (c.closed === 'ai')
-      push(c.closedAt || c.created, 'AI', 'AIの一次対応で解決', '担当者への引継ぎなし');
+    if (c.closed === 'ai') {
+      // 固定データの修復を経た解決は、実端末の問題が直ったことを示さない。
+      const usedDemo = chat?.messages.some(
+        (message) => message && ['diag', 'proposal', 'exec'].includes(message.kind),
+      );
+      push(
+        c.closedAt || c.created,
+        'AI',
+        usedDemo ? demo('AIの一次対応で解決') : 'AIの一次対応で解決',
+        '担当者への引継ぎなし',
+      );
+    }
     const tkt = L && L.tkt;
     const inc = L && L.inc;
     if (tkt) {
@@ -495,11 +505,10 @@
         ].includes(event.event)
       )
         continue;
-      const label = (typeof EV !== 'undefined' && EV[event.event]) || event.event;
       push(
         event.ts,
         ahName(event.actor),
-        ahHonest()?.DEMO_TIMELINE_EVENTS.includes(event.event) ? demo(label) : label,
+        (typeof EV !== 'undefined' && EV[event.event]) || event.event,
         '',
       );
     }
@@ -510,6 +519,18 @@
   /** 報告書の人物。名簿に無い利用者へデモ人物の氏名・部署・社員番号を渡さない。 */
   function ahReportPerson(userId, person) {
     return ahHonest() ? ahHonest().reportPerson(userId, person) : person;
+  }
+
+  /** 報告書の出力者。 */
+  function ahReportActor() {
+    const viewer = ahUser() || {};
+    return Object.assign({}, viewer, ahReportPerson(viewer.id, viewer));
+  }
+
+  /** 遠隔支援の承認者。原本は承認時の氏名を保存するので、デモの氏名を報告書へ渡さない。 */
+  function ahRemoteApprover(c) {
+    const approver = c.remote.approvedBy;
+    return approver && ahHonest()?.isUnregisteredUser(c.userId) ? ahName(c.userId) : approver;
   }
 
   function ahReportPayload(c, L) {
@@ -526,8 +547,7 @@
       requester.dept && typeof DEPTS !== 'undefined' && DEPTS[requester.dept]
         ? DEPTS[requester.dept].name
         : '';
-    const viewer = ahUser() || {};
-    const actor = Object.assign({}, viewer, ahReportPerson(viewer.id, viewer));
+    const actor = ahReportActor();
     const actorDept =
       actor.dept && typeof DEPTS !== 'undefined' && DEPTS[actor.dept] ? DEPTS[actor.dept].name : '';
     const sharedKeys = tkt && tkt.shared ? Object.keys(tkt.shared) : [];
@@ -623,7 +643,7 @@
             status: c.remote.status,
             requestedBy: c.remote.requestedBy,
             requestedAt: c.remote.requestedAt,
-            approvedBy: c.remote.approvedBy,
+            approvedBy: ahRemoteApprover(c),
             approvedAt: c.remote.approvedAt,
             endedAt: c.remote.endedAt,
             expiresAt: c.remote.expiresAt,
@@ -1047,7 +1067,7 @@
     const at = ahFormatHandoverDate(c.handoverApprovedAt);
     const by = String(c.handoverApprovedBy || '');
     if (!at && !by) return '';
-    const kind = c.handoverSelfApproved ? '自己承認' : '別ID承認';
+    const kind = Boolean(c.handoverSelfApproved) ? '自己承認' : '別ID承認';
     const rows = [];
     if (by) rows.push('承認者: ' + ahEsc(by));
     if (at) rows.push('承認日時: ' + ahEsc(at) + '（' + kind + '）');
