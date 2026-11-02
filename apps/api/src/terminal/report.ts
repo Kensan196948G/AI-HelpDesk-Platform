@@ -1,6 +1,6 @@
 import { sameHuman } from '../auth/shared-identity.js';
 import { type FinalReport, FinalReportSchema } from '../domain/final-report.js';
-import { redactPII } from '../domain/pii.js';
+import { redactKnowledgeKeywords, redactKnowledgeText, redactPII } from '../domain/pii.js';
 import { type CaseSnapshot, normalizeState } from '../lib/case-handover.js';
 import type { HandoverRow } from '../routes/case-handovers.js';
 import type { OutputSource, TerminalSessionRow, TerminalStepRow } from './session.js';
@@ -361,14 +361,14 @@ export function buildKnowledgeDraft(input: KnowledgeDraftInput): KnowledgeDraftC
   const snapshot = normalizeState(input.handover.snapshot) as CaseSnapshot | null;
   const caseRecord = record(snapshot?.case) ?? {};
   const subject = text(caseRecord.subject, 160) || text(input.handover.case_id, 160);
-  const title = redactPII(
+  const title = redactKnowledgeText(
     text(input.title, 160) || (subject.includes('手順') ? subject : `${subject}の確認手順`),
   ).text;
-  const symptom = redactPII(text(caseRecord.body, 4000)).text;
+  const symptom = redactKnowledgeText(text(caseRecord.body, 4000)).text;
 
   const recorded = input.steps.filter((step) => step.recorded_at);
   const last = recorded.at(-1);
-  const cause = redactPII(
+  const cause = redactKnowledgeText(
     text(input.cause, 4000) ||
       text(last?.note, 4000) ||
       '（原因は記録されていません。担当者の補足を追記してください）',
@@ -385,18 +385,27 @@ export function buildKnowledgeDraft(input: KnowledgeDraftInput): KnowledgeDraftC
       .filter(Boolean)
       .join('\n');
   });
-  const steps = redactPII(clipped(lines.join('\n'), 8000)).text;
+  const steps = redactKnowledgeText(clipped(lines.join('\n'), 8000)).text;
 
   const category = text(caseRecord.cat, 40);
-  const keywords = Array.from(
-    new Set(
-      [CATEGORY_LABEL[category], subject, ...recorded.map((step) => text(step.intent, 40))].filter(
-        (value): value is string => Boolean(value),
+  const keywords = redactKnowledgeKeywords(
+    Array.from(
+      new Set(
+        [CATEGORY_LABEL[category], subject, ...recorded.map((step) => text(step.intent, 40))]
+          .filter((value): value is string => Boolean(value))
+          .map((value) => value.trim()),
       ),
     ),
   )
     .slice(0, 12)
-    .map((value) => value.slice(0, 40));
+    .map((value) => value.slice(0, 40).trim());
 
-  return { title: title.slice(0, 160), symptom, cause, steps, keywords };
+  // 承認は ui-sync の上限と本文照合を通る。伏せ字で長さが変わるので最後に切り、前後の空白を落とす。
+  return {
+    title: title.slice(0, 160).trim(),
+    symptom: symptom.slice(0, 4000).trim(),
+    cause: cause.slice(0, 4000).trim(),
+    steps: steps.slice(0, 8000).trim(),
+    keywords,
+  };
 }

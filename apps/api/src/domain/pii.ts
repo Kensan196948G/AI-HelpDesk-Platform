@@ -1,5 +1,5 @@
 export interface PiiFinding {
-  type: 'password' | 'email' | 'phone' | 'ip' | 'card' | 'asset';
+  type: 'password' | 'email' | 'phone' | 'ip' | 'card' | 'asset' | 'device';
   count: number;
 }
 
@@ -73,13 +73,25 @@ const RULES: Array<{ type: PiiFinding['type']; pattern: RegExp; replacement: str
  * 相談本文・解決記録・ナレッジ下書きの保存前に PII を伏せ字にする。
  * 完全な PII 検出ではなく、MVP で扱う代表的なパターンに限定する。
  */
+const UUID_PATTERN = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+
 export function redactPII(input: string): RedactionResult {
   let text = input;
   const findings: PiiFinding[] = [];
 
   for (const rule of RULES) {
     let count = 0;
-    text = text.replace(rule.pattern, () => {
+    // UUID の中の数字の並びは電話番号でもカード番号でもない。実行 ID を壊すと追跡できなくなる。
+    const uuids =
+      rule.type === 'phone' || rule.type === 'card'
+        ? [...text.matchAll(UUID_PATTERN)].map((m) => ({
+            start: m.index,
+            end: m.index + m[0].length,
+          }))
+        : [];
+    text = text.replace(rule.pattern, (match: string, ...rest: unknown[]) => {
+      const offset = Number(rest.find((value) => typeof value === 'number'));
+      if (uuids.some(({ start, end }) => offset >= start && offset < end)) return match;
       count += 1;
       return rule.replacement;
     });
@@ -91,6 +103,91 @@ export function redactPII(input: string): RedactionResult {
   }
 
   return { text, findings };
+}
+
+/**
+ * ナレッジは承認後に別の相談者の相談と外部 AI へ渡るので、相談者固有の端末情報を入れない。
+ * 引継ぎ本文の節（端末・PC 基本情報・実診断の結果など）と、端末 ID、ホスト名、シリアル、
+ * 社員番号形式の端末名を除く。任意のホスト名は形から判別できないので、ラベル付きの値と既知の形に限る。
+ * scripts/report-state-kb-provenance.mjs に同じ規則がある（試験で一致を確かめる）。
+ */
+const KNOWLEDGE_RULES: Array<{ pattern: RegExp; replacement: string }> = [
+  {
+    pattern:
+      /【(?:端末|PC基本情報[^】]*|実診断の結果|AIの診断結果|対応案[^】]*|添付[^】]*)】[^【]*/g,
+    replacement: '',
+  },
+  {
+    pattern:
+      /(?:コンピュータ名|コンピューター名|ホスト名|hostname|シリアル番号|シリアル|serial(?: ?number)?|MACアドレス|取得日時)\s*[:：=]\s*[^\s、。／/]+/gi,
+    replacement: '[端末情報]',
+  },
+  { pattern: /WEB-[0-9A-F]{8}(?![0-9A-F])/gi, replacement: '[端末ID]' },
+  {
+    pattern:
+      /(?<![0-9a-f-])[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?![0-9a-f-])/gi,
+    replacement: '[ID]',
+  },
+  { pattern: /MRK-[A-Z0-9-]+/gi, replacement: '[端末名]' },
+  { pattern: /(?<![A-Z0-9])MK\d{4,6}(?!\d)/gi, replacement: '[社員番号]' },
+  {
+    pattern: /(?<![A-Z0-9-])(?:DESKTOP|LAPTOP|WIN|WORKSTATION)-[A-Z0-9]{3,}(?![A-Z0-9-])/gi,
+    replacement: '[ホスト名]',
+  },
+  {
+    pattern:
+      /(?<![\w.-])[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.(?:local|lan|corp|internal|intranet)(?![\w.-])/gi,
+    replacement: '[ホスト名]',
+  },
+  {
+    pattern: /(?<![0-9A-F:-])[0-9A-F]{2}(?:[:-][0-9A-F]{2}){5}(?![0-9A-F:-])/gi,
+    replacement: '[端末情報]',
+  },
+];
+
+/** ナレッジの本文用の伏せ字。redactPII に端末情報の除去を足す。何度かけても結果は変わらない。 */
+export function redactKnowledgeText(input: string): RedactionResult {
+  const base = redactPII(input);
+  let text = base.text;
+  let count = 0;
+  for (const rule of KNOWLEDGE_RULES) {
+    text = text.replace(rule.pattern, () => {
+      count += 1;
+      return rule.replacement;
+    });
+  }
+  if (count === 0) return base;
+  return {
+    text: text.trim(),
+    findings: [...base.findings, { type: 'device', count }],
+  };
+}
+
+/** 端末情報や個人情報が残っているか（承認の拒否に使う）。 */
+export function containsDeviceInfo(input: string): boolean {
+  return redactKnowledgeText(input).findings.length > 0;
+}
+
+/**
+ * keywords は検索の語なので、端末情報や個人情報を含む語は置き換えずに除く（docs/64 §11）。
+ * 既存の行は書き換えない。保存時と、閲覧・AI へ渡すときに通す。
+ */
+export function redactKnowledgeKeywords(keywords: readonly string[] | null | undefined): string[] {
+  if (!Array.isArray(keywords)) return [];
+  return keywords.filter((keyword) => !containsDeviceInfo(String(keyword)));
+}
+
+/**
+ * 相談者へ見せない、入力の指示についての言及を AI の回答から除く。
+ * 実 AI が、入力に指示が無くてもこの定型文を出した（docs/65 §7）。
+ */
+export function scrubAiAnswer(answer: string): string {
+  const scrubbed = answer.replace(
+    /[^\n。]*入力[^\n。]*指示[^\n。]*含まれ[^\n。]*(?:従いません|従わ)[^\n。]*。?/g,
+    '',
+  );
+  if (scrubbed === answer) return answer;
+  return scrubbed.replace(/\n{3,}/g, '\n\n').trim();
 }
 
 export function maskSensitivePcValue(key: string, value: string): string {

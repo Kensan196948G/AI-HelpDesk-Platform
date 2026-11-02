@@ -1,0 +1,248 @@
+# 64. AI の根拠を DB の承認済みナレッジに限定する
+
+対象: `apps/api/src/lib/knowledge-search.ts`、`apps/api/src/ai/deepseek.ts`、`POST /api/knowledge/ui-sync`、`assist-bridge.js`
+
+## 1. 直した問題
+
+`prototype_states` はブラウザが送る JSON である。修正前の `/api/ai/answer` は、その `data.kb` の `status='active'` を
+承認済みとして根拠にしていた。一般相談者が自分の state に KB を入れれば、承認なしで根拠になった。
+一方でユーザー単位のため、担当者が承認した KB は別の相談者に届かなかった。
+
+## 2. AI の根拠の条件
+
+`findApprovedKnowledge`（`cases.ts` の案件診断も同じ関数）は DB の `knowledge` だけを読み、次をすべて要求する。
+
+| 条件 | 内容 |
+|---|---|
+| 承認 | `status='approved'`、`approver_id` と `approved_at` がある |
+| 職務分離 | `approver_id <> author_id`（[docs/58](./58-phase-c-applied-20261028.md) のとおりアカウント単位）。同一人物の別アカウント（`SHARED_IDENTITY_GROUPS`）は除かず、`sharedIdentity` として応答と監査に残す |
+| 版 | `updated_at <= approved_at`（承認後に行が更新されていない）。版は出典（`sources[].version`）とプロンプト（`[KB-… v2]`）に出す |
+
+- 承認と `version` 加算は同じトランザクションで、`updated_at` はトリガの `now()` なので `approved_at` と一致する。
+- 案件や解決記録の削除で `case_id` / `resolution_id` が `SET NULL` になると `updated_at` も進み、その KB は根拠から外れる（安全側）。
+  検出スクリプトの `editedAfterApproval` に数える。
+- 本人の state の KB は「未承認資料」としても使わない。出典で区別する必要が生じないようにするため。
+
+## 3. 外部 AI へ送る内容
+
+承認済み KB は全相談者の相談で候補になる。送信量と内容は次のように制限する。
+
+- 件数は 3 件まで（従来どおり）。一致点が 2 未満の KB は送らない。無関係な相談では KB を送らない。
+- 1 件あたり 題名 160 / 症状 600 / 原因 600 / 手順 1,500 字で切る。
+  各項目最大長の 3 件で 8,351 字（結合試験のスタブが受け取った実測値）。上限がないと約 48,000 字になる。
+- 送る前に `redactPII` を再度かける。保存時の伏せ字に加える二重の防御である。
+
+`keywords` が空の行（画面経路は原本の `draftForSync` が返さないため空で保存される）は、題名の 3 文字以上の語で照合する。保存値は変えない。
+
+## 4. 既存データと移行案
+
+既存データは自動で書き換えない。件数は読み取り専用スクリプトで確認する。
+
+```bash
+AUDIT_DATABASE_URL=<接続先> SHARED_IDENTITY_GROUPS=<本番と同じ値> \
+  node scripts/report-state-kb-provenance.mjs [--allow-db=<DB 名>]
+```
+
+出力は件数だけで、メール・題名・本文を含まない。DB 名が `_test` で終わらない場合は `--allow-db` がなければ接続しない。
+**本番 DB への実行はユーザーの判断で行う。この PR の作業では実行していない。**
+
+| 出力 | 意味 | 移行案 |
+|---|---|---|
+| `state.demoInitial` | 原本 HTML の初期 KB（KB-101 系のデモ）。全員の state に入る | 対応不要。AI の根拠から外れるだけ。本番で必要な内容は下書きとして起票する |
+| `state.noDraftLink` | 下書きと結びつかない active KB（デモでない）。JSON 読込や不正入力の可能性 | 内容を担当者が確認し、必要なら新しい下書きにする。自動取り込みしない |
+| `state.linkedNoDbRow` | 下書きはあるが DB に行がない。引継ぎ経路の承認で起きる（§5） | 担当者が再度下書きを申請し、別人が承認する |
+| `state.linkedNotUsable` | DB に行はあるが使えない（承認待ち、自己承認など） | 別の承認者が承認する。自己承認の行は次の行を参照 |
+| `db.selfApproved` | 承認済みだが作成者本人の承認 | 別のアカウントが内容を確認して再承認する手順を決める（下記） |
+| `db.usableSharedIdentity` | 使えるが、承認者と作成者が同一人物の別アカウント | 記録のみ。別の人物が画面で承認できるようになったら、除外するか判断する（§7） |
+| `db.editedAfterApproval` | 承認後に行が更新された | 差分を確認して再承認する |
+| `db.usableWithoutKeywords` | 使えるがキーワードが空 | 題名で照合されるため必須ではない。精度が足りなければ別途補う |
+| `db.draftsWithoutClientRef` | 承認前で `client_ref` がない（この修正前の端末記録の下書きなど）。画面から承認できない | 自動で書き換えない。必要なら起票し直す |
+
+公開済みの行は `ui-sync` で変更できないので、再承認には新しい下書きとして起票し直す。`approver_id` を SQL で書き換えない。
+
+## 5. 引継ぎの承認と KB 公開
+
+`POST /api/case-handovers/:id/approve` は案件の完了を承認するだけで、`knowledge` に書かない。
+従来の画面は同じ「承認」ボタンから引継ぎの承認と原本のローカル公開を行い、「ナレッジを承認しました」と表示していた。
+そのため DB の行は申請中のまま残っていた。
+
+`assist-bridge.js` は引継ぎの承認後に `ui-sync` で KB の公開を別に保存し、両方の結果を分けて表示する。
+公開に失敗しても引継ぎの承認は戻さず、未公開と伝える。行は申請中のまま残るので「サーバ下書き」から承認し直せる。
+
+### 引継ぎワークスペースの「ナレッジ下書きを作成」
+
+`POST /api/terminal/sessions/:id/knowledge-draft` は、`client_ref = terminal-<session id>`、`status='pending'` で行を作る。
+
+- 画面に下書きを編集する導線はなく、作成の時点で「承認待ち」と表示していたので、実際の状態を表示に合わせた。自動公開はしない。
+- 承認者は ⑥ 承認者の確認の「サーバ下書き」から承認する。DX 推進部以外の承認者にも一覧に出る。
+- 既存の `client_ref` なしの行は書き換えない。件数は検出スクリプトの `db.draftsWithoutClientRef` で確認する。必要なら作成者が別の手順で起票し直す。
+
+## 6. `POST /api/knowledge/ui-sync` の調査結果
+
+クライアントは `status` を指定できるが、権限はサーバーで判定している。
+
+| 操作 | 判定 | 結果 |
+|---|---|---|
+| 一般社員の `pending` / `approved` | `requireHelpdeskActor` / `requireApproverActor` | 403 |
+| ヘルプデスクでない承認者が未知の `clientRef` で `approved` | `requireHelpdeskActor` | 403 |
+| `approverId` / `version` / `approved` の指定 | zod が捨てる | 無視される |
+| 公開済みの行の更新 | `conflict` | 409 |
+| **他人の行を `draft` / `pending` で上書き** | **判定なし（修正前）** | **本文を差し替えて自分で承認でき、職務分離を抜けられた。作成者別の別の行（`<clientRef>~<作成者 ID 先頭 8 桁>`）に保存し、元の行を変えないように修正** |
+| 本文比較と承認の競合 | 条件付き更新 | 承認の `UPDATE` に状態と本文の一致を条件に入れた。行ロックの後で評価し直すので、比較の直後に作成者が更新しても 409 で止まる。作成者の更新も `status <> 'approved'` を条件にした（PATCH と `/review` も同様） |
+| 自己承認（`ALLOW_SELF_APPROVAL=true`） | 設定で許可 | 行は `approved` になるが AI の根拠にしない。応答の `aiUsable=false` で画面に伝える |
+
+下書き番号（`DR-001`）はブラウザごとの連番で担当者間で重なる。別の行にするのはこのためで、拒否すると二人目の担当者が保存できなくなる。
+本文の上限は計 16,000 字なので、`bodyLimit` を 64KiB に広げた（16KiB では端末記録の長い下書きを承認できない）。
+
+## 7. 影響と残課題
+
+- 相談者の AI 回答から、原本 HTML のデモ KB（KB-101 系）が根拠として消える。DB に承認済み KB がなければ「担当者へ引き継いでください」が増える。
+- 画面内の決定ルールと `HD.kb()`（ブラウザ内の検索、API 障害時の `originalKb`）は引き続き state の KB を使う。本人のブラウザだけで完結し、サーバーの根拠にはならない。DB で未承認のものは承認済みと表示しない（[docs/14](./14-prototype-ui-integration.md) 2-14）。
+- `findApprovedKnowledge` は更新順に 100 件までを照合する。承認済みが 100 件を超えると古い KB は候補から外れる。
+- 職務分離はアカウント単位である。[docs/61](./61-approvers-and-owners-20261031.md) §7 のとおり、画面から承認できるのは現在人物 A の 2 アカウントだけなので、同一人物の承認を除くと新しい KB が AI に届かなくなる。別の人物が画面で承認できるようになった時点で、除外を検討する。
+- `MIN_SCORE` は案件診断（`cases.ts`）が示す KB にも適用される。`scripts/eval` は実行していない。
+
+## 8. KB に相談者の端末情報を入れない（2026-11-01、通しの E2E で発見）
+
+### 問題
+
+原本の `createDraft` は引継ぎ本文（`t.body`）を 180 字で切って症状欄にする。引継ぎ本文には本人が**担当者への共有**に同意した「端末」「PC 基本情報」「実診断の結果」が入る。既定の共有では `【端末】WEB-…／…【PC基本情報（事前取得）】取得日時…` が症状になり、承認後は全相談者の相談の AI 入力、つまり外部 AI へ渡っていた（`docs/evidence/dataflow-20261101/before-fix/`）。実行 ID が入らなかったのは 180 字で切れたからにすぎない。
+
+### 多層の対策
+
+| 層 | 対策 | 場所 |
+|---|---|---|
+| 下書きの作成（画面） | 症状の元を引継ぎ本文の「相談内容」の節だけにする。節が無ければ件名。節の無い本文（代行受付など）はそのまま | `prototype.ts` の `patchKbDraftBody` + `assist-bridge.js` の `ahKbConsultText` |
+| 下書きの保存 | `redactKnowledgeText` で除去（`ui-sync`、`PATCH /knowledge/:id`、`/cases/:id/knowledge-draft`、端末記録の下書き） | `domain/pii.ts`、`routes/knowledge.ts`、`routes/desk.ts`、`terminal/report.ts` |
+| 承認 | 別人の承認の前に保存済みの本文を検査し、残っていれば `409 KB_CONTAINS_DEVICE_INFO`（`ui-sync`、`/knowledge/:id/review`）。自動で書き換えて公開しない | `routes/knowledge.ts` |
+| AI 入力の構築 | `findApprovedKnowledge` で除去（`/api/ai/answer`、案件診断、解決ループの提案）。行は書き換えない | `lib/knowledge-search.ts` |
+| 公開済みの閲覧 | `GET /knowledge`、`GET /knowledge/:id` の公開済みの行でも除去して返す | `routes/knowledge.ts` |
+| 承認者の確認 | ⑥ の「サーバ下書き」は題名と作成者だけで本文が出ず、確認しないまま承認していた。症状・原因・手順を表示する | `assist-bridge.js` |
+
+### `redactKnowledgeText` が除くもの
+
+`redactPII` の対象（メール、電話、IP、カード、資産番号、パスワード）に加えて次を除く。
+
+- 引継ぎ本文の節: 【端末】【PC基本情報…】【実診断の結果】【AIの診断結果】【対応案…】【添付…】
+- ラベル付きの値: コンピュータ名、ホスト名、シリアル番号、MAC アドレス、取得日時
+- 形で分かるもの: `WEB-XXXXXXXX`、UUID（端末 ID と実行 ID）、`MRK-…`、`MK` + 数字（社員番号）、`DESKTOP-` / `LAPTOP-` / `WIN-` / `WORKSTATION-`、`*.local` / `.lan` / `.corp` / `.internal` / `.intranet`、MAC アドレス
+
+**限界:** 任意のホスト名（ラベルの無い `FINANCE7` など）は形から判別できない。氏名は対象外（原本の `maskPII` が担当者名と依頼者名を伏せる）。**残る防御は承認者の確認である。**
+
+### 既存データと移行案
+
+既存の行は書き換えない。件数は読み取り専用スクリプトで確認する（§4 の手順と同じ。出力は件数だけ）。
+
+| 出力 | 意味 | 移行案 |
+|---|---|---|
+| `db.approvedWithDeviceInfo` | 公開済みの行に端末情報が残る | AI 入力と閲覧では除去済みなので緊急性は下がるが、行には残る。担当者が内容を確認し、新しい下書きとして起票し直して別人が承認する。古い行の扱い（残す、取り下げ）はユーザーが判断する |
+| `db.notApprovedWithDeviceInfo` | 下書き・申請中の行に残る | 別人の承認は `KB_CONTAINS_DEVICE_INFO` で止まる。差し戻すと、作成者の次の保存で除去される |
+
+**本番 DB への実行はユーザーの判断で行う。この PR の作業では実行していない。**
+
+## 9. 承認の出所の区別（2026-11-01）
+
+本番の `approved` の KB 9 件は、作成者と承認者がすべてシードのアカウントで `client_ref` が無い（coordinator の確認。この作業では本番に接続していない）。実機の回で `KB-2026-0003 v1` が「出典：別の担当者が承認したナレッジ」と表示された。**表示が事実と違っていたので、出所を区別して表示する。使ってよいかの方針は変えていない。**
+
+### 出所の語彙
+
+サーバが固定語彙で判定する（`domain/approval-origin.ts`）。
+
+| 値 | 条件 | 表示 |
+|---|---|---|
+| `seed` | 作成者と承認者の両方が `scripts/seed.ts` の利用者の固定 ID（`SEED_USER_IDS`）。片方だけなら該当しない | 初期登録の資料（人の承認記録なし） |
+| `shared_identity` | `SHARED_IDENTITY_GROUPS` で作成者と承認者が同じグループ | 同一人物の別アカウントが承認 |
+| `other_person` | 上のどちらでもない | 別の担当者が承認 |
+| 値なし・不明 | `knowledge_refs` の古い行など | 出所を確認できません |
+
+出すところ: 結果カードの出典（`resolve-bridge.js`）、提案の AI 入力（`knowledgeRefs[].approvalOrigin` / `approvalOriginLabel`）、`/api/ai/answer` のプロンプトの「出所:」と出典、フォールバックの書き出し、画面の回答の「出典」行、報告書の出典表（画面内の資料は「画面内の資料（DB で未承認）」）。「承認済みナレッジ」と全件を呼ぶ文言は「ナレッジ」「社内ナレッジ」に変えた。
+
+**判定の根拠と限界:** メールのドメインでは判定しない。`seed.ts` は `ON CONFLICT DO NOTHING` で利用者を作るので、シードより前に同じメールの行があった環境では ID が固定値と違い、`other_person` と表示される。**本番の 9 件がこの判定で `seed` になるかは未確認である。** 下の `db.usableSeed` が 9 になることで確かめる。`other_person` は「アカウントが別で、同一人物の登録が無い」という意味で、別の人物であることの証明ではない。
+
+### 件数の確認（読み取り専用）
+
+§4 と同じ `scripts/report-state-kb-provenance.mjs`。`SHARED_IDENTITY_GROUPS` に本番と同じ値を渡す。出力は件数だけ。
+
+| 出力 | 意味 |
+|---|---|
+| `db.usableSeed` | AI の根拠に使える行のうち `seed` |
+| `db.usableSharedIdentity` | 同じく `shared_identity`（`seed` は除く） |
+| `db.usableOtherPerson` | 同じく `other_person` |
+
+**本番 DB への実行はユーザーの判断で行う。この PR の作業では実行していない。**
+
+### 現状の動作（変えていない）
+
+`findApprovedKnowledge` の条件（`approved`、承認記録あり、`approver_id <> author_id`、承認後の更新なし）を満たせば、3 種類とも AI の根拠と解決ループの案内に使う。`seed` も `approver_id <> author_id` を満たすので使われる。
+
+### 判断が必要なこと（ユーザーの判断）
+
+| 選択肢 | 影響 |
+|---|---|
+| A. `seed` を根拠に使い続ける（現状） | 既存の回答が変わらない。人の承認記録の無い内容が AI の根拠になるが、出所は表示される |
+| B. `seed` を根拠から外す | 本番の approved が 9 件とも seed なら、**AI の根拠と結果カードの案内が 0 件になる**。自由記述の回答は「担当者へ引き継いでください」が増える。必要な内容は下書きとして起票し、別人が承認する手順が要る |
+| C. `shared_identity` を使い続ける（現状） | 新しい KB が AI に届く。同一人物の承認なので職務分離は人物単位では成立しない。出所は表示される |
+| D. `shared_identity` を根拠から外す | [docs/61](./61-approvers-and-owners-20261031.md) §7 のとおり、いま画面から承認できるのは人物 A の 2 アカウントだけなので、**A の下書きを別の人物が承認できるようになるまで、新しい KB は AI に届かない** |
+
+B と D を同時に選ぶと、別の人物が画面で承認できるようになるまで本番の AI の根拠は 0 件になる。
+
+## 10. 承認を確認した本文へ束縛する
+
+| 項目 | 内容 |
+|---|---|
+| 修正前の失敗 | `POST /knowledge/:id/review` は本文も版も受け取らない。承認者が読んだ後に作成者が `ui-sync` で書き換えると、**未確認の本文がそのまま公開された**（`docs/evidence/kb-binding-20261101/vitest-red.txt`）。`ui-sync` は 4 項目を比べるが keywords を見ない |
+| 指紋 | `knowledgeContentHash`：ID、`version`、title、symptom、cause、steps、keywords の SHA-256。`version` は承認のときだけ増えるので、版だけでは束縛にならない |
+| 取得 | `GET /knowledge/pending`、`GET /knowledge/:id`（未公開の行のみ）、`ui-sync` の応答 |
+| 承認 | 両 API とも、トランザクションの中で `SELECT ... FOR UPDATE` の後の行で状態、端末情報、指紋を判定する。トランザクションの前に読んだ値を信用しない |
+| 不一致 | `409 KB_CONTENT_CHANGED`。行は変わらず、`knowledge_reviews` も増えない |
+| 省略 | `/review` の承認は常に、`ui-sync` は他人の KB の承認で必須（400）。省略で抜けられない。自分の KB の承認（`ALLOW_SELF_APPROVAL`）は同じトランザクションで保存する本文を指紋に記録するが、AI の根拠にはならない |
+| 記録 | `knowledge_reviews.content_hash`、`reviewed_version`、`published_version`。監査の `detail.contentHash`、`detail.publishedVersion`。既存行は NULL のまま |
+| 画面 | 承認者の一覧は一覧の指紋を送る。引継ぎの承認と下書きの承認は、押した時点の一覧を読み、**画面の本文と同じときだけ**指紋を送る |
+
+試験: `knowledge-approval-binding.integration.test.ts`。競合は sleep を使わず、別接続の未コミット更新で承認を行ロック待ちにして（`pg_stat_activity` で確認）から COMMIT する。待ちに入らなければ試験を失敗にする。
+
+## 11. keywords の保護
+
+keywords は本文の検査の対象外で、端末情報をそのまま保存し、AI の照合と閲覧の応答へ渡していた。**外部 AI のプロンプトには keywords を入れていない**（照合のスコアだけに使う）。
+
+| 段階 | 対策 |
+|---|---|
+| 保存（`PATCH`、`ui-sync`） | 端末情報や個人情報を含む語を除く（置き換えない。検索の語なので） |
+| 承認（両 API） | 保存済みの keywords に残っていれば `409 KB_CONTAINS_DEVICE_INFO` |
+| 閲覧、AI の照合 | 公開済みの行は応答と照合の前に除く。行は書き換えない |
+| 既存行 | **自動で更新しない。** 下の検出と移行案に分ける |
+
+#120 の `symptom_tags`（035）は固定の語彙で自由文ではないが、統合の後に同じ検査の対象か確かめる（未実施）。
+
+### 検出（読み取り専用）
+
+`scripts/report-state-kb-provenance.mjs` の件数。**本番 DB への実行はユーザーの判断で、この作業では実行していない。**
+
+| 出力 | 意味 |
+|---|---|
+| `db.approvedKeywordsWithDeviceInfo` | 公開済みで keywords に端末情報がある行 |
+| `db.notApprovedKeywordsWithDeviceInfo` | 未公開で同じ状態の行（承認時に 409 になる） |
+| `db.approvedWithoutReviewedHash` | 束縛の導入前に公開された行。確認した本文の記録が無い |
+| `db.uiRowsWithoutSource` | 元の引継ぎをたどれない画面経路の行 |
+
+### 移行案（未実施、判断が必要）
+
+1. 検出の件数を取る。0 件なら何もしない。
+2. keywords に端末情報のある行は、DB を直接書き換えず、担当者が起票し直して承認を取り直す。閲覧と AI の照合では既に除かれるので急がない。
+3. `content_hash` の無い公開行は「確認の記録なし」のまま残す。**過去の承認を確認済みと書き換えない。** 必要なら再承認する。
+
+## 12. KB から元の案件へたどる
+
+`knowledge.case_id` は `/review` の完了処理（案件の完了と起票のクローズ）に使っており、画面経路で設定すると案件が閉じる。そこで別の列にした。
+
+| 項目 | 内容 |
+|---|---|
+| 列 | `knowledge.source_handover_id`、`knowledge.source_case_ref`（migration 037） |
+| 設定 | 下書きを保存するとき、`sourceHandoverId` を**引き受けた本人の引継ぎに限って**受け付ける。案件は `case_handovers.case_id` を写し、クライアントの値を使わない。一致しなければ空のまま |
+| 公開 | `knowledgeDto` と `/knowledge/pending` では返さない。相談者へ案件番号を見せない |
+| 追跡 | KB → `source_handover_id` → `case_handovers.snapshot` と `case_id` → `resolution_sessions` → `resolution_steps` → `device_commands`。KB → `knowledge_reviews`（承認者、指紋、公開版） |
+
+## 13. 根拠の方針の判断（2026-11-01、ユーザー）
+
+選択肢 A と C を選んだ。**初期登録の KB と同一人物の別アカウントが承認した KB を、出所を表示したまま AI の根拠に使い続ける。** 判定の条件は変えない。別人物が画面で承認できるようになったら見直す。
+

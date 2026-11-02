@@ -10,10 +10,12 @@ import { sameHuman } from '../auth/shared-identity.js';
 import { authenticateUi } from '../auth/ui.js';
 import { config } from '../config.js';
 import { sql } from '../db.js';
-import { redactPII } from '../domain/pii.js';
+import { knowledgeContentHash } from '../domain/knowledge-content.js';
+import { containsDeviceInfo, redactKnowledgeKeywords, redactKnowledgeText } from '../domain/pii.js';
 import { ApiError, badRequest, conflict, notFound } from '../errors.js';
 import { appendAudit } from '../lib/audit-log.js';
 import { jsonbValue } from '../lib/jsonb-value.js';
+import { listAiUsableRefs } from '../lib/knowledge-search.js';
 import { nextKbNo } from '../lib/numbers.js';
 import { caseSummary, knowledgeDto } from '../lib/serializers.js';
 import { ensureAuthorUser } from '../lib/users.js';
@@ -35,8 +37,12 @@ const UpdateSchema = z
     message: '更新する項目がありません。',
   });
 
+const ContentHashSchema = z.string().regex(/^sha256:[0-9a-f]{64}$/);
+
 const ReviewSchema = z.object({
   decision: z.enum(['approved', 'rejected']),
+  // 承認者が確認した内容の指紋（GET /knowledge/:id、/knowledge/pending が返す）。承認では必須。
+  contentHash: ContentHashSchema.optional(),
   comment: z.string().trim().max(2000).optional(),
   checklist: z.object({
     reproducible: z.boolean(),
@@ -61,6 +67,10 @@ const UiSyncSchema = z.object({
   steps: z.string().trim().max(8000).default(''),
   keywords: z.array(z.string().trim().min(1).max(40)).max(12).default([]),
   comment: z.string().trim().max(2000).optional(),
+  // 他人の KB を承認するときは必須。承認者が確認した内容の指紋。
+  contentHash: ContentHashSchema.optional(),
+  // 下書きの元の引継ぎ。引き受けた本人の行だけ受け付け、案件はサーバで写す。
+  sourceHandoverId: z.string().uuid().optional(),
   checklist: z
     .object({
       reproducible: z.boolean(),
@@ -83,6 +93,50 @@ async function loadKnowledge(id: string) {
   return rows[0] ?? null;
 }
 
+/** 公開済みの行を相談者へ返すときも、保存済みの端末情報を見せない（行は書き換えない）。 */
+function publicKnowledge(row: any): any {
+  if (row.status !== 'approved') return row;
+  return {
+    ...row,
+    title: redactKnowledgeText(row.title).text,
+    symptom: redactKnowledgeText(row.symptom).text,
+    cause: redactKnowledgeText(row.cause).text,
+    steps: redactKnowledgeText(row.steps).text,
+    keywords: redactKnowledgeKeywords(row.keywords),
+  };
+}
+
+/** 承認の前に、保存済みの本文と keywords に端末情報が無いことを確かめる。 */
+function assertNoDeviceInfo(row: {
+  title: string;
+  symptom: string;
+  cause: string;
+  steps: string;
+  keywords?: string[] | null;
+}): void {
+  const fields = [row.title, row.symptom, row.cause, row.steps, ...(row.keywords ?? [])];
+  if (fields.some(containsDeviceInfo)) {
+    throw new ApiError(
+      409,
+      'KB_CONTAINS_DEVICE_INFO',
+      '本文に端末情報が含まれているため承認できません。差し戻して起票し直してください。',
+    );
+  }
+}
+
+const CONTENT_CHANGED_MESSAGE =
+  '確認後に本文が更新されています。一覧を更新して確認し直してください。';
+
+function contentChanged(): ApiError {
+  return new ApiError(409, 'KB_CONTENT_CHANGED', CONTENT_CHANGED_MESSAGE);
+}
+
+/** 行ロックを取って読む。判定は取得後の行で行い、トランザクションの前に読んだ値を信用しない。 */
+async function lockKnowledge(tx: any, id: string): Promise<any> {
+  const rows = await tx`SELECT * FROM knowledge WHERE id = ${id} FOR UPDATE`;
+  return rows[0] ?? null;
+}
+
 export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
   app.get('/knowledge', { preHandler: authenticate }, async (request) => {
     const user = request.authUser!;
@@ -99,7 +153,7 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
         k.updated_at DESC
       LIMIT ${query.limit}
     `;
-    return { knowledge: rows.map(knowledgeDto) };
+    return { knowledge: rows.map(publicKnowledge).map(knowledgeDto) };
   });
 
   /**
@@ -131,12 +185,13 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
         cause: string;
         steps: string;
         keywords: string[] | null;
+        version: number;
         author_email: string | null;
         created_at: Date;
       }[]
     >`
       SELECT k.id, k.client_ref, k.kb_no, k.status, k.title, k.symptom, k.cause, k.steps,
-             k.keywords, u.email AS author_email, k.created_at
+             k.keywords, k.version, u.email AS author_email, k.created_at
       FROM knowledge k
       LEFT JOIN users u ON u.id = k.author_id
       WHERE k.client_ref IS NOT NULL
@@ -155,11 +210,18 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
         cause: row.cause,
         steps: row.steps,
         keywords: Array.isArray(row.keywords) ? row.keywords : [],
+        version: row.version,
+        contentHash: knowledgeContentHash(row),
         authorEmail: row.author_email ?? null,
         createdAt: row.created_at,
       })),
     };
   });
+
+  /** 画面が state の KB を「承認済み」と表示してよいかの判定に使う（docs/64）。 */
+  app.get('/knowledge/approved-refs', { preHandler: authenticateUi }, async () =>
+    listAiUsableRefs(sql),
+  );
 
   app.get('/knowledge/:id', { preHandler: authenticate }, async (request) => {
     const user = request.authUser!;
@@ -177,7 +239,7 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
       ORDER BY r.created_at DESC
     `;
     return {
-      knowledge: knowledgeDto(row),
+      knowledge: knowledgeDto(publicKnowledge(row)),
       reviews: reviews.map((review) => ({
         id: review.id,
         decision: review.decision,
@@ -201,21 +263,26 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
       throw conflict('承認待ち・公開済みのナレッジは編集できません。');
     }
 
-    const title = input.title !== undefined ? redactPII(input.title) : null;
-    const symptom = input.symptom !== undefined ? redactPII(input.symptom) : null;
-    const cause = input.cause !== undefined ? redactPII(input.cause) : null;
-    const steps = input.steps !== undefined ? redactPII(input.steps) : null;
+    const title = input.title !== undefined ? redactKnowledgeText(input.title) : null;
+    const symptom = input.symptom !== undefined ? redactKnowledgeText(input.symptom) : null;
+    const cause = input.cause !== undefined ? redactKnowledgeText(input.cause) : null;
+    const steps = input.steps !== undefined ? redactKnowledgeText(input.steps) : null;
 
     await sql.begin(async (tx) => {
-      await tx`
+      // 確認と更新の間に申請・承認されていたら更新しない。
+      const updatedRows = await tx`
         UPDATE knowledge SET
           title = COALESCE(${title?.text ?? null}, title),
           symptom = COALESCE(${symptom?.text ?? null}, symptom),
           cause = COALESCE(${cause?.text ?? null}, cause),
           steps = COALESCE(${steps?.text ?? null}, steps),
-          keywords = COALESCE(${input.keywords ?? null}::text[], keywords)
-        WHERE id = ${id}
+          keywords = COALESCE(${input.keywords ? redactKnowledgeKeywords(input.keywords) : null}::text[], keywords)
+        WHERE id = ${id} AND status IN ('draft', 'rejected')
+        RETURNING id
       `;
+      if (updatedRows.length === 0) {
+        throw conflict('承認待ち・公開済みのナレッジは編集できません。');
+      }
       await appendAudit(tx, {
         actorId: user.id,
         action: 'knowledge.update',
@@ -281,25 +348,46 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
       ) {
         throw badRequest('承認には4項目のチェックリストすべての確認が必要です。');
       }
+      // 省略で束縛を抜けられないよう、指紋の無い承認は受け付けない。
+      if (!input.contentHash) {
+        throw badRequest('確認した本文の指紋がありません。一覧を更新して確認し直してください。');
+      }
     } else if (!input.comment) {
       throw badRequest('差戻しには理由を入力してください。');
     }
 
+    let publishedVersion: number | null = null;
     await sql.begin(async (tx) => {
+      // 確認の後に作成者の更新が確定していても、ロックの後の行で判定する。
+      const locked = await lockKnowledge(tx, id);
+      if (!locked || locked.status !== 'pending') {
+        throw conflict('承認待ちのナレッジではありません。');
+      }
+      const lockedHash = knowledgeContentHash(locked);
+      if (input.decision === 'approved') {
+        if (lockedHash !== input.contentHash) throw contentChanged();
+        assertNoDeviceInfo(locked);
+      }
+      publishedVersion = input.decision === 'approved' ? Number(locked.version) + 1 : null;
       await tx`
-          INSERT INTO knowledge_reviews (knowledge_id, reviewer_id, decision, comment, checklist)
+          INSERT INTO knowledge_reviews (
+            knowledge_id, reviewer_id, decision, comment, checklist,
+            content_hash, reviewed_version, published_version
+          )
           VALUES (${id}, ${user.id}, ${input.decision}, ${input.comment ?? ''},
-            ${jsonbValue(input.checklist)})
+            ${jsonbValue(input.checklist)}, ${lockedHash}, ${locked.version}, ${publishedVersion})
         `;
       if (input.decision === 'approved') {
-        await tx`
+        const approvedRows = await tx`
             UPDATE knowledge SET
               status = 'approved',
               approver_id = ${user.id},
               approved_at = now(),
               version = version + 1
-            WHERE id = ${id}
+            WHERE id = ${id} AND status = 'pending'
+            RETURNING id
           `;
+        if (approvedRows.length === 0) throw conflict('承認待ちのナレッジではありません。');
         if (row.case_id) {
           const caseRows = await tx<any[]>`
               SELECT case_no, signal FROM cases WHERE id = ${row.case_id} LIMIT 1
@@ -341,6 +429,8 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
           kbNo: row.kb_no,
           caseId: row.case_id,
           comment: input.comment ?? '',
+          contentHash: input.contentHash ?? null,
+          publishedVersion,
         },
       });
     });
@@ -377,7 +467,8 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
    */
   app.post(
     '/knowledge/ui-sync',
-    { preHandler: authenticateUi, bodyLimit: 16 * 1024 },
+    // 本文は最大 16,000 字（UTF-8 で約 48KiB）。端末記録から作った長い下書きも承認できるようにする。
+    { preHandler: authenticateUi, bodyLimit: 64 * 1024 },
     async (request) => {
       if (!request.uiEmail) throw badRequest('UI の認証情報がありません。');
       const email = request.uiEmail;
@@ -388,17 +479,31 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
           ? await requireApproverActor(email, request.uiRoles)
           : await requireHelpdeskActor(email);
 
-      const title = redactPII(input.title);
-      const symptom = redactPII(input.symptom);
-      const cause = redactPII(input.cause);
-      const steps = redactPII(input.steps);
+      const title = redactKnowledgeText(input.title);
+      const symptom = redactKnowledgeText(input.symptom);
+      const cause = redactKnowledgeText(input.cause);
+      const steps = redactKnowledgeText(input.steps);
+      const keywords = redactKnowledgeKeywords(input.keywords);
 
       const authorId = await ensureAuthorUser(email, actor.name ?? email);
 
+      const isDecision = input.status === 'approved' || input.status === 'rejected';
+      // 画面の下書き番号（DR-001）はブラウザごとの連番で、別の担当者と重なる。
+      // 重なっても他人の行を下書き・申請で上書きせず、作成者別の clientRef で別の行にする。
+      // 上書きを許すと、他人名義のまま差し替えて自分で承認でき、職務分離を抜けられる。
+      const ownClientRef = `${input.clientRef}~${authorId.slice(0, 8)}`;
+      // 指紋つきの判定は一覧で読んだ行そのもの。同じ番号の自分の行へ当てない。
+      const preferredRef = isDecision && input.contentHash ? input.clientRef : ownClientRef;
       const existingRows = await sql<any[]>`
-        SELECT * FROM knowledge WHERE client_ref = ${input.clientRef} LIMIT 1
+        SELECT * FROM knowledge
+        WHERE client_ref IN (${input.clientRef}, ${ownClientRef})
+        ORDER BY (client_ref = ${preferredRef}) DESC
+        LIMIT 1
       `;
-      const existing = existingRows[0];
+      const collidesWithOther =
+        !isDecision && existingRows[0] && String(existingRows[0].author_id) !== authorId;
+      const existing = collidesWithOther ? undefined : existingRows[0];
+      const newClientRef = collidesWithOther ? ownClientRef : input.clientRef;
       const recordAuthorId = existing ? String(existing.author_id) : authorId;
       const selfApproved = recordAuthorId === authorId;
       // 別アカウントだが同一人物による承認か（selfApproved=false の誤読を防ぐ）。
@@ -413,30 +518,21 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
         throw conflict('公開済みのナレッジは更新できません。');
       }
 
-      const isDecision = input.status === 'approved' || input.status === 'rejected';
       // 行の新規作成は下書き権限が要る（承認者だけでは未知の clientRef から作れない）。
       if (isDecision && !existing) await requireHelpdeskActor(email);
       // 他人のナレッジを判定するときは本文を変更しない（作成者名義の改ざんを防ぐ）。
       const lockContent = isDecision && Boolean(existing) && !selfApproved;
       // DX 推進部以外の承認者が判定できるのは申請済みだけ（下書き・差戻し中は見えないため）。
-      if (
-        isDecision &&
-        existing &&
-        existing.status !== 'pending' &&
-        !(await isHelpdeskActor(email))
-      ) {
+      const decidableStatuses =
+        isDecision && existing && !(await isHelpdeskActor(email))
+          ? ['pending']
+          : ['draft', 'pending', 'rejected'];
+      if (isDecision && existing && !decidableStatuses.includes(existing.status)) {
         throw conflict('承認待ちのナレッジではありません。');
       }
-      // 承認者が確認した本文と保存済みの本文が違えば公開しない（確認後の更新を見逃さない）。
-      if (
-        input.status === 'approved' &&
-        lockContent &&
-        (existing.title !== title.text ||
-          existing.symptom !== symptom.text ||
-          existing.cause !== cause.text ||
-          existing.steps !== steps.text)
-      ) {
-        throw conflict('確認後に本文が更新されています。一覧を更新して確認し直してください。');
+      // 他人の KB は、確認した内容の指紋なしでは公開しない（省略で束縛を抜けられないように）。
+      if (input.status === 'approved' && lockContent && !input.contentHash) {
+        throw badRequest('確認した本文の指紋がありません。一覧を更新して確認し直してください。');
       }
 
       if (input.status === 'approved') {
@@ -465,6 +561,8 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
         throw badRequest('差戻しには理由を入力してください。');
       }
 
+      let reviewedHash: string | null = null;
+      let publishedVersion: number | null = null;
       const savedId = await sql.begin(async (tx) => {
         let id = existing?.id as string | undefined;
         if (!id) {
@@ -475,7 +573,7 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
               client_ref, version
             ) VALUES (
               ${kbNo}, ${title.text}, ${symptom.text}, ${cause.text}, ${steps.text},
-              ${input.keywords}, 'draft', ${authorId}, ${input.clientRef}, 1
+              ${keywords}, 'draft', ${authorId}, ${newClientRef}, 1
             )
             RETURNING id
           `;
@@ -485,20 +583,34 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
             action: 'knowledge.create',
             targetType: 'knowledge',
             targetId: id,
-            detail: { kbNo, clientRef: input.clientRef, via: 'ui', actorEmail: email },
+            detail: { kbNo, clientRef: newClientRef, via: 'ui', actorEmail: email },
           });
         }
 
         if (!lockContent) {
-          await tx`
+          // 確認の後に公開された行は書き換えない。
+          const contentRows = await tx`
             UPDATE knowledge SET
               title = ${title.text},
               symptom = ${symptom.text},
               cause = ${cause.text},
               steps = ${steps.text},
-              keywords = ${input.keywords}
-            WHERE id = ${id}
+              keywords = ${keywords}
+            WHERE id = ${id} AND status <> 'approved'
+            RETURNING id
           `;
+          if (contentRows.length === 0) throw conflict('公開済みのナレッジは更新できません。');
+          // 元の引継ぎは、自分が引き受けた行だけ結びつける。案件はサーバの値を写す。
+          if (input.sourceHandoverId) {
+            await tx`
+              UPDATE knowledge k SET
+                source_handover_id = h.id,
+                source_case_ref = h.case_id
+              FROM case_handovers h
+              WHERE k.id = ${id} AND h.id = ${input.sourceHandoverId}
+                AND lower(h.claimed_by) = lower(${email})
+            `;
+          }
         }
 
         if (input.status === 'draft' || input.status === 'pending') {
@@ -513,18 +625,44 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
             });
           }
         } else if (input.status === 'approved') {
-          await tx`
-            INSERT INTO knowledge_reviews (knowledge_id, reviewer_id, decision, comment, checklist)
-            VALUES (${id}, ${authorId}, 'approved', ${input.comment ?? ''},
-              ${jsonbValue(input.checklist)})
-          `;
+          // 確認の後に作成者の更新が確定していても、ロックの後の行で判定する。
+          const locked = await lockKnowledge(tx, id);
+          if (!locked || !decidableStatuses.includes(locked.status)) {
+            throw conflict('承認待ちのナレッジではありません。');
+          }
+          // 修正前に保存された行に端末情報が残っていれば公開しない（理由を返して起票し直してもらう）。
+          assertNoDeviceInfo(locked);
+          const lockedHash = knowledgeContentHash(locked);
+          if (lockContent) {
+            const sentHash = knowledgeContentHash({
+              id: locked.id,
+              version: locked.version,
+              title: title.text,
+              symptom: symptom.text,
+              cause: cause.text,
+              steps: steps.text,
+              keywords,
+            });
+            // 指紋と送られた本文の両方が、保存済みの行と一致するときだけ公開する。
+            if (lockedHash !== input.contentHash || sentHash !== lockedHash) throw contentChanged();
+          }
+          publishedVersion = Number(locked.version) + 1;
           await tx`
             UPDATE knowledge SET
               status = 'approved',
               approver_id = ${authorId},
               approved_at = now(),
-              version = version + 1
+              version = ${publishedVersion}
             WHERE id = ${id}
+          `;
+          reviewedHash = lockedHash;
+          await tx`
+            INSERT INTO knowledge_reviews (
+              knowledge_id, reviewer_id, decision, comment, checklist,
+              content_hash, reviewed_version, published_version
+            )
+            VALUES (${id}, ${authorId}, 'approved', ${input.comment ?? ''},
+              ${jsonbValue(input.checklist)}, ${lockedHash}, ${locked.version}, ${publishedVersion})
           `;
           await appendAudit(tx, {
             actorId: authorId,
@@ -538,15 +676,24 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
               via: 'ui',
               actorEmail: email,
               comment: input.comment ?? '',
+              contentHash: reviewedHash,
+              publishedVersion,
             },
           });
         } else {
-          await tx`
-            INSERT INTO knowledge_reviews (knowledge_id, reviewer_id, decision, comment, checklist)
-            VALUES (${id}, ${authorId}, 'rejected', ${input.comment ?? ''},
-              ${jsonbValue(input.checklist ?? {})})
-          `;
+          const locked = await lockKnowledge(tx, id);
+          if (!locked || !decidableStatuses.includes(locked.status)) {
+            throw conflict('承認待ちのナレッジではありません。');
+          }
           await tx`UPDATE knowledge SET status = 'rejected' WHERE id = ${id}`;
+          await tx`
+            INSERT INTO knowledge_reviews (
+              knowledge_id, reviewer_id, decision, comment, checklist,
+              content_hash, reviewed_version
+            )
+            VALUES (${id}, ${authorId}, 'rejected', ${input.comment ?? ''},
+              ${jsonbValue(input.checklist ?? {})}, ${knowledgeContentHash(locked)}, ${locked.version})
+          `;
           await appendAudit(tx, {
             actorId: authorId,
             action: 'knowledge.reject',
@@ -565,7 +712,9 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
       });
 
       const updated = await loadKnowledge(savedId);
-      return { knowledge: knowledgeDto(updated), selfApproved, sharedIdentity };
+      // AI の根拠に使われるか（findApprovedKnowledge と同じ、アカウント単位の職務分離）。画面の案内に使う。
+      const aiUsable = updated?.status === 'approved' && !selfApproved;
+      return { knowledge: knowledgeDto(updated), selfApproved, sharedIdentity, aiUsable };
     },
   );
 }

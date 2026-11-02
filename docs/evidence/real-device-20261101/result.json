@@ -1,0 +1,129 @@
+{
+ "date": "2026-11-01",
+ "commit": "fac3c76",
+ "conditions": {
+  "device": "検証用 Windows 端末 1 台（PowerShell 5.1、Node なし）",
+  "user": "検証ユーザー、切断セッション、standard 権限（Administrators 所属の UAC 制限トークン）",
+  "executor": "scripts/windows/command-agent.ps1（Skill spooler.status のみ）",
+  "auth": "AUTH_MODE=local。認証済みブラウザではない",
+  "browser": "サーバ上のヘッドレス。端末のブラウザではない（画面の端末欄は Linux）",
+  "ai": "実 DeepSeek（提案のみ。合成の相談文）",
+  "roster": "合成",
+  "human": "Y は担当者が番号で判定。3 回目は条件付きの事前承認（skill と引数の一致を機械照合してから送信）"
+ },
+ "rows": [
+  {
+   "case_id": "CASE-0001",
+   "status": "waiting_continue",
+   "session": "bf7aaaed-ee08-4088-91b8-0b04e47817dd",
+   "step": "2163485e-0bba-445d-964d-0151a6b76532",
+   "skill_id": "spooler.status",
+   "step_status": "done",
+   "command_id": "0b5fb260-f163-44a6-967d-cb19bc429aa3"
+  },
+  {
+   "case_id": "CASE-0002",
+   "status": "stopped",
+   "session": "1142dfc2-7ed9-4d03-9de6-17e5d00dd6e6",
+   "step": "99effb85-2560-4f5c-9fd4-625546af7c4f",
+   "skill_id": "spooler.status",
+   "step_status": "cancelled",
+   "command_id": null
+  },
+  {
+   "case_id": "CASE-0002",
+   "status": "escalated",
+   "session": "e3362ffd-217e-4724-8e8c-4085e84e9bbd",
+   "step": "e1ac36d1-63fd-46e0-ae1c-0a20c257ef0c",
+   "skill_id": "spooler.status",
+   "step_status": "done",
+   "command_id": "2209b951-fb7c-46ea-aade-a379bdd9099b"
+  }
+ ],
+ "commands": [
+  {
+   "id": "0b5fb260-f163-44a6-967d-cb19bc429aa3",
+   "status": "done",
+   "skill_id": "spooler.status",
+   "step_id": "2163485e-0bba-445d-964d-0151a6b76532",
+   "session_id": "bf7aaaed-ee08-4088-91b8-0b04e47817dd",
+   "skill_version": "1.0.0"
+  },
+  {
+   "id": "2209b951-fb7c-46ea-aade-a379bdd9099b",
+   "status": "done",
+   "skill_id": "spooler.status",
+   "step_id": "e1ac36d1-63fd-46e0-ae1c-0a20c257ef0c",
+   "session_id": "e3362ffd-217e-4724-8e8c-4085e84e9bbd",
+   "skill_version": "1.0.0"
+  }
+ ],
+ "handover": {
+  "id": "7b755a61-5fcb-4baa-a6c4-edc0b052fb1f",
+  "status": "pending",
+  "case": "CASE-0002",
+  "hasRealDiag": true,
+  "hasEndpointSource": true,
+  "hasMock": false,
+  "hasDemo": false,
+  "hasSpoolerRunning": true
+ },
+ "ticket": "TKT-2026-0001",
+ "apiLog": [
+  "GET /api/knowledge/approved-refs 200",
+  "GET /api/employees 200",
+  "GET /api/resolve/device-status 200",
+  "GET /api/me 200",
+  "GET /api/me 200",
+  "POST /api/device/browser 200",
+  "GET /api/resolve/device-status 200",
+  "POST /api/resolve/sessions 200",
+  "GET /api/knowledge/approved-refs 200",
+  "GET /api/knowledge/approved-refs 200",
+  "GET /api/knowledge/approved-refs 200",
+  "GET /api/knowledge/approved-refs 200",
+  "GET /api/knowledge/approved-refs 200",
+  "POST /api/resolve/steps/:id/approve 409",
+  "POST /api/resolve/sessions/:id/stop 200",
+  "GET /api/knowledge/approved-refs 200",
+  "GET /api/knowledge/approved-refs 200",
+  "GET /api/knowledge/approved-refs 200",
+  "GET /api/knowledge/approved-refs 200",
+  "POST /api/resolve/sessions 200",
+  "POST /api/resolve/steps/:id/approve 200",
+  "GET /api/resolve/steps/:id 200",
+  "GET /api/resolve/steps/:id 200",
+  "GET /api/resolve/steps/:id 200",
+  "GET /api/resolve/steps/:id 200",
+  "GET /api/resolve/steps/:id 200",
+  "POST /api/resolve/sessions/:id/escalate 200",
+  "GET /api/me 200",
+  "GET /api/case-handovers/recipients 200",
+  "POST /api/case-handovers 200"
+ ],
+ "expiry": {
+  "case": "CASE-0002 の 1 回目",
+  "result": "Y が 5 分の期限後に到着。approve は 409、コマンド 0 件、セッション stopped"
+ },
+ "agentProcess": {
+  "user": "検証ユーザー",
+  "session": 2,
+  "note": "Get-Process -IncludeUserName で実測"
+ },
+ "agentLogEvents": [
+  "start source=endpoint_agent",
+  "command/skill/done 0b5fb260",
+  "poll error 502 3 回（検証サーバの再起動中）の後に自動復帰",
+  "command/skill/done 2209b951"
+ ],
+ "result": {
+  "name": "Spooler",
+  "status": "Running",
+  "startType": "Auto",
+  "sameAsIndependentRead": true
+ },
+ "notEvidence": [
+  "読取成功は相談の解決ではない。解決は判定していない",
+  "SPOOLER_RESTART と変更系は実行していない"
+ ]
+}

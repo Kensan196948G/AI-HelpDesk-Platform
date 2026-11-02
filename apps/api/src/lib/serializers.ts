@@ -1,5 +1,6 @@
 import type { AuthUser } from '../auth/types.js';
 import { CASE_STATUS_LABELS, CATEGORY_META, SIGNAL_LABELS } from '../domain/constants.js';
+import { knowledgeContentHash } from '../domain/knowledge-content.js';
 import type { Category, SignalColor } from '../domain/pc.js';
 import { asJsonArray, asJsonObject } from './json.js';
 
@@ -81,6 +82,7 @@ export function resolutionDto(row: any) {
 
 export function knowledgeDto(row: any) {
   if (!row) return null;
+  const keywords = Array.isArray(row.keywords) ? row.keywords : [];
   return {
     id: row.id,
     kbNo: row.kb_no,
@@ -90,7 +92,9 @@ export function knowledgeDto(row: any) {
     symptom: row.symptom,
     cause: row.cause,
     steps: row.steps,
-    keywords: Array.isArray(row.keywords) ? row.keywords : [],
+    keywords,
+    // 承認者が確認した内容の指紋。公開済みは閲覧用に伏せた本文なので返さない。
+    contentHash: row.status === 'approved' ? null : knowledgeContentHash({ ...row, keywords }),
     status: row.status,
     authorId: row.author_id,
     authorName: row.author_name ?? null,

@@ -1,0 +1,117 @@
+{
+  "scope": "Linux の pwsh と実 API の結合。Skill はスタブ（模擬）で実端末の結果ではない。Windows PowerShell 5.1、本物の Skill、endpoint_agent の申告は未確認。認証は AUTH_MODE=local、名簿は使っていない。",
+  "pwsh": "7.6.9",
+  "checks": [
+    {
+      "id": "P0",
+      "title": "案件を状態へ保存する",
+      "ok": true,
+      "note": "200"
+    },
+    {
+      "id": "P1",
+      "title": "解決ループが spooler.status を提案する",
+      "ok": true,
+      "note": "200 spooler.status"
+    },
+    {
+      "id": "P2",
+      "title": "本人の Y でコマンドが作られる",
+      "ok": true,
+      "note": "200"
+    },
+    {
+      "id": "P3",
+      "title": "エージェントが正常に終了する",
+      "ok": true,
+      "note": "evice/command source=mock\n[2026-11-01T17:21:29.7988247+09:00] command a7549f74-d9c0-4981-a64b-e3f7097b60b2 spooler.status\n[2026-11-01T17:21:29.8754715+09:00] skill a7549f74-d9c0-4981-a64b-e3f7097b60b2 spooler.status 1.0.0\n[2026-11-01T17:21:31.0013352+09:00] done a7549f74-d9c0-4981-a64b-e3f7097b60b2\n"
+    },
+    {
+      "id": "P4",
+      "title": "ログにトークンを出さない",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "P5",
+      "title": "コマンドが done で保存される",
+      "ok": true,
+      "note": "done "
+    },
+    {
+      "id": "P6",
+      "title": "端末 ID が一致する（x-device-id）",
+      "ok": true,
+      "note": "ps1-agent-device-0001"
+    },
+    {
+      "id": "P7",
+      "title": "配信と完了の時刻が残る",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "P8",
+      "title": "出所は mock（Linux のスタブを実端末と申告しない）",
+      "ok": true,
+      "note": "mock"
+    },
+    {
+      "id": "P9",
+      "title": "スタブの結果が保存される",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "P10",
+      "title": "ステップの API に結果と出所が出る",
+      "ok": true,
+      "note": "done/mock"
+    },
+    {
+      "id": "P11",
+      "title": "読取成功だけで解決にしない",
+      "ok": true,
+      "note": "waiting_continue"
+    },
+    {
+      "id": "P12",
+      "title": "定義のハッシュが違えば実行せず failed で保存される",
+      "ok": true,
+      "note": "failed 0"
+    },
+    {
+      "id": "P13",
+      "title": "本番モード: mock の申告は保存されない（failed、結果なし）",
+      "ok": true,
+      "note": "failed 模擬の結果は本番では受け付けません（実端末で実行されていません）。"
+    },
+    {
+      "id": "P14",
+      "title": "本番モードの拒否でもログにトークンを出さない",
+      "ok": true,
+      "note": ""
+    }
+  ],
+  "ids": {
+    "caseId": "CASE-PS1-AGENT",
+    "stepId": "7145300d-3667-43e8-b265-e3ec78c36608",
+    "commandId": "a7549f74-d9c0-4981-a64b-e3f7097b60b2",
+    "device": "ps1-agent-device-0001"
+  },
+  "savedResult": {
+    "deviceId": "ps1-agent-device-0001",
+    "exitCode": 0,
+    "durationMs": 1011,
+    "normalized": {
+      "name": "Spooler",
+      "stub": "模擬（Linux のスタブ）",
+      "status": "Running",
+      "startType": "Auto",
+      "displayName": "Print Spooler"
+    },
+    "stderrSummary": "",
+    "stdoutSummary": "{\"name\":\"Spooler\",\"displayName\":\"Print Spooler\",\"status\":\"Running\",\"startType\":\"Auto\",\"stub\":\"模擬（Linux のスタブ）\"}",
+    "executionSource": "mock"
+  }
+}

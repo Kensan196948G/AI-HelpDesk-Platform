@@ -1,0 +1,39 @@
+# 修正後の試験の結果。Linux の pwsh 7.6.9。対象 commit 98e8e0f。
+# 実行: pwsh -NoProfile -NonInteractive -File scripts/windows/tests/command-agent.tests.ps1（終了コード 0）
+# SKIP は PASS に数えていない。Skill はスタブで、Windows では実行していない。
+SKIP Set-Content の拒否 : Windows 実機が要る（scripts/windows/tests/script-identity-windows.ps1）
+SKIP [IO.File]::WriteAllBytes の拒否 : Windows 実機が要る（scripts/windows/tests/script-identity-windows.ps1）
+SKIP Copy-Item の上書きの拒否 : Windows 実機が要る（scripts/windows/tests/script-identity-windows.ps1）
+SKIP Remove-Item の拒否 : Windows 実機が要る（scripts/windows/tests/script-identity-windows.ps1）
+SKIP Move-Item（改名）の拒否 : Windows 実機が要る（scripts/windows/tests/script-identity-windows.ps1）
+SKIP 別ファイルの移動による置換の拒否 : Windows 実機が要る（scripts/windows/tests/script-identity-windows.ps1）
+SKIP 親フォルダの改名の可否 : Windows 実機が要る（scripts/windows/tests/script-identity-windows.ps1）
+SKIP powershell.exe -File（5.1）がハンドルを持ったまま開ける : Windows 実機が要る（scripts/windows/tests/script-identity-windows.ps1）
+passed=197 failed=0 skipped=8
+
+# 手順の確認: script-identity-windows.ps1 -ProbeOnNonWindows（Linux。実機の確認ではない。終了コード 1、ok=false）
+# Linux の FAIL は想定どおりで、助言ロックでは書込み、削除、改名を防げないことを示す。
+passed=4 failed=12 skipped=1 platformValid=False ok=False
+PASS child_opens_while_handle_held 
+FAIL set_content not denied while handle held
+FAIL write_all_bytes not denied while handle held
+PASS copy_item_overwrite IOException
+FAIL remove_item not denied while handle held
+FAIL move_item_rename not denied while handle held
+FAIL move_item_replace not denied while handle held
+FAIL file_replace not denied while handle held
+FAIL rename_parent_folder not denied while handle held
+FAIL rename_grandparent_folder not denied while handle held
+FAIL swap_other_content unapproved bytes ran or write not denied
+FAIL swap_lf_to_crlf unapproved bytes ran or write not denied
+FAIL swap_new_version unapproved bytes ran or write not denied
+FAIL fail_closed_when_writer_open skill ran
+PASS handle_released_after_timeout 
+SKIP junction_refused windows only
+PASS elevated_branch_refused 
+
+# 変異の確認: 写しの command-agent.ps1 を壊して試験が失敗することを確かめた
+noelev（昇格の判定を無効化）: FAIL 5 件。ただし close 試験を強化する前の実行で、並行実行の干渉による identity の 1 件を含む
+earlyclose（子の起動前に Dispose）: FAIL 22 件（close 試験を強化する前の実行。並行実行の干渉を含む可能性がある）
+nofinally（Dispose を削除）: 差替えの「終わったら閉じる」3 件が FAIL し、残したハンドルのため試験が途中で止まる（終了コード 1、集計行なし）
+successonly（finally を外し正常時だけ閉じる）: close の 6 件が FAIL（passed=191 failed=6 skipped=8）。成功の 1 件は前の経路の閉じ忘れの連鎖

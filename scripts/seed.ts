@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { config } from 'dotenv';
 import postgres from 'postgres';
 import { hashPassword } from '../apps/api/src/auth/password.js';
+import { SEED_USER_IDS } from '../apps/api/src/domain/approval-origin.js';
 import { computeAuditHash, GENESIS_HASH } from '../apps/api/src/domain/audit.js';
 import { buildDemoPcSnapshot } from '../apps/api/src/domain/pc.js';
 
@@ -35,14 +36,8 @@ if (!seedPassword) {
 
 const sql = postgres(databaseUrl, { max: 1, onnotice: () => {} });
 
-const U = {
-  yamada: '11111111-1111-4111-8111-111111111111',
-  kimura: '22222222-2222-4222-8222-222222222222',
-  ogawa: '33333333-3333-4333-8333-333333333333',
-  sato: '44444444-4444-4444-8444-444444444444',
-  takahashi: '55555555-5555-4555-8555-555555555555',
-  watanabe: '66666666-6666-4666-8666-666666666666',
-};
+// 承認の出所の判定（seed）に使うので、固定 ID は domain/approval-origin.ts に置く。
+const U = SEED_USER_IDS;
 
 const C = {
   one: 'c0000001-0000-4000-8000-000000000001',

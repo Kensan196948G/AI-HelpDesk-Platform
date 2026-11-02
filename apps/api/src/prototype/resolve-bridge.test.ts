@@ -166,7 +166,7 @@ describe('印刷の相談の導線', () => {
     context.sandbox.H.print(context.chat);
     await settle();
     await settle();
-    expect(context.calls.some((call) => call.startsWith('fetch'))).toBe(false);
+    expect(context.calls.some((call) => call.includes('device-status'))).toBe(false);
     expect(context.chat.messages[0].html).toContain(NO_AGENT);
   });
 
@@ -193,7 +193,7 @@ describe('案件の状態との整合', () => {
     await settle();
     await settle();
     expect(context.chat.messages[0].text).not.toContain('未接続');
-    expect(context.calls.some((call) => call.startsWith('fetch'))).toBe(false);
+    expect(context.calls.some((call) => call.includes('device-status'))).toBe(false);
   });
 
   it('share の結果に $ が含まれても HTML を壊さない', () => {

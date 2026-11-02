@@ -540,6 +540,14 @@ Phase B の独立レビューで指摘された High 3 件を、Phase C 着手�
 
 ### 20-5. 実機の前提
 
-- 実行器は `scripts/endpoint-command-agent.mjs`（Node 20+、`--mock` なし、Windows）。**`scripts/windows/command-agent.ps1` は使えない**（`SPOOLER_RESTART` だけで Skill を実行せず、`x-device-id` も送らないので `GET /api/device/command` が 400 になる）。
+- 実行器は `scripts/endpoint-command-agent.mjs`（Node 20+、`--mock` なし、Windows）、または Node の無い端末では `scripts/windows/command-agent.ps1`（standard の 8 Skill。[docs/66](66-windows-command-agent.md)。2026-11-01 に Skill 実行へ対応。Windows では未実行）。
 - 設定の `browserDeviceId` には、ブラウザの端末 ID（`localStorage` の `aihd.device.id`。未接続のカードに表示）をそのまま入れる。画面の `WEB-XXXXXXXX` は短縮表示で、`device_tokens.device_id` と一致しないのでコマンドが届かない。
 - 旧版エージェントの結果は本番で拒否される。実機受入は更新後の版で行う。
+
+## 21. 提案の AI 入力と承認済み KB（2026-11-01）
+
+- `POST /api/resolve/sessions` と `/steps/:id/continue` は、相談文に一致する承認済み KB の参照（KB 番号、版、題名 160 字、手順の要約 300 字、最大 3 件）を提案の AI 入力の `knowledgeRefs` へ入れる。一致が無ければキーごと送らない。判定は `findApprovedKnowledge`（DB、別人の承認、承認後の更新なし、一致点の下限）で、state の KB は読まない。
+- AI は実際に参考にした KB を `usedKnowledge` で返す。送っていない番号は捨てる。ルールの提案では常に空。
+- 結果は `resolution_steps.knowledge_refs`（migration 036、additive）へ `{matched, used}` で保存し、ステップの API は `knowledgeRefs` で返す。承認ハッシュの対象ではない。
+- **限界:** 端末エージェントが未接続の相談はセッションを作らないので、KB は案内されない。`used` は AI の申告で、実際に使ったことの証明ではない。提案の経路は実 AI で未確認（スタブのみ）。
+

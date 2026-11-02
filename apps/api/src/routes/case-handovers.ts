@@ -12,6 +12,7 @@ import { sameHuman } from '../auth/shared-identity.js';
 import { authenticateUi } from '../auth/ui.js';
 import { config } from '../config.js';
 import { sql } from '../db.js';
+import { redactKnowledgeText } from '../domain/pii.js';
 import { ApiError, badRequest } from '../errors.js';
 import { appendAudit } from '../lib/audit-log.js';
 import {
@@ -437,6 +438,42 @@ export async function caseHandoverRoutes(app: FastifyInstance): Promise<void> {
       LIMIT 50
     `;
     return { ok: true, items: rows.map((row) => snapshotSummary(row, request.uiEmail ?? '')) };
+  });
+
+  /**
+   * 完了の承認を待つ引継ぎ（docs/14 §2-17）。承認者は担当者の受信箱を開けないので別に返す。
+   * 担当者が解決を記録した行だけ出す（引き受けただけの案件を閉じさせない）。
+   * 承認に必要な最小限だけ返し、相談者の情報、端末情報、会話は返さない。
+   * これは案件を閉じる承認の一覧で、KB の公開承認（/knowledge/pending）とは別物である。
+   */
+  app.get('/case-handovers/awaiting-approval', { preHandler: authenticateUi }, async (request) => {
+    if (!request.uiEmail) throw badRequest('UI の認証情報がありません。');
+    const email = request.uiEmail;
+    await requireApproverActor(email, request.uiRoles);
+    const rows = await sql<HandoverRow[]>`
+      SELECT id, case_id, owner_email, assignee_hint, recipient_no, recipient_name,
+             status, snapshot, claimed_by, approved_by, approved_at, self_approved, created_at
+      FROM case_handovers
+      WHERE status = 'resolved'
+      ORDER BY created_at DESC
+      LIMIT 50
+    `;
+    return {
+      ok: true,
+      allowSelfApproval: config.ALLOW_SELF_APPROVAL,
+      items: rows.map((row) => {
+        const summary = snapshotSummary(row, email);
+        return {
+          id: summary.id,
+          caseId: summary.caseId,
+          status: summary.status,
+          subject: redactKnowledgeText(String(summary.subject)).text,
+          claimedByMe: summary.claimedByMe,
+          claimedByName: summary.claimedByName,
+          createdAt: summary.createdAt,
+        };
+      }),
+    };
   });
 
   app.post('/case-handovers/:id/claim', { preHandler: authenticateUi }, async (request) => {

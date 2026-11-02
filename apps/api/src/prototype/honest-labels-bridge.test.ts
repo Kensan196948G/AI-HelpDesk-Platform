@@ -110,7 +110,7 @@ describe('モデル表示（msgMeta）', () => {
 
   it('DeepSeek を使わなかったフォールバックに DeepSeek と出さない', () => {
     const meta = metaOf({ model: 'DeepSeek-V4.1-Flash', conf: '中', provider: 'fallback' });
-    expect(meta).toBe('承認済みナレッジ検索（DeepSeek 未使用）|—');
+    expect(meta).toBe('社内ナレッジ検索（DeepSeek 未使用）|—');
   });
 
   it('担当者の追加質問（/api/ai/answer-case）の回答を実 AI とフォールバックで分ける', () => {
@@ -119,17 +119,15 @@ describe('モデル表示（msgMeta）', () => {
       'DeepSeek-V4.1-Flash|高',
     );
     expect(metaOf({ model: 'fallback', conf: '中', provider: 'fallback' })).toBe(
-      '承認済みナレッジ検索（DeepSeek 未使用）|—',
+      '社内ナレッジ検索（DeepSeek 未使用）|—',
     );
     // provider を保存する前の分（model が API の値）
     expect(metaOf({ model: 'deepseek-flash', conf: '高' })).toBe('DeepSeek-V4.1-Flash|高');
-    expect(metaOf({ model: 'fallback', conf: '中' })).toBe(
-      '承認済みナレッジ検索（DeepSeek 未使用）|—',
-    );
+    expect(metaOf({ model: 'fallback', conf: '中' })).toBe('社内ナレッジ検索（DeepSeek 未使用）|—');
     // サーバが案件へ追記した分
     expect(
       metaOf({ id: 'case-ai-1', model: 'DeepSeek-V4.1-Flash', provider: 'fallback', conf: '—' }),
-    ).toBe('承認済みナレッジ検索（DeepSeek 未使用）|—');
+    ).toBe('社内ナレッジ検索（DeepSeek 未使用）|—');
     expect(metaOf({ id: 'case-ai-2', model: 'DeepSeek-V4.1-Flash', provider: 'deepseek' })).toBe(
       'DeepSeek-V4.1-Flash|undefined',
     );
@@ -395,9 +393,9 @@ describe('発言者・判定ヘルパー', () => {
     const api = honest();
     const report = (...messages: Message[]) => api.reportModel({ messages });
     expect(report({ provider: 'deepseek' }, { provider: 'fallback' })).toBe('DeepSeek-V4.1-Flash');
-    expect(report({ provider: 'fallback' })).toBe('承認済みナレッジ検索（DeepSeek 未使用）');
+    expect(report({ provider: 'fallback' })).toBe('社内ナレッジ検索（DeepSeek 未使用）');
     expect(report({ provider: 'fallback' }, { model: 'x' })).toBe(
-      '承認済みナレッジ検索（DeepSeek 未使用）',
+      '社内ナレッジ検索（DeepSeek 未使用）',
     );
     expect(report({ model: 'x' })).toBe('ルールベース（デモデータ）');
     expect(api.reportModel(null)).toBe('ルールベース（デモデータ）');

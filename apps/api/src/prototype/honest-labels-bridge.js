@@ -12,7 +12,7 @@
  */
 (() => {
   const REAL_MODEL = 'DeepSeek-V4.1-Flash';
-  const FALLBACK_LABEL = '承認済みナレッジ検索（DeepSeek 未使用）';
+  const FALLBACK_LABEL = '社内ナレッジ検索（DeepSeek 未使用）';
   const RULE_LABEL = 'ルールベース（デモデータ）';
   const RULE_DIAG_LABEL = 'ルールベース（デモデータ・実端末の結果ではありません）';
   const AGENT_LABEL = '端末エージェント（実端末）';

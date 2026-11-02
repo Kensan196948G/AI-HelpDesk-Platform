@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { z } from 'zod';
 import { config } from '../config.js';
+import { approvalOriginLabel } from './approval-origin.js';
 import { redactPII } from './pii.js';
 
 /**
@@ -82,6 +83,8 @@ const SourceSchema = z.object({
   id: z.string().max(60),
   kbNo: z.string().max(60),
   title: z.string().max(300),
+  // 承認の出所。local は画面内（state）の資料で DB の承認ではない。
+  approvalOrigin: z.enum(['other_person', 'shared_identity', 'seed', 'local']).optional(),
 });
 
 const HandoverSchema = z.object({
@@ -571,11 +574,16 @@ function renderAi(report: FinalReport): string {
     .join('');
 
   const sources = ai.sources.length
-    ? `<h3>根拠にした承認済みナレッジ</h3>${table(
-        ['ID', 'タイトル'],
+    ? `<h3>根拠にしたナレッジ</h3>${table(
+        ['ID', 'タイトル', '出所'],
         ai.sources.map((source) => [
           escapeHtml(source.kbNo || source.id),
           escapeHtml(source.title),
+          escapeHtml(
+            source.approvalOrigin === 'local'
+              ? '画面内の資料（DB で未承認）'
+              : approvalOriginLabel(source.approvalOrigin),
+          ),
         ]),
       )}`
     : '';

@@ -4,13 +4,14 @@
  */
 import { createHash } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { config } from '../config.js';
 import { sql } from '../db.js';
 import { jsonbValue } from '../lib/jsonb-value.js';
 import { resetRateLimits } from '../lib/rate-limit.js';
 import { buildServer } from '../server.js';
 import { computeApprovalHash } from './approval.js';
+import { sweepResolveTimeouts } from './routes.js';
 
 const EMAIL = 'resolve-realpath@example.com';
 const OTHER_EMAIL = 'resolve-realpath-other@example.com';
@@ -233,6 +234,36 @@ describe('結果の出所', () => {
   });
 });
 
+describe('結果を見る画面が無くても実行の結果を失わない（docs/65 §0-1）', () => {
+  it('実行が終わっていれば、期限の処理は失敗にせず結果を取り込む', async () => {
+    const started = await startSession();
+    await approveY(started);
+    const command = await deliver();
+    const reported = await report(command.id, {
+      executionSource: 'endpoint_agent',
+      deviceId: DEVICE,
+      exitCode: 0,
+      durationMs: 1,
+      normalized: {
+        name: 'Spooler',
+        status: 'Running',
+        startType: 'Auto',
+        displayName: 'Print Spooler',
+      },
+    });
+    expect(reported.statusCode, reported.body).toBe(200);
+    await sql`UPDATE resolution_steps SET deadline_at = now() - interval '1 minute' WHERE id = ${started.step.id}`;
+    await sweepResolveTimeouts();
+    const [row] = await sql<{ status: string; error: string | null; source: string | null }[]>`
+      SELECT status, error, result_summary->>'executionSource' AS source
+      FROM resolution_steps WHERE id = ${started.step.id}
+    `;
+    expect(row?.error).toBeNull();
+    expect(row?.status).not.toBe('failed');
+    expect(row?.source).toBe('endpoint_agent');
+  });
+});
+
 describe('本番での模擬の拒否', () => {
   it('NODE_ENV=production では mock の結果を 403 で拒否し、保存せず失敗として閉じる', async () => {
     const started = await startSession();
@@ -378,5 +409,192 @@ describe('N・取消・期限切れの後に進まない', () => {
       headers: AGENT_HEADERS,
     });
     expect(response.statusCode).toBe(204);
+  });
+});
+
+/**
+ * 印刷の相談にも承認済み KB を届ける（docs/65 §7 欠陥 2）。外部 AI はスタブ。
+ * 判定は #125 と同じ findApprovedKnowledge。state の KB は使わない。
+ */
+describe('解決ループの提案と承認済み KB', () => {
+  const KB_REF = 'kb-resolve-refs-e2e';
+  const AUTHOR_EMAIL = 'resolve-kb-author@example.com';
+  const APPROVER_EMAIL = 'resolve-kb-approver@example.com';
+  const KB_NO = 'KB-RESOLVE-1';
+  const STATE_MARKER = 'ZX9状態のKB';
+  let authorId = '';
+  let approverId = '';
+  const originalKey = config.DEEPSEEK_API_KEY;
+  const originalProcessEnv = process.env.NODE_ENV;
+  const originalFetch = globalThis.fetch;
+  let sent: Array<Record<string, unknown>> = [];
+  let aiReply: Record<string, unknown> = {};
+
+  async function cleanupKb() {
+    await sql`DELETE FROM knowledge WHERE client_ref = ${KB_REF} OR kb_no = ${KB_NO}`;
+  }
+
+  function stubAi() {
+    sent = [];
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      if (!String(url).includes('/chat/completions')) return originalFetch(url, init);
+      const body = JSON.parse(String(init?.body)) as {
+        messages: Array<{ role: string; content: string }>;
+      };
+      sent.push(JSON.parse(body.messages.at(-1)?.content ?? '{}'));
+      return new Response(
+        JSON.stringify({ choices: [{ message: { content: JSON.stringify(aiReply) } }] }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    }) as typeof fetch;
+  }
+
+  beforeEach(async () => {
+    await resetData();
+    await cleanupKb();
+    const rows = await sql<{ id: string; email: string }[]>`
+      INSERT INTO users (email, name, role, password_hash)
+      VALUES (${AUTHOR_EMAIL}, '作成者', 'helpdesk', 'access-only$no-login'),
+             (${APPROVER_EMAIL}, '承認者', 'approver', 'access-only$no-login')
+      ON CONFLICT (lower(email)) DO UPDATE SET updated_at = now()
+      RETURNING id, email
+    `;
+    authorId = rows.find((row) => row.email === AUTHOR_EMAIL)?.id ?? '';
+    approverId = rows.find((row) => row.email === APPROVER_EMAIL)?.id ?? '';
+    config.DEEPSEEK_API_KEY = 'stub-key-not-real';
+    // proposer は NODE_ENV=test では AI を呼ばない。この節だけスタブへ向ける。
+    process.env.NODE_ENV = 'development';
+    aiReply = { skillId: 'spooler.status', params: {}, rationale: 'スタブ', decision: null };
+    stubAi();
+  });
+
+  afterEach(async () => {
+    globalThis.fetch = originalFetch;
+    process.env.NODE_ENV = originalProcessEnv;
+    config.DEEPSEEK_API_KEY = originalKey;
+    await cleanupKb();
+    await sql`DELETE FROM users WHERE email IN (${AUTHOR_EMAIL}, ${APPROVER_EMAIL})`;
+  });
+
+  async function insertKb(overrides: { approverId?: string } = {}) {
+    await sql`
+      INSERT INTO knowledge (
+        kb_no, title, symptom, cause, steps, keywords, status, author_id, approver_id,
+        approved_at, client_ref, version
+      ) VALUES (
+        ${KB_NO}, 'プリンタの待機ジョブが滞留したときの対処', '印刷ができない',
+        '待機ジョブの滞留', ${`1. 待機ジョブを確認する\n2. ${'手順の続き'.repeat(200)}`},
+        ${['待機ジョブ']}, 'approved', ${authorId}, ${overrides.approverId ?? approverId},
+        now(), ${KB_REF}, 2
+      )
+    `;
+  }
+
+  it('関連する承認済み KB の参照を提案の AI 入力へ入れる（上限つき）', async () => {
+    await insertKb();
+    const response = await post('/api/resolve/sessions', { caseId: CASE_ID, deviceId: DEVICE });
+    expect(response.statusCode, response.body).toBe(200);
+    const refs = sent.at(-1)?.knowledgeRefs as Array<Record<string, unknown>>;
+    const ref = refs.find((item) => item.kbNo === KB_NO);
+    expect(ref).toMatchObject({ kbNo: KB_NO, version: 2 });
+    expect(String(ref?.title)).toContain('待機ジョブ');
+    expect(String(ref?.stepsSummary)).toContain('待機ジョブを確認する');
+    expect(String(ref?.stepsSummary).length).toBeLessThanOrEqual(301);
+    expect(refs.length).toBeLessThanOrEqual(3);
+  });
+
+  it('参照に承認の出所を付け、プロンプトは「別の担当者が承認した」と決めつけない', async () => {
+    await insertKb();
+    let system = '';
+    const stubbed = globalThis.fetch;
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? '{}')) as {
+        messages?: Array<{ content: string }>;
+      };
+      system = body.messages?.[0]?.content ?? '';
+      return stubbed(url, init);
+    }) as typeof fetch;
+    const response = await post('/api/resolve/sessions', { caseId: CASE_ID, deviceId: DEVICE });
+    expect(response.statusCode, response.body).toBe(200);
+    const refs = sent.at(-1)?.knowledgeRefs as Array<Record<string, unknown>>;
+    expect(refs.find((item) => item.kbNo === KB_NO)).toMatchObject({
+      approvalOrigin: 'other_person',
+      approvalOriginLabel: '別の担当者が承認',
+    });
+    expect(refs.find((item) => item.kbNo === 'KB-2026-0003')).toMatchObject({
+      approvalOrigin: 'seed',
+    });
+    expect(system).toContain('knowledgeRefs');
+    expect(system).not.toContain('別の担当者が承認した');
+    const stored = response.json().step.knowledgeRefs.matched;
+    expect(
+      stored.find((item: { kbNo: string }) => item.kbNo === 'KB-2026-0003').approvalOriginLabel,
+    ).toBe('初期登録の資料（人の承認記録なし）');
+  });
+
+  it('AI が使わなければ、一致した KB は示すが「使った」としない', async () => {
+    await insertKb();
+    const body = (
+      await post('/api/resolve/sessions', { caseId: CASE_ID, deviceId: DEVICE })
+    ).json();
+    const refs = body.step.knowledgeRefs;
+    expect(refs.matched.map((item: { kbNo: string }) => item.kbNo)).toContain(KB_NO);
+    expect(refs.used).toEqual([]);
+  });
+
+  it('AI が使ったと答えた KB だけ used に入る。送っていない番号は捨てる', async () => {
+    await insertKb();
+    aiReply = { ...aiReply, usedKnowledge: [KB_NO, 'KB-NOT-SENT'] };
+    const body = (
+      await post('/api/resolve/sessions', { caseId: CASE_ID, deviceId: DEVICE })
+    ).json();
+    expect(body.step.knowledgeRefs.used).toEqual([KB_NO]);
+    const reread = (await getStep(body.step.id)).json();
+    expect(reread.step.knowledgeRefs.used).toEqual([KB_NO]);
+  });
+
+  it('自己承認の KB と本人の state の KB は参照に入らない', async () => {
+    await insertKb({ approverId: authorId });
+    await sql`
+      UPDATE prototype_states
+      SET data = jsonb_set(data, '{kb}', ${jsonbValue([
+        { id: 'KB-STATE', status: 'active', title: `プリンタ ${STATE_MARKER}`, symptom: '印刷' },
+      ])})
+      WHERE user_email = ${EMAIL} AND name = 'cowork'
+    `;
+    await post('/api/resolve/sessions', { caseId: CASE_ID, deviceId: DEVICE });
+    const input = JSON.stringify(sent.at(-1));
+    expect(input).not.toContain(KB_NO);
+    expect(input).not.toContain(STATE_MARKER);
+  });
+
+  it('無関係な相談には KB を送らない', async () => {
+    const { proposeNext } = await import('./proposer.js');
+    const { listApprovedSkills } = await import('./skills.js');
+    const { knowledgeRefsForCase } = await import('./knowledge-refs.js');
+    await insertKb();
+    const text = '経費精算の締め日を教えてください';
+    const refs = await knowledgeRefsForCase(text);
+    expect(refs.map((item) => item.kbNo)).not.toContain(KB_NO);
+    await proposeNext({
+      text,
+      history: [],
+      skills: await listApprovedSkills(),
+      knowledgeRefs: refs,
+    });
+    expect(JSON.stringify(sent.at(-1))).not.toContain(KB_NO);
+  });
+
+  it('KB に端末情報が残っていても提案の AI 入力では除く', async () => {
+    await insertKb();
+    await sql`
+      UPDATE knowledge SET steps = '1. WEB-2B6D41AA の待機ジョブを確認する',
+        approved_at = now() + interval '1 second'
+      WHERE kb_no = ${KB_NO}
+    `;
+    await post('/api/resolve/sessions', { caseId: CASE_ID, deviceId: DEVICE });
+    const input = JSON.stringify(sent.at(-1));
+    expect(input).toContain(KB_NO);
+    expect(input).not.toContain('WEB-2B6D41AA');
   });
 });

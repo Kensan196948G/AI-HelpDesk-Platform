@@ -1,10 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { sql } from '../db.js';
 import { buildServer } from '../server.js';
 
 let app: FastifyInstance;
 let password: string;
 let suffix: string;
+const createdKnowledge: string[] = [];
 
 interface CookieJar {
   cookie: string;
@@ -73,6 +75,8 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  // 承認済みの行を残すと、同じ DB の次の実行で KB 検索の上位を奪う。
+  for (const id of createdKnowledge) await sql`DELETE FROM knowledge WHERE id = ${id}`;
   await app.close();
 });
 
@@ -117,6 +121,7 @@ describe('追加の API integration', () => {
     const draftRes = await call(helpdesk, 'POST', `/api/cases/${caseId}/knowledge-draft`);
     expect(draftRes.statusCode, draftRes.body).toBe(200);
     const knowledgeId = draftRes.json().knowledge.id as string;
+    createdKnowledge.push(knowledgeId);
 
     const submitRes = await call(helpdesk, 'POST', `/api/knowledge/${knowledgeId}/submit`);
     expect(submitRes.statusCode, submitRes.body).toBe(200);
@@ -148,6 +153,7 @@ describe('追加の API integration', () => {
 
     const approveRes = await call(approver, 'POST', `/api/knowledge/${knowledgeId}/review`, {
       decision: 'approved',
+      contentHash: resubmit.json().knowledge.contentHash,
       comment: '修正を確認しました。',
       checklist: {
         reproducible: true,

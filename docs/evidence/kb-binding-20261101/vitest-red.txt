@@ -1,0 +1,31 @@
+対象: 1f91f2a（修正前）+ 試験の追加のみ
+     × 一覧と詳細が本文のハッシュを返す
+     × 本文のハッシュが無い承認は拒否する
+     × 確認の後に本文が変わっていれば 409 で公開しない
+     × 確認の後に keywords だけ変わっても 409 で公開しない
+     × 競合: 本文の読み取りの後に更新が確定しても未確認の本文を公開しない
+     × 一致すれば公開し、確認した本文のハッシュと公開版を記録する
+     × 本文のハッシュが無い他人の KB の承認は拒否する
+     × 確認の後に keywords だけ変わっていれば 409 で公開しない
+     × 送った本文と確認したハッシュが違えば 409 で公開しない
+     ✓ 競合: 本文の読み取りの後に本文の更新が確定しても公開しない
+     × 競合: 本文の読み取りの後に keywords の更新が確定しても公開しない
+     × 一致すれば公開し、確認した本文のハッシュと公開版を記録する
+     × 保存時に keywords の端末情報を伏せる
+     × 承認時に保存済みの keywords に端末情報があれば公開しない
+     × 公開済みの行は閲覧時と AI の入力で伏せ、行そのものは書き換えない
+TypeError: .toMatch() expects to receive a string, but got undefined
+AssertionError: expected 200 to be 400 // Object.is equality
+AssertionError: expected 200 to be 409 // Object.is equality
+AssertionError: expected 200 to be 409 // Object.is equality
+AssertionError: expected 200 to be 409 // Object.is equality
+PostgresError: column "content_hash" does not exist
+AssertionError: expected 200 to be 400 // Object.is equality
+AssertionError: expected 200 to be 409 // Object.is equality
+AssertionError: expected 200 to be 409 // Object.is equality
+AssertionError: expected 200 to be 409 // Object.is equality
+PostgresError: column "content_hash" does not exist
+AssertionError: expected 'プリンタ DESKTOP-ABC1234' not to contain 'DESKTOP-ABC1234'
+AssertionError: expected 200 to be 409 // Object.is equality
+AssertionError: expected [ 'プリンタ', 'DESKTOP-ABC1234' ] to deeply equal [ 'プリンタ' ]
+      Tests  14 failed | 1 passed (15)

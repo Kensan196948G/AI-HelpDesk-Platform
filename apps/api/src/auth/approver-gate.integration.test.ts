@@ -5,6 +5,7 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { config } from '../config.js';
 import { sql } from '../db.js';
+import { knowledgeContentHash } from '../domain/knowledge-content.js';
 import { resetRateLimits } from '../lib/rate-limit.js';
 import { buildServer } from '../server.js';
 import { resetAllowlistCache } from './allowlist.js';
@@ -93,8 +94,17 @@ function draft(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/** 承認者が画面で読んだ内容の指紋を、保存済みの行から取る（一覧の contentHash と同じ値）。 */
+async function withReviewedHash(payload: Record<string, unknown>) {
+  if (payload.status !== 'approved' || payload.contentHash) return payload;
+  const rows = await sql<
+    any[]
+  >`SELECT * FROM knowledge WHERE client_ref = ${String(payload.clientRef)}`;
+  return rows[0] ? { ...payload, contentHash: knowledgeContentHash(rows[0]) } : payload;
+}
+
 async function sync(payload: Record<string, unknown>) {
-  return call('POST', '/api/knowledge/ui-sync', payload);
+  return call('POST', '/api/knowledge/ui-sync', await withReviewedHash(payload));
 }
 
 beforeAll(async () => {
@@ -124,6 +134,8 @@ beforeEach(() => {
 });
 
 afterAll(async () => {
+  // 承認済みの行を残すと、同じ DB の次の実行で KB 検索の上位を奪う。
+  await sql`DELETE FROM knowledge WHERE client_ref LIKE 'GATE-%'`;
   config.ALLOW_SELF_APPROVAL = originals.self;
   config.AUTH_MODE = originals.authMode;
   config.ACCESS_ALLOWLIST_FILE = originals.allowlist;

@@ -165,6 +165,52 @@
     return Array.from(new Set(names.filter(Boolean)));
   }
 
+  /** 担当者欄の既定値。名簿の本人なら本人、選択肢に無ければ未選択。原本のデモ名を既定にしない。 */
+  function defaultAssignee(names, suggest, me) {
+    if (me && me.real) return names.includes(me.name) ? me.name : '';
+    return names.includes(suggest) ? suggest : names[0] || '';
+  }
+
+  /** 名簿の本人の画面では、原本のデモ担当者を選択肢から外す（名簿が取れないときは外さない）。 */
+  function assigneeOptions(names, me) {
+    const staff = window.__AIHD_EMPLOYEES__ && window.__AIHD_EMPLOYEES__.staff;
+    if (!me || !me.real || !Array.isArray(staff) || !staff.length) return names;
+    const real = new Set(staff.map((employee) => employee.name));
+    return names.filter((name) => real.has(name));
+  }
+
+  function currentUser() {
+    try {
+      return me();
+    } catch {
+      return null;
+    }
+  }
+
+  // 原本の「③ 引継ぎ」の担当者欄も同じ既定値にする（配信時の差し替え。routes/prototype.ts）。
+  window.__AIHD_ASSIGNEE__ = (name, suggest) => {
+    const user = currentUser();
+    return user && user.real ? name === user.name : name === suggest;
+  };
+  // 本人が原本の選択肢に無いとき、先頭のデモ担当者が選ばれたまま送られないようにする。
+  window.__AIHD_ASSIGNEE_BLANK__ = () => {
+    const user = currentUser();
+    if (!user || !user.real) return '';
+    const listed = typeof STAFF !== 'undefined' && STAFF.some((s) => s.name === user.name);
+    return listed ? '' : '<option value="" selected>（選択してください）</option>';
+  };
+  if (window.App && typeof window.App.startWork === 'function') {
+    const originalStartWork = window.App.startWork;
+    window.App.startWork = function (...args) {
+      const select = document.getElementById('q_as');
+      if (select && !select.value) {
+        if (typeof toast === 'function') toast('担当者を選択してください', 'bad');
+        return undefined;
+      }
+      return originalStartWork.apply(this, args);
+    };
+  }
+
   function signal(t) {
     if (t.sec) return 'red';
     if (t.status === 'escalated' && dueAt(t) < Date.now()) return 'red';
@@ -675,12 +721,18 @@
       return '<section class="hw-action readonly"><div class="hw-action-h"><b>閲覧のみ</b><span class="hw-tag display">表示</span><span class="hw-chip">権限分離</span></div><p class="hw-note">承認者・監査担当は、担当開始・解決記録を登録できません。内容の確認と監査の参照のみ行えます。</p></section>';
     }
     if (t.status === 'escalated') {
-      const names = staffNames();
-      const selected = names.includes(t.suggest) ? t.suggest : names[0] || '';
+      const user = currentUser();
+      const names = assigneeOptions(staffNames(), user);
+      const selected = defaultAssignee(names, t.suggest, user);
       return (
         '<section class="hw-action"><div class="hw-action-h"><b>次の一手：担当を決めて対応を開始</b><span class="hw-tag input">入力</span>' +
-        (t.suggest ? '<span class="hw-chip">AIのおすすめ ' + esc(t.suggest) + '</span>' : '') +
+        (t.suggest && names.includes(t.suggest)
+          ? '<span class="hw-chip">AIのおすすめ ' + esc(t.suggest) + '</span>'
+          : '') +
         '</div><div class="hw-form-row"><label>担当者<select id="hw-assignee">' +
+        (selected === '' && names.length
+          ? '<option value="" selected>（選択してください）</option>'
+          : '') +
         (names.length
           ? names
               .map(
@@ -777,13 +829,13 @@
     const items = (HW.ai[t.id] || []).slice(-5);
     const note = caseId
       ? 'Aさんが共有したPC情報と、ここまでのAI一次対応の履歴を根拠に回答します。引継ぎ記録がある場合は、質問と回答をその記録に保存します。'
-      : 'AI窓口から引き継がれた案件ではないため、承認済みナレッジを根拠に回答します。質問は案件記録に保存されません。';
+      : 'AI窓口から引き継がれた案件ではないため、社内ナレッジを根拠に回答します。質問は案件記録に保存されません。';
     return (
       '<section class="hw-action hw-ai"><div class="hw-action-h"><b>AI に聞く</b><span class="hw-tag input">入力</span><span class="hw-chip info">' +
       (caseId ? '案件コンテキスト' : 'ナレッジ検索') +
       '</span></div><p class="hw-ai-note">' +
       esc(note) +
-      '</p><p class="hw-ai-note">プロンプトには承認済みナレッジ本文と共有PC情報が含まれます。取扱いに注意してください。</p><div class="hw-form-row"><label>質問<textarea id="hw-ai-input" rows="2" placeholder="例：この状態で次に確認すべきことは？">' +
+      '</p><p class="hw-ai-note">プロンプトには社内ナレッジ本文と共有PC情報が含まれます。取扱いに注意してください。</p><div class="hw-form-row"><label>質問<textarea id="hw-ai-input" rows="2" placeholder="例：この状態で次に確認すべきことは？">' +
       esc(HW.aiDraft[t.id] || '') +
       '</textarea></label></div><div class="hw-form-row end"><button type="button" class="hw-btn pri" data-hw="ai"' +
       (busy ? ' disabled' : '') +
@@ -1462,7 +1514,13 @@
           '</div>'
         : '') +
       (kbId
-        ? '<div class="hw-alert info"><b>ナレッジ下書き</b> <span class="hw-chip warn">承認待ち（下書き）</span><div class="hw-tc-meta">' +
+        ? '<div class="hw-alert info"><b>ナレッジ下書き</b> ' +
+          (knowledge && knowledge.status === 'approved'
+            ? '<span class="hw-chip ok">公開済み</span>'
+            : knowledge && knowledge.status === 'rejected'
+              ? '<span class="hw-chip warn">差戻し</span>'
+              : '<span class="hw-chip warn">承認待ち（下書き）</span>') +
+          '<div class="hw-tc-meta">' +
           (kbNo ? 'kbNo: <span class="hw-mono">' + esc(kbNo) + '</span>' : 'ID: ' + esc(kbId)) +
           '</div><div class="hw-tc-meta">公開は承認者のレビュー後です（自動公開しません）。</div></div>'
         : '') +

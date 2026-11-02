@@ -22,6 +22,7 @@ import {
   newNonce,
 } from './approval.js';
 import { type ExecutionSource, executionSourceOf, resultShapeOk } from './execution-source.js';
+import { knowledgeGuideForCase, knowledgeRefsForCase } from './knowledge-refs.js';
 import {
   escalationReasonForDecision,
   type Proposal,
@@ -69,6 +70,7 @@ const AdminApproveSchema = z.object({
   approvalHash: z.string().trim().max(128).optional(),
 });
 const ManualCloseSchema = z.object({ reason: z.string().trim().max(500).optional() }).default({});
+const KnowledgeGuideSchema = z.object({ caseId: z.string().trim().min(1).max(120) });
 const DeviceStatusQuerySchema = z.object({ deviceId: z.string().trim().min(1).max(120) });
 
 interface SessionRow {
@@ -88,6 +90,7 @@ interface SessionRow {
 
 interface StepRow {
   id: string;
+  knowledge_refs?: unknown;
   session_id: string;
   seq: number;
   skill_id: string;
@@ -432,6 +435,8 @@ function stepDto(row: StepRow, session: SessionRow) {
       : null,
     params: jsonObject(row.params),
     rationale: row.rationale,
+    // 照合した KB の参照。used は AI が使ったと答えたものだけ。
+    knowledgeRefs: jsonObjectOrNull(row.knowledge_refs) ?? { matched: [], used: [] },
     riskLevel: Number(row.risk_level),
     status: row.status,
     approvalChallenge: approvalChallengeFor(row, session),
@@ -658,11 +663,12 @@ async function insertProposedStep(
   const rows = await tx<{ id: string }[]>`
     INSERT INTO resolution_steps (
       session_id, seq, skill_id, skill_version, skill_content_hash, params, rationale,
-      risk_level, status, nonce, approval_expires_at, admin_nonce, admin_expires_at
+      risk_level, status, nonce, approval_expires_at, admin_nonce, admin_expires_at, knowledge_refs
     ) VALUES (
       ${session.id}, ${seq}, ${skill.id}, ${skill.version}, ${skill.contentHash ?? 'sha256:unknown'},
       ${jsonbValue(proposal.params)}, ${proposal.rationale}, ${skill.riskLevel}, 'proposed',
-      ${nonce}, ${STEP_APPROVAL_TTL_SQL}, ${adminNonce}, ${ADMIN_APPROVAL_TTL_SQL}
+      ${nonce}, ${STEP_APPROVAL_TTL_SQL}, ${adminNonce}, ${ADMIN_APPROVAL_TTL_SQL},
+      ${jsonbValue(proposal.knowledge ?? { matched: [], used: [] })}
     )
     RETURNING id
   `;
@@ -1364,6 +1370,20 @@ async function cancelSessionWork(
  */
 export async function sweepResolveTimeouts(): Promise<number> {
   let swept = 0;
+  // 実行が終わっているのに結果を見る画面が無かったものは、タイムアウトにせず結果を取り込む。
+  // 実端末の結果を「返らなかった」として引継ぎへ流さない（docs/65 §0-1）。
+  const finished = await sql<{ id: string; user_email: string }[]>`
+    SELECT st.id, s.user_email
+    FROM resolution_steps st
+    JOIN resolution_sessions s ON s.id = st.session_id
+    JOIN device_commands c ON c.id = st.command_id
+    WHERE st.status IN ('approved', 'executing')
+      AND st.deadline_at IS NOT NULL
+      AND st.deadline_at < now()
+      AND c.status IN ('done', 'failed')
+    LIMIT 50
+  `;
+  for (const step of finished) await applyCommandOutcome(step.user_email, step.id);
   // 対象セッションを先に特定し、session → step の固定順でロックする。
   const candidates = await sql<{ session_id: string }[]>`
     SELECT DISTINCT session_id FROM resolution_steps
@@ -1502,6 +1522,17 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
         approvedAt: skill.approvedAt,
       })),
     };
+  });
+
+  // 端末エージェントが無い相談者への案内（docs/14 §2-16）。外部 AI へ送らず、端末も操作しない。
+  // 本文は本人の案件からサーバが読み、クライアントの文字列を使わない。
+  app.post('/resolve/knowledge-guide', { preHandler: authenticateUi }, async (request) => {
+    const email = requireEmail(request);
+    enforceRateLimit(`resolve-kb-guide:${email}`, 30, 'ナレッジの案内の取得が多すぎます。');
+    const { caseId } = KnowledgeGuideSchema.parse(request.body);
+    const ownedCase = await findOwnedCase(email, caseId);
+    if (!ownedCase) throw notFound('案件が見つかりません。');
+    return { ok: true, items: await knowledgeGuideForCase(caseText(ownedCase)) };
   });
 
   // 相談者の導線の分岐に使う（docs/25 §20）。本人の端末だけを返し、トークンの情報は返さない。
@@ -1765,6 +1796,7 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
         lastSummary: null,
         history: [],
         skills,
+        knowledgeRefs: await knowledgeRefsForCase(caseText(ownedCase)),
       });
       if (!proposal || proposal.decision) {
         // 初回提案で AI が終了宣言（stop / escalate）を返した場合も、新規セッションは
@@ -2269,6 +2301,7 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
         lastVerify,
         history,
         skills,
+        knowledgeRefs: await knowledgeRefsForCase(caseText(ownedCase)),
       });
 
       const outcome = await sql.begin(async (tx) => {
