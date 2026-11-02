@@ -70,13 +70,22 @@ describe('scripts/approve-skills.ts', () => {
     expect(result.status).toBe(1);
   }, 60_000);
 
-  it('--by のメールは拒否し、記録しない（公開リポジトリに残るため）', () => {
-    const before = sha(manifest);
-    const result = run('--by', 'someone@example.com', '--manifest', manifest);
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain('役割名');
-    expect(sha(manifest)).toBe(before);
-  }, 60_000);
+  it.each([
+    ['--by の半角', ['--by', 'someone@example.com'], '役割名'],
+    ['--by の全角', ['--by', 'someone＠example.com'], '役割名'],
+    ['--note の半角', ['--by', 'skill-reviewer', '--note', 'someone@example.com'], '--note'],
+    ['--note の全角', ['--by', 'skill-reviewer', '--note', 'someone＠example.com'], '--note'],
+  ])(
+    '%s のメールは拒否し、記録しない（公開リポジトリに残るため）',
+    (_name, args, message) => {
+      const before = sha(manifest);
+      const result = run(...args, '--manifest', manifest);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain(message);
+      expect(sha(manifest)).toBe(before);
+    },
+    60_000,
+  );
 
   it('--by がなければ承認しない（既定の承認者を持たない）', () => {
     const before = sha(manifest);

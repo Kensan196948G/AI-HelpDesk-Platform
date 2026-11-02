@@ -184,7 +184,7 @@
   "outputPolicy": { "maxBytes": 8192, "fieldsToAi": ["service", "status"], "maskPii": true },
   "status": "approved",
   "contentHash": "sha256:...",
-  "approvedBy": "approver@mirai-const.co.jp",
+  "approvedBy": "skill-reviewer",
   "approvedAt": "2026-10-25T00:00:00Z"
 }
 ```
