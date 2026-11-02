@@ -1,0 +1,16 @@
+case_handover.approve | 1
+case_handover.claim | 1
+case_handover.create | 1
+case_handover.resolve | 1
+knowledge.approve | 1
+knowledge.create | 1
+knowledge.submit | 1
+resolution.approved | 2
+resolution.escalated | 1
+resolution.executed | 1
+resolution.proposed | 6
+resolution.rejected | 1
+resolution.result | 1
+resolution.session_started | 6
+resolution.stopped | 1
+resolution.timeout | 1

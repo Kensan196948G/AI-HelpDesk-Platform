@@ -3,8 +3,79 @@
 README の図と記述の各線を、実際の経路と証跡に対応づける。README の「いまの状態」はこの表に合わせる。
 
 - 作成: 2026-11-01。対象は `verify/dataflow-integration`（検証用の統合。#125 と #126 を含む）。
-- この PR の head での通しは流していない。通しの最終確認は #128 の統合先で行う（結果は #128 の docs/evidence/assist-integration-20261101/e2e/）。
+- 追記: 2026-11-01。`verify/dataflow-assist-integration` で #120（`abb9a38`。#117 を含む。merge は `48cbff3`）を統合した。**この表の E2E の証跡は #120 の統合の前の記録で、統合の後に通しの E2E は流していない。** 統合の後の結果は vitest と pwsh の試験で、[docs/evidence/assist-integration-20261101/](evidence/assist-integration-20261101/) にある。3 経路の責任範囲は [docs/67](67-execution-paths.md)。
 - 通しの E2E: `scripts/e2e/dataflow-integration.mjs`、結果は [docs/evidence/dataflow-20261101/](evidence/dataflow-20261101/)。`stub/`、`real-ai/` が修正後、`before-fix/` が修正前の再現、`round1-*/` が最初の通しの記録。
+
+- 統合の後の通し E2E: main（`dc529c9`、#123 まで）を取り込み端末コマンドの経路を閉じた後の `c6e19ea` で 88 項目、失敗 0（スタブ AI、模擬の実行器）。結果は [docs/evidence/assist-integration-20261101/e2e/result.json](evidence/assist-integration-20261101/e2e/result.json)。
+
+## 0-0. 実機の後に入れた修正の確認（2026-11-02、`90cba01`）
+
+`ae9bcce` の後の修正を同じ実機で確かめた。証跡は [docs/evidence/real-chain-20261102/](evidence/real-chain-20261102/)。**検証の条件は下の §0-1 と同じで、受入の完了ではない。**
+
+- `ConfigPath` の既定値、画面が無いときの結果の取り込み、報告の失敗で再実行しないことを確認した。同じ条件の一本通しも再度つながった。
+- 報告の分離の判定はサーバの記録による。端末のログの該当行は読めなかった。
+- main（`056c3ae`）と端末コマンドの経路を閉じた変更を含む版で流した。その後に main へ入った #129 は含まない。
+
+## 0-1. 同じ実端末の結果から次の相談まで（2026-11-01、`ae9bcce`）
+
+**判定: 検証の条件で一本つながった。受入の完了ではない。** 実機の結果と mock の通しを継ぎ合わせず、同じ DB、同じ案件で連続して進めた。証跡は [docs/evidence/real-chain-20261101/](evidence/real-chain-20261101/)、手順は `scripts/e2e/real-device-chain.mjs`。
+
+| 段階 | 方法 | 結果 | ID（検証 DB、削除済み） |
+|---|---|---|---|
+| 相談 | ヘッドレスの画面操作、合成の相談文 | 接続ありの案内 | `CASE-0006` |
+| 提案 | 実 DeepSeek | `spooler.status`、Y の前のコマンド 0 件 | セッション `5e89375e`、提案 `90269bad` |
+| 本人 Y | **条件付きの事前承認**（Skill、引数なし、読取のみを機械照合）、画面のボタン | 承認 | - |
+| 実行直前の再検証 | サーバと `command-agent.ps1`（ハッシュ、ハンドル保持、非昇格） | 通過 | - |
+| 実端末の読取 | Windows 実機、PowerShell 5.1、検証ユーザーの切断セッション | `Running`、`endpoint_agent`。別経路（RSP）の読み取りと一致 | 実行 `1d602247` |
+| 結果 | 画面 | 「まだ解決とは判定していません」。解決にしない | - |
+| 本人の同意と引継ぎ | 画面 | スナップショットに実行 ID、出所あり、模擬なし | 引継ぎ `10a9ea1d` |
+| 担当者の記録、KB 下書き | 画面。**文はエージェントが担当者役で書いた合成** | 元の案件と引継ぎを記録 | `KB-2026-0101` |
+| 公開の承認 | 本文を提示して番号選択の Y、右下のパネルの画面操作 | v2 で公開、指紋を記録。監査 `sharedIdentity=true` | 承認 `d1e350e9`、`sha256:1a07ca7c…` |
+| 引継ぎの完了承認 | 同じパネルの別のボタン | 完了。KB の承認では完了しないことも確認 | - |
+| 別の相談者の次の相談 | 画面（端末エージェントなし）+ `/api/ai/answer` を API で直接 | KB の案内と実 AI の根拠に `KB-2026-0101` | - |
+| ID の突合 | SQL | KB → 引継ぎ → 案件 → セッション → 実行が一致 | `matchesRun=true` |
+
+### 確認した拒否（同じ実機、実 DeepSeek）
+
+| 操作 | 方法 | 結果 |
+|---|---|---|
+| N | 画面 | `stopped`、コマンド 0 件 |
+| 中止 | 画面 | `stopped`、コマンド 0 件 |
+| 通信断の後の Y | 端末の経路を止めて 135 秒、画面の Y | 「オフライン」、コマンド 0 件。再開後に自動で接続 |
+| 期限切れの Y | 321 秒後、**API 直接** | `409 APPROVAL_EXPIRED`、コマンド 0 件 |
+| 二重 Y | **API を同時に 2 回**（画面の連打ではない） | 200 と `409 STEP_NOT_APPROVABLE`、実行 1 件 |
+
+### 解決能力の評価（引用の成功とは別）
+
+| 観点 | 評価 |
+|---|---|
+| 引用 | 実 AI の 1 回で `KB-2026-0101` を根拠に挙げた。画面の案内にも出た |
+| 根拠に沿うか | 実 AI の回答は手順 1〜5 に沿い、「スプーラ以外を確認」と文脈に合っていた（1 回の観察） |
+| 安全 | 実 AI は端末の変更を求めなかった。**画面の案内は同時に初期登録の KB を先に出し、「印刷スプーラを再起動する」を含む。** 相談者の「スプーラは動いている」と合わず、一般利用者の権限で実行できないことがある |
+| 誤った文脈 | 実 AI が「ご利用の環境は Linux」と述べた。サーバのヘッドレスの情報が入ったためで、端末のブラウザなら変わる見込み（未確認） |
+| **解決したか** | **未評価。** 人が手順を試しておらず、プリンターの不調を再現していない。KB の文も合成で、引用できても直せる証拠ではない。1 回の観察で再現率も測っていない |
+
+### 読取、目印、本人の確認の区別
+
+- **読取の成功:** 確認した（`Running`）。相談の解決ではない。
+- **目印（marker）の成功:** 変更系を実行していないので該当なし。
+- **本人の解決の確認:** この一本通しでは行っていない（引継ぎへ進んだ）。
+
+### 実条件と違うところ（受入に数えない）
+
+- **Access:** `AUTH_MODE=local`。Access と本人の認証は未確認。対象の確定はデバイストークンだけで、相談者と Windows ユーザーを照合していない。
+- **本人:** 相談者は合成で、Y はヘッドレスの画面を番号選択または事前承認のもとでエージェントが押した。
+- **別人物の承認:** 未確認。担当者と承認者は別アカウントだが同じ人物の判断で、`shared_identity` と記録した。職務分離の方針は変えていない。
+- **経路:** ② は検証専用で `RESOLVE_REQUESTER_DIAGNOSIS_ENABLED` の既定は無効（[docs/67](67-execution-paths.md)）。③ の本人ヘルパーの経路は今回の一本通しに入っていない。
+- **対象:** `spooler.status` 1 シナリオ。変更系は未実施。
+
+### 実機の実行の後に入れた変更（実機では再確認していない）
+
+実機の実行は `ae9bcce`。その後のレビューの修正（KB の行の選択、keywords、画面の指紋、UUID、承認者の一覧を解決済みに限定、`command-agent.ps1` の報告の分離と `ConfigPath` の既定）は試験で確認した。実機では流し直していない。
+
+### この実行で見つけた欠陥（`6b070be` で修正。試験のみで実機では未確認）
+
+- **結果を見る画面が無いと、実行が済んでいても `RESULT_TIMEOUT` になっていた。** 二重 Y の回はコマンドが `done`、結果は `endpoint_agent` だったが、API だけで操作して画面を開いていなかったので、ステップは後で `failed`、セッションは `escalated` になった。実行の事実と状態が食い違う。
 
 ## 0. 実機で確かめた範囲（2026-11-01）
 
@@ -12,7 +83,7 @@ README の図と記述の各線を、実際の経路と証跡に対応づける�
 
 - **条件:** Skill は `spooler.status` のみ。実 DeepSeek は提案だけで、相談文は合成。認証は `AUTH_MODE=local`、ブラウザはサーバ上のヘッドレス（端末のブラウザではない）、名簿は合成。検証ユーザーは Administrators 所属の UAC 制限トークン。
 - **確認した拒否:** 期限切れの Y は 409 でコマンド 0 件。
-- **実機で通していない部分:** 引継ぎの後（担当者の対応、KB 下書き、別人承認、次の相談）は実機の結果から続けておらず、`--mock` の通し E2E の結果である。
+- **実機で通していない部分（この回）:** 引継ぎの後は実機の結果から続けていなかった。§0-1 で続けた。
 - **解決の証拠ではない:** 読取成功は診断の成功で、相談の解決ではない。変更系と `SPOOLER_RESTART` は実行していない。
 - **本人の Y の実態:** Y はユーザーの番号選択を受けて、担当者がヘッドレス画面から送った。相談者本人が端末のブラウザで押したものではない。実行 `2209b951` は条件付きの事前承認だった（Skill と引数の一致を機械で照合してから送信）。
 - **本人の照合はしていない:** resolve の経路は相談者と Windows ユーザーを照合しない。端末側の確認はデバイストークンだけである。
@@ -44,9 +115,9 @@ README の図と記述の各線を、実際の経路と証跡に対応づける�
 | #125 | AI の根拠を DB の別人承認 KB に限定 | 含む（この統合で merge） | 未 |
 | #126 | 印刷の相談を解決ループへ、結果の出所 | 含む | 未 |
 | #127 | この PR の修正（KB の端末情報、印刷の相談への KB、担当者欄、AI の定型文、試験の後片付け） | 含む | 未 |
-| #120 / #117 | 共通支援セッション、新本人ヘルパー、フォルダ同意 | **含まない** | 未 |
+| #120 / #117 | 共通支援セッション、新本人ヘルパー、フォルダ同意 | `verify/dataflow-integration` には**含まない**。`verify/dataflow-assist-integration` に含む（既定無効） | 未 |
 
-表の「成立」列の記号: **M** = main で成立、**I** = この統合（#123〜#126 + #127 の修正）で成立、**#120** = #120 のブランチでのみ（既定無効）。この統合の E2E で確かめたのは **I** だけである。**M** はコード読解で、E2E は流していない。
+表の「成立」列の記号: **M** = main で成立、**I** = この統合（#123〜#126 + #127 の修正）で成立、**#120** = #120 を含むブランチでのみ（`feat/assist-session`、`verify/dataflow-assist-integration`。既定無効）。この統合の E2E で確かめたのは **I** だけである。**M** はコード読解で、E2E は流していない。
 
 **経路の区別:**
 
@@ -70,7 +141,7 @@ README の図と記述の各線を、実際の経路と証跡に対応づける�
 | 🛠 直す（提案カード） | 提案の Y | なし（`/api/device/command` は閉じた） | `prototype_states` | 模擬 | 「実行しました（模擬）」 | デモと表示 | **デモ** | M / I | docs/14 §2-11 |
 | 🛠 直す（`SPOOLER_RESTART` の実機） | なし（実行ボタンを出さない） | `POST /api/device/command` は 410 `DEVICE_COMMAND_CLOSED` | 行を作らない | - | - | - | **閉じた**（ユーザーの判断、2026-11-01）。未配信の既存の行は従来どおり配信される | I | `device.test.ts` |
 | 🛠 直す（修復 Skill、resolve カード） | 提案の Y | `/api/resolve/steps/:id/approve` | 同上 | エージェント | - | - | API と統合試験のみ。画面の通しは未実施（**未検証**）。AI が修復を選ぶ前提で、読み取りの提案までしか流していない | I | `routes.integration.test.ts` |
-| 🛠 直す（新本人ヘルパー） | 既定無効 | `/api/support-sessions/*` | #120 のテーブル | 本人権限ヘルパー | docs/63 §14 | - | **未検証（この統合には無い）**。実機の記録は docs/63 §14 のとおり検証端末 1 台、検証インスタンス、ヘッダ注入で、実画面の操作ではない。結果は `folder.summary` などで、印刷・修復の実障害の証拠ではない | #120 | docs/63 §14 |
+| 🛠 直す（新本人ヘルパー） | 既定無効 | `/api/support-sessions/*` | #120 のテーブル | 本人権限ヘルパー | docs/63 §14 | - | **未検証。** `verify/dataflow-assist-integration` に統合したが既定無効で、統合の後は統合試験と pwsh の試験だけ（実機、実画面なし）。実機の記録は統合前の docs/63 §14 のとおり検証端末 1 台、検証インスタンス、ヘッダ注入で、実画面の操作ではない。結果は `folder.summary` などで、印刷・修復の実障害の証拠ではない | #120 | docs/63 §14 |
 | 🚫 やらない（許可リスト外） | - | サーバのカタログ照合（resolve）、定義済みの操作のみ（元ウィザード） | - | - | - | - | resolve は**実データ（統合試験）**、元ウィザードは**デモ** | M / I | `routes.integration.test.ts` |
 | 🖐 本人の Y だけで動く | 開始 → Y | `/api/resolve/steps/:id/approve` | `resolution_steps.approval_hash` | - | 他人 404、誤ハッシュ 400、二重 1 回、取消後 409 | - | resolve は**実データ（mock まで）**。元ウィザードは画面の状態だけで**デモ** | I | E2E D1〜D14（API 直接）、A4 |
 | 🔁 15 回まで | - | なし | `prototype_states` | - | - | - | 元ウィザードの画面側の制限（**デモ**）。resolve カードは別で 6 提案・30 分 | M / I | 原本 HTML、`resolve/routes.ts` |
@@ -98,11 +169,12 @@ README の図と記述の各線を、実際の経路と証跡に対応づける�
 | 下書き → 申請 | 「承認申請」 | `POST /api/knowledge/ui-sync`（`pending`） | `knowledge` | **実データ** | M / I | E2E K1 |
 | 承認の出所の表示 | 結果カード、回答の出典、報告書 | `knowledgeRefs`、`sources` | - | `seed`、`shared_identity`、`other_person` を区別して表示（I のみ。M は「承認済み」と一括）。使うかの方針は変えていない。**本番の 9 件が `seed` と判定されるかは未確認**（[docs/64](64-kb-approved-provenance.md) §9） | I | E2E N7、`approval-origin.test.ts`、`knowledge-ai-provenance.integration.test.ts` |
 | 別人が承認（DX 推進部の承認者） | ⑥ の「サーバ下書き」（I は本文も表示） | `GET /api/knowledge/pending`、`POST /ui-sync`（`approved`） | `knowledge.approver_id`、`version` | **実データ（合成の構成）**。指紋で確認した本文へ束縛する（[docs/64](64-kb-approved-provenance.md) §10）。本番の人物構成では別人がいない（docs/61 §7） | M / I | E2E K7、K8、K19 |
-| 別人が承認（DX 推進部以外の承認者） | 右下の「承認者の確認」→ ② ナレッジの公開承認（[docs/14](14-prototype-ui-integration.md) §2-17） | `GET /api/knowledge/pending`、`POST /ui-sync`（指紋つき） | `knowledge`、`knowledge_reviews` | **接続済み（合成の構成、mock）**。パネルを開くところまで画面で確認。公開のクリックはこの役割では未確認。原本の役割の選択には出ない（docs/61 §7） | I | E2E U1、U2 |
+| 別人が承認（DX 推進部以外の承認者） | 右下の「承認者の確認」→ ② ナレッジの公開承認（[docs/14](14-prototype-ui-integration.md) §2-19） | `GET /api/knowledge/pending`、`POST /ui-sync`（指紋つき） | `knowledge`、`knowledge_reviews` | **接続済み（合成の構成、mock）**。パネルを開くところまで画面で確認。公開のクリックはこの役割では未確認。原本の役割の選択には出ない（docs/61 §7） | I | E2E U1、U2 |
 | 権限なしの承認の拒否 | - | `POST /ui-sync` | - | **実データ**（API 直接） | M / I | E2E K5、K6 |
 | 承認済み → 次の人の AI 入力（自由記述） | B の STEP 2 | `POST /api/ai/answer` | `knowledge` を読む | **実データ**（実 AI でも確認）。`[KB番号 v版]` が入る。実 AI の 2 回のうち、この流れの KB を根拠に挙げたのは 2 回目（§7 の確認 4） | **I のみ**。M では state の KB を根拠にする | E2E K10、Q3、Q5 |
 | 承認済み → 次の人（印刷の相談、エージェント接続あり） | 開始 → 本人 Y → 結果カード | `POST /api/resolve/sessions`、`/steps/:id/continue` | `resolution_steps.knowledge_refs` | **実データ（スタブ AI・mock まで）**。提案の AI 入力に参照が入り、結果カードに出典付きで出る。AI が示したときだけ「AI が参照」と出る。実 AI の提案では**未検証** | I | E2E N1〜N6、`real-path.integration.test.ts` |
 | 承認済み → 次の人（印刷の相談、エージェント未接続） | B の STEP 2 の案内 | `POST /api/resolve/knowledge-guide`（外部 AI なし、端末操作なし） | `knowledge` を読む | **接続済み（合成の構成）**。KB の手順と出所、引継ぎのボタンを出す。案内が解決につながるかは未評価 | I | E2E N0、N0b、N0c |
+| 承認済み → 新ループの入力（新本人ヘルパー） | 既定無効。実画面は未操作 | `POST /api/knowledge/ui-sync`（作成と別アカウントの承認）→ 提案の AI 入力 | `knowledge.symptom_tags`、`knowledgeRefs` | **実データ（統合試験まで。API 直接、スタブ AI）**。AI へ渡すのは ID と固定タグだけ。統合で #125 と同じ条件に揃え、タグを承認の指紋に含めた（[docs/64](64-kb-approved-provenance.md) §11、[docs/67](67-execution-paths.md) §3）。実 AI、実画面は**未検証** | #120 | `support-session.integration.test.ts` の「画面で作って別人が承認したナレッジ」、[受入表](evidence/assist-integration-20261101/README.md) |
 | 承認前・自己承認は根拠にしない | B の STEP 2 | `/api/ai/answer` | - | **実データ** | I | E2E K4、K17、`knowledge-ai-provenance.integration.test.ts` |
 | 相談者の state の KB は根拠にしない | 注入 → 画面から相談 | `/api/ai/answer` | - | **実データ** | **I のみ**。M では根拠になる（#125 の修正対象） | E2E I1〜I6 |
 | 引継ぎの完了承認（別人） | 右下の「承認者の確認」→ ① 引継ぎの完了承認 | `GET /api/case-handovers/awaiting-approval`、`POST /api/case-handovers/:id/approve` | `case_handovers` | **接続済み（合成の構成、mock）**。画面のクリックで完了する。KB は公開しない | I | E2E C1、C2 |
@@ -206,4 +278,4 @@ README の図と記述の各線を、実際の経路と証跡に対応づける�
 | AI | スタブが全経路。実 AI は `/api/ai/answer` の入力と応答を 1 回だけ（中継で送信内容を確認） |
 | 実行器 | `endpoint-command-agent.mjs --mock`。実端末・RSP・Mesh は未使用 |
 | 拒否の試験 D1〜D14、K5、K6、K17、C2 | ブラウザの文脈から API を直接呼ぶ。画面のクリックではない |
-| 未確認 | 実端末、Access、実 AI の提案と担当者文脈、`usedKnowledge` の実 AI での動作、PDF、メール送信、N の引継ぎ要約、VPN など他の相談、遠隔支援、#120 との結合、本番 DB の既存 KB の件数 |
+| 未確認 | 実端末、Access、実 AI の提案と担当者文脈、`usedKnowledge` の実 AI での動作、PDF、メール送信、N の引継ぎ要約、VPN など他の相談、遠隔支援、本番 DB の既存 KB の件数。#120 との結合は統合試験まで（E2E は未実施）。resolve の経路に #120 の対策は効かない（docs/67 §3） |

@@ -274,6 +274,64 @@ describe('保存済み状態の欠落キー補完', () => {
     expect(state.devices).toEqual({});
   });
 
+  it('フォルダ一覧のブリッジは機能フラグが有効なときだけ配信する（docs/62）', async () => {
+    const original = config.FOLDER_ACCESS_ENABLED;
+    try {
+      config.FOLDER_ACCESS_ENABLED = false;
+      const off = (await app.inject({ method: 'GET', url: '/' })).body;
+      expect(off).not.toContain('__AIHD_FOLDER_ACCESS_BRIDGE__');
+      expect(off).not.toContain('folder-access');
+      // 既存のブリッジは影響を受けない。
+      expect(off).toContain('__AIHD_REMOTE_SUPPORT_BRIDGE__');
+
+      config.FOLDER_ACCESS_ENABLED = true;
+      const on = (await app.inject({ method: 'GET', url: '/' })).body;
+      expect(on).toContain('__AIHD_FOLDER_ACCESS_BRIDGE__');
+      expect(on).toContain('__AIHD_REMOTE_SUPPORT_BRIDGE__');
+
+      config.FOLDER_ACCESS_ENABLED = false;
+      const offAgain = (await app.inject({ method: 'GET', url: '/' })).body;
+      expect(offAgain).not.toContain('__AIHD_FOLDER_ACCESS_BRIDGE__');
+    } finally {
+      config.FOLDER_ACCESS_ENABLED = original;
+    }
+  });
+
+  it('共通支援セッションのブリッジは両方のフラグが有効なときだけ配信する（docs/63）', async () => {
+    const folder = config.FOLDER_ACCESS_ENABLED;
+    const assist = config.ASSIST_SESSION_ENABLED;
+    try {
+      config.FOLDER_ACCESS_ENABLED = true;
+      config.ASSIST_SESSION_ENABLED = false;
+      const off = (await app.inject({ method: 'GET', url: '/' })).body;
+      expect(off).not.toContain('__AIHD_SUPPORT_SESSION_BRIDGE__');
+      expect(off).toContain('__AIHD_FOLDER_ACCESS_BRIDGE__');
+
+      config.ASSIST_SESSION_ENABLED = true;
+      const on = (await app.inject({ method: 'GET', url: '/' })).body;
+      expect(on).toContain('__AIHD_SUPPORT_SESSION_BRIDGE__');
+
+      // 受付の停止中も、本人が既存のセッションを取り消せるよう配信する。
+      config.ASSIST_SESSION_ENABLED = false;
+      config.ASSIST_SESSION_MODE = 'drain';
+      const drain = (await app.inject({ method: 'GET', url: '/' })).body;
+      expect(drain).toContain('__AIHD_SUPPORT_SESSION_BRIDGE__');
+      config.ASSIST_SESSION_MODE = 'off';
+      const modeOff = (await app.inject({ method: 'GET', url: '/' })).body;
+      expect(modeOff).not.toContain('__AIHD_SUPPORT_SESSION_BRIDGE__');
+      config.ASSIST_SESSION_MODE = undefined;
+
+      config.ASSIST_SESSION_ENABLED = true;
+      config.FOLDER_ACCESS_ENABLED = false;
+      const noFolder = (await app.inject({ method: 'GET', url: '/' })).body;
+      expect(noFolder).not.toContain('__AIHD_SUPPORT_SESSION_BRIDGE__');
+    } finally {
+      config.FOLDER_ACCESS_ENABLED = folder;
+      config.ASSIST_SESSION_ENABLED = assist;
+      config.ASSIST_SESSION_MODE = undefined;
+    }
+  });
+
   it('依頼者以外の操作でも落ちないよう、依頼者の解決と表示フォールバックを差し込む', () => {
     const html =
       '<script>function renderView(){syncHd();var a=DEPTS[USERS[c.userId].dept].name;var b=USERS[c.userId].device;</script>';

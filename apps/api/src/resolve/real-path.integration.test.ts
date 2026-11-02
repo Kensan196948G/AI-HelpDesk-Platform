@@ -90,6 +90,7 @@ beforeAll(async () => {
   originalDevEmail = config.DEV_AUTH_EMAIL;
   originalNodeEnv = config.NODE_ENV;
   config.DEV_AUTH_EMAIL = EMAIL;
+  config.RESOLVE_REQUESTER_DIAGNOSIS_ENABLED = true;
   app = await buildServer({ logger: false });
   await app.ready();
   await sql`
@@ -119,6 +120,12 @@ beforeAll(async () => {
     VALUES (${EMAIL}, 'cowork', ${jsonbValue({
       v: 31,
       cases: [
+        {
+          id: 'CASE-RETRACTED-1',
+          userId: 'u1',
+          subject: '印刷の件',
+          body: '印刷できませんでしたが、もう直りました',
+        },
         { id: CASE_ID, userId: 'u1', subject: '印刷できない', body: 'プリンタで印刷できません' },
       ],
     })})
@@ -137,11 +144,36 @@ beforeEach(async () => {
 afterAll(async () => {
   config.NODE_ENV = originalNodeEnv;
   config.DEV_AUTH_EMAIL = originalDevEmail;
+  config.RESOLVE_REQUESTER_DIAGNOSIS_ENABLED = false;
   await resetData();
   await sql`DELETE FROM device_tokens WHERE user_email IN (${EMAIL}, ${OTHER_EMAIL})`;
   await sql`DELETE FROM device_inventories WHERE user_email IN (${EMAIL}, ${OTHER_EMAIL})`;
   await sql`DELETE FROM prototype_states WHERE user_email = ${EMAIL} AND name = 'cowork'`;
   await app.close();
+});
+
+describe('否定や解消の相談へ提案しない（docs/67）', () => {
+  it('解消済みの相談は 409 で、セッションもコマンドも作らない', async () => {
+    const caseId = 'CASE-RETRACTED-1';
+    const response = await post('/api/resolve/sessions', { caseId, deviceId: DEVICE });
+    expect(response.statusCode, response.body).toBe(409);
+    expect(response.json().error.code).toBe('NO_ACTIVE_SYMPTOM');
+    const sessions = await sql`SELECT id FROM resolution_sessions WHERE case_id = ${caseId}`;
+    expect(sessions).toHaveLength(0);
+  });
+
+  it('既定では相談者の読取診断へ案内しない', async () => {
+    config.RESOLVE_REQUESTER_DIAGNOSIS_ENABLED = false;
+    try {
+      const response = await app.inject({
+        method: 'GET',
+        url: `/api/resolve/device-status?deviceId=${DEVICE}`,
+      });
+      expect(response.json().agentConnected).toBe(false);
+    } finally {
+      config.RESOLVE_REQUESTER_DIAGNOSIS_ENABLED = true;
+    }
+  });
 });
 
 describe('GET /api/resolve/device-status', () => {

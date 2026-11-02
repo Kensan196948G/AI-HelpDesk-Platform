@@ -10,7 +10,11 @@ import { sameHuman } from '../auth/shared-identity.js';
 import { authenticateUi } from '../auth/ui.js';
 import { config } from '../config.js';
 import { sql } from '../db.js';
-import { knowledgeContentHash } from '../domain/knowledge-content.js';
+import {
+  effectiveSymptomTags,
+  knowledgeContentHash,
+  symptomTagsMatchContent,
+} from '../domain/knowledge-content.js';
 import { containsDeviceInfo, redactKnowledgeKeywords, redactKnowledgeText } from '../domain/pii.js';
 import { ApiError, badRequest, conflict, notFound } from '../errors.js';
 import { appendAudit } from '../lib/audit-log.js';
@@ -19,6 +23,7 @@ import { listAiUsableRefs } from '../lib/knowledge-search.js';
 import { nextKbNo } from '../lib/numbers.js';
 import { caseSummary, knowledgeDto } from '../lib/serializers.js';
 import { ensureAuthorUser } from '../lib/users.js';
+import { assistEnabled } from '../support-session/propagate.js';
 
 const ListQuerySchema = z.object({
   status: z.enum(['draft', 'pending', 'approved', 'rejected']).optional(),
@@ -113,8 +118,16 @@ function assertNoDeviceInfo(row: {
   cause: string;
   steps: string;
   keywords?: string[] | null;
+  symptom_tags?: string[] | null;
 }): void {
-  const fields = [row.title, row.symptom, row.cause, row.steps, ...(row.keywords ?? [])];
+  const fields = [
+    row.title,
+    row.symptom,
+    row.cause,
+    row.steps,
+    ...(row.keywords ?? []),
+    ...(row.symptom_tags ?? []),
+  ];
   if (fields.some(containsDeviceInfo)) {
     throw new ApiError(
       409,
@@ -135,6 +148,40 @@ function contentChanged(): ApiError {
 async function lockKnowledge(tx: any, id: string): Promise<any> {
   const rows = await tx`SELECT * FROM knowledge WHERE id = ${id} FOR UPDATE`;
   return rows[0] ?? null;
+}
+
+/**
+ * 列のタグが本文から求めた値と違えば公開しない（docs/64 §11）。承認の前の行にタグを書く経路は無いので、
+ * 違うのは手で書き換えられたときだけである。語彙の外の値もここで止まる。黙って直さない。
+ */
+function assertSymptomTagsMatch(row: {
+  title: string;
+  symptom: string;
+  symptom_tags?: string[] | null;
+}): void {
+  if (!symptomTagsMatchContent(row)) {
+    throw new ApiError(
+      409,
+      'KB_SYMPTOM_TAGS_INVALID',
+      '症状タグが本文と一致しないため承認できません。差し戻して起票し直してください。',
+    );
+  }
+}
+
+/**
+ * 承認者が確認した指紋に入っている固定の症状タグを保存する（docs/63 §12、docs/64 §11）。
+ * ロックの後に検査した行から求め、入力を使わない。
+ * 機能が無効の間は 035 が未適用でも承認を止めないよう書かない（読むときに本文から求める）。
+ */
+async function saveKnowledgeSymptomTags(
+  tx: Parameters<Parameters<typeof sql.begin>[1]>[0],
+  row: { id: string; title: string; symptom: string; symptom_tags?: string[] | null },
+): Promise<void> {
+  if (!assistEnabled()) return;
+  await tx`
+    UPDATE knowledge SET symptom_tags = ${effectiveSymptomTags(row)}
+    WHERE id = ${row.id}
+  `;
 }
 
 export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
@@ -185,13 +232,14 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
         cause: string;
         steps: string;
         keywords: string[] | null;
+        symptom_tags: string[] | null;
         version: number;
         author_email: string | null;
         created_at: Date;
       }[]
     >`
       SELECT k.id, k.client_ref, k.kb_no, k.status, k.title, k.symptom, k.cause, k.steps,
-             k.keywords, k.version, u.email AS author_email, k.created_at
+             k.keywords, k.symptom_tags, k.version, u.email AS author_email, k.created_at
       FROM knowledge k
       LEFT JOIN users u ON u.id = k.author_id
       WHERE k.client_ref IS NOT NULL
@@ -367,6 +415,7 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
       if (input.decision === 'approved') {
         if (lockedHash !== input.contentHash) throw contentChanged();
         assertNoDeviceInfo(locked);
+        assertSymptomTagsMatch(locked);
       }
       publishedVersion = input.decision === 'approved' ? Number(locked.version) + 1 : null;
       await tx`
@@ -388,6 +437,7 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
             RETURNING id
           `;
         if (approvedRows.length === 0) throw conflict('承認待ちのナレッジではありません。');
+        await saveKnowledgeSymptomTags(tx, locked);
         if (row.case_id) {
           const caseRows = await tx<any[]>`
               SELECT case_no, signal FROM cases WHERE id = ${row.case_id} LIMIT 1
@@ -642,10 +692,13 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
               cause: cause.text,
               steps: steps.text,
               keywords,
+              // タグは入力に無い。列の値で比べ、未算出なら送られた本文から求める。
+              symptom_tags: locked.symptom_tags,
             });
             // 指紋と送られた本文の両方が、保存済みの行と一致するときだけ公開する。
             if (lockedHash !== input.contentHash || sentHash !== lockedHash) throw contentChanged();
           }
+          assertSymptomTagsMatch(locked);
           publishedVersion = Number(locked.version) + 1;
           await tx`
             UPDATE knowledge SET
@@ -664,6 +717,7 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
             VALUES (${id}, ${authorId}, 'approved', ${input.comment ?? ''},
               ${jsonbValue(input.checklist)}, ${lockedHash}, ${locked.version}, ${publishedVersion})
           `;
+          await saveKnowledgeSymptomTags(tx, locked);
           await appendAudit(tx, {
             actorId: authorId,
             action: 'knowledge.approve',

@@ -283,11 +283,12 @@ PC 情報の画面では混ざりません。端末ごとに分けて保存し�
 | 🖐 本人同意つきの遠隔サポート（案内文まで） | 🎭 同じログイン内のデモ |
 | 🔔 引継ぎのメール通知 | ❔ 未検証（ローカル SMTP シンクまで） |
 | 🖥 画面共有・遠隔操作 | 🚧 実装していません |
-| 🧑 本人権限ヘルパーの共通支援セッション（#120） | 🚧 開発中のブランチ。既定無効で、この状態表の対象外 |
+| 🧑 本人権限ヘルパーの共通支援セッション（#120） | 🚧 開発中。検証統合のブランチに含むが既定無効で、統合の後の確認は試験のみ（実機なし）。経路の違いは [docs/67](docs/67-execution-paths.md) |
+| 🔗 同じ実端末の結果から KB 承認、次の相談まで | 🟡 検証環境で 1 回（[docs/65](docs/65-readme-dataflow-map.md) §0-1。読取 1 シナリオ、ローカル認証、合成の相談文、別人物の承認なし。解決能力は未評価） |
 | 🧪 通しテスト（E2E） | 🟡 1 シナリオのみ（合成の名簿、ローカル認証、スタブ AI、模擬の実行器） |
 
 > [!NOTE]
-> 「実データ」でも、通しの確認は検証環境（合成の名簿・ローカル認証）で行っています。Cloudflare Access・実端末では確かめていません。
+> 「実データ」でも、通しの確認は検証環境（合成の名簿・ローカル認証）で行っています。Cloudflare Access では確かめていません。実端末は検証用の 1 台だけです。
 > スタブの AI と模擬の実行器で通したものは、実機の受入に数えていません。
 
 ---
@@ -377,6 +378,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\windows\install-collector-tas
 - [受入照合](docs/11-acceptance.md) / [Round Log](docs/12-round-log.md) / [Blocker 報告](docs/13-blocked-report.md)
 - [既存 UI の適用](docs/14-prototype-ui-integration.md) / [AI 修復フロー](docs/16-ai-repair-flow.md) / [端末コマンド実行](docs/19-device-command-execution.md) / [社員名簿](docs/20-employee-directory.md)
 - [README のデータの流れの対応表](docs/65-readme-dataflow-map.md) / [Windows の端末エージェント（Node 不要）](docs/66-windows-command-agent.md) / [最終報告書](docs/21-final-report-export.md) / [STEP5 引継ぎと遠隔支援](docs/22-remote-assist-handover.md) / [RSP / MeshCentral 連携設計](docs/23-rsp-meshcentral-integration.md)
+- [本人同意付きフォルダ一覧](docs/62-consented-folder-access.md) / [共通支援セッション](docs/63-assist-session.md) / [端末操作の 3 経路の責任範囲](docs/67-execution-paths.md)
 
 ### 既知の制約
 
@@ -387,6 +389,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\windows\install-collector-tas
 - 遠隔支援（案内文の送信）は同じログイン内のデモです。画面共有（MeshCentral 等）は未実装です。
 - 最終報告書は画面の状態から生成します。サーバー側の案件台帳との突合・電子署名は未実装です（[docs/21](docs/21-final-report-export.md) §7-1）。
 - 添付実体・端末修復実行・外部ヘルプデスク基盤連携・SSO は対象外です。
+- 本人同意付きフォルダ一覧（[docs/62](docs/62-consented-folder-access.md)）は開発中で、既定で無効です（`FOLDER_ACCESS_ENABLED=false`。全 API が 404、画面の導線も出ません）。読み取り専用で、選んだフォルダ直下の名前と属性だけを扱います。Mirai-Info の貸与情報 API が `generatedAt` と鮮度の根拠 `dataAsOf.employeeDirectoryLastSeenAt` を返すまでは、検証環境の `FOLDER_ACCESS_ALLOW_UNVERIFIED_LEASE=true` でしか先へ進めません（本番では起動を拒否します）。
+- 共通支援セッションと AI 操作ループ（[docs/63](docs/63-assist-session.md)）は開発中で、既定で無効です（`ASSIST_SESSION_ENABLED=false`。全 API が 404、画面の導線も出ません）。実行器は本人権限ヘルパーだけで、`device_commands` / RSP へ配送しません。追加の Skill は人の承認（`scripts/skills/approved.json`）があるまで提案されません。
 - アクセス制御の正本は [docs/MailAddress.txt](docs/MailAddress.txt)。空・不存在の場合は **全拒否**（fail-closed）です。
   Cloudflare Access の allow ポリシーと同じ内容に保ち、変更時は両方を更新して API を再起動してください。
 

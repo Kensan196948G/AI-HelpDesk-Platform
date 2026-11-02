@@ -1,0 +1,315 @@
+{
+ "scope": {
+  "auth": "AUTH_MODE=local。Cloudflare Access ではない",
+  "browser": "サーバ上のヘッドレス。端末のブラウザではない",
+  "ai": "実 DeepSeek（合成の相談文と合成の KB）",
+  "executor": "scripts/windows/command-agent.ps1 + 実端末",
+  "roster": "合成",
+  "humans": "担当者と承認者は別アカウントだが同じ人物が番号で判定し、操作はエージェントが画面へ送る"
+ },
+ "steps": {
+  "consult": {
+   "caseId": "CASE-0006",
+   "connected": true
+  },
+  "propose": {
+   "skill": "spooler.status",
+   "commandsBeforeY": 0,
+   "proposal": "🧭 解決ループ（読み取り診断）\nステップ 1/6・waiting_execute\n印刷スプーラの状態を確認する \n読み取りのみ\n印刷スプーラサービスと印刷キューの状態を読み取りで確認します。\n理由: 印刷不可の症状に対し、まず印刷スプーラとキューの状態を読み取りで確認します。\nパラメータ: {}\n実行する（Y）\nやめる（N）\n解決した\n担当者へ\n中止",
+   "api": [
+    "GET /api/me 200",
+    "GET /api/resolve/device-status 200",
+    "POST /api/resolve/sessions 200"
+   ]
+  },
+  "result": {
+   "source": "endpoint_agent",
+   "command": {
+    "status": "done",
+    "skill_id": "spooler.status"
+   },
+   "resultSummary": "{\"ok\":true,\"summary\":\"{\\\"name\\\":\\\"Spooler\\\",\\\"displayName\\\":\\\"Print Spooler\\\",\\\"status\\\":\\\"Running\\\",\\\"startType\\\":\\\"Auto\\\"}\",\"exitCode\":0,\"normalized\":{\"name\":\"Spooler\",\"status\":\"Running\",\"startType\":\"Auto\",\"displayName\":\"Print Spooler\"},\"resultShapeOk\":true,\"executionSource\":\"endpoint_agent\"}",
+   "sessionStatus": "waiting_continue",
+   "saysNotResolved": true,
+   "closed": null,
+   "panel": "🧭 解決ループ（読み取り診断）\nステップ 1/6・waiting_continue\n結果：端末エージェント（実端末）\n読み取りの結果です。まだ解決とは判定していません。解決したかどうかはご本人が確認してください。\n{\"name\":\"Spooler\",\"displayName\":\"Print Spooler\",\"status\":\"Running\",\"startType\":\"Auto\"}\n\n{\n  \"name\": \"Spooler\",\n  \"status\": \"Running\",\n  \"startType\": \"Auto\",\n  \"displayName\": \"Print Spooler\"\n}\n出典：社内ナレッジ\nKB-2026-0003 v1 印刷ジョブが消えないときの対処\n出所：初期登録の資料（人の承認記録なし）\n1. 印刷キューを開き、エラーのジョブを削除する / 2. 印刷スプーラを再起動する / 3. テスト印刷を実行する\nAI の参照はありません（相談内容との照合で表示）\n続ける（Y）\nやめる（N）\n解決した\n担当者へ\n中止"
+  },
+  "handover": {
+   "handoverId": "10a9ea1d-5084-4804-97df-918504dd3232",
+   "status": "pending",
+   "hasCommandId": true,
+   "hasEndpointAgent": true,
+   "hasMock": false,
+   "consentMentionsResult": true
+  },
+  "staffRecord": {
+   "workspaceShowsResult": true,
+   "kb": {
+    "id": "f8091772-b95a-4be5-852f-283e029fa47a",
+    "kb_no": "KB-2026-0101",
+    "status": "pending",
+    "version": 1,
+    "title": "印刷しても紙が出ないとき（スプーラが動作中）の確認手順",
+    "symptom": "印刷ができません",
+    "cause": "読み取りではスプーラは動作中だった。スプーラ以外（既定のプリンター、印刷キュー、本体）を確認する段階。",
+    "steps": "設定 > Bluetooth とデバイス > プリンターとスキャナーで、使いたいプリンターが既定になっているか確認する\n同じ画面で「印刷キューを開く」を選び、一時停止やエラーの表示があれば解除する\nプリンター本体の電源、用紙、紙詰まりの表示を確認する\nテストページを印刷する\n直らないときは、試した内容を添えて担当者へ引き継ぐ",
+    "keywords": [],
+    "source_handover_id": "10a9ea1d-5084-4804-97df-918504dd3232",
+    "source_case_ref": "CASE-0006"
+   },
+   "sourceMatchesCase": true,
+   "sourceMatchesHandover": true
+  },
+  "approveKb": {
+   "status": "approved",
+   "version": 2,
+   "separateAccounts": true,
+   "review": {
+    "id": "d1e350e9-af7a-4cf5-98c5-44397edf8e61",
+    "content_hash": "sha256:1a07ca7c6e214282b62a1565cb80ffbae79607dfaa4a25268b8443e27f5ec0a2",
+    "reviewed_version": 1,
+    "published_version": 2,
+    "decision": "approved"
+   },
+   "handoverStatusAfterKb": "resolved"
+  },
+  "completeHandover": {
+   "status": "completed",
+   "self_approved": false
+  },
+  "nextConsult": {
+   "caseId": "CASE-0001",
+   "kbNo": "KB-2026-0101",
+   "chat": "🙋\nプリンターから紙が出ない。印刷しても紙が出ません。スプーラは動いていると言われました。次に何を確認すればいいですか\n22:05\n🤖\n\n🖥️ 相談の前に取得した PC基本情報（WEB-10572CE2・13:05・35項目）を確認しました。\n\n気になる点は見つかりませんでした。\n\n★＝相談内容に関係しそうな項目です。このあと、相談内容に合わせて詳しく調べます。\n\nPC基本情報を詳しく見る\n🧠 PCエージェント（事前取得）　22:05\n🤖\n\n端末エージェントが未接続のため実診断はできません。担当者へ引き継げます。\n\n次のナレッジをご自身で試せます。端末の読み取りや操作はしていません。試しても直らないときは担当者へ引き継げます。\n\n印刷ジョブが消えないときの対処（KB-2026-0003 v1、初期登録の資料（人の承認記録なし））\n1. 印刷キューを開き、エラーのジョブを削除する\n2. 印刷スプーラを再起動する\n3. テスト印刷を実行する\n印刷しても紙が出ないとき（スプーラが動作中）の確認手順（KB-2026-0101 v2、同一人物の別アカウントが承認）\n設定 > Bluetooth とデバイス > プリンターとスキャナーで、使いたいプリンターが既定になっているか確認する\n同じ画面で「印刷キューを開く」を選び、一時停止やエラーの表示があれば解除する\nプリンター本体の電源、用紙、紙詰まりの表示を確認する\nテストページを印刷する\n直らないときは、試した内容を添えて担当者へ引き継ぐ\n🙋 担当者へ引き継ぐ\n🧠 システム　22:05",
+   "chatMentionsKb": true,
+   "directAnswer": "スプーラが動作中とのことなので、スプーラ以外を確認しましょう。\n\n1. 設定 > Bluetooth とデバイス > プリンターとスキャナーを開き、使いたいプリンターが既定になっているか確認してください。\n2. 同じ画面で「印刷キューを開く」を選び、一時停止やエラーの表示があれば解除してください。\n3. プリンター本体の電源、用紙、紙詰まりの表示を確認してください。\n4. テストページを印刷してください。\n\nなお、ご利用の環境はLinuxと記録されているため、画面の名称が上記と異なる場合があります。その場合は読み替えて操作してください。直らないときは、試した内容を添えて担当者へ引き継いでください。\n\n根拠: KB-2026-0101",
+   "directSources": [
+    {
+     "id": "f8091772-b95a-4be5-852f-283e029fa47a",
+     "kbNo": "KB-2026-0101",
+     "title": "印刷しても紙が出ないとき（スプーラが動作中）の確認手順",
+     "version": 2,
+     "approvalOrigin": "shared_identity",
+     "approvalOriginLabel": "同一人物の別アカウントが承認"
+    }
+   ],
+   "provider": "deepseek",
+   "api": [
+    "GET /api/me 200",
+    "POST /api/device/browser 200",
+    "GET /api/me 200",
+    "GET /api/resolve/device-status 200",
+    "GET /api/resolve/device-status 200",
+    "POST /api/resolve/knowledge-guide 200",
+    "GET /api/resolve/device-status 200",
+    "POST /api/ai/answer 200"
+   ],
+   "note": "chat は画面の操作。directAnswer は同じ文を /api/ai/answer へ直接送った結果で、画面の操作ではない"
+  },
+  "trace": {
+   "row": {
+    "kb_no": "KB-2026-0101",
+    "version": 2,
+    "source_case_ref": "CASE-0006",
+    "source_handover_id": "10a9ea1d-5084-4804-97df-918504dd3232",
+    "handover_case": "CASE-0006",
+    "session_id": "5e89375e-25b0-405c-8182-daf44de7edbe",
+    "step_id": "90269bad-5ccd-4c1b-b10d-3eef1c89fe4f",
+    "command_id": "1d602247-cd74-4970-b448-d84e05b33083",
+    "command_status": "done",
+    "content_hash": "sha256:1a07ca7c6e214282b62a1565cb80ffbae79607dfaa4a25268b8443e27f5ec0a2",
+    "published_version": 2
+   },
+   "matchesRun": true
+  }
+ },
+ "ids": {
+  "caseId": "CASE-0006",
+  "sessionId": "5e89375e-25b0-405c-8182-daf44de7edbe",
+  "proposalStepId": "90269bad-5ccd-4c1b-b10d-3eef1c89fe4f",
+  "commandId": "1d602247-cd74-4970-b448-d84e05b33083",
+  "handoverId": "10a9ea1d-5084-4804-97df-918504dd3232",
+  "kbId": "f8091772-b95a-4be5-852f-283e029fa47a",
+  "kbNo": "KB-2026-0101",
+  "reviewId": "d1e350e9-af7a-4cf5-98c5-44397edf8e61",
+  "contentHash": "sha256:1a07ca7c6e214282b62a1565cb80ffbae79607dfaa4a25268b8443e27f5ec0a2",
+  "publishedVersion": 2,
+  "nextCaseId": "CASE-0001"
+ },
+ "apiLog": {
+  "requesterA": [
+   "GET /api/me 200",
+   "GET /api/employees 200",
+   "GET /api/me 200",
+   "GET /api/knowledge/approved-refs 200",
+   "GET /api/me 200",
+   "POST /api/device/browser 200",
+   "GET /api/me 200",
+   "GET /api/resolve/device-status 200",
+   "GET /api/resolve/device-status 200",
+   "POST /api/resolve/sessions 200",
+   "POST /api/resolve/steps/:id/approve 200",
+   "GET /api/resolve/device-status 200",
+   "POST /api/resolve/sessions 200",
+   "POST /api/resolve/sessions/:id/stop 200",
+   "GET /api/resolve/device-status 200",
+   "POST /api/resolve/sessions 200",
+   "GET /api/resolve/device-status 200",
+   "POST /api/resolve/sessions 200",
+   "GET /api/knowledge/approved-refs 200",
+   "GET /api/me 200",
+   "GET /api/resolve/device-status 200",
+   "POST /api/resolve/sessions 200",
+   "GET /api/knowledge/approved-refs 200",
+   "GET /api/knowledge/approved-refs 200",
+   "POST /api/resolve/steps/:id/approve 409",
+   "GET /api/knowledge/approved-refs 200",
+   "GET /api/knowledge/approved-refs 200",
+   "GET /api/knowledge/approved-refs 200",
+   "GET /api/knowledge/approved-refs 200",
+   "GET /api/knowledge/approved-refs 200",
+   "GET /api/knowledge/approved-refs 200",
+   "GET /api/knowledge/approved-refs 200",
+   "POST /api/device/browser 200",
+   "GET /api/knowledge/approved-refs 200",
+   "GET /api/knowledge/approved-refs 200",
+   "GET /api/knowledge/approved-refs 200",
+   "GET /api/me 200",
+   "GET /api/resolve/device-status 200",
+   "POST /api/resolve/sessions 200",
+   "POST /api/resolve/steps/:id/approve 200",
+   "GET /api/resolve/steps/:id 200",
+   "GET /api/resolve/steps/:id 200",
+   "GET /api/resolve/steps/:id 200",
+   "GET /api/resolve/steps/:id 200",
+   "GET /api/resolve/steps/:id 200",
+   "POST /api/resolve/sessions/:id/escalate 200",
+   "GET /api/case-handovers/recipients 200",
+   "POST /api/case-handovers 200",
+   "GET /api/knowledge/approved-refs 200",
+   "GET /api/case-handovers/:id 200",
+   "GET /api/knowledge/approved-refs 200",
+   "GET /api/case-handovers/:id 200",
+   "GET /api/me 200"
+  ],
+  "staff": [
+   "GET /api/me 200",
+   "GET /api/employees 200",
+   "GET /api/knowledge/approved-refs 200",
+   "GET /api/me 200",
+   "GET /api/me 200",
+   "GET /api/case-handovers/inbox 200",
+   "POST /api/device/browser 200",
+   "GET /api/employees 200",
+   "GET /api/me 200",
+   "GET /api/knowledge/approved-refs 200",
+   "GET /api/me 200",
+   "GET /api/case-handovers/inbox 200",
+   "POST /api/device/browser 200",
+   "POST /api/case-handovers/:id/claim 200",
+   "GET /api/employees 200",
+   "GET /api/knowledge/approved-refs 200",
+   "GET /api/me 200",
+   "GET /api/me 200",
+   "GET /api/resolve/device-status 200",
+   "GET /api/me 200",
+   "POST /api/device/browser 200",
+   "GET /api/case-handovers/:id 200",
+   "GET /api/terminal/sessions 404",
+   "GET /api/case-handovers/inbox 200",
+   "GET /api/terminal/sessions 200",
+   "PATCH /api/case-handovers/:id 200",
+   "GET /api/knowledge/pending 200",
+   "POST /api/knowledge/ui-sync 200",
+   "GET /api/case-handovers/:id 200",
+   "GET /api/knowledge/approved-refs 200",
+   "GET /api/case-handovers/:id 200"
+  ],
+  "approver": [
+   "GET /api/me 200",
+   "GET /api/employees 200",
+   "GET /api/knowledge/approved-refs 200",
+   "GET /api/me 200",
+   "GET /api/me 200",
+   "GET /api/case-handovers/inbox 200",
+   "POST /api/device/browser 200",
+   "GET /api/knowledge/pending 200",
+   "GET /api/case-handovers/awaiting-approval 200",
+   "POST /api/knowledge/ui-sync 200",
+   "GET /api/knowledge/pending 200",
+   "GET /api/case-handovers/awaiting-approval 200",
+   "POST /api/case-handovers/:id/approve 200",
+   "GET /api/case-handovers/awaiting-approval 200"
+  ],
+  "requesterB": [
+   "GET /api/me 200",
+   "GET /api/employees 200",
+   "GET /api/knowledge/approved-refs 200",
+   "GET /api/me 200",
+   "GET /api/me 200",
+   "POST /api/device/browser 200",
+   "GET /api/me 200",
+   "GET /api/resolve/device-status 200",
+   "GET /api/resolve/device-status 200",
+   "POST /api/resolve/knowledge-guide 200",
+   "GET /api/resolve/device-status 200",
+   "POST /api/ai/answer 200"
+  ]
+ },
+ "commit": "ae9bcce (verify/dataflow-assist-integration)",
+ "date": "2026-11-01",
+ "approvals": {
+  "install": "番号選択で Y",
+  "mainY": "条件付きの事前承認（Skill=spooler.status、引数なし、読取のみを機械照合してから画面の Y を押す）",
+  "kbPublish": "本文を提示して番号選択で Y（担当者と同じ人物）",
+  "clicks": "サーバ上のヘッドレスでエージェントが押した"
+ },
+ "independentRead": {
+  "via": "RSP（エージェントとは別経路）",
+  "spooler": "Running"
+ },
+ "negative": {
+  "negativeN": {
+   "caseId": "CASE-0001",
+   "proposal": "🧭 解決ループ（読み取り診断）\nステップ 1/6・waiting_execute\n印刷スプーラの状態を確認する \n読み取りのみ\n印刷スプーラサービスと印刷キューの状態を読み取りで確認します。\n理由: 印刷不可の症状に対し、まず印刷スプーラとキューの状態を読み取りで確認します。\nパラメータ: {}\n実行する（Y）\nやめる（N）\n解決した\n担当者へ\n中止",
+   "commandsAdded": 0,
+   "session": "stopped",
+   "step": "rejected"
+  },
+  "negativeAbort": {
+   "caseId": "CASE-0002",
+   "canStop": true,
+   "commandsAdded": 0,
+   "session": "stopped"
+  },
+  "negativeOfflineY": {
+   "caseId": "CASE-0005",
+   "commandsAdded": 0,
+   "panel": "🧭 解決ループ（読み取り診断）\nステップ 1/6・waiting_execute\n印刷スプーラの状態を確認する \n読み取りのみ\n印刷スプーラサービスと印刷キューの状態を読み取りで確認します。\n理由: 印刷不可の症状に対し、まず印刷スプーラとキューの状態を読み取りで確認します。\nパラメータ: {}\n実行する（Y）\nやめる（N）\n解決した\n担当者へ\n中止\n対象端末が応答していません（オフライン）。端末を起動してからやり直してください。"
+  },
+  "doubleY": {
+   "via": "画面と同じ API を同時に 2 回（画面の連打ではない）",
+   "statuses": [
+    {
+     "status": 200,
+     "code": null
+    },
+    {
+     "status": 409,
+     "code": "STEP_NOT_APPROVABLE"
+    }
+   ],
+   "commands": 1,
+   "source": "endpoint_agent"
+  },
+  "expired": {
+   "via": "API 直接（画面ではない）",
+   "waitedSeconds": 321,
+   "response": {
+    "status": 409,
+    "code": "APPROVAL_EXPIRED"
+   },
+   "commands": 0
+  }
+ }
+}

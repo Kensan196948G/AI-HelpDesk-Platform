@@ -88,10 +88,17 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const children = [];
 const dlKey = randomBytes(24).toString('hex');
 const configKey = randomBytes(24).toString('hex');
-const deviceId = randomUUID();
+// 導入済みの端末へ触らずに起動し直すときは、DB の端末とトークンをそのまま使う。
+const reuseDevice = process.env.RDC_REUSE_DEVICE === '1';
+let deviceId = randomUUID();
 const deviceToken = randomBytes(32).toString('hex');
 let configServed = false;
+// 結果へ書かない（docs/65 §0）。
+let publicUrl = '';
 let deviceRouteOpen = true;
+// 実行の結果の報告だけを止める（報告の失敗と実行の失敗を分ける確認）。
+let blockResult = false;
+let resultBlocked = 0;
 
 const FILES = [
   'scripts/windows/command-agent.ps1',
@@ -168,6 +175,15 @@ async function prepareDb() {
     RETURNING id
   `;
   await sql`INSERT INTO user_roles (user_id, role) VALUES (${user.id}, 'approver') ON CONFLICT DO NOTHING`;
+  if (reuseDevice) {
+    const [existing] = await sql`
+      SELECT device_id FROM device_tokens WHERE label = 'real-device-chain'
+      ORDER BY created_at DESC LIMIT 1
+    `;
+    if (!existing) throw new Error('再利用する端末がありません。');
+    deviceId = existing.device_id;
+    return;
+  }
   await sql`
     INSERT INTO device_tokens (token_hash, user_email, label, device_id)
     VALUES (${createHash('sha256').update(deviceToken).digest('hex')}, ${EMAIL.requesterA},
@@ -192,6 +208,7 @@ async function startApi(role) {
       MIRAI_INFO_DATABASE_URL: dbUrl,
       SESSION_SECRET: randomBytes(32).toString('hex'),
       AUTH_MODE: 'local',
+      RESOLVE_REQUESTER_DIAGNOSIS_ENABLED: 'true',
       DEV_AUTH_EMAIL: EMAIL[role],
       ALLOW_SELF_APPROVAL: 'false',
       // 担当者と承認者は同じ人物が判定する。別人物の承認に見せない。
@@ -227,7 +244,7 @@ function startDeviceProxy() {
       response.setHeader('Content-Type', 'application/json');
       response.end(
         JSON.stringify({
-          url: `${process.env.RDC_PUBLIC_URL ?? results.publicUrl}/api/device/agent`,
+          url: `${process.env.RDC_PUBLIC_URL ?? publicUrl}/api/device/agent`,
           deviceToken,
           browserDeviceId: deviceId,
           commandIntervalSeconds: 3,
@@ -248,6 +265,13 @@ function startDeviceProxy() {
     }
     if (!deviceRouteOpen || !/^\/api\/device\/(agent(\/|$)|command(\/|$))/.test(url.pathname)) {
       response.statusCode = deviceRouteOpen ? 403 : 503;
+      response.end();
+      return;
+    }
+    if (blockResult && request.method === 'POST' && /\/result$/.test(url.pathname)) {
+      resultBlocked += 1;
+      request.resume();
+      response.statusCode = 503;
       response.end();
       return;
     }
@@ -346,6 +370,17 @@ async function startSession(page) {
   return panelText(page);
 }
 
+/** 条件付きの事前承認の機械照合。読み取りの spooler.status、引数なしの提案だけ Y を押す。 */
+function assertPreapproved(panel) {
+  if (
+    !/spooler|スプーラ/.test(panel) ||
+    !/読み取りのみ/.test(panel) ||
+    !/パラメータ: \{\}/.test(panel)
+  ) {
+    throw new Error('事前承認の条件に合いません。Y を押しません。');
+  }
+}
+
 async function commandCount() {
   const [row] = await sql`SELECT count(*)::int AS n FROM device_commands`;
   return row.n;
@@ -388,13 +423,13 @@ const STATE = { mainCase: null, handoverId: null, kbId: null };
 const STEPS_API = {
   /** 導入に必要な値をファイルに書く。値は標準出力へ出さない。 */
   async bootstrap(url) {
-    results.publicUrl = url.searchParams.get('public') ?? '';
+    publicUrl = url.searchParams.get('public') ?? '';
     writeFileSync(
       process.env.RDC_BOOTSTRAP,
       JSON.stringify({ dlKey, configKey, deviceId, files: FILES }),
       { mode: 0o600 },
     );
-    return { ok: Boolean(results.publicUrl) };
+    return { ok: Boolean(publicUrl) };
   },
   async status() {
     const [row] = await sql`
@@ -547,6 +582,79 @@ const STEPS_API = {
       canStop,
       commandsAdded: (await commandCount()) - before,
       session: row.session_status,
+    });
+  },
+
+  // ── 実機の後に入れた修正の確認（ae9bcce の後の分） ──
+  /** 結果の取り込み: Y の直後に画面を離れ、画面が無くてもサーバが結果を取り込むか。 */
+  async recheckResultCapture() {
+    const { page } = await openPersona('requesterA');
+    const caseId = await newCase(page);
+    assertPreapproved(await startSession(page));
+    const row0 = await latestStep(caseId);
+    if (row0?.skill_id !== 'spooler.status') throw new Error('事前承認の条件に合いません。');
+    const home = page.url();
+    await page.click(`${PANEL} [data-aihd-resolve="approve"][data-decision="Y"]`);
+    await sleep(800);
+    await page.goto('about:blank');
+    let row;
+    let command;
+    const started = Date.now();
+    while (Date.now() - started < 170_000) {
+      row = await latestStep(caseId);
+      if (row?.command_id) {
+        [command] = await sql`SELECT status FROM device_commands WHERE id = ${row.command_id}`;
+      }
+      if (command?.status === 'done' && row.result_summary) break;
+      await sleep(3000);
+    }
+    const seconds = Math.round((Date.now() - started) / 1000);
+    await page.goto(home);
+    return record('recheckResultCapture', {
+      caseId,
+      seconds,
+      commandStatus: command?.status ?? null,
+      stepStatus: row?.step_status ?? null,
+      sessionStatus: row?.session_status ?? null,
+      capturedWithoutPage: Boolean(command?.status === 'done' && row?.result_summary),
+      resultSummary: JSON.stringify(row?.result_summary ?? null).slice(0, 300),
+    });
+  },
+  /** 報告の分離: 結果の報告だけを失敗させ、実行を繰り返さず、エージェントが動き続けるか。 */
+  async recheckReportSplit() {
+    const { page } = await openPersona('requesterA');
+    const caseId = await newCase(page);
+    assertPreapproved(await startSession(page));
+    const row0 = await latestStep(caseId);
+    if (row0?.skill_id !== 'spooler.status') throw new Error('事前承認の条件に合いません。');
+    const before = await commandCount();
+    blockResult = true;
+    resultBlocked = 0;
+    await page.click(`${PANEL} [data-aihd-resolve="approve"][data-decision="Y"]`);
+    const started = Date.now();
+    while (Date.now() - started < 120_000 && resultBlocked === 0) await sleep(1000);
+    const blocked = resultBlocked;
+    blockResult = false;
+    // 繰り返して実行されるなら、次の取得と報告がここで届く。
+    await sleep(30_000);
+    const row = await latestStep(caseId);
+    const [command] = row?.command_id
+      ? await sql`SELECT status FROM device_commands WHERE id = ${row.command_id}`
+      : [null];
+    const [seen] = await sql`
+      SELECT max(last_used_at) AS last_seen FROM device_tokens WHERE device_id = ${deviceId}
+    `;
+    return record('recheckReportSplit', {
+      caseId,
+      blockedReports: blocked,
+      reportsAfterUnblock: resultBlocked - blocked,
+      commandsAdded: (await commandCount()) - before,
+      commandStatus: command?.status ?? null,
+      stepStatus: row?.step_status ?? null,
+      lastSeenSecondsAgo: seen?.last_seen
+        ? Math.round((Date.now() - new Date(seen.last_seen).getTime()) / 1000)
+        : null,
+      panel: (await panelText(page)).slice(0, 300),
     });
   },
 

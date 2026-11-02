@@ -1,0 +1,29 @@
+{
+  "symptom": [
+    {
+      "text": "印刷エラーはありません",
+      "path3_symptomTags": [],
+      "path2_ruleProposal": "spooler.status"
+    },
+    {
+      "text": "昨日は印刷できなかったが今は印刷できます",
+      "path3_symptomTags": [],
+      "path2_ruleProposal": "spooler.status"
+    },
+    {
+      "text": "印刷できません",
+      "path3_symptomTags": [
+        "print_failed"
+      ],
+      "path2_ruleProposal": "spooler.status"
+    }
+  ],
+  "assertion": {
+    "rationale": "解決しました",
+    "path3_accepted": {
+      "text": null,
+      "rejected": true
+    },
+    "path2_rationale": "解決しました"
+  }
+}

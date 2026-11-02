@@ -41,7 +41,7 @@ const GUIDE_STEP_LIMIT = 8;
 const GUIDE_STEP_CHARS = 200;
 
 /**
- * 端末エージェントが無い相談者へ見せる案内（docs/14 §2-16）。外部 AI へ送らない。
+ * 端末エージェントが無い相談者へ見せる案内（docs/14 §2-18）。外部 AI へ送らない。
  * 判定は /api/ai/answer と同じ findApprovedKnowledge で、本文は伏せた後の値。端末は操作しない。
  */
 export async function knowledgeGuideForCase(text: string): Promise<KnowledgeGuideItem[]> {

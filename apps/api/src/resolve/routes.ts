@@ -10,6 +10,7 @@ import { ApiError, badRequest, notFound } from '../errors.js';
 import { appendAudit } from '../lib/audit-log.js';
 import { jsonbValue } from '../lib/jsonb-value.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
+import { symptomStatusOf } from '../support-session/case-facts.js';
 import { isResolveAdmin } from './admin.js';
 import {
   type AdminApprovalPayload,
@@ -1381,9 +1382,15 @@ export async function sweepResolveTimeouts(): Promise<number> {
       AND st.deadline_at IS NOT NULL
       AND st.deadline_at < now()
       AND c.status IN ('done', 'failed')
+    ORDER BY st.deadline_at
     LIMIT 50
   `;
-  for (const step of finished) await applyCommandOutcome(step.user_email, step.id);
+  for (const step of finished) {
+    // 1 件の失敗で後続のタイムアウト処理を止めない。
+    await applyCommandOutcome(step.user_email, step.id).catch((error) => {
+      console.warn('[resolve] 結果の取り込みに失敗しました', step.id, error?.code ?? 'unknown');
+    });
+  }
   // 対象セッションを先に特定し、session → step の固定順でロックする。
   const candidates = await sql<{ session_id: string }[]>`
     SELECT DISTINCT session_id FROM resolution_steps
@@ -1524,7 +1531,7 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
     };
   });
 
-  // 端末エージェントが無い相談者への案内（docs/14 §2-16）。外部 AI へ送らず、端末も操作しない。
+  // 端末エージェントが無い相談者への案内（docs/14 §2-18）。外部 AI へ送らず、端末も操作しない。
   // 本文は本人の案件からサーバが読み、クライアントの文字列を使わない。
   app.post('/resolve/knowledge-guide', { preHandler: authenticateUi }, async (request) => {
     const email = requireEmail(request);
@@ -1543,7 +1550,13 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
     const { deviceId } = DeviceStatusQuerySchema.parse(request.query);
     const owned = await ownsDevice(email, deviceId);
     const lastSeen = owned ? await standardAgentLastSeenAt(email, deviceId) : null;
-    return { ok: true, deviceId, owned, agentConnected: isDeviceOnline(lastSeen) };
+    // 検証専用の経路なので既定は案内しない（docs/67）。相談者と Windows ユーザーを照合していない。
+    return {
+      ok: true,
+      deviceId,
+      owned,
+      agentConnected: config.RESOLVE_REQUESTER_DIAGNOSIS_ENABLED && isDeviceOnline(lastSeen),
+    };
   });
 
   // IT 管理者の承認待ち（リスク 4 以上）。管理者以外には存在を返さない。
@@ -1789,6 +1802,14 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
       }
       const ownedCase = await findOwnedCase(email, input.caseId);
       if (!ownedCase) throw notFound('案件が見つかりません。');
+      // 否定や解消が書かれた相談へ端末の操作を提案しない（#120 の判定を使う。docs/67）。
+      if (symptomStatusOf(caseText(ownedCase)) === 'retracted') {
+        throw new ApiError(
+          409,
+          'NO_ACTIVE_SYMPTOM',
+          '相談文から、いま続いている症状を読み取れませんでした。続いている場合は症状を書き直すか、担当者へ引き継いでください。',
+        );
+      }
 
       const skills = await listApprovedSkills();
       const proposal = await proposeNext({

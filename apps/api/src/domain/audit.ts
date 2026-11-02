@@ -1,5 +1,8 @@
 import { createHash } from 'node:crypto';
 import { config } from '../config.js';
+import { stableStringify } from './stable-stringify.js';
+
+export { stableStringify };
 
 export const GENESIS_HASH = '0'.repeat(64);
 
@@ -98,20 +101,6 @@ export function currentKnownAuditBreaks(): readonly KnownAuditBreak[] {
 }
 
 /** キー順に依存しない JSON 文字列化（ハッシュの再現性のため）。 */
-export function stableStringify(value: unknown): string {
-  // Date は JSON.stringify では ISO 文字列になる。保存時（jsonb）と同じ表現にそろえる。
-  // ここを `{}` として扱うと、保存値から再計算したハッシュが一致しなくなる（G-01-F1）。
-  if (value instanceof Date) {
-    return JSON.stringify(Number.isNaN(value.getTime()) ? null : value.toISOString());
-  }
-  if (value === null || typeof value !== 'object') return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
-  const entries = Object.entries(value as Record<string, unknown>)
-    .filter(([, v]) => v !== undefined)
-    .sort(([a], [b]) => a.localeCompare(b));
-  return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`).join(',')}}`;
-}
-
 export function computeAuditHash(prevHash: string, payload: AuditPayload): string {
   return createHash('sha256')
     .update(prevHash + stableStringify(payload))

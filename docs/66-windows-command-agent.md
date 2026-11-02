@@ -211,7 +211,13 @@ Linux の pwsh 7 では次を確かめられない。
 
 **確認できないもの（SKIP として PASS に数えない）:** Linux の .NET の `FileShare` は助言ロックで、実測では**拒否されるのは `FileShare.None` を求める排他オープンだけ**である。`WriteAllBytes`、`Set-Content`、改名、削除は親がハンドルを持っていても成功する。Linux のエージェントは試験用（`mock`）なので問題にしないが、Linux の試験は Windows での拒否の証拠にならない。
 
-### 8-4. Windows 実機で確かめること（未確認）
+### 8-4-0. 実機の結果（2026-11-01、`ae9bcce`）
+
+検証用の Windows 端末 1 台（PowerShell 5.1、検証ユーザー、非昇格）で `script-identity-windows.ps1` を流し、**17 件すべて PASS、SKIP 0**（`docs/evidence/script-identity-20261101/windows-real.json`）。ハンドルを持ったままの子の起動、書込み、削除、改名、置換、親と祖父母のフォルダの改名の拒否、差替え 3 種、書込み中の fail-closed、タイムアウト後の解放、ジャンクションの拒否を含む。
+
+**残る未確認:** 実際に昇格したプロセスでの Skill の拒否（`elevated_real_refused`。`elevated_branch_refused` は分岐の確認で、昇格して流していない）。
+
+### 8-4. Windows 実機で確かめること（上の結果を除き未確認）
 
 `scripts/windows/tests/script-identity-windows.ps1` を、昇格していない本人権限で実行する。一時フォルダだけを使い、実 Skill、本番の設定、トークンに触れず、通信しない。結果は JSON で標準出力へ出す（パス、ユーザー名、例外の本文は出さない）。終了コードは 0（すべて PASS）、1（FAIL あり、または昇格している）、2（Windows 以外）。
 

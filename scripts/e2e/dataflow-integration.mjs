@@ -305,6 +305,7 @@ async function startApi(role, overrides = {}) {
       MIRAI_INFO_DATABASE_URL: dbUrl,
       SESSION_SECRET: randomBytes(32).toString('hex'),
       AUTH_MODE: 'local',
+      RESOLVE_REQUESTER_DIAGNOSIS_ENABLED: 'true',
       DEV_AUTH_EMAIL: EMAIL[role],
       DEEPSEEK_API_KEY: 'stub-not-a-real-key',
       DEEPSEEK_BASE_URL: `http://127.0.0.1:${PORTS.ai}`,
@@ -871,7 +872,7 @@ async function main(browser) {
     'DX 推進部以外の承認者は原本の役割の選択には出ない（docs/61 §7。入口は U2 の承認者パネル）',
     !outsideCanSelect,
   );
-  // 所属外の承認者も、画面の操作で承認の一覧へ届く（docs/14 §2-17）。
+  // 所属外の承認者も、画面の操作で承認の一覧へ届く（docs/14 §2-19）。
   await outside.page.waitForSelector('#ahApproverEntry', { timeout: 15_000 });
   await outside.page.click('#ahApproverEntry');
   await outside.page.waitForSelector('#ahApproverKnowledge', { timeout: 15_000 });
@@ -1306,7 +1307,7 @@ async function main(browser) {
     !approverHasCase,
     `staffHasDraft=${staffHasDraft}`,
   );
-  // API の直接呼び出しではなく、承認者のパネルのボタンを押す（docs/14 §2-17）。
+  // API の直接呼び出しではなく、承認者のパネルのボタンを押す（docs/14 §2-19）。
   await approver.page.reload({ waitUntil: 'load' });
   await waitAfterReload(approver.page);
   await approver.page.waitForSelector('#ahApproverEntry', { timeout: 15_000 });

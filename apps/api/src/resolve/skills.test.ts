@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { approvalCatalog } from '../support-session/skill-approval.js';
 import {
   APPROVAL_MANIFEST_PATH,
   computeScriptHash,
@@ -713,7 +714,13 @@ describe('承認 manifest', () => {
   it('manifest の全エントリがカタログ定義とハッシュ一致する（改ざん・陳腐化を検出）', () => {
     const manifest = readApprovalManifest(REPO_ROOT);
     expect(APPROVAL_MANIFEST_PATH).toBe('scripts/skills/approved.json');
-    const byKey = new Map(SKILL_CATALOG.map((skill) => [`${skill.id}@${skill.version}`, skill]));
+    // 支援セッションの Skill も同じ manifest で承認する。検証専用は本番の manifest に入れない。
+    const byKey = new Map(
+      [...SKILL_CATALOG, ...approvalCatalog({ includeVerification: false })].map((skill) => [
+        `${skill.id}@${skill.version}`,
+        skill,
+      ]),
+    );
     for (const entry of manifest.skills) {
       const skill = byKey.get(`${entry.id}@${entry.version}`);
       expect(skill, `カタログに無い承認: ${entry.id}@${entry.version}`).toBeTruthy();
