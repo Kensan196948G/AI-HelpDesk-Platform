@@ -1052,7 +1052,7 @@ async function main(browser, base, otherBase, staffBase, noRosterBase) {
     d6Approved.status === 200 &&
       d6Session.status === 'stopped' &&
       d6Step.status === 'failed' &&
-      d6Step.result_summary === null,
+      d6Step.result_summary?.resultState === 'unknown',
     `${late.status}/${d6Step.status}`,
   );
   process.kill(-agent.child.pid, 'SIGCONT');

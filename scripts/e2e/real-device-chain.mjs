@@ -98,6 +98,8 @@ let publicUrl = '';
 let deviceRouteOpen = true;
 // 実行の結果の報告だけを止める（報告の失敗と実行の失敗を分ける確認）。
 let blockResult = false;
+// 'unavailable': 503（残して再送される）。'conflict': サーバの拒否と同じ応答（消される）。
+let blockMode = 'unavailable';
 let resultBlocked = 0;
 
 const FILES = [
@@ -272,6 +274,12 @@ function startDeviceProxy() {
     if (blockResult && request.method === 'POST' && /\/result$/.test(url.pathname)) {
       resultBlocked += 1;
       request.resume();
+      if (blockMode === 'conflict') {
+        response.statusCode = 409;
+        response.setHeader('content-type', 'application/json');
+        response.end(JSON.stringify({ error: { code: 'RESULT_CONFLICT' } }));
+        return;
+      }
       response.statusCode = 503;
       response.end();
       return;
@@ -657,6 +665,66 @@ const STEPS_API = {
         : null,
       panel: (await panelText(page)).slice(0, 300),
     });
+  },
+
+  /** 再送の前半: 報告を 503 で止める。この後に端末のエージェントを再起動する。 */
+  async recheckResendStart() {
+    const { page } = await openPersona('requesterA');
+    const caseId = await newCase(page);
+    assertPreapproved(await startSession(page));
+    const row0 = await latestStep(caseId);
+    if (row0?.skill_id !== 'spooler.status') throw new Error('事前承認の条件に合いません。');
+    STATE.resendCase = caseId;
+    STATE.resendBefore = await commandCount();
+    blockMode = 'unavailable';
+    blockResult = true;
+    resultBlocked = 0;
+    await page.click(`${PANEL} [data-aihd-resolve="approve"][data-decision="Y"]`);
+    const started = Date.now();
+    while (Date.now() - started < 120_000 && resultBlocked === 0) await sleep(1000);
+    return { caseId, blockedReports: resultBlocked };
+  },
+  /** 再送の後半: 報告を通し、再起動の後に結果だけが届くこと、実行し直さないことを確かめる。 */
+  async recheckResendFinish() {
+    const row0 = await latestStep(STATE.resendCase);
+    const blocked = resultBlocked;
+    blockResult = false;
+    let command;
+    const started = Date.now();
+    while (Date.now() - started < 120_000) {
+      [command] = await sql`SELECT status FROM device_commands WHERE id = ${row0.command_id}`;
+      if (command?.status === 'done') break;
+      await sleep(2000);
+    }
+    const row = await latestStep(STATE.resendCase);
+    return record('recheckResend', {
+      caseId: STATE.resendCase,
+      blockedReports: blocked,
+      commandStatus: command?.status ?? null,
+      commandsAdded: (await commandCount()) - STATE.resendBefore,
+      stepStatus: row?.step_status ?? null,
+      seconds: Math.round((Date.now() - started) / 1000),
+    });
+  },
+  /** サーバの拒否と同じ応答で、端末が結果を消すこと（5.1 の例外からコードを読めること）。 */
+  async recheckRejected() {
+    const { page } = await openPersona('requesterA');
+    const caseId = await newCase(page);
+    assertPreapproved(await startSession(page));
+    const row0 = await latestStep(caseId);
+    if (row0?.skill_id !== 'spooler.status') throw new Error('事前承認の条件に合いません。');
+    blockMode = 'conflict';
+    blockResult = true;
+    resultBlocked = 0;
+    await page.click(`${PANEL} [data-aihd-resolve="approve"][data-decision="Y"]`);
+    const started = Date.now();
+    while (Date.now() - started < 120_000 && resultBlocked === 0) await sleep(1000);
+    const first = resultBlocked;
+    await sleep(25_000);
+    const attempts = resultBlocked;
+    blockResult = false;
+    blockMode = 'unavailable';
+    return record('recheckRejected', { caseId, firstAttempts: first, attemptsAfterWait: attempts });
   },
 
   // ── 一本通し ──────────────────────────────────
