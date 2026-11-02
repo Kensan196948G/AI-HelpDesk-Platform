@@ -20,6 +20,7 @@
   const DEMO_NOTICE = 'デモデータ（実端末の結果ではありません）';
   const DEMO_INLINE = 'デモデータ：実端末の結果ではありません';
   const DEMO_PREFIX = '【デモデータ】';
+  const UNREGISTERED_NAME = '名簿未登録の利用者（氏名は未確認）';
   const NO_REAL_DEVICE = '未取得（実端末の情報はありません）';
   // 画面の固定値ではなく、由来が別に分かっているメッセージのモデル欄はそのまま出す。
   const PASS_THROUGH_MODELS = new Set([
@@ -345,6 +346,31 @@
     return result;
   });
 
+  /**
+   * デモ人物の ID か。名簿の本人（USERS[id].real）は /api/me の一時障害で固定されても対象にしない。
+   * 本番（self モード）で案件に残るデモ ID は、担当者が開いても実在の人物ではない。
+   */
+  function isUnregisteredUser(userId) {
+    const user = typeof USERS !== 'undefined' && userId ? USERS[userId] : null;
+    if (!user || user.real) return false;
+    if (typeof SWITCH_MODE !== 'undefined' && SWITCH_MODE === 'self') return true;
+    const locked = typeof PERSONA_LOCKED !== 'undefined' && PERSONA_LOCKED;
+    return Boolean(locked && typeof S !== 'undefined' && S.ui && S.ui.user === userId);
+  }
+
+  /** 報告書に書く人物。名簿に無い利用者へデモ人物の氏名・部署・社員番号を渡さない。 */
+  function reportPerson(userId, person) {
+    if (isUnregisteredUser(userId)) {
+      return { name: UNREGISTERED_NAME, role: '', dept: '', employeeNo: '' };
+    }
+    return {
+      name: (person && person.name) || '',
+      role: (person && person.role) || '',
+      dept: (person && person.dept) || '',
+      employeeNo: (person && person.employeeNo) || '',
+    };
+  }
+
   // 名簿に無い利用者は画面既定のデモ利用者のまま固定される。実名に見せて担当者へ渡さない。
   try {
     if (window.HD && typeof window.HD.intake === 'function') {
@@ -352,9 +378,7 @@
       window.HD.intake = (options) => {
         const locked = typeof PERSONA_LOCKED !== 'undefined' && PERSONA_LOCKED;
         return originalIntake(
-          locked
-            ? Object.assign({}, options, { requester: '名簿未登録の利用者（氏名は未確認）' })
-            : options,
+          locked ? Object.assign({}, options, { requester: UNREGISTERED_NAME }) : options,
         );
       };
     }
@@ -367,6 +391,8 @@
     RULE_LABEL,
     DEMO_PREFIX,
     honestMeta,
+    isUnregisteredUser,
+    reportPerson,
     whoFor,
     usedRealAi,
     reportModel,
