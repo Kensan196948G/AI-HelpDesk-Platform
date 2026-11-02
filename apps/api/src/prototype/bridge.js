@@ -154,7 +154,7 @@
           }
           if (data.provider === 'fallback') {
             html +=
-              '<p class="small muted">承認済みナレッジから回答しています（DeepSeek API 未設定）。</p>';
+              '<p class="small muted">承認済みナレッジから回答しています（DeepSeek は使っていません）。</p>';
           }
           const sources = (data.sources || []).map((source) => source.kbNo);
           try {
@@ -186,11 +186,12 @@
     };
   }
 
-  // 表示上の AI モデル名だけを DeepSeek に合わせる（レイアウトは変更しない）。
+  // モデル選択欄の表示名（レイアウトは変更しない）。DeepSeek が答えるのは自由記述だけ。
+  // 個々の回答の表示は honest-labels-bridge.js が provider から判定する。
   try {
     if (typeof MODELS === 'object' && MODELS) {
-      MODELS.local = 'DeepSeek-V4.1-Flash';
-      MODELS.external = 'DeepSeek-V4.1-Flash（承認済み外部）';
+      MODELS.local = 'DeepSeek-V4.1-Flash（自由記述のみ）';
+      MODELS.external = 'DeepSeek-V4.1-Flash（承認済み外部・自由記述のみ）';
       const select = document.querySelector('#model');
       if (select) {
         for (const option of select.options) {

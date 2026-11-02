@@ -418,6 +418,25 @@ describe('AI 追加質問へ渡す文脈', () => {
     expect(context).toContain('[資産番号]');
   });
 
+  it('画面の固定データから作った PC 情報（模擬）は AI の根拠にしない', () => {
+    const base = snapshot();
+    const demo: CaseSnapshot = {
+      ...base,
+      case: {
+        ...base.case,
+        pc: {
+          snap: {
+            items: [
+              { grp: '端末', k: 'OS', v: 'Windows 11 Enterprise 24H2' },
+              { grp: '端末', k: 'PCエージェント', v: 'v0.3（模擬）（署名あり・読み取りのみ）' },
+            ],
+          },
+        },
+      },
+    };
+    expect(buildPcContext(demo)).toBe('');
+  });
+
   it('案件の文脈はメール等の PII を伏せ、直近の発言を含める', () => {
     const context = buildCaseContext(snapshot());
     expect(context).toContain('共有フォルダが開けません');
