@@ -416,7 +416,9 @@ describe('N・取消・期限切れの後に進まない', () => {
     await report(command.id, { ...SPOOLER_RESULT, executionSource: 'endpoint_agent' });
     const step = await getStep(started.step.id);
     expect(step.json().session.status).toBe('stopped');
-    expect(step.json().step.status).toBe('cancelled');
+    // 配送済みなので取り消しと書かず、結果不明のまま残す。
+    expect(step.json().step.status).toBe('failed');
+    expect(step.json().step.error).toBe('STOPPED_RESULT_UNKNOWN');
     expect(step.json().step.resultSummary).toBeNull();
   });
 
@@ -677,13 +679,6 @@ describe('経路②のモード（docs/67）', () => {
       const delivered = await deliver();
       config.RESOLVE_PATH_MODE = mode;
 
-      const none = await app.inject({
-        method: 'GET',
-        url: '/api/device/command',
-        headers: AGENT_HEADERS,
-      });
-      expect(none.statusCode).toBe(204);
-
       const result = await report(delivered.id, SPOOLER_RESULT);
       expect(result.statusCode, result.body).toBe(200);
       const step = await getStep(first.step.id);
@@ -692,6 +687,20 @@ describe('経路②のモード（docs/67）', () => {
 
       const stop = await post(`/api/resolve/sessions/${first.session.id}/stop`);
       expect(stop.statusCode, stop.body).toBe(200);
+    });
+
+    it(`${mode}: 承認済みで未配送のコマンドを配送しない（on なら配送される）`, async () => {
+      const started = await startSession();
+      expect((await approveY(started)).statusCode).toBe(200);
+      config.RESOLVE_PATH_MODE = mode;
+      const none = await app.inject({
+        method: 'GET',
+        url: '/api/device/command',
+        headers: AGENT_HEADERS,
+      });
+      expect(none.statusCode).toBe(204);
+      config.RESOLVE_PATH_MODE = 'on';
+      expect((await deliver()).id).toBeTruthy();
     });
 
     it(`${mode}: 本人の N は受け付ける`, async () => {
@@ -731,6 +740,51 @@ describe('結果の再送の契約（docs/66 §10）', () => {
       FROM resolution_steps WHERE id = ${started.step.id}
     `;
     expect(row).toMatchObject({ status: 'failed', error: 'RESULT_TIMEOUT', state: 'unknown' });
+  });
+
+  it('配送の後に停止しても「取消」と書かず、結果不明として残す', async () => {
+    const started = await startSession();
+    expect((await approveY(started)).statusCode).toBe(200);
+    await deliver();
+    const stop = await post(`/api/resolve/sessions/${started.session.id}/stop`);
+    expect(stop.statusCode, stop.body).toBe(200);
+    const [row] = await sql<{ status: string; error: string; state: string }[]>`
+      SELECT status, error, result_summary->>'resultState' AS state
+      FROM resolution_steps WHERE id = ${started.step.id}
+    `;
+    expect(row).toMatchObject({
+      status: 'failed',
+      error: 'STOPPED_RESULT_UNKNOWN',
+      state: 'unknown',
+    });
+  });
+
+  it('配送の前に停止したものは取り消しのまま（未実行と確定できる）', async () => {
+    const started = await startSession();
+    expect((await approveY(started)).statusCode).toBe(200);
+    const stop = await post(`/api/resolve/sessions/${started.session.id}/stop`);
+    expect(stop.statusCode, stop.body).toBe(200);
+    const [row] = await sql<{ status: string }[]>`
+      SELECT status FROM resolution_steps WHERE id = ${started.step.id}
+    `;
+    expect(row?.status).toBe('cancelled');
+  });
+
+  it('同じ失敗の再送も受領済みで返す', async () => {
+    const started = await startSession();
+    expect((await approveY(started)).statusCode).toBe(200);
+    const command = await deliver();
+    const send = () =>
+      app.inject({
+        method: 'POST',
+        url: `/api/device/command/${command.id}/result`,
+        headers: AGENT_HEADERS,
+        payload: { ok: false, error: '合成の失敗' },
+      });
+    expect((await send()).statusCode).toBe(200);
+    const again = await send();
+    expect(again.statusCode, again.body).toBe(200);
+    expect(again.json().duplicate).toBe(true);
   });
 
   it('同じ結果の再送は受領済みで返し、実行し直さない。違う内容は上書きしない', async () => {
@@ -795,6 +849,49 @@ describe('放置されたセッションの掃除と off の前の確認（docs/
     expect(after.blocking).toBe(before.blocking - 1);
   });
 
+  it('検証の後の判断待ちは期限で閉じない（本人の「解決した」を奪わない）', async () => {
+    const started = await startSession();
+    expect((await approveY(started)).statusCode).toBe(200);
+    const command = await deliver();
+    expect((await report(command.id, SPOOLER_RESULT)).statusCode).toBe(200);
+    await getStep(started.step.id);
+    await sql`UPDATE resolution_sessions SET expires_at = now() - interval '1 second' WHERE id = ${started.session.id}`;
+    await sweepResolveTimeouts();
+    const [session] = await sql<{ status: string }[]>`
+      SELECT status FROM resolution_sessions WHERE id = ${started.session.id}
+    `;
+    expect(session?.status).toBe('waiting_continue');
+    const resolved = await post(`/api/resolve/sessions/${started.session.id}/resolve`);
+    expect(resolved.statusCode, resolved.body).toBe(200);
+  });
+
+  it('結果不明は待っても消えないので、人の確認に回す（off へ進む判定）', async () => {
+    const { drainExitCode } = await import('../../../../scripts/report-drain-status.mjs');
+    expect(drainExitCode({ blocking: 1, resultUnknown: 0 })).toBe(3);
+    expect(drainExitCode({ blocking: 0, resultUnknown: 1 })).toBe(4);
+    expect(drainExitCode({ blocking: 0, resultUnknown: 1 }, true)).toBe(0);
+    expect(drainExitCode({ blocking: 0, resultUnknown: 0 })).toBe(0);
+    expect(drainExitCode({ blocking: 1, resultUnknown: 0 }, true)).toBe(3);
+  });
+
+  it('off では、画面から作られた古い未配信のコマンドを閉じる', async () => {
+    const [legacy] = await sql<{ id: string }[]>`
+      INSERT INTO device_commands (user_email, device_id, op_id, params)
+      VALUES (${EMAIL}, ${DEVICE}, 'SPOOLER_RESTART', '{}'::jsonb)
+      RETURNING id
+    `;
+    config.RESOLVE_PATH_MODE = 'off';
+    try {
+      await sweepResolveTimeouts();
+    } finally {
+      config.RESOLVE_PATH_MODE = 'on';
+    }
+    const [row] = await sql<{ status: string }[]>`
+      SELECT status FROM device_commands WHERE id = ${legacy?.id ?? ''}
+    `;
+    expect(row?.status).toBe('expired');
+  });
+
   it('実行中のセッションは閉じない（結果不明を未実行へ置き換えない）', async () => {
     const started = await startSession();
     expect((await approveY(started)).statusCode).toBe(200);
@@ -803,7 +900,7 @@ describe('放置されたセッションの掃除と off の前の確認（docs/
     await sweepResolveTimeouts();
     const { drainStatus } = await import('../../../../scripts/report-drain-status.mjs');
     const status = await drainStatus(sql);
-    expect(status.path2.deliveredCommands).toBeGreaterThan(0);
+    expect(status.path2.runningCommands + status.path2.resultUnknownCommands).toBeGreaterThan(0);
     expect(status.blocking).toBeGreaterThan(0);
     const [session] = await sql<{ status: string }[]>`
       SELECT status FROM resolution_sessions WHERE id = ${started.session.id}

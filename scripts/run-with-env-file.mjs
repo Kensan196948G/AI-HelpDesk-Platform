@@ -4,7 +4,7 @@
  * シェルとして実行しないので、値に `|` や `$` があっても解釈されない（docs/09 §4-3）。値は表示しない。
  *
  * 使い方: node scripts/run-with-env-file.mjs <file> -- <command> [args...]
- * すでに設定されている環境変数（例: NODE_ENV）を優先する。
+ * ファイルの値を優先する（シェルに残った DATABASE_URL などで別の DB を指さない。systemd と同じ結果にする）。
  */
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -35,7 +35,7 @@ function main(argv) {
   const [command, ...args] = argv.slice(2);
   const result = spawnSync(command, args, {
     stdio: 'inherit',
-    env: { ...fromFile, ...process.env },
+    env: { ...process.env, ...fromFile },
   });
   if (result.error) {
     console.error(`コマンドを起動できません: ${result.error.code ?? 'unknown'}`);

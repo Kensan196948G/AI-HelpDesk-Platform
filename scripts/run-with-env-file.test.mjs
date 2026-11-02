@@ -26,7 +26,7 @@ describe('run-with-env-file', () => {
     }
   });
 
-  it('コマンドへ環境を渡し、終了コードを返す。既存の環境を優先する', () => {
+  it('コマンドへ環境を渡し、終了コードを返す。ファイルの値を優先する', () => {
     const file = path.join(dir, 'api.conf');
     const marker = path.join(dir, 'marker');
     writeFileSync(file, `GROUPS_X=a|touch ${marker}\nKEEP=from-file\n`);
@@ -43,7 +43,7 @@ describe('run-with-env-file', () => {
       { encoding: 'utf8', env: { PATH: process.env.PATH, KEEP: 'existing' } },
     );
     expect(result.status).toBe(7);
-    expect(result.stdout).toBe('aexisting');
+    expect(result.stdout).toBe('afrom-file');
     expect(spawnSync('test', ['-e', marker]).status).toBe(1);
   });
 });

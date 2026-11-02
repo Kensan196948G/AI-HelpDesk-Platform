@@ -99,7 +99,33 @@ Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" |
   ForEach-Object { Stop-Process -Id $_.ProcessId }
 ```
 
-**アンインストール:** 停止する → スタートアップのショートカットを消す → `%LOCALAPPDATA%\AIHelpDesk\agent`、設定ファイル、`<設定ファイル>.last-contact` を消す → 管理者がサーバ側でトークンを失効する（`device_tokens.revoked_at`。専用のスクリプトは無い）。
+**アンインストール:** 停止する → スタートアップのショートカットを消す → `%LOCALAPPDATA%\AIHelpDesk\agent`、設定ファイル、`<設定ファイル>.last-contact`、`<設定ファイル>.pending-results` を消す → 管理者がサーバ側でトークンを失効する（`device_tokens.revoked_at`。専用のスクリプトは無い）。
+
+## 4-1. 結果の再送の契約（2026-11-02）
+
+**報告の失敗で、コマンドを実行し直さない。** 結果を先に `<設定ファイル>.pending-results\<ID>.json` へ保存し（本人だけが読める ACL）、報告だけをやり直す。
+
+| 場面 | 端末 | サーバ |
+|---|---|---|
+| 初回の報告 | 受領の応答（`ok:true`）で消す | `done` / `failed` |
+| 通信の失敗、5xx、コードの無い 403 や 404 | 残して次の周回で送る。HTTP の失敗は後続の結果を止めない | - |
+| 再起動の後 | 残っている結果を送る | 同じ内容なら `duplicate:true` で受領 |
+| 違う内容の再送 | `RESULT_CONFLICT` で消してログへ残す | 409。受領済みの結果を上書きしない |
+| 48 時間を過ぎた結果 | 送らずに消す。設定を消すときも消す | 結果不明のまま |
+
+**結果不明の扱い（経路②）。** サーバは次を区別する。結果不明を成功、未実行、停止確認済みへ置き換えない。
+
+| 状況 | `step.status` / `error` | `resultSummary.resultState` |
+|---|---|---|
+| 配送前に期限切れ | `failed` / `NOT_DELIVERED` | `not_delivered`（未実行と確定） |
+| 配送前に停止 | `cancelled` | -（未実行と確定） |
+| 配送後に結果が来ない | `failed` / `RESULT_TIMEOUT` | `unknown` |
+| 配送後に停止 | `failed` / `STOPPED_RESULT_UNKNOWN` | `unknown` |
+| 結果は届いたが期限内に確認できない | `failed` / `RESULT_TIMEOUT` | `reported` |
+
+期限の後に届いた結果は `device_commands` に記録するが、ステップを成功へ変えない。
+
+**確認の範囲:** Linux の pwsh と統合試験。実機は `docs/68` §5 の結果による。5.1 の `WebException` からのコードの読み取りは実機でだけ確かめられる。
 
 ## 5. 確かめたこと
 

@@ -1057,6 +1057,8 @@ async function applyCommandOutcome(email: string, stepId: string): Promise<void>
       // 追撃ステップを自動承認で積む（追撃の追撃は作らない）。
       // 承認後に Skill 定義が変わっていたら（content_hash 不一致）は積まない（fail-closed）。
       const followup =
+        // 受付を止めている間は、確認の追撃も新しく作らない（配送しないので引継ぎへ流れてしまう）。
+        config.RESOLVE_PATH_MODE === 'on' &&
         verifyResult.reason === 'requires_followup' &&
         !step.verify_for_step_id &&
         !sessionExpired(session) &&
@@ -1346,30 +1348,6 @@ async function ownsDevice(email: string, deviceId: string): Promise<boolean> {
 }
 
 /**
- * セッションを停止/期限切れにし、未実行の step と queued の端末コマンドを無効化する。
- * 承認済みでも、端末がまだ取得していないコマンドは実行させない（H-3）。
- */
-async function cancelSessionWork(
-  tx: any,
-  sessionId: string,
-  stepStatus: 'cancelled' | 'failed' = 'cancelled',
-): Promise<void> {
-  await tx`
-    UPDATE resolution_steps SET status = ${stepStatus}
-    WHERE session_id = ${sessionId} AND status IN ('proposed', 'approved', 'executing')
-  `;
-  await tx`
-    UPDATE device_commands SET status = 'expired', completed_at = now()
-    WHERE session_id = ${sessionId} AND status = 'queued'
-  `;
-}
-
-/**
- * 実行期限を過ぎたステップを failed にし、セッションをエスカレーションする（設計 §4-3）。
- * GET からの遅延呼び出しと、resolveRoutes の定期実行の両方から使う。
- * 期限後に届いた結果は step が failed のため applyCommandOutcome が状態を進めない。
- */
-/**
  * 経路②の新しい実行につながる操作を止める（docs/67）。画面ではなくサーバで止める。
  * 結果の受付、本人の N、停止、参照は呼ばない。
  */
@@ -1385,6 +1363,50 @@ function assertResolvePathOpen(): void {
   throw new ApiError(404, 'RESOLVE_PATH_DISABLED', 'この経路は無効です。');
 }
 
+/**
+ * セッションを停止/期限切れにし、未実行の step と queued の端末コマンドを無効化する。
+ * 承認済みでも、端末がまだ取得していないコマンドは実行させない（H-3）。
+ */
+async function cancelSessionWork(
+  tx: any,
+  sessionId: string,
+  stepStatus: 'cancelled' | 'failed' = 'cancelled',
+): Promise<void> {
+  // 配送済みのコマンドは、止まったと確認できない（実行中の子プロセスを止める指示は無い。docs/67）。
+  // 「取り消し」や「未実行」と書かず、結果不明として残す。
+  const unknown = {
+    ok: false,
+    exitCode: null,
+    summary: '停止しました。端末で実行されたかどうかは不明です。',
+    normalized: null,
+    resultState: 'unknown',
+  };
+  await tx`
+    UPDATE resolution_steps st
+    SET status = 'failed', error = 'STOPPED_RESULT_UNKNOWN',
+        executed_at = COALESCE(st.executed_at, now()),
+        result_summary = ${jsonbValue(unknown)}
+    WHERE st.session_id = ${sessionId}
+      AND st.status IN ('approved', 'executing')
+      AND EXISTS (
+        SELECT 1 FROM device_commands c WHERE c.step_id = st.id AND c.status = 'delivered'
+      )
+  `;
+  await tx`
+    UPDATE resolution_steps SET status = ${stepStatus}
+    WHERE session_id = ${sessionId} AND status IN ('proposed', 'approved', 'executing')
+  `;
+  await tx`
+    UPDATE device_commands SET status = 'expired', completed_at = now()
+    WHERE session_id = ${sessionId} AND status = 'queued'
+  `;
+}
+
+/**
+ * 実行期限を過ぎたステップを failed にし、セッションをエスカレーションする（設計 §4-3）。
+ * GET からの遅延呼び出しと、resolveRoutes の定期実行の両方から使う。
+ * 期限後に届いた結果は step が failed のため applyCommandOutcome が状態を進めない。
+ */
 export async function sweepResolveTimeouts(): Promise<number> {
   let swept = 0;
   // 実行が終わっているのに結果を見る画面が無かったものは、タイムアウトにせず結果を取り込む。
@@ -1434,14 +1456,19 @@ export async function sweepResolveTimeouts(): Promise<number> {
       `;
         for (const step of rows) {
           // 配送していなければ未実行と確定できる。配送後は実行されたかどうか分からないので「不明」と書く。
+          // 配送と競合しないよう行をロックしてから判定する。
           const commandRows = await tx<{ status: string }[]>`
-          SELECT status FROM device_commands WHERE step_id = ${step.id} LIMIT 1
-        `;
-          const notDelivered = commandRows[0]?.status === 'queued';
-          const resultState = notDelivered ? 'not_delivered' : 'unknown';
+            SELECT status FROM device_commands WHERE step_id = ${step.id} LIMIT 1 FOR UPDATE
+          `;
+          const commandStatus = commandRows[0]?.status;
+          const notDelivered = commandStatus === 'queued';
+          const reported = commandStatus === 'done' || commandStatus === 'failed';
+          const resultState = notDelivered ? 'not_delivered' : reported ? 'reported' : 'unknown';
           const message = notDelivered
             ? '端末へ配送していません（未実行）。担当者へ引き継いでください。'
-            : '端末から結果が返りませんでした。実行されたかどうかは不明です。担当者へ引き継いでください。';
+            : reported
+              ? '端末の結果は届いていますが、期限内に確認できませんでした。担当者へ引き継いでください。'
+              : '端末から結果が返りませんでした。実行されたかどうかは不明です。担当者へ引き継いでください。';
           const summary = {
             ok: false,
             exitCode: null,
@@ -1488,17 +1515,25 @@ export async function sweepResolveTimeouts(): Promise<number> {
     }
   }
   swept += await closeAbandonedSessions();
+  // 受付を止めた後は、画面から作られた古いコマンド（セッション無し）を残さない。配送もしない。
+  if (config.RESOLVE_PATH_MODE !== 'on') {
+    await sql`
+      UPDATE device_commands SET status = 'expired', completed_at = now()
+      WHERE session_id IS NULL AND status = 'queued'
+    `;
+  }
   return swept;
 }
 
 /**
- * 期限を過ぎ、実行中のものが無いセッションを閉じる。誰も画面を開かないと提案が残り続け、
- * off へ進む前の確認で「残り」に数えられたままになる（docs/68 §7）。提案は未実行のまま取り消す。
+ * 期限を過ぎた提案のセッションを閉じる。誰も画面を開かないと提案が残り続け、off へ進む前の確認で
+ * 「残り」に数えられたままになる（docs/68 §7）。提案は未実行のまま取り消す。
+ * 実行の後の waiting_continue は閉じない（本人の「解決した」「担当者へ」を奪わない）。
  */
 async function closeAbandonedSessions(): Promise<number> {
   const due = await sql<{ id: string }[]>`
     SELECT s.id FROM resolution_sessions s
-    WHERE s.status NOT IN ('resolved', 'escalated', 'stopped', 'expired')
+    WHERE s.status IN ('active', 'waiting_execute')
       AND s.expires_at <= now()
       AND NOT EXISTS (
         SELECT 1 FROM resolution_steps st
@@ -1513,10 +1548,17 @@ async function closeAbandonedSessions(): Promise<number> {
       await sql.begin(async (tx) => {
         const [session] = await tx<SessionRow[]>`
           SELECT * FROM resolution_sessions
-          WHERE id = ${id} AND status NOT IN ('resolved', 'escalated', 'stopped', 'expired')
+          WHERE id = ${id} AND status IN ('active', 'waiting_execute') AND expires_at <= now()
           FOR UPDATE
         `;
         if (!session) return;
+        // 選んだ後に承認された行を壊さない（ロックを取ってから見直す）。
+        const running = await tx<{ id: string }[]>`
+          SELECT id FROM resolution_steps
+          WHERE session_id = ${id} AND status IN ('approved', 'executing')
+          LIMIT 1
+        `;
+        if (running[0]) return;
         await tx`
           UPDATE resolution_steps SET status = 'cancelled'
           WHERE session_id = ${id} AND status = 'proposed'
@@ -1527,7 +1569,7 @@ async function closeAbandonedSessions(): Promise<number> {
         `;
         await tx`UPDATE resolution_sessions SET status = 'expired', updated_at = now() WHERE id = ${id}`;
         await appendResolveAudit(tx, {
-          action: 'resolution.timeout',
+          action: 'resolution.expired',
           sessionId: id,
           actorEmail: session.user_email,
           detail: { by: 'system', reason: 'session_expired' },
@@ -1719,9 +1761,9 @@ export async function resolveRoutes(app: FastifyInstance): Promise<void> {
       if (!isResolveAdmin(email)) {
         throw new ApiError(403, 'FORBIDDEN', 'IT 管理者のみ承認できます。');
       }
-      assertResolvePathOpen();
       const { id: stepId } = StepIdParamsSchema.parse(request.params);
       const input = AdminApproveSchema.parse(request.body);
+      if (input.decision === 'Y') assertResolvePathOpen();
 
       const outcome = await sql.begin(async (tx) => {
         // ロック順は session → step に固定する（停止・スイープとのデッドロック回避）。

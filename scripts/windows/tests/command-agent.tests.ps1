@@ -324,6 +324,9 @@ try {
   $state.ResultStatus = 403
   $case = Invoke-Case (New-TestCommand)
   Assert-True 'report: 拒否されても落ちない' ($case.Run.Exit -eq 0 -and $case.Count -ge 1)
+  # コードの無い 403（Access など）では結果を消さない。この後の試験に混ざらないよう片付ける。
+  Assert-True 'report: コードの無い 403 では結果を残す' (Test-Path -LiteralPath "$configPath.pending-results")
+  Remove-Item -LiteralPath "$configPath.pending-results" -Recurse -Force
   $state.ResultStatus = 200
 
   # ── タイムアウト（実時間 60 秒） ───────────────────────────────
@@ -506,6 +509,7 @@ try {
   # 再送: 結果は端末に残り、コマンドは実行し直さず、次の周回で結果だけを送る。
   $pendingDir = Get-PendingResultDirectory
   Assert-Equal 'resend: 結果を保存する' 1 @(Get-ChildItem -LiteralPath $pendingDir -Filter '*.json').Count
+  if (-not (Test-IsWindowsHost)) { Assert-Equal 'resend: 本人だけが読める' '700' ([string](& stat -c '%a' -- $pendingDir)) }
   $script:RestartCount = 0
   function Restart-Service { param($Name, [switch]$Force) $script:RestartCount += 1 }
   $state.Command = $null
@@ -522,23 +526,54 @@ try {
   Assert-True 'recover: 成功のまま' (($state.Results[0].body | ConvertFrom-Json).ok -eq $true)
   Assert-Equal 'recover: 受領で消す' 0 @(Get-ChildItem -LiteralPath $pendingDir -Filter '*.json').Count
   Assert-Equal 'recover: 実行は増えない' 0 $script:RestartCount
-  # 受け取られないと確定した応答では消す。一時的な失敗では残す。
-  function New-RejectedError { param([int]$Status) $e = [Exception]::new('rejected'); $e | Add-Member -NotePropertyName Response -NotePropertyValue ([pscustomobject]@{ StatusCode = $Status }); return $e }
+  # サーバの拒否のコードでは消す。一時的な失敗、Access の 403 などでは消さない。
+  function New-HttpError {
+    param([string]$Body)
+    $inner = [Exception]::new('http')
+    $inner | Add-Member -NotePropertyName Response -NotePropertyValue ([pscustomobject]@{ StatusCode = 500 })
+    $record = [Management.Automation.ErrorRecord]::new($inner, 'http', 'InvalidOperation', $null)
+    if ($Body) { $record.ErrorDetails = [Management.Automation.ErrorDetails]::new($Body) }
+    return $record
+  }
   $rejectId = [Guid]::NewGuid().ToString()
   Save-PendingResult -Id $rejectId -Outcome @{ ok = $true }
-  function Send-CommandResult { param($Id, $Outcome) throw (New-RejectedError -Status 409) }
+  function Send-CommandResult { param($Id, $Outcome) throw (New-HttpError -Body '{"error":{"code":"RESULT_CONFLICT"}}') }
   Invoke-PendingResultFlush
-  Assert-Equal 'resend: 409 は消す' 0 @(Get-ChildItem -LiteralPath $pendingDir -Filter '*.json').Count
+  Assert-Equal 'resend: サーバの拒否は消す' 0 @(Get-ChildItem -LiteralPath $pendingDir -Filter '*.json').Count
   Save-PendingResult -Id $rejectId -Outcome @{ ok = $true }
-  function Send-CommandResult { param($Id, $Outcome) throw (New-RejectedError -Status 503) }
+  function Send-CommandResult { param($Id, $Outcome) throw (New-HttpError -Body '<html>Access</html>') }
   Invoke-PendingResultFlush
-  Assert-Equal 'resend: 503 は残す' 1 @(Get-ChildItem -LiteralPath $pendingDir -Filter '*.json').Count
-  # 保持期限を過ぎた結果は送らずに消す（結果の不明は、サーバ側の記録のまま）。
+  Assert-Equal 'resend: コードの無い応答は残す' 1 @(Get-ChildItem -LiteralPath $pendingDir -Filter '*.json').Count
+  function Send-CommandResult { param($Id, $Outcome) return '<html>login</html>' }
+  Invoke-PendingResultFlush
+  Assert-Equal 'resend: 受領でない 200 は残す' 1 @(Get-ChildItem -LiteralPath $pendingDir -Filter '*.json').Count
+  # 1 件の恒久的な失敗で後続を止めない。
+  $secondId = [Guid]::NewGuid().ToString()
+  Start-Sleep -Milliseconds 20
+  Save-PendingResult -Id $secondId -Outcome @{ ok = $true }
+  $script:SentIds = @()
+  function Send-CommandResult {
+    param($Id, $Outcome)
+    $script:SentIds += $Id
+    if ($Id -eq $rejectId) { throw (New-HttpError -Body '') }
+    return [pscustomobject]@{ ok = $true }
+  }
+  Invoke-PendingResultFlush
+  Assert-True 'resend: 後続の結果も送る' ($script:SentIds -contains $secondId)
+  Assert-Equal 'resend: 失敗した 1 件だけ残る' 1 @(Get-ChildItem -LiteralPath $pendingDir -Filter '*.json').Count
+  # 通信の失敗では止める。
+  $script:SendCount = 0
+  function Send-CommandResult { param($Id, $Outcome) $script:SendCount += 1; throw 'network down' }
+  Save-PendingResult -Id $secondId -Outcome @{ ok = $true }
+  Invoke-PendingResultFlush
+  Assert-Equal 'resend: 通信の失敗では止める' 1 $script:SendCount
+  # 保持期限を過ぎた結果は送らずに消す。書込み途中の一時ファイルも残さない。
+  [IO.File]::WriteAllText((Join-Path $pendingDir 'partial.json.tmp'), '{')
   $script:SendCount = 0
   function Send-CommandResult { param($Id, $Outcome) $script:SendCount += 1 }
   Invoke-PendingResultFlush -Now ([DateTimeOffset]::UtcNow.AddHours(49))
   Assert-Equal 'resend: 期限切れは送らない' 0 $script:SendCount
-  Assert-Equal 'resend: 期限切れは消す' 0 @(Get-ChildItem -LiteralPath $pendingDir -Filter '*.json').Count
+  Assert-Equal 'resend: 期限切れは消す' 0 @(Get-ChildItem -LiteralPath $pendingDir -Force).Count
   ${function:Send-CommandResult} = $originalSend
   function Restart-Service { param($Name, [switch]$Force) $script:RestartArgs = "$Name/$Force" }
 

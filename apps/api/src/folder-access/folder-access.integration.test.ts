@@ -1266,23 +1266,34 @@ describe('同意と毎操作の検証（Mock: RSP）', () => {
     expect((await requestRow(first.id))?.status).toBe('expired');
   });
 
-  it('経路②のデバイストークンでは、ヘルパーの API を通せない', async () => {
-    const token = 'path2-device-token-00000000000000';
-    const helperRoutes = await app.inject({
-      method: 'POST',
-      url: '/api/device/agent/folder-helper/poll',
-      headers: { 'x-device-token': token, 'x-device-id': 'path2-device' },
-      payload: {},
-    });
-    expect(helperRoutes.statusCode).not.toBe(200);
-    expect([401, 403, 404]).toContain(helperRoutes.statusCode);
-    const asHelperToken = await app.inject({
-      method: 'POST',
-      url: '/api/device/agent/folder-helper/poll',
-      headers: { 'x-folder-helper-token': token },
-      payload: {},
-    });
-    expect([401, 403, 404]).toContain(asHelperToken.statusCode);
+  it('経路②の有効なデバイストークンでは、ヘルパーの API を通せない', async () => {
+    const paired = await activeRequest();
+    const token = 'path2-device-token-synthetic-000000';
+    await sql`
+      INSERT INTO device_tokens (token_hash, user_email, label, device_id, last_used_at, privilege)
+      VALUES (${createHash('sha256').update(token).digest('hex')}, ${OWNER}, 'path2', 'path2-device', now(), 'standard')
+    `;
+    try {
+      const url = '/api/device/agent/folder-helper/poll';
+      const asDevice = await app.inject({
+        method: 'POST',
+        url,
+        headers: { 'x-device-token': token, 'x-device-id': 'path2-device' },
+        payload: {},
+      });
+      expect(asDevice.statusCode).toBe(401);
+      const asHelper = await app.inject({
+        method: 'POST',
+        url,
+        headers: { 'x-folder-helper-token': token },
+        payload: {},
+      });
+      expect(asHelper.statusCode).toBe(401);
+      // 正しいヘルパートークンなら通る（経路の名前の誤りで 401 になっていないことの確認）。
+      expect((await poll(paired.helper.helperToken)).statusCode).toBe(200);
+    } finally {
+      await sql`DELETE FROM device_tokens WHERE label = 'path2'`;
+    }
   });
 
   it('期限切れ: 同意前の依頼も期限で終わり、未ペアの登録情報は掃除で消える', async () => {

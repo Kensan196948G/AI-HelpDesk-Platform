@@ -300,6 +300,20 @@ async function main() {
     RETURNING id
   `;
   const third = runAgent(agentPath, prod, token);
+  // 本番は経路②が on にならないので配送しない。mock の拒否は、配送済みの行へ結果を送って確かめる。
+  const [undelivered] = await sql`SELECT status FROM device_commands WHERE id = ${prodCommand.id}`;
+  check(
+    'P12b',
+    '本番モード: 経路②を配送しない',
+    undelivered.status === 'queued',
+    undelivered.status,
+  );
+  await sql`UPDATE device_commands SET status = 'delivered', delivered_at = now() WHERE id = ${prodCommand.id}`;
+  await fetch(`${prod}/api/device/command/${prodCommand.id}/result`, {
+    method: 'POST',
+    headers: { 'x-device-token': token, 'x-device-id': DEVICE, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ok: true, result: { executionSource: 'mock', exitCode: 0 } }),
+  });
   const [prodRow] =
     await sql`SELECT status, result, error FROM device_commands WHERE id = ${prodCommand.id}`;
   check(

@@ -199,7 +199,11 @@ function Update-LastContact {
 # 期限切れは成功でも、サーバが認めた停止でもない。サーバ側のトークンは失効しない。
 function Invoke-LocalRetention {
   param([DateTimeOffset]$Now = [DateTimeOffset]::UtcNow)
-  if (-not (Test-Path -LiteralPath $ConfigPath -PathType Leaf)) { return $false }
+  if (-not (Test-Path -LiteralPath $ConfigPath -PathType Leaf)) {
+    # 設定を消した後に結果だけが残らないようにする。
+    try { Remove-PendingResults } catch { Write-AgentLog '未報告の結果を消せませんでした。手動で消してください。' }
+    return $false
+  }
   # 発行（設定ファイルの作成）と最後の連絡の新しいほう。発行し直した直後に古い記録で消さない。
   $last = [DateTimeOffset][IO.File]::GetLastWriteTimeUtc($ConfigPath)
   $contactPath = Get-LastContactPath
@@ -216,10 +220,9 @@ function Invoke-LocalRetention {
     return $true
   }
   try {
+    Remove-PendingResults
     Remove-Item -LiteralPath $ConfigPath -Force
     if (Test-Path -LiteralPath $contactPath) { Remove-Item -LiteralPath $contactPath -Force }
-    $pendingPath = Get-PendingResultDirectory
-    if (Test-Path -LiteralPath $pendingPath) { Remove-Item -LiteralPath $pendingPath -Recurse -Force }
     Write-AgentLog ($notice + '設定ファイル（トークン）を消しました。再開にはトークンの再発行が要ります')
   } catch {
     Write-AgentLog ($notice + '設定ファイルを消せませんでした。手動で消してください')
@@ -606,7 +609,7 @@ function Invoke-AgentRequest {
 
 function Send-CommandResult {
   param([string]$Id, [object]$Outcome)
-  Invoke-AgentRequest -Method 'Post' -Uri "$($script:CommandUrl)/$Id/result" -Payload $Outcome | Out-Null
+  return (Invoke-AgentRequest -Method 'Post' -Uri "$($script:CommandUrl)/$Id/result" -Payload $Outcome)
 }
 
 # 結果の再送（docs/66 §10）。実行の結果を先にファイルへ残し、報告だけをやり直す。コマンドは実行し直さない。
@@ -616,69 +619,118 @@ function Get-PendingResultDirectory {
   return "$ConfigPath.pending-results"
 }
 
+function Protect-PendingResultDirectory {
+  param([string]$Path)
+  # 結果には端末の情報が入る。本人だけが読めるようにする。
+  if (Test-IsWindowsHost) {
+    $acl = New-Object Security.AccessControl.DirectorySecurity
+    $acl.SetAccessRuleProtection($true, $false)
+    $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User
+    $rule = New-Object Security.AccessControl.FileSystemAccessRule(
+      $sid, 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow')
+    $acl.AddAccessRule($rule)
+    Set-Acl -LiteralPath $Path -AclObject $acl
+    return
+  }
+  & chmod 700 -- $Path
+}
+
 function Save-PendingResult {
   param([string]$Id, [object]$Outcome)
   if ($Id -notmatch '^[0-9a-fA-F-]{36}$') { throw '不正なコマンド ID です' }
   $directory = Get-PendingResultDirectory
   if (-not (Test-Path -LiteralPath $directory -PathType Container)) {
     New-Item -ItemType Directory -Path $directory -Force | Out-Null
+    Protect-PendingResultDirectory -Path $directory
   }
-  $record = @{ id = $Id; savedAt = [DateTimeOffset]::UtcNow.ToString('o'); outcome = $Outcome }
+  $record = @{ id = $Id; savedAtUnix = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds(); outcome = $Outcome }
   $path = Join-Path $directory "$Id.json"
   [IO.File]::WriteAllText("$path.tmp", ($record | ConvertTo-Json -Depth 20 -Compress))
   Move-Item -LiteralPath "$path.tmp" -Destination $path -Force
 }
 
-function Get-HttpStatusOfError {
-  param([object]$ErrorRecord)
-  $exception = $ErrorRecord.Exception
-  if ($exception.PSObject.Properties['Response'] -and $exception.Response) {
-    return [int]$exception.Response.StatusCode
-  }
-  return 0
+function Remove-PendingResults {
+  $directory = Get-PendingResultDirectory
+  if (Test-Path -LiteralPath $directory) { Remove-Item -LiteralPath $directory -Recurse -Force }
 }
 
-# 保存した結果を古い順に報告する。届かなければ次の周回へ残す。応答ごとの扱いは次のとおり。
-# 受領（重複を含む）: 消す。404、403、409、410: 受け取られないと確定したので、ログに残して消す。それ以外: 残す。
+# サーバが受け取らないと答えたときのコード。Access やルーターの 403、404 では結果を消さない。
+$script:ResultRejectionCodes = @(
+  'NOT_FOUND', 'DEVICE_MISMATCH', 'PRIVILEGE_MISMATCH', 'RESULT_CONFLICT',
+  'MOCK_RESULT_FORBIDDEN', 'UNVERIFIED_RESULT_SOURCE'
+)
+
+function Get-ResultRejectionCode {
+  param([object]$ErrorRecord)
+  $message = $null
+  if ($ErrorRecord.ErrorDetails) { $message = $ErrorRecord.ErrorDetails.Message }
+  if (-not $message) { return '' }
+  try {
+    $code = [string](($message | ConvertFrom-Json).error.code)
+  } catch {
+    return ''
+  }
+  if ($script:ResultRejectionCodes -contains $code) { return $code }
+  return ''
+}
+
+function Test-HttpResponseError {
+  param([object]$ErrorRecord)
+  $exception = $ErrorRecord.Exception
+  return [bool]($exception.PSObject.Properties['Response'] -and $exception.Response)
+}
+
+# 保存した結果を古い順に報告する。受領（重複を含む）と、サーバの拒否では消す。
+# 通信の失敗では止めて次の周回へ回す。HTTP の失敗はその結果だけを残して次へ進む（1 件で後続を止めない）。
 function Invoke-PendingResultFlush {
   param([DateTimeOffset]$Now = [DateTimeOffset]::UtcNow)
   $directory = Get-PendingResultDirectory
   if (-not (Test-Path -LiteralPath $directory -PathType Container)) { return }
+  $limit = $script:PendingResultRetentionHours * 3600
+  # 書込みの途中で落ちた一時ファイルは送らない。結果が無かったのと同じで、不明はサーバ側に残る。
+  Get-ChildItem -LiteralPath $directory -Filter '*.tmp' -File | Remove-Item -Force
   $files = @(Get-ChildItem -LiteralPath $directory -Filter '*.json' -File | Sort-Object LastWriteTimeUtc)
   foreach ($file in $files) {
     try {
       $record = [IO.File]::ReadAllText($file.FullName) | ConvertFrom-Json
       $id = [string]$record.id
-      $saved = [DateTimeOffset]::Parse([string]$record.savedAt)
+      $saved = [long]$record.savedAtUnix
     } catch {
       Write-AgentLog "report dropped (unreadable) $($file.BaseName)"
       Remove-Item -LiteralPath $file.FullName -Force
       continue
     }
-    if ($saved.AddHours($script:PendingResultRetentionHours) -lt $Now) {
+    if (($Now.ToUnixTimeSeconds() - $saved) -gt $limit) {
       Write-AgentLog "report dropped (expired) $id"
       Remove-Item -LiteralPath $file.FullName -Force
       continue
     }
     try {
-      Send-CommandResult -Id $id -Outcome $record.outcome
-      Remove-Item -LiteralPath $file.FullName -Force
+      $response = Send-CommandResult -Id $id -Outcome $record.outcome
     } catch {
-      $status = Get-HttpStatusOfError -ErrorRecord $_
-      if (@(403, 404, 409, 410) -contains $status) {
-        Write-AgentLog "report rejected $status $id"
+      $code = Get-ResultRejectionCode -ErrorRecord $_
+      if ($code) {
+        Write-AgentLog "report rejected $code $id"
         Remove-Item -LiteralPath $file.FullName -Force
         continue
       }
       Write-AgentLog "report error $id"
+      if (Test-HttpResponseError -ErrorRecord $_) { continue }
+      return
+    }
+    # ログイン画面への転送など、受領の応答でないものでは消さない。
+    if ($response -and $response.PSObject.Properties['ok'] -and $response.ok -eq $true) {
+      Remove-Item -LiteralPath $file.FullName -Force
+    } else {
+      Write-AgentLog "report not acknowledged $id"
       return
     }
   }
 }
 
 function Invoke-CommandTick {
-  # 再起動の前に残した結果も、ここで送り直す。
-  Invoke-PendingResultFlush
+  # 再起動の前に残した結果も、ここで送り直す。-DryRun は報告しない。
+  if (-not $DryRun) { Invoke-PendingResultFlush }
   try {
     $response = Invoke-AgentRequest -Method 'Get' -Uri $script:CommandUrl -Payload $null
   } catch {

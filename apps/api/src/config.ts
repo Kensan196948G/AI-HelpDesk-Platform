@@ -200,11 +200,11 @@ if (parsed.data.ASSIST_SESSION_MODE === 'on' && process.env.ASSIST_SESSION_ENABL
   );
   process.exit(1);
 }
-// 貸与情報の検証を省く検証用フラグを本番で有効にさせない（fail-closed）。
 if (isProduction && parsed.data.RESOLVE_PATH_MODE === 'on') {
   console.error('[config] NODE_ENV=production では RESOLVE_PATH_MODE=on を使えません（docs/67）。');
   process.exit(1);
 }
+// 貸与情報の検証を省く検証用フラグを本番で有効にさせない（fail-closed）。
 if (isProduction && parsed.data.FOLDER_ACCESS_ALLOW_UNVERIFIED_LEASE) {
   console.error(
     '[config] NODE_ENV=production では FOLDER_ACCESS_ALLOW_UNVERIFIED_LEASE=true を使えません。',

@@ -1051,7 +1051,7 @@ async function main(browser, base, otherBase, staffBase, noRosterBase) {
     '取消の後に届いた結果で状態を進めない',
     d6Approved.status === 200 &&
       d6Session.status === 'stopped' &&
-      d6Step.status === 'cancelled' &&
+      d6Step.status === 'failed' &&
       d6Step.result_summary === null,
     `${late.status}/${d6Step.status}`,
   );
@@ -1069,15 +1069,28 @@ async function main(browser, base, otherBase, staffBase, noRosterBase) {
       VALUES (${EMAIL.other}, ${prodDevice}, ${skill.id}, '{}'::jsonb, ${skill.id}, ${skill.version}, ${skill.content_hash})
       RETURNING id
     `;
+    // 本番は経路②が on にならないので配送しない。mock の拒否は、配送済みの行へ結果を送って確かめる。
     const prodAgent = startAgent(prod, prodToken, prodDevice, 'agent-prod');
-    await waitUntil(
-      async () =>
-        (await sql`SELECT status FROM device_commands WHERE id = ${queuedCommand.id}`)[0].status !==
-          'queued' && /failed|poll error/.test(readFileSync(prodAgent.logPath, 'utf8')),
-      'prod agent reported',
-      20_000,
-    );
+    await sleep(6000);
     stopChild(prodAgent.child);
+    const [undelivered] =
+      await sql`SELECT status FROM device_commands WHERE id = ${queuedCommand.id}`;
+    check(
+      'E0',
+      '本番モード: 経路②を配送しない',
+      undelivered.status === 'queued',
+      undelivered.status,
+    );
+    await sql`UPDATE device_commands SET status = 'delivered', delivered_at = now() WHERE id = ${queuedCommand.id}`;
+    await fetch(`${prod}/api/device/command/${queuedCommand.id}/result`, {
+      method: 'POST',
+      headers: {
+        'x-device-token': prodToken,
+        'x-device-id': prodDevice,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ ok: true, result: { executionSource: 'mock', exitCode: 0 } }),
+    });
     const [row] =
       await sql`SELECT status, result, error FROM device_commands WHERE id = ${queuedCommand.id}`;
     check(
@@ -1097,7 +1110,7 @@ async function main(browser, base, otherBase, staffBase, noRosterBase) {
       'x-device-id': prodDevice,
       'Content-Type': 'application/json',
     };
-    await fetch(`${prod}/api/device/command`, { headers: prodHeaders });
+    await sql`UPDATE device_commands SET status = 'delivered', delivered_at = now() WHERE id = ${second.id}`;
     const rejected = await fetch(`${prod}/api/device/command/${second.id}/result`, {
       method: 'POST',
       headers: prodHeaders,
@@ -1123,7 +1136,7 @@ async function main(browser, base, otherBase, staffBase, noRosterBase) {
       VALUES (${EMAIL.other}, ${prodDevice}, ${skill.id}, '{}'::jsonb, ${skill.id}, ${skill.version}, ${skill.content_hash})
       RETURNING id
     `;
-    await fetch(`${prod}/api/device/command`, { headers: prodHeaders });
+    await sql`UPDATE device_commands SET status = 'delivered', delivered_at = now() WHERE id = ${third.id}`;
     const unknownResult = await fetch(`${prod}/api/device/command/${third.id}/result`, {
       method: 'POST',
       headers: prodHeaders,
