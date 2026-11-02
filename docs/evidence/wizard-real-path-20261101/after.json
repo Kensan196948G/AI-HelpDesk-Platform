@@ -1,0 +1,583 @@
+{
+  "checks": [
+    {
+      "id": "A0",
+      "title": "合成名簿の利用者として動く（デモ人物 u1 に切り替わらない）",
+      "ok": true,
+      "note": "合成 相談者"
+    },
+    {
+      "id": "A1",
+      "title": "接続あり: デモ診断・デモ確認カードを出さない",
+      "ok": true,
+      "note": "welcome,user,ai,ai"
+    },
+    {
+      "id": "A2",
+      "title": "接続あり: STEP 3 の本文にデモデータの記述が無い",
+      "ok": true,
+      "note": "AIの一次対応\n\n印刷の相談は、端末エージェントが接続された端末の状態を読み取って確認します。実行のたびに、あなたが Y／N で答えます。\n\n🙋\n印刷ができま"
+    },
+    {
+      "id": "A3",
+      "title": "接続あり: 解決ループへ誘導する",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "A4",
+      "title": "押すまでセッションを作らない",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "A5",
+      "title": "提案は spooler.status の読み取りのみ",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "A6",
+      "title": "Y の前は端末コマンドが 0 件",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "A7",
+      "title": "--mock の結果は模擬と表示する",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "A8",
+      "title": "--mock の結果に「端末エージェント（実端末）」と出さない",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "A9",
+      "title": "読取成功で解決と断定しない",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "A10",
+      "title": "読取成功だけで解決済みにしない",
+      "ok": true,
+      "note": "waiting_continue/null"
+    },
+    {
+      "id": "A11",
+      "title": "DB の結果に出所 mock を保存する",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "A12",
+      "title": "結果の形の機械検証が通る",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "A12b",
+      "title": "再読み込みで結果へ戻り、セッションを増やさない",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "A13",
+      "title": "次の提案は自動実行しない（コマンドは 1 件のまま）",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "A14",
+      "title": "次提案の AI 入力に結果の出所が入る",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "A15",
+      "title": "2 回目は別の承認で別のコマンドになる",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "A16",
+      "title": "承認ハッシュはステップごとに異なる",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "A17",
+      "title": "担当者へ進むと STEP 4 の同意画面になる",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "A18",
+      "title": "同意画面に実診断の結果を選択肢として出す",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "A19",
+      "title": "同意画面にデモ端末を出さない",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "A20",
+      "title": "引継ぎに実診断の結果が出所付きで入る",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "A21",
+      "title": "引継ぎにデモ値が入らない",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "A22",
+      "title": "引継ぎの結果に実行 ID が入る",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "A26",
+      "title": "画面の宛先選択から案件を共有できる",
+      "ok": true,
+      "note": "200"
+    },
+    {
+      "id": "A27",
+      "title": "担当者の AI 追加質問が動く",
+      "ok": true,
+      "note": "200"
+    },
+    {
+      "id": "A28",
+      "title": "担当者の AI 文脈に結果が出所付きで入る",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "A29",
+      "title": "担当者の AI 文脈にデモ値が入らない",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "A30",
+      "title": "UI / API / DB / エージェントの ID が一致する",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "A31",
+      "title": "相談から解決ループの API が呼ばれる",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "A32",
+      "title": "外部への通信が無い",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "A33",
+      "title": "ページエラーが無い",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "A40",
+      "title": "本人の確認前は解決にならない",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "A41",
+      "title": "本人の「解決した」で session=resolved・案件=完了",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "A23",
+      "title": "報告書の診断欄に出所付きで入る",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "A24",
+      "title": "報告書にデモ端末・デモ診断が入らない",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "A25",
+      "title": "報告書 API が受理する",
+      "ok": true,
+      "note": "200 \"\""
+    },
+    {
+      "id": "A42",
+      "title": "報告書の本文に模擬の表示があり実端末と書かない",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "A43",
+      "title": "報告書の本文にデモ端末が無い",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "B6",
+      "title": "未接続: STEP 3 の本文にデモデータの記述が無い",
+      "ok": true,
+      "note": "AIの一次対応\n\n印刷の相談は、端末エージェントが接続された端末の状態を読み取って確認します。実行のたびに、あなたが Y／N で答えます。\n\n🙋\n印刷ができま"
+    },
+    {
+      "id": "B1",
+      "title": "未接続: 文言を明示する",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "B2",
+      "title": "未接続: デモの診断を出さない",
+      "ok": true,
+      "note": "welcome,user,ai,ai"
+    },
+    {
+      "id": "B3",
+      "title": "未接続: 開始ボタンを出さない",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "B4",
+      "title": "未接続: セッションを作らない",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "B5",
+      "title": "未接続: 引継ぎにデモ値も実診断も入らない",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "C1",
+      "title": "名簿外: 実診断できないと明示し、デモ人物の診断を出さない",
+      "ok": true,
+      "note": "CASE-0001"
+    },
+    {
+      "id": "D1",
+      "title": "本人以外の Y は 404",
+      "ok": true,
+      "note": "404"
+    },
+    {
+      "id": "D2",
+      "title": "担当者の Y も 404",
+      "ok": true,
+      "note": "404"
+    },
+    {
+      "id": "D3",
+      "title": "違うハッシュは 400 APPROVAL_MISMATCH",
+      "ok": true,
+      "note": "400"
+    },
+    {
+      "id": "D4",
+      "title": "ハッシュなしの Y は 400",
+      "ok": true,
+      "note": "400"
+    },
+    {
+      "id": "D5",
+      "title": "拒否の間はコマンド 0 件",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "D6",
+      "title": "同時の二重 Y は 1 回だけ通る",
+      "ok": true,
+      "note": "200,409"
+    },
+    {
+      "id": "D7",
+      "title": "二重 Y でもコマンドは 1 件",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "D8",
+      "title": "前のステップのハッシュは次のステップに使えない",
+      "ok": true,
+      "note": "400"
+    },
+    {
+      "id": "D9",
+      "title": "次のステップはコマンドを作らない",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "D10",
+      "title": "N で停止しコマンドを作らない",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "id": "D11",
+      "title": "N の後の Y は 409",
+      "ok": true,
+      "note": "409"
+    },
+    {
+      "id": "D12",
+      "title": "取消の後の Y は 409 でコマンドなし",
+      "ok": true,
+      "note": "409"
+    },
+    {
+      "id": "D13",
+      "title": "期限切れの Y は 409 APPROVAL_EXPIRED でコマンドなし",
+      "ok": true,
+      "note": "409"
+    },
+    {
+      "id": "D14",
+      "title": "Y の後の取消で未取得のコマンドは実行しない",
+      "ok": true,
+      "note": "expired"
+    },
+    {
+      "id": "D15",
+      "title": "取消の後に届いた結果で状態を進めない",
+      "ok": true,
+      "note": "200/cancelled"
+    },
+    {
+      "id": "E1",
+      "title": "本番モード: --mock エージェントの結果を保存しない",
+      "ok": true,
+      "note": "failed"
+    },
+    {
+      "id": "E2",
+      "title": "本番モード: 模擬の結果は 403 MOCK_RESULT_FORBIDDEN",
+      "ok": true,
+      "note": "403/failed"
+    },
+    {
+      "id": "E3",
+      "title": "本番モード: 申告の無い結果は 403 UNVERIFIED_RESULT_SOURCE",
+      "ok": true,
+      "note": "403"
+    }
+  ],
+  "apiLog": {
+    "A": [
+      {
+        "method": "PUT",
+        "path": "/api/state/cowork",
+        "status": 200,
+        "count": 21
+      },
+      {
+        "method": "GET",
+        "path": "/api/resolve/device-status",
+        "status": 200,
+        "count": 3
+      },
+      {
+        "method": "GET",
+        "path": "/api/me",
+        "status": 200,
+        "count": 3
+      },
+      {
+        "method": "PUT",
+        "path": "/api/state/helpdesk",
+        "status": 200,
+        "count": 6
+      },
+      {
+        "method": "POST",
+        "path": "/api/resolve/sessions",
+        "status": 200,
+        "count": 1
+      },
+      {
+        "method": "POST",
+        "path": "/api/resolve/steps/:id/approve",
+        "status": 200,
+        "count": 2
+      },
+      {
+        "method": "GET",
+        "path": "/api/resolve/steps/:id",
+        "status": 200,
+        "count": 3
+      },
+      {
+        "method": "GET",
+        "path": "/api/employees",
+        "status": 200,
+        "count": 1
+      },
+      {
+        "method": "POST",
+        "path": "/api/device/browser",
+        "status": 200,
+        "count": 1
+      },
+      {
+        "method": "POST",
+        "path": "/api/resolve/steps/:id/continue",
+        "status": 200,
+        "count": 1
+      },
+      {
+        "method": "POST",
+        "path": "/api/resolve/sessions/:id/escalate",
+        "status": 200,
+        "count": 1
+      },
+      {
+        "method": "GET",
+        "path": "/api/case-handovers/recipients",
+        "status": 200,
+        "count": 1
+      },
+      {
+        "method": "POST",
+        "path": "/api/case-handovers",
+        "status": 200,
+        "count": 1
+      }
+    ],
+    "staff": [
+      {
+        "method": "GET",
+        "path": "/api/me",
+        "status": 200,
+        "count": 2
+      },
+      {
+        "method": "GET",
+        "path": "/api/employees",
+        "status": 200,
+        "count": 1
+      },
+      {
+        "method": "PUT",
+        "path": "/api/state/cowork",
+        "status": 200,
+        "count": 4
+      },
+      {
+        "method": "PUT",
+        "path": "/api/state/helpdesk",
+        "status": 200,
+        "count": 3
+      },
+      {
+        "method": "GET",
+        "path": "/api/case-handovers/inbox",
+        "status": 200,
+        "count": 1
+      },
+      {
+        "method": "POST",
+        "path": "/api/device/browser",
+        "status": 200,
+        "count": 1
+      },
+      {
+        "method": "POST",
+        "path": "/api/ai/answer-case",
+        "status": 200,
+        "count": 1
+      }
+    ],
+    "A2": [
+      {
+        "method": "POST",
+        "path": "/api/reports/final",
+        "status": 200,
+        "count": 1
+      },
+      {
+        "method": "GET",
+        "path": "/api/reports/final/:id/html",
+        "status": 200,
+        "count": 1
+      }
+    ],
+    "B": [
+      {
+        "method": "PUT",
+        "path": "/api/state/cowork",
+        "status": 200,
+        "count": 14
+      },
+      {
+        "method": "GET",
+        "path": "/api/me",
+        "status": 200,
+        "count": 1
+      },
+      {
+        "method": "GET",
+        "path": "/api/resolve/device-status",
+        "status": 200,
+        "count": 2
+      },
+      {
+        "method": "PUT",
+        "path": "/api/state/helpdesk",
+        "status": 200,
+        "count": 2
+      }
+    ]
+  },
+  "ids": [
+    {
+      "caseId": "CASE-0001",
+      "sessionId": "5476ce4a-e57d-4d9a-9bef-281b40507993",
+      "stepId": "2d897b17-a74a-4714-88dc-b7d5efc75cb8",
+      "commandId": "c9fda474-bcd2-485d-9060-dc6798f80584",
+      "skillId": "spooler.status",
+      "deviceId": "60bf1587-3529-46d4-94a6-8544eef21ae3",
+      "source": "mock",
+      "ui": true,
+      "api": true,
+      "db": true,
+      "agent": true
+    },
+    {
+      "caseId": "CASE-0001",
+      "sessionId": "5476ce4a-e57d-4d9a-9bef-281b40507993",
+      "stepId": "d2e8d043-e794-43d0-b831-bf36e5cbf549",
+      "commandId": "0e08c2d9-01f2-4ad1-8143-975c8f7a7dfa",
+      "skillId": "os.info",
+      "deviceId": "60bf1587-3529-46d4-94a6-8544eef21ae3",
+      "source": "mock",
+      "ui": true,
+      "api": true,
+      "db": true,
+      "agent": true
+    }
+  ],
+  "notes": []
+}

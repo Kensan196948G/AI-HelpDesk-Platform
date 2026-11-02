@@ -59,7 +59,8 @@ const DiagnosisSchema = z.object({
       z.object({
         k: z.string().max(120),
         v: z.string().max(500),
-        lv: z.enum(['ok', 'warn', 'ng']).default('ok'),
+        // none: 値を判定していない（解決ループの読み取り結果）。
+        lv: z.enum(['ok', 'warn', 'ng', 'none']).default('ok'),
       }),
     )
     .max(50)
@@ -340,6 +341,7 @@ const PF = {
   ok: ['正常', '#1d7a4d'],
   warn: ['注意', '#a36400'],
   ng: ['異常', '#b42318'],
+  none: ['判定なし', '#667085'],
 } as const;
 
 function escapeHtml(value: string): string {
@@ -811,6 +813,7 @@ th { background: #f0f4f8; font-weight: 700; white-space: nowrap; }
 .dot.ok { background: #1d7a4d; }
 .dot.warn { background: #d97706; }
 .dot.ng { background: #b42318; }
+.dot.none { background: #667085; }
 .chat { display: grid; gap: 2.5mm; }
 .msg { border: 1px solid #d9e2ec; border-radius: 2mm; padding: 2.5mm 3mm; page-break-inside: avoid; }
 .msg.user { background: #f7f9fb; }

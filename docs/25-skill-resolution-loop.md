@@ -499,3 +499,47 @@ Phase B の独立レビューで指摘された High 3 件を、Phase C 着手�
   fieldsToAi のドット記法拡張
 - 注記: 本ブランチは `feat/resolve-loop-poc`（Phase B）から分岐。`main` は設計書（572ecb3）のみで、
   Phase B の実装 2 コミットはまだ main にマージされていない。
+
+## 20. 相談者の実診断経路と結果の出所（2026-11-01）
+
+印刷の相談 + `spooler.status` の 1 シナリオを相談者ウィザードへつないだ。画面の変更は [14-prototype-ui-integration.md](14-prototype-ui-integration.md) §2-12。
+
+### 20-1. 接続確認
+
+`GET /api/resolve/device-status?deviceId=` は本人の端末について `{ owned, agentConnected }` を返す。`device_tokens` の standard トークンの `last_used_at` が `RESOLVE_DEVICE_OFFLINE_SEC` 以内なら接続あり。導線の案内に使う参考値で、実行の可否は従来どおり承認時の `DEVICE_OFFLINE` が判定する。
+
+### 20-2. 結果の出所（`executionSource`）
+
+| 値 | 意味 |
+|---|---|
+| `endpoint_agent` | エージェントが PowerShell で実行した（申告） |
+| `mock` | fixture（`--mock` または Windows 以外） |
+| `unknown` | 申告なし・不正（旧版エージェント）。実端末の結果と見なさない |
+
+- エージェントは Skill の結果に `executionSource` を付ける。サーバは `result_summary` / `result_ai` / `last_summary` へ写し、`stepDto.executionSource` で返す。
+- **本番は `endpoint_agent` 以外の Skill の結果を受け付けない。** `NODE_ENV=production`、または `AUTH_MODE=cloudflare-access` の環境で、`POST /api/device/command/:id/result` は `mock` を 403 `MOCK_RESULT_FORBIDDEN`、申告なしを 403 `UNVERIFIED_RESULT_SOURCE` とし、結果を保存せずコマンドを `failed` にする（ステップは失敗、セッションは担当者へ）。旧版エージェントは非 Windows で申告なしの fixture を返すため拒否する。**本番へ入れるときはエージェントの更新が先に必要。** `skill_id` の無い既存経路（`SPOOLER_RESTART`）と失敗報告は対象外。
+- `result_ai` の先頭に出所を置き、AI には「`endpoint_agent` 以外は解決の根拠にしない」と指示する。
+- **限界**: 出所はデバイストークンを持つエージェントの自己申告で、端末の実在の証明ではない。トークンを持つ者が `endpoint_agent` と偽ることは防げない。模擬を実端末に見せない・本番へ入れないための区別である。
+
+### 20-3. 機械検証の下限
+
+`spooler.status` は `verify` が無い。Skill の `resultSchema` と結果の形を照合し、`result_summary.resultShapeOk` に残す（`true` / `false` / 未宣言は `null`）。解決の判定には使わない。読み取りの成功では `outcome=verified` にしない（`isChangeSkillRow`）。
+
+### 20-4. 確認した承認の条件（試験: `apps/api/src/resolve/real-path.integration.test.ts`）
+
+| 条件 | 結果 |
+|---|---|
+| 本人以外の Y | 404 |
+| 違う・無いハッシュ、前のステップのハッシュ | 400 `APPROVAL_MISMATCH` |
+| 同時の二重 Y | 1 回だけ 200、もう一方は 409。コマンドは 1 件 |
+| 継続 Y | 次の提案（別 nonce）を作るだけで実行しない |
+| N・取消の後の Y／継続 | 409。コマンドを作らない |
+| 承認の期限切れ | 409 `APPROVAL_EXPIRED`。コマンドを作らない |
+| 実行期限を過ぎたコマンド | エージェントへ配信しない（204） |
+| Y の後の取消 | 未取得のコマンドは `expired`。配信済みの結果が届いても状態を進めない |
+
+### 20-5. 実機の前提
+
+- 実行器は `scripts/endpoint-command-agent.mjs`（Node 20+、`--mock` なし、Windows）。**`scripts/windows/command-agent.ps1` は使えない**（`SPOOLER_RESTART` だけで Skill を実行せず、`x-device-id` も送らないので `GET /api/device/command` が 400 になる）。
+- 設定の `browserDeviceId` には、ブラウザの端末 ID（`localStorage` の `aihd.device.id`。未接続のカードに表示）をそのまま入れる。画面の `WEB-XXXXXXXX` は短縮表示で、`device_tokens.device_id` と一致しないのでコマンドが届かない。
+- 旧版エージェントの結果は本番で拒否される。実機受入は更新後の版で行う。

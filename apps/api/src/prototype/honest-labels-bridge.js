@@ -17,6 +17,7 @@
   const RULE_DIAG_LABEL = 'ルールベース（デモデータ・実端末の結果ではありません）';
   const AGENT_LABEL = '端末エージェント（実端末）';
   const NOTICE_LABEL = '定型の案内';
+  const RESOLVE_LOOP_LABEL = '解決ループ（端末の読み取り結果。出所は各結果を参照）';
   const DEMO_NOTICE = 'デモデータ（実端末の結果ではありません）';
   const DEMO_INLINE = 'デモデータ：実端末の結果ではありません';
   const DEMO_PREFIX = '【デモデータ】';
@@ -34,6 +35,8 @@
 
   /** メッセージの由来。実 AI と判定できるものだけ deepseek を返す。 */
   function sourceOf(message) {
+    // 解決ループの結果は、出所（実端末 / 模擬 / 不明）を model に持たせて表示する。
+    if (message.resolveResult) return 'pass';
     if (message.provider === 'deepseek' || message.provider === 'fallback') {
       return message.provider;
     }
@@ -103,6 +106,8 @@
     const sources = messages.filter(Boolean).map(sourceOf);
     if (sources.includes('deepseek')) return REAL_MODEL;
     if (sources.includes('fallback')) return FALLBACK_LABEL;
+    // 解決ループだけの相談（固定データも実 AI の回答も使っていない）。
+    if (messages.some((message) => message?.resolveResult)) return RESOLVE_LOOP_LABEL;
     return RULE_LABEL;
   }
 
