@@ -1,4 +1,4 @@
-# リリース候補の検証（2026-11-02、コード `777caea`）
+# リリース候補の検証（2026-11-02、コード `82008f2`）
 
 実データはこの文書と JSON に書かない。**出力は件数とハッシュの一致だけ**である。
 
@@ -19,16 +19,16 @@
 
 | 項目 | SHA | 結果 |
 |---|---|---|
-| vitest | `777caea` | 1576 件成功 |
+| vitest | `82008f2` | 1577 件成功 |
 | `folder-helper.tests.ps1` | `f008f2c` | 428 成功 |
 | `command-agent.tests.ps1` | `d7e1598` | 217 成功、失敗 0、SKIP 8（Windows 実機が要るもの。実機で 17 件成功） |
-| 通し E2E（スタブ AI、模擬の実行器） | `777caea` | 88 項目、失敗 0（`e2e-dataflow.json`） |
-| wizard E2E（本番モードを含む） | `777caea` | 65 項目、失敗 0（`e2e-wizard.json`） |
-| command-agent E2E（本番モードを含む） | `777caea` | 16 項目、失敗 0（`e2e-command-agent.json`） |
-| CI（secret scan、audit 2 種、migrate 2 回、test、build、pwsh） | `777caea` | [成功](https://github.com/Kensan196948G/AI-HelpDesk-Platform/actions/runs/41388857808) |
+| 通し E2E（スタブ AI、模擬の実行器） | `82008f2` | 88 項目、失敗 0（`e2e-dataflow.json`） |
+| wizard E2E（本番モードを含む） | `82008f2` | 65 項目、失敗 0（`e2e-wizard.json`） |
+| command-agent E2E（本番モードを含む） | `82008f2` | 16 項目、失敗 0（`e2e-command-agent.json`） |
+| CI（secret scan、audit 2 種、migrate 2 回、test、build、pwsh） | `82008f2` | [成功](https://github.com/Kensan196948G/AI-HelpDesk-Platform/actions/runs/41390813892) |
 | `npm audit --audit-level=high`、`scan-secrets.sh` | `2d5b409` | 0 件、検出なし |
 
-`npm audit` と `scan-secrets.sh` のローカル実行は `2d5b409`。`777caea` では CI の同じ手順が成功している。
+`npm audit` と `scan-secrets.sh` のローカル実行は `2d5b409`。`82008f2` では CI の同じ手順が成功している。
 
 ## 実機（`2d5b409`。候補との差は設定の判定、`device-status` の応答項目、画面の文言と CSS で、実機は流し直していない。`../real-chain-20261102/resend-2d5b409.json`）
 

@@ -13,7 +13,7 @@
       "id": "A1",
       "title": "印刷の相談は /api/ai/answer を呼ばない（固定ルールでも AI でもなく解決ループへ）",
       "ok": true,
-      "note": "PUT /api/state/cowork 200 / GET /api/me 200 / GET /api/resolve/device-status 200 / PUT /api/state/helpdesk 200"
+      "note": "GET /api/me 200 / GET /api/resolve/device-status 200 / PUT /api/state/cowork 200 / PUT /api/state/helpdesk 200"
     },
     {
       "id": "A2",
@@ -199,7 +199,7 @@
       "id": "K19",
       "title": "承認者の画面に症状・原因・手順が出る（確認しないまま承認させない）",
       "ok": true,
-      "note": "KB-2026-0101 印刷ができませんときの対処\n作成者 synth.staff@example.test／状態 pending／作成 2026-11-02T04:37:14.084Z\n症状\n印刷ができません\n原因\n印刷スプーラの待機ジ"
+      "note": "KB-2026-0101 印刷ができませんときの対処\n作成者 synth.staff@example.test／状態 pending／作成 2026-11-02T04:58:56.212Z\n症状\n印刷ができません\n原因\n印刷スプーラの待機ジ"
     },
     {
       "id": "K7",
@@ -253,7 +253,7 @@
       "id": "K14",
       "title": "B の AI 入力の KB に A の端末 ID が入らない",
       "ok": true,
-      "note": "WEB-328F5A5A"
+      "note": "WEB-9D9C51CD"
     },
     {
       "id": "K15",
@@ -535,12 +535,6 @@
   "apiLog": {
     "A_consult": [
       {
-        "method": "PUT",
-        "path": "/api/state/cowork",
-        "status": 200,
-        "count": 12
-      },
-      {
         "method": "GET",
         "path": "/api/me",
         "status": 200,
@@ -551,6 +545,12 @@
         "path": "/api/resolve/device-status",
         "status": 200,
         "count": 2
+      },
+      {
+        "method": "PUT",
+        "path": "/api/state/cowork",
+        "status": 200,
+        "count": 13
       },
       {
         "method": "PUT",
@@ -596,7 +596,7 @@
         "method": "PUT",
         "path": "/api/state/cowork",
         "status": 200,
-        "count": 13
+        "count": 12
       },
       {
         "method": "GET",
@@ -678,7 +678,7 @@
         "method": "PUT",
         "path": "/api/state/cowork",
         "status": 200,
-        "count": 13
+        "count": 11
       },
       {
         "method": "POST",
@@ -710,7 +710,7 @@
         "method": "PUT",
         "path": "/api/state/cowork",
         "status": 200,
-        "count": 14
+        "count": 15
       },
       {
         "method": "PUT",
@@ -858,7 +858,7 @@
         "method": "GET",
         "path": "/api/knowledge/pending",
         "status": 200,
-        "count": 1
+        "count": 2
       },
       {
         "method": "POST",
@@ -982,7 +982,7 @@
         "method": "PUT",
         "path": "/api/state/cowork",
         "status": 200,
-        "count": 41
+        "count": 44
       },
       {
         "method": "POST",
@@ -1096,15 +1096,15 @@
       },
       {
         "method": "PUT",
-        "path": "/api/state/cowork",
-        "status": 200,
-        "count": 72
-      },
-      {
-        "method": "PUT",
         "path": "/api/state/helpdesk",
         "status": 200,
         "count": 13
+      },
+      {
+        "method": "PUT",
+        "path": "/api/state/cowork",
+        "status": 200,
+        "count": 69
       },
       {
         "method": "POST",
@@ -1186,10 +1186,10 @@
     },
     "flow": {
       "caseId": "CASE-0001",
-      "sessionId": "474336c7-2dc2-4fb1-8800-6400730148bb",
-      "proposalStepId": "3988feca-4ba4-4448-9462-4dc9a2d6b1a3",
-      "commandId": "1a55df65-3166-4d00-8273-d54c08518d30",
-      "deviceId": "328f5a5a-9f11-4543-92f9-968788b4ce3a",
+      "sessionId": "f671993a-43d8-4507-9aff-db11c8272038",
+      "proposalStepId": "a7c65df2-e234-40ba-ae39-05106ee1d743",
+      "commandId": "51ba4411-8df2-4714-a78e-cbf52276526c",
+      "deviceId": "9d9c51cd-3d6a-41dc-89a7-0f3fee809009",
       "source": "mock",
       "ui": true,
       "api": true,
@@ -1197,9 +1197,9 @@
       "agent": true,
       "handoverSnapshot": true
     },
-    "handoverId": "36da4ea3-3d9c-4dac-a7d0-4653aaa2fe4c",
+    "handoverId": "ac8b0d86-0c74-4132-be91-5162bee9b344",
     "knowledge": {
-      "id": "795f85ea-21e8-4756-9be8-87de67cb8b9f",
+      "id": "2cb39bd0-05a5-4fe4-a959-83db6881e6be",
       "kbNo": "KB-2026-0101",
       "version": 2,
       "approverIsNotAuthor": true,

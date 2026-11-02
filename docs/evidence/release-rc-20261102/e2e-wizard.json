@@ -238,7 +238,7 @@
       "id": "B6",
       "title": "未接続: STEP 3 の本文にデモデータの記述が無い",
       "ok": true,
-      "note": "AIの一次対応\n\n印刷の相談は、端末エージェントが接続された端末の状態を読み取って確認します。実行のたびに、あなたが Y／N で答えます。\n\n🙋\n印刷ができま"
+      "note": "AIの一次対応\n\n印刷の相談は、ナレッジの案内と担当者への引継ぎで対応します。端末の読み取り診断は行っていません。\n\n🙋\n印刷ができません。印刷ボタンを押して"
     },
     {
       "id": "B1",
@@ -547,7 +547,7 @@
         "method": "PUT",
         "path": "/api/state/cowork",
         "status": 200,
-        "count": 14
+        "count": 15
       },
       {
         "method": "GET",
@@ -578,11 +578,11 @@
   "ids": [
     {
       "caseId": "CASE-0001",
-      "sessionId": "29f09bbb-10bb-4eed-870e-d144faa917fc",
-      "stepId": "430fe828-017d-445e-8b3c-eaf0ed925be1",
-      "commandId": "8fd5ea9f-a621-4377-a06d-f2a9a1b52db8",
+      "sessionId": "a2ea3d14-11c2-4b62-9a7f-fc9a307f4600",
+      "stepId": "9f1802b1-25db-4bef-b614-f5166f4edd7f",
+      "commandId": "f2c0a52d-eed2-4358-92f0-83583f9ba175",
       "skillId": "spooler.status",
-      "deviceId": "f5af3573-3c58-47b7-b997-f6778987d6f5",
+      "deviceId": "b006cd6f-34ed-4d4e-9d6c-93b203a20c87",
       "source": "mock",
       "ui": true,
       "api": true,
@@ -591,11 +591,11 @@
     },
     {
       "caseId": "CASE-0001",
-      "sessionId": "29f09bbb-10bb-4eed-870e-d144faa917fc",
-      "stepId": "19c0c0c3-4092-4034-8dd4-86d511395f59",
-      "commandId": "96b3e288-aec5-4cda-86e9-6d2d5e3a432f",
+      "sessionId": "a2ea3d14-11c2-4b62-9a7f-fc9a307f4600",
+      "stepId": "0b64e222-8b39-4aae-9fed-798aad4c72f9",
+      "commandId": "b1b1a353-d5f4-457c-84c2-b2a99fef1d66",
       "skillId": "os.info",
-      "deviceId": "f5af3573-3c58-47b7-b997-f6778987d6f5",
+      "deviceId": "b006cd6f-34ed-4d4e-9d6c-93b203a20c87",
       "source": "mock",
       "ui": true,
       "api": true,

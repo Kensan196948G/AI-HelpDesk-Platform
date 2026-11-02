@@ -24,7 +24,7 @@
       "id": "P3",
       "title": "エージェントが正常に終了する",
       "ok": true,
-      "note": "evice/command source=mock\n[2026-11-02T13:43:37.5806440+09:00] command c64c0f0d-a30a-4d99-b2ad-4a8bf9dc84d0 spooler.status\n[2026-11-02T13:43:37.7231640+09:00] skill c64c0f0d-a30a-4d99-b2ad-4a8bf9dc84d0 spooler.status 1.0.0\n[2026-11-02T13:43:39.1750941+09:00] done c64c0f0d-a30a-4d99-b2ad-4a8bf9dc84d0\n"
+      "note": "evice/command source=mock\n[2026-11-02T14:05:17.5479251+09:00] command ca426ec0-46f3-4330-85b5-d18aa642c778 spooler.status\n[2026-11-02T14:05:17.6438169+09:00] skill ca426ec0-46f3-4330-85b5-d18aa642c778 spooler.status 1.0.0\n[2026-11-02T14:05:18.7746613+09:00] done ca426ec0-46f3-4330-85b5-d18aa642c778\n"
     },
     {
       "id": "P4",
@@ -101,14 +101,14 @@
   ],
   "ids": {
     "caseId": "CASE-PS1-AGENT",
-    "stepId": "6b53a475-a2fb-4e9c-9aaa-0ea40dbb275d",
-    "commandId": "c64c0f0d-a30a-4d99-b2ad-4a8bf9dc84d0",
+    "stepId": "2d09fb0b-4df0-4266-b8ec-64e324954e23",
+    "commandId": "ca426ec0-46f3-4330-85b5-d18aa642c778",
     "device": "ps1-agent-device-0001"
   },
   "savedResult": {
     "deviceId": "ps1-agent-device-0001",
     "exitCode": 0,
-    "durationMs": 1341,
+    "durationMs": 1050,
     "normalized": {
       "name": "Spooler",
       "stub": "模擬（Linux のスタブ）",
