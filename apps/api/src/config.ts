@@ -7,6 +7,12 @@ import { z } from 'zod';
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const repoRoot = path.resolve(here, '../../..');
 
+// 検証専用の設定（貸与照合の省略、模擬実行、検証用 manifest）は、開発か試験だと明示した環境だけで使う。
+// プロセスに渡された NODE_ENV で判定し、.env.local や .env が補った値は数えない。NODE_ENV の設定漏れ
+// （未設定）は本番と同じく拒否する（fail-closed。docs/62 §10-5 の検証は development を明示する。docs/69 S3）。
+const verificationOptionsAllowed =
+  process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test';
+
 // 本番（systemd）では Environment= を優先し、ローカルの .env.local を読み込まない。
 const isProduction = process.env.NODE_ENV === 'production';
 const isTest = process.env.NODE_ENV === 'test';
@@ -16,11 +22,6 @@ if (!isProduction && existsSync(path.join(repoRoot, localEnvFile))) {
 } else {
   loadEnv({ path: path.join(repoRoot, '.env') });
 }
-
-// 検証専用の設定（貸与照合の省略、模擬実行、検証用 manifest）は、開発か試験だと明示した環境だけで使う。
-// NODE_ENV の設定漏れ（未設定）は本番と同じく拒否する（fail-closed。docs/62 §10-5 の検証は development を明示する）。
-const verificationOptionsAllowed =
-  process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test';
 
 // 空文字（`KEY=`）は未設定として扱う。
 const optionalText = z.preprocess(

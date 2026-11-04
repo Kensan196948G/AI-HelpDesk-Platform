@@ -37,7 +37,7 @@ function secretsMatch(actual: string, expected: string): boolean {
 
 export async function buildServer(options?: {
   logger?: boolean;
-  /** 登録した経路を試験で一覧するため（閉じ忘れの検出。route-inventory.test.ts）。 */
+  /** 登録した経路を試験で一覧するため（閉じ忘れの検出。route-inventory.integration.test.ts）。 */
   onRoute?: (route: RouteOptions) => void;
 }): Promise<FastifyInstance> {
   if (config.REQUIRE_PROXY_SECRET && !config.PROXY_SECRET) {

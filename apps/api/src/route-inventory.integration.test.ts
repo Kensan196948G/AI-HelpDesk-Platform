@@ -26,14 +26,18 @@ const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 type Closed = {
   kind: 'closed';
   payload: Record<string, unknown>;
-  /** 既定（off）での応答。 */
-  off: { status: number; code?: string };
+  /**
+   * 既定（off）での応答。③の無効時の 404 は「対象が無い」404 と同じ code なので、文面まで照合する
+   * （ゲートを外すと、ランダムな ID への 404 で試験が通ってしまうため）。
+   */
+  off: { status: number; code?: string; message?: string };
   /** 経路②の drain での応答（②の経路だけ）。 */
   drain?: { status: number; code: string };
 };
 type Allowed = { kind: 'allowed'; reason: string };
 
-const OFF_404 = { status: 404 } as const;
+// 経路③の機能フラグのゲートが返す文面（folder-access/routes.ts、support-session/*routes.ts）。
+const OFF_404 = { status: 404, code: 'NOT_FOUND', message: 'パスは存在しません。' } as const;
 const RESOLVE_OFF = { status: 404, code: 'RESOLVE_PATH_DISABLED' } as const;
 const RESOLVE_DRAIN = { status: 409, code: 'RESOLVE_PATH_DRAINING' } as const;
 const Y = { decision: 'Y' };
@@ -208,12 +212,15 @@ async function call(key: string, payload: Record<string, unknown>) {
     payload,
   });
   let code: string | undefined;
+  let message: string | undefined;
   try {
-    code = response.json()?.error?.code;
+    const error = response.json()?.error;
+    code = error?.code;
+    message = error?.message;
   } catch {
     code = undefined;
   }
-  return { status: response.statusCode, code };
+  return { status: response.statusCode, code, message };
 }
 
 describe('経路の閉じ忘れの検出', () => {
@@ -239,6 +246,7 @@ describe('経路の閉じ忘れの検出', () => {
     const result = await call(key, spec.payload);
     expect(result.status, key).toBe(spec.off.status);
     if (spec.off.code) expect(result.code, key).toBe(spec.off.code);
+    if (spec.off.message) expect(result.message, key).toBe(spec.off.message);
   });
 
   const drained = closed.filter(([, spec]) => spec.drain);
