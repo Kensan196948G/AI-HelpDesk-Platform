@@ -1,0 +1,10 @@
+[Unit]
+Description=AI HelpDesk tunnel failure watch (read-only, mail on repeated failures)
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/kensan/Projects/Mirai-Admin-Platform/AI-HelpDesk-Platform
+Environment=AIHD_ENV_FILE=%h/.config/ai-helpdesk/api.conf
+ExecStart=/home/kensan/.nvm/versions/node/v22.22.3/bin/node scripts/tunnel-watch.mjs
+NoNewPrivileges=true
+PrivateTmp=true
