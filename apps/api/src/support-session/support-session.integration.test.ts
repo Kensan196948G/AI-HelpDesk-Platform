@@ -83,6 +83,7 @@ const originals = {
   assistMode: config.ASSIST_SESSION_MODE,
   mock: config.ASSIST_ALLOW_MOCK_EXECUTION,
   isProduction: config.isProduction,
+  verificationOptionsAllowed: config.verificationOptionsAllowed,
   leaseUrl: config.LEASE_API_URL,
   leaseId: config.LEASE_API_TOKEN_ID,
   leaseSecret: config.LEASE_API_TOKEN_SECRET,
@@ -526,6 +527,7 @@ beforeEach(() => {
   config.ASSIST_SESSION_MODE = undefined;
   config.ASSIST_ALLOW_MOCK_EXECUTION = false;
   config.isProduction = false;
+  config.verificationOptionsAllowed = true;
   config.DEEPSEEK_API_KEY = undefined;
   config.DEEPSEEK_BASE_URL = AI_URL;
   config.LEASE_API_URL = LEASE_URL;
@@ -545,6 +547,7 @@ afterAll(async () => {
   config.ASSIST_SESSION_MODE = originals.assistMode;
   config.ASSIST_ALLOW_MOCK_EXECUTION = originals.mock;
   config.isProduction = originals.isProduction;
+  config.verificationOptionsAllowed = originals.verificationOptionsAllowed;
   config.LEASE_API_URL = originals.leaseUrl;
   config.LEASE_API_TOKEN_ID = originals.leaseId;
   config.LEASE_API_TOKEN_SECRET = originals.leaseSecret;
@@ -2625,6 +2628,23 @@ describe('共通支援セッション（Mock: ヘルパー / RSP / 名簿 / PII 
       expect(response.statusCode).toBe(403);
       expect((await executionRows(session.id))[0]?.execution_mode).toBeNull();
     });
+
+    it.each(['mock', 'manual'])(
+      'NODE_ENV の設定漏れ（開発か試験の明示なし）でも、検証用フラグの %s を拒否する',
+      async (mode) => {
+        const session = await readySession();
+        const { op } = await executing(session);
+        config.ASSIST_ALLOW_MOCK_EXECUTION = true;
+        config.verificationOptionsAllowed = false;
+        const response = await report(
+          session.token,
+          op,
+          resultBody(op, FOLDER_OUTPUT, { executionMode: mode }),
+        );
+        expect(response.statusCode).toBe(403);
+        expect((await executionRows(session.id))[0]?.execution_mode).toBeNull();
+      },
+    );
 
     it.each(['mock', 'manual'])(
       '検証用フラグで %s を記録しても証拠にせず、進めない',

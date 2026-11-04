@@ -114,10 +114,13 @@ export async function supportSessionHelperRoutes(app: FastifyInstance): Promise<
 
       const body = SkillResultBodySchema.parse(request.body);
 
-      // real 以外は本番で必ず拒否する。本番以外でも検証用フラグが無ければ受けない（§7）。
+      // real 以外は、開発か試験を明示した環境で検証用フラグがあるときだけ受ける（§7）。
+      // NODE_ENV の設定漏れでも受けない。
       if (
         body.executionMode !== 'real' &&
-        (config.isProduction || !config.ASSIST_ALLOW_MOCK_EXECUTION)
+        (config.isProduction ||
+          !config.verificationOptionsAllowed ||
+          !config.ASSIST_ALLOW_MOCK_EXECUTION)
       ) {
         await sql.begin(async (tx) => {
           const keys = await tx<{ support_session_id: string }[]>`

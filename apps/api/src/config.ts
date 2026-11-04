@@ -17,6 +17,11 @@ if (!isProduction && existsSync(path.join(repoRoot, localEnvFile))) {
   loadEnv({ path: path.join(repoRoot, '.env') });
 }
 
+// 検証専用の設定（貸与照合の省略、模擬実行、検証用 manifest）は、開発か試験だと明示した環境だけで使う。
+// NODE_ENV の設定漏れ（未設定）は本番と同じく拒否する（fail-closed。docs/62 §10-5 の検証は development を明示する）。
+const verificationOptionsAllowed =
+  process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test';
+
 // 空文字（`KEY=`）は未設定として扱う。
 const optionalText = z.preprocess(
   (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
@@ -211,21 +216,23 @@ if (
   process.exit(1);
 }
 // 貸与情報の検証を省く検証用フラグを本番で有効にさせない（fail-closed）。
-if (isProduction && parsed.data.FOLDER_ACCESS_ALLOW_UNVERIFIED_LEASE) {
+if (!verificationOptionsAllowed && parsed.data.FOLDER_ACCESS_ALLOW_UNVERIFIED_LEASE) {
   console.error(
-    '[config] NODE_ENV=production では FOLDER_ACCESS_ALLOW_UNVERIFIED_LEASE=true を使えません。',
+    '[config] NODE_ENV=development または test を明示しない限り FOLDER_ACCESS_ALLOW_UNVERIFIED_LEASE=true を使えません。',
   );
   process.exit(1);
 }
 // 出所を確認できない実行結果を本番で受け付けない（fail-closed。API 側でも拒否する。docs/63 §7）。
 // 検証用 Skill の承認を本番へ持ち込まない。
-if (isProduction && process.env.ASSIST_VERIFICATION_MANIFEST?.trim()) {
-  console.error('[config] NODE_ENV=production では ASSIST_VERIFICATION_MANIFEST を使えません。');
+if (!verificationOptionsAllowed && process.env.ASSIST_VERIFICATION_MANIFEST?.trim()) {
+  console.error(
+    '[config] NODE_ENV=development または test を明示しない限り ASSIST_VERIFICATION_MANIFEST を使えません。',
+  );
   process.exit(1);
 }
-if (isProduction && parsed.data.ASSIST_ALLOW_MOCK_EXECUTION) {
+if (!verificationOptionsAllowed && parsed.data.ASSIST_ALLOW_MOCK_EXECUTION) {
   console.error(
-    '[config] NODE_ENV=production では ASSIST_ALLOW_MOCK_EXECUTION=true を使えません。',
+    '[config] NODE_ENV=development または test を明示しない限り ASSIST_ALLOW_MOCK_EXECUTION=true を使えません。',
   );
   process.exit(1);
 }
@@ -270,4 +277,5 @@ export const config = {
     .map((origin) => origin.trim())
     .filter(Boolean),
   isProduction,
+  verificationOptionsAllowed,
 };
