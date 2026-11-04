@@ -1014,6 +1014,15 @@ export async function recordResultTx(
   if (body.status === 'rejected') {
     const reportable = ['delivered', 'executing', 'timed_out', 'expired', 'rejected_at_start'];
     if (!reportable.includes(current.status)) return notAccepted('NOT_DELIVERED');
+    // /start を通った実行について「実行していない」と言えるのは、/start の応答を失った場合だけ。
+    // 他のコードや、束縛と違う SID・セッションからの申告で、結果不明（変更の可能性）を未実行に
+    // 置き換えない（docs/69 S2、docs/67 §1）。状態は変えずに記録だけ残す。
+    if (current.start_nonce_consumed_at) {
+      if (body.resultCode !== 'START_NO_RESPONSE') return notAccepted('REJECT_AFTER_START');
+      if (body.actorSid !== session.sid || body.sessionId !== session.windows_session_id) {
+        return notAccepted('REJECT_IDENTITY_MISMATCH');
+      }
+    }
     await store({
       status: 'rejected_by_helper',
       evidence: false,
@@ -1178,14 +1187,29 @@ export async function recordResultTx(
   return { kind: 'accepted' };
 }
 
-/** 変更系で成功を確認できなかったときは、変更が生じた可能性を隠さない（§10）。 */
+/**
+ * 変更系で成功を確認できなかったときは、変更が生じた可能性を隠さない（§10）。
+ * 印は変更系の本体（role=main）に付ける。確認操作（読み取り専用）が失敗したときも、
+ * 確認できなかったのは本体の変更なので、本体に付ける（docs/69 S1）。
+ */
 async function markModifyUnknown(
   tx: Tx,
   execution: ExecutionRow,
   proposal: ProposalRow,
 ): Promise<void> {
   if (proposal.effect !== 'modify') return;
-  await mergePartialEffect(tx, execution.id, ['POSSIBLE_CHANGE']);
+  if (execution.role === 'main') {
+    await mergePartialEffect(tx, execution.id, ['POSSIBLE_CHANGE']);
+    return;
+  }
+  const mains = await tx<{ id: string }[]>`
+    SELECT id FROM assist_executions
+    WHERE proposal_id = ${proposal.id} AND role = 'main'
+    ORDER BY created_at DESC
+    LIMIT 1
+  `;
+  const main = mains[0];
+  if (main) await mergePartialEffect(tx, main.id, ['POSSIBLE_CHANGE']);
 }
 
 async function afterProposalSucceeded(

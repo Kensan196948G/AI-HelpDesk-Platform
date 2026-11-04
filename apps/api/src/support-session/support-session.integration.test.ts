@@ -1931,6 +1931,29 @@ describe('共通支援セッション（Mock: ヘルパー / RSP / 名簿 / PII 
       expect(execution?.stopped_at).not.toBeNull();
     });
 
+    it.each([
+      ['/start の応答の喪失以外のコード', { resultCode: 'ELEVATED' }, 'REJECT_AFTER_START'],
+      ['開始前にしか起きないコード', { resultCode: 'BAD_SIGNATURE' }, 'REJECT_AFTER_START'],
+      ['束縛と違う SID', { actorSid: OTHER_SID }, 'REJECT_IDENTITY_MISMATCH'],
+      ['束縛と違う Windows セッション', { sessionId: 7 }, 'REJECT_IDENTITY_MISMATCH'],
+    ])(
+      '1. 開始済みの実行への「実行していない」申告は、%sなら受けず、変更の可能性を残す（docs/69 S2）',
+      async (_n, over, reason) => {
+        setManifest(ALL_BUT_DISK);
+        const session = await readySession();
+        const op = await modifyExecuting(session);
+        await call(OWNER, 'POST', base(session.id, '/revoke'), {});
+        expect((await row(session.id, op.opId))?.partial_effect).toEqual(['POSSIBLE_CHANGE']);
+        const response = await report(session.token, op, { ...notRun(op), ...over });
+        expect(response.json()).toEqual({ ok: true, accepted: false, reason });
+        const execution = await row(session.id, op.opId);
+        expect(execution?.partial_effect).toEqual(['POSSIBLE_CHANGE']);
+        expect(execution?.status).not.toBe('rejected_by_helper');
+        expect(execution?.stop_outcome).not.toBe('not_running');
+        expect(execution?.result_received_at).toBeNull();
+      },
+    );
+
     it('1. 申告に partialEffect が付いていても未実行なら記録しない', async () => {
       setManifest(ALL_BUT_DISK);
       const session = await readySession();
@@ -2807,6 +2830,35 @@ describe('共通支援セッション（Mock: ヘルパー / RSP / 名簿 / PII 
       expect(
         (await call(OWNER, 'POST', base(session.id, '/resolution'), { resolved: true })).statusCode,
       ).toBe(409);
+      // 変更の可能性は、確認操作（読み取り）ではなく変更系の本体に付ける（docs/69 S1）。
+      const rows = await executionRows(session.id);
+      const main = rows.find((item) => item.id === op.opId);
+      const verifyRow = rows.find((item) => item.id === verifyOp.opId);
+      expect(main?.partial_effect).toContain('POSSIBLE_CHANGE');
+      expect(verifyRow?.partial_effect ?? []).not.toContain('POSSIBLE_CHANGE');
+    });
+
+    it.each([
+      ['エラー', { status: 'error', resultCode: 'EXEC_FAILED', exitCode: 3 }],
+      ['タイムアウト', { status: 'timeout', resultCode: 'TIMEOUT', exitCode: null }],
+    ])('確認操作が%sでも、変更の可能性を本体に付ける', async (_n, over) => {
+      setManifest(ALL_BUT_DISK);
+      const session = await readySession();
+      const first = await executing(session);
+      await report(session.token, first.op, resultBody(first.op, FOLDER_OUTPUT));
+      const second = await propose(session.id);
+      await decide(session.id, second.proposal.id, {
+        decision: 'Y',
+        approvalHash: second.proposal.approvalHash,
+      });
+      const op = (await poll(session.token)).skillOps?.[0] as Op;
+      await start(session.token, op);
+      await report(session.token, op, resultBody(op, { applied: true, previousPresent: false }));
+      const verifyOp = (await poll(session.token)).skillOps?.[0] as Op;
+      await start(session.token, verifyOp);
+      await report(session.token, verifyOp, resultBody(verifyOp, null, over));
+      const rows = await executionRows(session.id);
+      expect(rows.find((item) => item.id === op.opId)?.partial_effect).toContain('POSSIBLE_CHANGE');
     });
   });
 
