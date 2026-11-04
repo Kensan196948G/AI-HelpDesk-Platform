@@ -1019,8 +1019,21 @@ export async function recordResultTx(
     // 置き換えない（docs/69 S2、docs/67 §1）。状態は変えずに記録だけ残す。
     if (current.start_nonce_consumed_at) {
       if (body.resultCode !== 'START_NO_RESPONSE') return notAccepted('REJECT_AFTER_START');
-      if (body.actorSid !== session.sid || body.sessionId !== session.windows_session_id) {
-        return notAccepted('REJECT_IDENTITY_MISMATCH');
+      const mismatch =
+        body.actorSid !== session.sid
+          ? 'sid_mismatch'
+          : body.sessionId !== session.windows_session_id
+            ? 'session_changed'
+            : null;
+      if (mismatch) {
+        // 改ざんの兆候。成功・失敗の報告の不一致（下）と同じく依頼ごと止める。止める処理は
+        // 実行中の変更系に変更の可能性を付ける（実行していないとは扱わない）。
+        const outcome = await notAccepted('REJECT_IDENTITY_MISMATCH');
+        if (isOpenSession(session.status)) {
+          await endRequestTx(tx, ctx, mismatch, HELPER_ACTOR);
+          await reload(tx, session);
+        }
+        return outcome;
       }
     }
     await store({

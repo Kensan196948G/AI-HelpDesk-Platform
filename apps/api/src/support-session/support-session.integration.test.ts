@@ -1954,6 +1954,28 @@ describe('共通支援セッション（Mock: ヘルパー / RSP / 名簿 / PII 
       },
     );
 
+    it.each([
+      ['SID', { actorSid: OTHER_SID }, 'sid_mismatch'],
+      ['Windows セッション', { sessionId: 7 }, 'session_changed'],
+    ])(
+      '1. 開いているセッションで %s の違う「実行していない」申告が届けば、依頼ごと止めて変更の可能性を残す',
+      async (_n, over, end) => {
+        setManifest(ALL_BUT_DISK);
+        const session = await readySession();
+        const op = await modifyExecuting(session);
+        const response = await report(session.token, op, { ...notRun(op), ...over });
+        expect(response.json()).toEqual({
+          ok: true,
+          accepted: false,
+          reason: 'REJECT_IDENTITY_MISMATCH',
+        });
+        expect((await sessionRow(session.id))?.end_reason).toBe(end);
+        const execution = await row(session.id, op.opId);
+        expect(execution?.partial_effect).toContain('POSSIBLE_CHANGE');
+        expect(execution?.status).not.toBe('rejected_by_helper');
+      },
+    );
+
     it('1. 申告に partialEffect が付いていても未実行なら記録しない', async () => {
       setManifest(ALL_BUT_DISK);
       const session = await readySession();
