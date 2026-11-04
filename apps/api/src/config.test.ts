@@ -101,6 +101,21 @@ describe('config（起動時の安全確認）', () => {
     expect(result.status, result.stderr).toBe(0);
   });
 
+  it.each([
+    ['FOLDER_ACCESS_ALLOW_UNVERIFIED_LEASE', 'true'],
+    ['ASSIST_ALLOW_MOCK_EXECUTION', 'true'],
+    ['ASSIST_VERIFICATION_MANIFEST', '/tmp/verification-manifest.json'],
+  ])(
+    'NODE_ENV の設定漏れでは検証用の %s を拒否する（Access 認証でも local 認証でも）',
+    (key, value) => {
+      for (const authMode of ['cloudflare-access', 'local']) {
+        const result = loadConfig({ AUTH_MODE: authMode, [key]: value });
+        expect(result.status, `${authMode}: ${result.stderr}`).toBe(1);
+        expect(result.stderr).toContain(key);
+      }
+    },
+  );
+
   it('NODE_ENV=production で ASSIST_VERIFICATION_MANIFEST は起動を拒否する', () => {
     const result = loadConfig({
       NODE_ENV: 'production',

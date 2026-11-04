@@ -341,7 +341,10 @@ export async function resolveDevice(
 ): Promise<void> {
   const snapshot = await sql.begin((tx) => loadContext(tx, id));
   if (!snapshot || isTerminal(snapshot.status)) return;
-  const allowUnverified = config.FOLDER_ACCESS_ALLOW_UNVERIFIED_LEASE && !config.isProduction;
+  const allowUnverified =
+    config.FOLDER_ACCESS_ALLOW_UNVERIFIED_LEASE &&
+    config.verificationOptionsAllowed &&
+    !config.isProduction;
   const outcome = await determineDevice(snapshot, input, { allowUnverified });
 
   await sql.begin(async (tx) => {

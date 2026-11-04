@@ -1,6 +1,6 @@
 import { timingSafeEqual } from 'node:crypto';
 import cookie from '@fastify/cookie';
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyInstance, type RouteOptions } from 'fastify';
 import { ZodError } from 'zod';
 import { allowlistSize, getAllowlist } from './auth/allowlist.js';
 import { requireCloudflareAccess } from './auth/ui.js';
@@ -35,7 +35,11 @@ function secretsMatch(actual: string, expected: string): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-export async function buildServer(options?: { logger?: boolean }): Promise<FastifyInstance> {
+export async function buildServer(options?: {
+  logger?: boolean;
+  /** 登録した経路を試験で一覧するため（閉じ忘れの検出。route-inventory.integration.test.ts）。 */
+  onRoute?: (route: RouteOptions) => void;
+}): Promise<FastifyInstance> {
   if (config.REQUIRE_PROXY_SECRET && !config.PROXY_SECRET) {
     throw new Error('REQUIRE_PROXY_SECRET=true の場合は PROXY_SECRET が必要です。');
   }
@@ -62,6 +66,7 @@ export async function buildServer(options?: { logger?: boolean }): Promise<Fasti
     bodyLimit: 1024 * 1024,
   });
 
+  if (options?.onRoute) app.addHook('onRoute', options.onRoute);
   await app.register(cookie);
 
   if (config.AUTH_MODE === 'cloudflare-access') {

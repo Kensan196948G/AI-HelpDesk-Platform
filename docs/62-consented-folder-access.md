@@ -82,7 +82,7 @@ device_pending → helper_pending → consent_pending → active → ended
      現貸与は `employee_active === true` かつ `lease_active === true` の行だけ。
      貸与情報と RSP の `mesh_node_id` が食い違えば `LEASE_CONFLICT`（nodeId は手掛かりで、同一性は MachineGuid で確認する）。
    - 同意の直前に取り直す。端末が変わった・確定できなくなった場合は `lease_conflict`、取得できない場合は同意を進めない。
-   - `FOLDER_ACCESS_ALLOW_UNVERIFIED_LEASE=true`（`NODE_ENV=production` では起動拒否）のときだけ、
+   - `FOLDER_ACCESS_ALLOW_UNVERIFIED_LEASE=true`（`NODE_ENV=development` か `test` を明示しない限り起動拒否。未設定も拒否）のときだけ、
      検証用に `lease_status='unverified'` として担当者の指定端末で進める。
 3. **端末**: RSP `deviceId` と `mesh_node_id` を保存する。hostname だけを許可の根拠にしない。
    RSP の固定テンプレートで MachineGuid を取得し、ヘルパーの申告と一致しなければ `device_mismatch`。

@@ -1,6 +1,6 @@
 import { readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { repoRoot } from '../config.js';
+import { config, repoRoot } from '../config.js';
 import {
   APPROVAL_MANIFEST_PATH,
   type ApprovalManifest,
@@ -20,9 +20,11 @@ const manifestCache = new Map<string, { key: string; manifest: ApprovalManifest 
  */
 export function loadApprovalManifest(file?: string): ApprovalManifest {
   const main = readManifestFile(file ?? path.join(repoRoot, APPROVAL_MANIFEST_PATH));
-  // 検証用 manifest（人が --include-verification で承認したもの）。本番では使わない。
+  // 検証用 manifest（人が --include-verification で承認したもの）。開発か試験を明示した環境だけで使う。
   const extra = process.env.ASSIST_VERIFICATION_MANIFEST?.trim();
-  if (file !== undefined || !extra || process.env.NODE_ENV === 'production') return main;
+  if (file !== undefined || !extra || !config.verificationOptionsAllowed || config.isProduction) {
+    return main;
+  }
   return { ...main, skills: [...main.skills, ...readManifestFile(extra).skills] };
 }
 

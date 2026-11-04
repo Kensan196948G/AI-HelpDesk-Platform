@@ -703,8 +703,11 @@ async function assignRoutes(app: FastifyInstance): Promise<void> {
           ) {
             return { kind: 'inactive' as const };
           }
-          // 本番は貸与の照合が必須。未検証モードは本番では起動を拒否しているが二重に確かめる。
-          if (config.isProduction && ctx.lease_status !== 'verified') {
+          // 開発か試験を明示した環境以外では貸与の照合が必須。起動時にも拒否しているが二重に確かめる。
+          if (
+            (config.isProduction || !config.verificationOptionsAllowed) &&
+            ctx.lease_status !== 'verified'
+          ) {
             return { kind: 'inactive' as const };
           }
           const rows = await tx<{ id: string }[]>`
