@@ -12,6 +12,9 @@
   };
   const last = Object.create(null);
   const lastFailAt = Object.create(null);
+  // 応答の無い保存を待ち続けない。2026-11-04 にトンネルの不調で PUT が 100 秒以上返らず、
+  // 失敗の表示も出ないまま、後続の保存がすべて待たされた（docs/68 §9）。
+  const SAVE_TIMEOUT_MS = 15_000;
 
   /** 保存失敗・AI 失敗を利用者に知らせる（同じ失敗を 30 秒おきに 1 回だけ）。 */
   function notifyFailure(name, message) {
@@ -41,12 +44,15 @@
     } catch (error) {
       return;
     }
+    const controller = typeof AbortController === 'function' ? new AbortController() : null;
+    const abortTimer = controller ? setTimeout(() => controller.abort(), SAVE_TIMEOUT_MS) : null;
     try {
       const body = JSON.stringify({ data });
       const response = await fetch('/api/state/' + encodeURIComponent(name), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body,
+        signal: controller ? controller.signal : undefined,
         // keepalive は使わない。ページ全体で合計 64KiB の枠を 2 つの状態
         // （AI相談・ヘルプデスク）で奪い合い、超えると fetch 自体が
         // "Failed to fetch" で失敗して保存が止まる（2026-10-23 に実測:
@@ -59,6 +65,8 @@
       // 次の interval / 変更イベントで再試行する。失敗は黙って続けず、利用者に知らせる。
       delete last[name];
       notifyFailure('state', '状態を保存できませんでした。接続が戻るまで再試行します。');
+    } finally {
+      if (abortTimer) clearTimeout(abortTimer);
     }
   }
 
