@@ -157,6 +157,7 @@ tail -n 1 ~/backups/ai-helpdesk/backup.log
 |---|---|---|
 | 画面が真っ白 | Worker の配信、CSP、ブラウザコンソール | 直前の Worker deployment へ rollback |
 | API が 502 | Tunnel / API systemd / health | Tunnel と API を再起動、health 確認 |
+| 画面が 524、保存されない（health は正常） | `journalctl --user -u ai-helpdesk-cloudflared -u ai-helpdesk-proxy` の `Request failed` / `upstream error` | §5-2 |
 | ログインできない | Cookie の Secure / SameSite、Origin、DB | 環境変数と `users` を確認 |
 | データが増えない | DB 接続、Migration、API ログ | `db:migrate` / seed 状態と 5xx を確認 |
 | 監査検証が失敗 | 直近の操作、DB の手動変更 | 変更を止め、バックアップと差分を確認 |
@@ -164,6 +165,27 @@ tail -n 1 ~/backups/ai-helpdesk/backup.log
 | PC情報が更新されない | `device_inventories.updated_at`、エージェントの HTTP ステータス | トークン・URL・Access bypass を確認。`--once` で再送 |
 | エージェントが 401 | トークンの失効・削除 | 再発行し、設定ファイルを 0600 で更新 |
 | 導入ソフトが多すぎる | `software` は 300 件上限 | 必要なら allowlist / 除外を設計（B-25） |
+
+### 5-2. トンネル経路の不調（2026-11-04 追加）
+
+2026-11-04 に、API の health は正常のまま、トンネルの経路で画面の表示と状態の保存が止まった（docs/68 §9）。
+
+1. **切り戻す前に、旧ビルドでも起きるかを確かめる。** 配備直後でも、原因がリリースとは限らない。サーバ内の経路は `curl http://127.0.0.1:18949/api/health`（プロキシ）と `:18950`（API）で切り分ける。
+2. トンネルの失敗が続くなら、`systemctl --user restart ai-helpdesk-cloudflared` で再起動する（数秒止まる。設定は変えない）。登録された接続（`Registered tunnel connection`）が 4 本あることを確かめる。
+3. 再起動の後、利用者の操作で `PUT /api/state/*` が 200 で返ることをログで確かめる。
+
+**監視の導入（1 回だけ）:** 5 分ごとに直近 10 分の失敗を数え、3 件以上ならメールで知らせる（同じ通知は 60 分に 1 回）。再起動はしない。API の再起動の直後も `socket hang up` が数件出るので、配備の直後の通知は §5-2 の 1 で確かめる。
+
+```bash
+cd ~/Projects/Mirai-Admin-Platform/AI-HelpDesk-Platform
+node scripts/tunnel-watch.mjs --dry-run      # 判定と本文の確認（送らない）
+install -m 0644 ops/systemd/ai-helpdesk-tunnel-watch.service ops/systemd/ai-helpdesk-tunnel-watch.timer ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now ai-helpdesk-tunnel-watch.timer
+systemctl --user list-timers ai-helpdesk-tunnel-watch.timer --no-pager
+```
+
+戻すとき: `systemctl --user disable --now ai-helpdesk-tunnel-watch.timer` の後、2 つの unit を消して `daemon-reload`。
 
 ## 6. 定期メンテナンス
 
