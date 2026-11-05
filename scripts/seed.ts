@@ -7,21 +7,22 @@ import { hashPassword } from '../apps/api/src/auth/password.js';
 import { SEED_USER_IDS } from '../apps/api/src/domain/approval-origin.js';
 import { computeAuditHash, GENESIS_HASH } from '../apps/api/src/domain/audit.js';
 import { buildDemoPcSnapshot } from '../apps/api/src/domain/pc.js';
+import { assertCurrentTestDatabase, assertTestDatabase } from './lib/test-database-guard.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..');
 
-const envFile =
-  process.env.NODE_ENV === 'test'
-    ? '.env.test.local'
-    : process.env.NODE_ENV === 'production'
-      ? null
-      : '.env.local';
-if (envFile && existsSync(path.join(root, envFile))) {
-  config({ path: path.join(root, envFile), override: true });
-} else {
-  config({ path: path.join(root, '.env') });
+const isTest = process.env.NODE_ENV === 'test';
+if (!isTest) {
+  const envFile = process.env.NODE_ENV === 'production' ? null : '.env.local';
+  if (envFile && existsSync(path.join(root, envFile))) {
+    config({ path: path.join(root, envFile), override: true });
+  } else {
+    config({ path: path.join(root, '.env') });
+  }
 }
+// config.ts を通る先行 import でも、ここでも test のファイル補完を行わない。
+const testDatabase = assertTestDatabase(process.env);
 
 const databaseUrl = process.env.DATABASE_URL;
 const seedPassword = process.env.SEED_PASSWORD;
@@ -256,6 +257,10 @@ const auditPayload = {
 const auditHash = computeAuditHash(GENESIS_HASH, auditPayload);
 
 try {
+  if (testDatabase) {
+    const rows = await sql<{ database_name: string }[]>`SELECT current_database() AS database_name`;
+    assertCurrentTestDatabase(rows[0]?.database_name, testDatabase);
+  }
   await sql.begin(async (tx) => {
     for (const user of [
       { id: U.yamada, email: 'yamada@example.com', name: '山田 太郎', role: 'requester' },
@@ -515,7 +520,8 @@ try {
       ', cases=3, demo password は環境変数 SEED_PASSWORD）',
   );
 } catch (error) {
-  console.error('[seed] failed:', error);
+  // DB driver の例外に資格情報が含まれ得るため、test の失敗は固定文言だけにする。
+  console.error('[seed] failed:', isTest ? 'test database operation rejected' : error);
   process.exitCode = 1;
 } finally {
   await sql.end({ timeout: 5 });

@@ -4,21 +4,22 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config } from 'dotenv';
 import postgres from 'postgres';
+import { assertCurrentTestDatabase, assertTestDatabase } from './lib/test-database-guard.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..');
 
-const envFile =
-  process.env.NODE_ENV === 'test'
-    ? '.env.test.local'
-    : process.env.NODE_ENV === 'production'
-      ? null
-      : '.env.local';
-if (envFile && existsSync(path.join(root, envFile))) {
-  config({ path: path.join(root, envFile), override: true });
-} else {
-  config({ path: path.join(root, '.env') });
+const isTest = process.env.NODE_ENV === 'test';
+if (!isTest) {
+  const envFile = process.env.NODE_ENV === 'production' ? null : '.env.local';
+  if (envFile && existsSync(path.join(root, envFile))) {
+    config({ path: path.join(root, envFile), override: true });
+  } else {
+    config({ path: path.join(root, '.env') });
+  }
 }
+// test はファイル補完をせず、driver 作成前に明示 URL を検証する。
+const testDatabase = assertTestDatabase(process.env);
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -34,6 +35,10 @@ const sql = postgres(databaseUrl, {
 const migrationsDir = path.join(root, 'db', 'migrations');
 
 try {
+  if (testDatabase) {
+    const rows = await sql<{ database_name: string }[]>`SELECT current_database() AS database_name`;
+    assertCurrentTestDatabase(rows[0]?.database_name, testDatabase);
+  }
   await sql`
     CREATE TABLE IF NOT EXISTS schema_migrations (
       version text PRIMARY KEY,
@@ -63,7 +68,8 @@ try {
 
   console.log('[migrate] done');
 } catch (error) {
-  console.error('[migrate] failed:', error);
+  // DB driver の例外に資格情報が含まれ得るため、test の失敗は固定文言だけにする。
+  console.error('[migrate] failed:', isTest ? 'test database operation rejected' : error);
   process.exitCode = 1;
 } finally {
   await sql.end({ timeout: 5 });

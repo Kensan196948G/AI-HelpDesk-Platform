@@ -4,7 +4,9 @@ import { describe, expect, it } from 'vitest';
 
 const root = path.resolve(import.meta.dirname, '../../..');
 
-function loadConfig(env: Record<string, string>) {
+const testDatabaseUrl = 'postgresql://user:fake-password@127.0.0.1:1/ai_helpdesk_test';
+
+function loadConfig(env: Record<string, string | undefined>) {
   return spawnSync(
     process.execPath,
     ['--import', 'tsx', '-e', "await import('./apps/api/src/config.ts')"],
@@ -12,7 +14,8 @@ function loadConfig(env: Record<string, string>) {
       cwd: root,
       env: {
         PATH: process.env.PATH ?? '',
-        DATABASE_URL: 'postgresql://user:pass@127.0.0.1:1/none',
+        DATABASE_URL:
+          env.NODE_ENV === 'test' ? testDatabaseUrl : 'postgresql://user:pass@127.0.0.1:1/none',
         SESSION_SECRET: 'x'.repeat(40),
         ...env,
       },
@@ -183,6 +186,36 @@ describe('config（起動時の安全確認）', () => {
   it('production + cloudflare-access は起動できる', () => {
     const result = loadConfig({ NODE_ENV: 'production', AUTH_MODE: 'cloudflare-access' });
     expect(result.status, result.stderr).toBe(0);
+  });
+
+  it('test は固定 CI fixture をファイル補完なしで許可する', () => {
+    const result = loadConfig({ NODE_ENV: 'test' });
+    expect(result.status, result.stderr).toBe(0);
+  });
+
+  it('test は動的 DB 名を明示した期待名と照合する', () => {
+    const result = loadConfig({
+      NODE_ENV: 'test',
+      DATABASE_URL: 'postgresql://user:fake-password@127.0.0.1:1/aihd_test_config',
+      AIHD_TEST_DATABASE_NAME: 'aihd_test_config',
+    });
+    expect(result.status, result.stderr).toBe(0);
+  });
+
+  it.each([
+    { DATABASE_URL: undefined },
+    { DATABASE_URL: 'postgresql://user:fake-password@127.0.0.1:1/none' },
+    { DATABASE_URL: 'postgresql://user:fake-password@127.0.0.1:1/ai_helpdesk_preview' },
+    { DATABASE_URL: 'postgresql://user:fake-password@remote.example.test/ai_helpdesk_test' },
+    { DATABASE_URL: `${testDatabaseUrl}?host=remote.example.test` },
+    { AIHD_TEST_DATABASE_NAME: 'aihd_test_other' },
+    { DATABASE_URL: 'postgresql://user:fake-password@127.0.0.1:1/aihd_test_config' },
+  ])('test は安全でない接続先を起動時に拒否する (%j)', (env) => {
+    const result = loadConfig({ NODE_ENV: 'test', ...env });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('[test-database]');
+    expect(result.stderr).not.toContain('fake-password');
+    expect(result.stderr).not.toContain('postgresql://');
   });
 
   it('空の ACCESS_TEAM_DOMAIN / ACCESS_AUD（.env.example の既定）は未設定として扱う', () => {
