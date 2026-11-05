@@ -196,6 +196,7 @@ fi
 ```bash
 systemctl --user daemon-reload
 systemctl --user enable ai-helpdesk-stg-api.service
+systemctl --user restart ai-helpdesk-stg-api        # A-1 で unit を更新した場合も反映する（staging のみ）
 systemctl --user enable --now ai-helpdesk-stg-proxy.service
 ```
 
