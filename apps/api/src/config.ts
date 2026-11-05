@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config as loadEnv } from 'dotenv';
 import { z } from 'zod';
+import { assertTestDatabase } from './lib/test-database.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const repoRoot = path.resolve(here, '../../..');
@@ -16,12 +17,16 @@ const verificationOptionsAllowed =
 // 本番（systemd）では Environment= を優先し、ローカルの .env.local を読み込まない。
 const isProduction = process.env.NODE_ENV === 'production';
 const isTest = process.env.NODE_ENV === 'test';
-const localEnvFile = isTest ? '.env.test.local' : '.env.local';
-if (!isProduction && existsSync(path.join(repoRoot, localEnvFile))) {
-  loadEnv({ path: path.join(repoRoot, localEnvFile), override: true });
-} else {
-  loadEnv({ path: path.join(repoRoot, '.env') });
+// test はプロセスから明示された設定だけを使う。seed の先行 import から到達しても
+// .env / .env.local / .env.test.local を読まず、接続先や本番資格情報を補完しない。
+if (!isTest) {
+  if (!isProduction && existsSync(path.join(repoRoot, '.env.local'))) {
+    loadEnv({ path: path.join(repoRoot, '.env.local'), override: true });
+  } else {
+    loadEnv({ path: path.join(repoRoot, '.env') });
+  }
 }
+assertTestDatabase(process.env);
 
 // 空文字（`KEY=`）は未設定として扱う。
 const optionalText = z.preprocess(

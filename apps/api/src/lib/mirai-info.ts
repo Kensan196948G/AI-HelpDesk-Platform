@@ -43,6 +43,9 @@ function connectionOptions(): {
 }
 
 async function getClient(): Promise<ReturnType<typeof postgres>> {
+  // test から実名簿・Unix ソケットへフォールバックしない。名簿が必要な試験は mock を使う。
+  // cache/client の再利用判定より前に閉じる。開発・本番の接続方法は変えない。
+  if (config.NODE_ENV === 'test') throw new Error('mirai-info-disabled-in-test');
   if (client) return client;
   const options = connectionOptions();
   const created = options.dsn
