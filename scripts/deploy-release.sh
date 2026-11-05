@@ -123,16 +123,11 @@ build_release() {
   } > "$tmp/release.env"
   chmod 600 "$tmp/release.env"
   mv -T -- "$tmp" "$RELEASE_DIR"
+  # release は生成後に書き換えない（誤編集・部分更新の検知を容易にする）。
+  chmod -R a-w -- "$RELEASE_DIR"
 }
 
-# ---- 2. DB migration / seed（release と同じ commit のツールで実行） ----
-run_tooling() {
-  local tool=$1
-  [ -f "$RELEASE_DIR/scripts/run-with-env-file.mjs" ] || fail 'run-with-env-file.mjs missing'
-  ( cd "$RELEASE_DIR" && node scripts/run-with-env-file.mjs "$ENV_FILE" -- npx tsx "scripts/$tool" ) >&2
-}
-
-# ---- 3. 切り替えと health ----
+# ---- 2. 切り替えと health ----
 switch_to() {
   local target=$1
   ln -sfn -- "$target" "$ROOT/.current.new"
@@ -194,6 +189,8 @@ prune_releases() {
           *)
             if [ -n "$PREVIOUS" ] && [ "$(realpath -- "$dir")" = "$PREVIOUS" ]; then continue; fi
             if [ "$(realpath -- "$dir")" = "$(realpath -m -- "$ROOT/current")" ]; then continue; fi
+            # release は read-only（a-w）なので、削除前に所有者の書込を戻す。
+            chmod -R u+w -- "$dir" 2>/dev/null || true
             rm -rf -- "$dir"
             note "prune: removed old release $(basename -- "$dir")"
             ;;
@@ -204,17 +201,11 @@ prune_releases() {
 # ---- 実行 ----
 if [ -d "$RELEASE_DIR" ]; then
   note "release already exists; reusing $RELEASE_ID"
+  if [ "$DO_MIGRATE" = 1 ] || [ "$DO_SEED" = 1 ]; then
+    fail 'release already exists; migration/seed run inside build. remove the release to rebuild'
+  fi
 else
   build_release
-fi
-
-if [ "$DO_MIGRATE" = 1 ]; then
-  note 'migrate: applying DB migrations for this commit'
-  run_tooling migrate.ts
-fi
-if [ "$DO_SEED" = 1 ]; then
-  note 'seed: applying demo seed (idempotent upsert)'
-  run_tooling seed.ts
 fi
 
 if [ "$DRY_RUN" = 1 ]; then
