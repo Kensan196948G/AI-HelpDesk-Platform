@@ -132,6 +132,7 @@ install_unit() {
   sed -e "s|__STG_ROOT__|$STG_ROOT|g" \
       -e "s|__STG_CONF__|$CONF|g" \
       -e "s|__NODE__|$NODE_BIN|g" \
+      -e "s|__NODE_DIR__|$(dirname -- "$NODE_BIN")|g" \
       "$src" > "$dst"
   chmod 644 "$dst"
   note "unit installed: $dst"
@@ -139,7 +140,27 @@ install_unit() {
 install_unit "$REPO_SRC/ops/systemd/ai-helpdesk-stg-postgres.service" "$UNIT_DIR/ai-helpdesk-stg-postgres.service"
 install_unit "$REPO_SRC/ops/systemd/ai-helpdesk-stg-api.service" "$UNIT_DIR/ai-helpdesk-stg-api.service"
 install_unit "$REPO_SRC/ops/systemd/ai-helpdesk-stg-proxy.service" "$UNIT_DIR/ai-helpdesk-stg-proxy.service"
+install_unit "$REPO_SRC/ops/systemd/ai-helpdesk-stg-backup.service" "$UNIT_DIR/ai-helpdesk-stg-backup.service"
+install_unit "$REPO_SRC/ops/systemd/ai-helpdesk-stg-backup.timer" "$UNIT_DIR/ai-helpdesk-stg-backup.timer"
+install_unit "$REPO_SRC/ops/systemd/ai-helpdesk-stg-restore-drill.service" "$UNIT_DIR/ai-helpdesk-stg-restore-drill.service"
+install_unit "$REPO_SRC/ops/systemd/ai-helpdesk-stg-restore-drill.timer" "$UNIT_DIR/ai-helpdesk-stg-restore-drill.timer"
+install_unit "$REPO_SRC/ops/systemd/ai-helpdesk-stg-healthcheck.service" "$UNIT_DIR/ai-helpdesk-stg-healthcheck.service"
+install_unit "$REPO_SRC/ops/systemd/ai-helpdesk-stg-healthcheck.timer" "$UNIT_DIR/ai-helpdesk-stg-healthcheck.timer"
 systemctl --user daemon-reload
+
+STG_TIMERS=(
+  ai-helpdesk-stg-backup.timer
+  ai-helpdesk-stg-restore-drill.timer
+  ai-helpdesk-stg-healthcheck.timer
+)
+if [ -L "$STG_ROOT/current" ]; then
+  systemctl --user enable --now "${STG_TIMERS[@]}"
+  note 'staging timers enabled and started'
+else
+  # unit は release 内の script を指すため、release が無い状態で start すると失敗する。
+  systemctl --user enable "${STG_TIMERS[@]}"
+  note 'staging timers enabled but not started: deploy a release first, then systemctl --user start them'
+fi
 
 # ---- 5. 起動と DB 作成 ----
 systemctl --user enable --now ai-helpdesk-stg-postgres.service

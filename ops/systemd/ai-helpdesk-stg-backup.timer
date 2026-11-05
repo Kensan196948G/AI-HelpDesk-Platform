@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily AI HelpDesk Staging DB backup (03:10, off-hours vs production 02:30)
+
+[Timer]
+OnCalendar=*-*-* 03:10:00
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target
