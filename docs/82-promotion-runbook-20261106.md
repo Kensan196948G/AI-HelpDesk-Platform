@@ -56,8 +56,8 @@
 | 13 | Staging release | `/home/kensan/ai-helpdesk-stg/releases/20261106T063553-359cbd012274` | 06:35（docs/81 §1-2） | `readlink -f /home/kensan/ai-helpdesk-stg/current` |
 | 14 | Staging DB | `127.0.0.1:5437` / `ai_helpdesk_stg`（docs/77 の設計値 **5440 とは異なる**） | 08:21（待受）/ 07:05（docs/81 §5） | `ss -ltn`、`psql`（§3-4 B-5） |
 | 15 | Staging api unit | 758 bytes / mtime 08:07:20 / `EnvironmentFile=.../current/release.env` を含む | 08:19 | `stat -c '%y %s' ~/.config/systemd/user/ai-helpdesk-stg-api.service` |
-| 16 | node | `/home/kensan/.nvm/versions/node/v22.22.3/bin/node` | 08:20 | `command -v node` |
-| 17 | 本番 tunnel | `96d0214e-8236-4bce-8dd0-75233d1e716f` / `~/.cloudflared/ai-helpdesk-config.yml` / ingress 1 本 → 18949 | 06:2x（docs/77 §1） | `cloudflared tunnel list`、`cat`（秘密なし） |
+| 16 | node | `/home/kensan/.nvm/versions/node/v22.22.3/bin/node` | 08:19（unit / テンプレート記載） | `grep -h '^ExecStart' ops/systemd/*.service`、`cat ~/.config/systemd/user/ai-helpdesk-api.service` |
+| 17 | 本番 tunnel | `96d0214e-8236-4bce-8dd0-75233d1e716f` / `~/.cloudflared/ai-helpdesk-config.yml` / ingress 1 本 → 18949 | 06:2x（docs/77 §1 の実測） | `cloudflared tunnel list`（config は read-only。値は秘密ではない） |
 | 18 | Staging proxy 不具合の修正 | symlink 経由で `main()` が走らない不具合は PR #143（merge `65caaa2`）で修正済み。**Staging release が未更新のため 18951 は未稼働** | 08:18 | `git log -1 origin/main` |
 
 ### 1-2. 実行直前に取り直すコマンド（read-only）
