@@ -357,7 +357,7 @@ cloudflared tunnel ingress validate --config "$HOME/.cloudflared/ai-helpdesk-stg
 
 #### B-3. Access アプリ（承認要）と AUD の取得
 
-アカウント ID と API トークンは**対話取得**し、履歴・標準出力に残さない。許可ポリシーは実メールを書かず、既存の Access グループ ID を使う（PII を文書・証跡に残さない）。**B-3〜B-6 は同一シェルで実行する。**
+アカウント ID と API トークンは**対話取得**し、履歴・標準出力に残さない。許可ポリシーは実メールを書かず、既存の Access グループ ID を使う（PII を文書・証跡に残さない）。**B-1〜B-6 は同一シェルで実行する**（`TUNNEL_ID` / `APP_ID` / `STG_AUD` を引き継ぐ）。
 
 ```bash
 set -euo pipefail
