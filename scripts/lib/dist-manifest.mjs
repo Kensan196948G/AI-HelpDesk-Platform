@@ -263,7 +263,12 @@ export async function readManifestFile(manifestPath, { expectedCommit } = {}) {
     const metadata = await handle.stat();
     if (metadata.isSymbolicLink()) fail('DIST_MANIFEST_SYMLINK');
     if (!metadata.isFile()) fail('DIST_MANIFEST_NOT_REGULAR');
-    if ((metadata.mode & 0o777) !== 0o600) fail('DIST_MANIFEST_MODE_INVALID');
+    // release は生成後に `chmod -R a-w` で読み取り専用（0400）になる。
+    // 0600 固定にすると read-only release の再検証が常に失敗するため、
+    // 「所有者だけがアクセスでき、group/other に権限が無い」ことを要求する。
+    const manifestMode = metadata.mode & 0o777;
+    if ((manifestMode & 0o077) !== 0) fail('DIST_MANIFEST_MODE_INVALID');
+    if ((manifestMode & 0o400) === 0) fail('DIST_MANIFEST_MODE_INVALID');
     if (typeof process.getuid === 'function' && metadata.uid !== process.getuid()) {
       fail('DIST_MANIFEST_OWNER_INVALID');
     }

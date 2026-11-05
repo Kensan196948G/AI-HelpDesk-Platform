@@ -8,6 +8,7 @@ export default defineConfig({
       'scripts/lib/test-database-guard.test.mjs',
       'scripts/lib/dist-manifest.test.mjs',
       'scripts/lib/smoke-guards.test.mjs',
+      'scripts/lib/build-script.test.mjs',
       'scripts/lib/is-main.test.mjs',
       'scripts/staging-smoke.test.mjs',
       'apps/api/src/lib/test-database.test.ts',

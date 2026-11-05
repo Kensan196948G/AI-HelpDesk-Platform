@@ -177,6 +177,23 @@ describe('dist-manifest: manifest ファイルの境界を fail-closed にする
     );
   });
 
+  it('読み取り専用 release（0400）を受け入れ、group/other 権限を拒否する', async () => {
+    const root = await fixture();
+    const manifest = await buildManifest({ repoRoot: root, commit: COMMIT });
+
+    const file = path.join(root, 'dist-manifest.json');
+    for (const mode of [0o600, 0o400, 0o500]) {
+      await rm(file, { force: true });
+      await writeManifestFile(root, manifest, { mode });
+      await expect(readManifestFile(file)).resolves.toBeTruthy();
+    }
+    for (const mode of [0o640, 0o604, 0o660]) {
+      await rm(file, { force: true });
+      await writeManifestFile(root, manifest, { mode });
+      await expectFailure(readManifestFile(file), 'DIST_MANIFEST_MODE_INVALID');
+    }
+  });
+
   it('存在しない・directory・空の manifest を拒否する', async () => {
     const root = await fixture();
     await expectFailure(

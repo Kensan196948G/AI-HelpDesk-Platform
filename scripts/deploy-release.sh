@@ -125,6 +125,9 @@ build_release() {
   mv -T -- "$tmp" "$RELEASE_DIR"
   # release は生成後に書き換えない（誤編集・部分更新の検知を容易にする）。
   chmod -R a-w -- "$RELEASE_DIR"
+  # 読み取り専用化した後でも manifest を再検証できること（退行防止）。
+  node "$RELEASE_DIR/scripts/dist-manifest.mjs" --verify \
+    --manifest "$RELEASE_DIR/dist-manifest.json" --commit "$REF" >&2
 }
 
 # ---- 2. 切り替えと health ----
