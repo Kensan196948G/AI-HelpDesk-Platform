@@ -1,0 +1,14 @@
+[Unit]
+Description=AI HelpDesk Staging DB backup (dump + 7 day rotation)
+After=network-online.target ai-helpdesk-stg-postgres.service
+Wants=ai-helpdesk-stg-postgres.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=__STG_ROOT__/current
+Environment=AIHD_STG_ROOT=__STG_ROOT__
+Environment=AIHD_STG_CONF=__STG_CONF__
+ExecStart=/bin/bash __STG_ROOT__/current/scripts/backup-staging.sh
+NoNewPrivileges=true
+PrivateTmp=true
+TimeoutStartSec=300
