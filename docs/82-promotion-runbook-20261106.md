@@ -745,7 +745,7 @@ ls -t /home/kensan/ai-helpdesk-prod/state/deploy-*.json | head -1 | xargs cat
 - プロセスの cwd と `cmdline` が `current` 配下。
 - state の `result` が `success`（`healthPort` は precheck のため `18953`）。
 
-**この 4 点が揃って初めて C-1 合格**。health の `commit` 単独では合格にしない（自己申告のため）。
+この 4 点で「配備の出自」を確認する（precheck port 上）。**§4-8 の後に 18950 で同じ 4 点を再確認して C-1 を確定する**。health の `commit` 単独では合格にしない（自己申告のため）。
 
 ### 4-8. 18950 への切替と unit 交代（H-1）
 
@@ -761,10 +761,16 @@ rm -f /home/kensan/ai-helpdesk-prod/state/precheck.env
 systemctl --user daemon-reload
 systemctl --user restart ai-helpdesk-prod-api
 
-# 3) 18950 で health を確認（最大 30 秒待つ）
+# 3) 18950 で health と commit を確認（最大 30 秒待つ。commit が違うまま旧 unit を disable しない）
 OK=0
 for i in $(seq 1 30); do
-  if curl -fsS --noproxy '*' http://127.0.0.1:18950/api/health; then OK=1; break; fi
+  if body=$(curl -fsS --noproxy '*' http://127.0.0.1:18950/api/health 2>/dev/null); then
+    if printf '%s' "$body" | node -e '
+      let s = ""; process.stdin.on("data", d => s += d).on("end", () => {
+        const j = JSON.parse(s);
+        process.exit(j.ok === true && j.db === "ok" && j.commit === process.argv[1] ? 0 : 1);
+      });' "$DEPLOY_REF"; then OK=1; break; fi
+  fi
   sleep 1
 done
 if [ "$OK" -ne 1 ]; then
