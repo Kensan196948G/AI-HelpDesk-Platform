@@ -1,0 +1,23 @@
+[Unit]
+Description=AI HelpDesk Production API (127.0.0.1:18950, immutable release)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=__PROD_ROOT__/current
+# 通常の設定（秘密を含む）は従来どおり api.conf から読む。
+EnvironmentFile=__ENV_FILE__
+# COMMIT_SHA / RELEASE_ID は release から供給する。config の自己申告値ではなく、
+# 「どの release を起動しているか」を health で観測できるようにするため後置する。
+EnvironmentFile=__PROD_ROOT__/current/release.env
+ExecStart=__NODE__ __PROD_ROOT__/current/apps/api/dist/index.js
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+
+[Install]
+WantedBy=default.target

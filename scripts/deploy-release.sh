@@ -8,7 +8,7 @@
 # 使い方:
 #   scripts/deploy-release.sh --repo <git repo> --ref <40hex commit> --root <release root> \
 #     --env-file <0600 の EnvironmentFile> --unit <systemd --user unit> --health-port <port> \
-#     [--migrate] [--seed] [--dry-run] [--keep N]
+#     [--migrate] [--seed] [--dry-run] [--keep N] [--unit-template <path>]
 #
 # 前提:
 #   - Systemd の unit は WorkingDirectory=<root>/current, ExecStart=<root>/current/apps/api/dist/index.js。
@@ -22,7 +22,7 @@ umask 077
 fail() { printf 'ERROR: %s\n' "$1" >&2; exit 1; }
 note() { printf '%s\n' "$1"; }
 
-REPO='' REF='' ROOT='' ENV_FILE='' UNIT='' HEALTH_PORT=''
+REPO='' REF='' ROOT='' ENV_FILE='' UNIT='' HEALTH_PORT='' UNIT_TEMPLATE=''
 DO_MIGRATE=0 DO_SEED=0 DRY_RUN=0 KEEP=3
 
 while [ "$#" -gt 0 ]; do
@@ -34,6 +34,7 @@ while [ "$#" -gt 0 ]; do
     --unit) UNIT=${2:?--unit requires a value}; shift 2 ;;
     --health-port) HEALTH_PORT=${2:?--health-port requires a value}; shift 2 ;;
     --keep) KEEP=${2:?--keep requires a value}; shift 2 ;;
+    --unit-template) UNIT_TEMPLATE=${2:?--unit-template requires a value}; shift 2 ;;
     --migrate) DO_MIGRATE=1; shift ;;
     --seed) DO_SEED=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
@@ -217,10 +218,36 @@ if [ "$DRY_RUN" = 1 ]; then
   exit 0
 fi
 
+# 任意: unit テンプレートから systemd user unit を配置する（本番の unit 新設を再現可能にする）。
+if [ -n "$UNIT_TEMPLATE" ]; then
+  [ -f "$UNIT_TEMPLATE" ] || fail "unit template not found: $UNIT_TEMPLATE"
+  UNIT_DIR=$(dirname -- "$HOME/.config/systemd/user/$UNIT.service")
+  mkdir -p -- "$UNIT_DIR"
+  sed -e "s|__ROOT__|$ROOT|g" \
+      -e "s|__STG_ROOT__|$ROOT|g" \
+      -e "s|__PROD_ROOT__|$ROOT|g" \
+      -e "s|__ENV_FILE__|$ENV_FILE|g" \
+      -e "s|__STG_CONF__|$ENV_FILE|g" \
+      -e "s|__NODE__|$(command -v node)|g" \
+      -e "s|__NODE_DIR__|$(dirname -- "$(command -v node)")|g" \
+      "$UNIT_TEMPLATE" > "$UNIT_DIR/$UNIT.service"
+  chmod 644 -- "$UNIT_DIR/$UNIT.service"
+  note "unit installed from template: $UNIT_DIR/$UNIT.service"
+  systemctl --user daemon-reload
+fi
+
 switch_to "$RELEASE_DIR"
 note 'restart: systemctl --user restart'
 if ! systemctl --user restart "$UNIT"; then
-  fail "restart failed for $UNIT"
+  # restart に失敗した場合も current を直前の release へ戻す。
+  # 戻さないと「起動しない release を指したまま」になり、次の deploy の PREVIOUS 基準も壊れる。
+  printf 'ERROR: restart failed for %s; rolling back current\n' "$UNIT" >&2
+  if [ -n "$PREVIOUS" ] && [ -d "$PREVIOUS" ]; then
+    switch_to "$PREVIOUS"
+    systemctl --user restart "$UNIT" || true
+  fi
+  record_deploy 'restart-failed'
+  exit 1
 fi
 
 if health_ok "$REF"; then
