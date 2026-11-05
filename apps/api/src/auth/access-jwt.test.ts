@@ -23,7 +23,7 @@ function token(
     JSON.stringify({
       iss: `https://${TEAM}`,
       aud: [AUD],
-      email: 'kensan1969@gmail.com',
+      email: 'admin@example.com',
       exp: nowSeconds + 600,
       iat: nowSeconds,
       ...claims,
@@ -44,7 +44,7 @@ beforeEach(() => clearAccessKeyCache());
 describe('verifyAccessJwt', () => {
   it('正しい署名・aud・iss・期限の JWT を受け入れる', async () => {
     const claims = await verifyAccessJwt(token({}), verifyOptions);
-    expect(claims.email).toBe('kensan1969@gmail.com');
+    expect(claims.email).toBe('admin@example.com');
   });
 
   it.each([
@@ -95,15 +95,15 @@ describe('requireCloudflareAccess + ACCESS_JWT_MODE', () => {
     const { requireCloudflareAccess } = await import('./ui.js');
     config.ACCESS_JWT_MODE = 'enforce';
     const ok = request({
-      'cf-access-authenticated-user-email': 'kensan1969@gmail.com',
+      'cf-access-authenticated-user-email': 'admin@example.com',
       'cf-access-jwt-assertion': token({}),
     });
     await requireCloudflareAccess(ok);
-    expect(ok.uiEmail).toBe('kensan1969@gmail.com');
+    expect(ok.uiEmail).toBe('admin@example.com');
 
     await expect(
       requireCloudflareAccess(
-        request({ 'cf-access-authenticated-user-email': 'kensan1969@gmail.com' }),
+        request({ 'cf-access-authenticated-user-email': 'admin@example.com' }),
       ),
     ).rejects.toMatchObject({ statusCode: 401 });
   });
@@ -114,7 +114,7 @@ describe('requireCloudflareAccess + ACCESS_JWT_MODE', () => {
     await expect(
       requireCloudflareAccess(
         request({
-          'cf-access-authenticated-user-email': 'kensan1969@gmail.com',
+          'cf-access-authenticated-user-email': 'admin@example.com',
           'cf-access-jwt-assertion': token({ email: 'taro@mirai-const.co.jp' }),
         }),
       ),
@@ -124,9 +124,9 @@ describe('requireCloudflareAccess + ACCESS_JWT_MODE', () => {
   it('report: 失敗してもログに出すだけで通す', async () => {
     const { requireCloudflareAccess } = await import('./ui.js');
     config.ACCESS_JWT_MODE = 'report';
-    const req = request({ 'cf-access-authenticated-user-email': 'kensan1969@gmail.com' });
+    const req = request({ 'cf-access-authenticated-user-email': 'admin@example.com' });
     await requireCloudflareAccess(req);
-    expect(req.uiEmail).toBe('kensan1969@gmail.com');
+    expect(req.uiEmail).toBe('admin@example.com');
     expect(log.warn).toHaveBeenCalled();
   });
 });
