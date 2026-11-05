@@ -1,0 +1,18 @@
+[Unit]
+Description=AI HelpDesk Staging PostgreSQL 16 (loopback only)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=forking
+PIDFile=__STG_ROOT__/pgdata/postmaster.pid
+ExecStart=/usr/lib/postgresql/16/bin/pg_ctl -D __STG_ROOT__/pgdata -l __STG_ROOT__/state/postgres.log -w -t 30 -o "-p 5437 -h 127.0.0.1 -k __STG_ROOT__/run" start
+ExecStop=/usr/lib/postgresql/16/bin/pg_ctl -D __STG_ROOT__/pgdata -m fast -w -t 30 stop
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=60
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target

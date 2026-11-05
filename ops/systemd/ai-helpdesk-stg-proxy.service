@@ -1,0 +1,20 @@
+[Unit]
+Description=AI HelpDesk Staging local proxy (adds X-Proxy-Secret)
+After=network-online.target ai-helpdesk-stg-api.service
+Wants=ai-helpdesk-stg-api.service
+
+[Service]
+Type=simple
+WorkingDirectory=__STG_ROOT__/current
+EnvironmentFile=__STG_CONF__
+Environment=SIDECAR_PORT=18951
+Environment=API_PORT=18952
+ExecStart=__NODE__ __STG_ROOT__/current/scripts/proxy-sidecar.mjs
+Restart=always
+RestartSec=2
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+
+[Install]
+WantedBy=default.target

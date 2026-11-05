@@ -1,0 +1,21 @@
+[Unit]
+Description=AI HelpDesk Staging API (127.0.0.1:18952, immutable release)
+After=network-online.target ai-helpdesk-stg-postgres.service
+Wants=ai-helpdesk-stg-postgres.service
+
+[Service]
+Type=simple
+WorkingDirectory=__STG_ROOT__/current
+EnvironmentFile=__STG_CONF__
+# COMMIT_SHA / RELEASE_ID は release 側から供給し、切替と health を同じ release に束縛する。
+EnvironmentFile=__STG_ROOT__/current/release.env
+ExecStart=__NODE__ __STG_ROOT__/current/apps/api/dist/index.js
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+
+[Install]
+WantedBy=default.target
