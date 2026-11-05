@@ -1,4 +1,4 @@
-登録メール
-「kensan1969@gmail.com」
-「@mirai-const.co.jp」　例：k-aritoh@mirai-const.co.jp」
+登録メール（このファイルは見本です。実運用の正本は環境ごとに ACCESS_ALLOWLIST_FILE でリポジトリ外を指定してください）
+「admin@example.com」
+「@mirai-const.co.jp」　例：user@mirai-const.co.jp」
 のみでお願いします。
