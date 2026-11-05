@@ -12,7 +12,7 @@
  * リクエスト本文・ヘッダの値はログに出さない。
  */
 import http from 'node:http';
-import { pathToFileURL } from 'node:url';
+import { isMainModule } from './lib/is-main.mjs';
 
 const HOP_BY_HOP = new Set([
   'connection',
@@ -101,8 +101,7 @@ export function createProxyServer({
   });
 }
 
-const isMain =
-  process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href;
+const isMain = isMainModule(import.meta.url, process.argv[1]);
 if (isMain) {
   const port = Number(process.env.SIDECAR_PORT || 18949);
   const targetPort = Number(process.env.API_PORT || process.env.PORT || 18950);

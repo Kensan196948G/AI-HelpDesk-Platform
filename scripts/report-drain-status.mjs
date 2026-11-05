@@ -7,8 +7,8 @@
  * - 終了コード: 0 = off へ進める。3 = 終わっていない処理がある。4 = 結果不明があり、人の確認が要る。
  *   結果不明は待っても消えない。確認した後に `--accept-unknown` を付けて記録する。結果不明を消さない。
  */
-import { pathToFileURL } from 'node:url';
 import postgres from 'postgres';
+import { isMainModule } from './lib/is-main.mjs';
 
 async function tableExists(tx, name) {
   const [row] = await tx`SELECT to_regclass(${`public.${name}`}) AS t`;
@@ -115,6 +115,6 @@ async function main() {
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isMainModule(import.meta.url, process.argv[1])) {
   process.exit(await main());
 }

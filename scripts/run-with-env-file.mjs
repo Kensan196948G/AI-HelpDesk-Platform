@@ -8,7 +8,7 @@
  */
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { pathToFileURL } from 'node:url';
+import { isMainModule } from './lib/is-main.mjs';
 
 /** KEY=VALUE を読む。空行と # の行は無視し、値全体を囲む引用符だけを外す。 */
 export function parseEnvironmentFile(text) {
@@ -44,6 +44,6 @@ function main(argv) {
   return result.status ?? 1;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isMainModule(import.meta.url, process.argv[1])) {
   process.exit(main(process.argv.slice(2)));
 }
