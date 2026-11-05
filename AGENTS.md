@@ -39,7 +39,7 @@
 npm install
 npm run typecheck        # 全 workspace の tsc --noEmit
 npm run lint             # biome check
-npm test             # vitest
+npm test             # vitest（NODE_ENV=test と DATABASE_URL 等を明示。docs/06 §2-1）
 npm run build            # api
 npm run db:migrate       # 空 DB から再実行可能（冪等）
 npm run db:seed          # 再実行可能（TRUNCATE はしない。upsert のみ）

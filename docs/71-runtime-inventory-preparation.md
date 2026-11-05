@@ -82,3 +82,7 @@ inspect/verifyのsnapshot SHA-256は `ce975357775993295176f0acd67625ba25030a586b
 証跡はprivate出力 `/tmp/aihd-runtime-inventory-jaotm_ar`（0700）に保存。`runtime-inventory.json`、`source-fingerprints.json`、`acceptance-summary.json`、改竄負対照の別manifestを保持し、生秘密値・名簿・承認者の内容は含めていない。対象code3ファイルの指紋台帳SHA-256は `00fb29467d37d292511c1f7754cbd8a5e77fcf0e69ca8a188189a9fa58918b4c`。
 
 準備ツールの成功をitem11完了や配備準備完了に読み替えない。item12〜20は前回提示の未着手条件を維持する。Git commit/PR/必須CI/mergeと本番配備も未実施のままである。
+
+## 2026-11-06 追記（現況）
+
+本記録は作成時点のもの。その後 PR #135 で commit・CI・merge 済み（merge `2deffab`）。現況と follow-up は [docs/76](76-followup-20261106.md) を参照。本文の実測結果・数値・限界は作成時点の記録としてそのまま維持する。

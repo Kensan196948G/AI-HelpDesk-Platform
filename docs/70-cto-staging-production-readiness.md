@@ -123,3 +123,7 @@ Architect の元候補 C1–C10 との対応: 14=C1、15=C2、16=C3+C4、17=C5+C
 private scratch `/tmp/aihd-verify.Jt9cSOZn`（0700、ログ0600）と安全要約 `/tmp/aihd-cto-deliverables/candidate-v2-verification.json` を保持。旧クラスタを再利用せず、旧PASSを新候補に流用していない。合成スモークは正署名の実Accessログイン、認証後UI、実社員/貸与端末、別人物承認、復元、正式Staging受入、本番配備を検証しない。
 
 CI YAML の編集拒否に加え、Git MCP の操作は作業先を正規に訂正しても path traversal/root 制約で拒否された。stage/commit/PR/今回候補の必須CI/merge は未実施。別経路での迂回は行わない。通常の自動マージ方針と、現在マージできていない事実を区別する。第1組はローカル実装・合成検証まで進めたが、項目10と正式本番構築は未完了である。
+
+## 2026-11-06 追記（現況）
+
+本記録は作成時点のもの。その後 PR #135 で commit・CI・merge 済み（merge `2deffab`）。現況と follow-up は [docs/76](76-followup-20261106.md) を参照。本文の実測結果・数値・限界は作成時点の記録としてそのまま維持する。

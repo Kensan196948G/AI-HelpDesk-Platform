@@ -83,3 +83,7 @@ Security task27の独立readonly受入は限定PASS-with-limits、新規未修�
 SRE task29の限定独立照合もPASS。14proofとprestart6指紋が全一致、133asset/JS98由来/69assertions/5stubcaseの台帳・安全結果が整合し、PG/app/JWKS-harnessの指定3PID不存在・3port ECONNREFUSEDを独立に確認した（DB/HTTP protocol送信0）。asset/deps payloadや秘密/privateログは読まず、旧候補27/本番不変はLeadの別実測として区別した。どちらも実Access/業務受入/正式Staging/本番GOへ拡張しない。
 
 Git/CI境界未解消・管理者の数字回答待ち、R2/R3 No-Go・独立Staging/復元/実Access/実人物/貸与PC/別人物承認未受入を維持する。今回は可搬配置の非配備candidateを合成認証・合成DBで局所smokeした段階であり、item11の完全bundle正式受入や本番GOに昇格させない。
+
+## 2026-11-06 追記（現況）
+
+本記録は作成時点のもの。その後 PR #135 で commit・CI・merge 済み（merge `2deffab`）。現況と follow-up は [docs/76](76-followup-20261106.md) を参照。本文の実測結果・数値・限界は作成時点の記録としてそのまま維持する。
