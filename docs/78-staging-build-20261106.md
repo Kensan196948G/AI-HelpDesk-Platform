@@ -89,3 +89,32 @@
 - Staging の health 成功は、認証後 UI・実社員・貸与端末・別人物承認・復元の受入ではない。
 - `ACCESS_JWT_MODE=off` の間は、loopback へ到達できるローカルプロセスが `Cf-Access-Authenticated-User-Email` を偽装し得る。公開経路を作る前に `enforce` へ切り替える。
 - 本番の「配備」は依然として main checkout 直配備であり、本記録はその方式を置き換えていない。本番へ release 方式を適用するには別承認が必要。
+
+## 7. 追記（2026-11-06 / 追加実測）
+
+### 7-1. backup からの復元訓練（staging クラスタ内の使い捨て DB）
+
+| 項目 | 結果 |
+|---|---|
+| 入力 dump | `~/backups/ai-helpdesk/ai_helpdesk_preview-20261106-023218.dump`（266,586B、custom format、35 TABLE DATA、pg_dump 16.15） |
+| 復元先 | staging クラスタ（`127.0.0.1:5437`）内の `aihd_restore_drill_20261106`（本番 DB・本番クラスタには触れない） |
+| 実行 | `pg_restore --no-owner --no-privileges --exit-on-error` |
+| 結果 | **35/35 テーブル復元、全表の行数が本番と完全一致**、`schema_migrations` 37 行 |
+| 後処理 | 同 DB を削除（接頭辞 `aihd_restore_drill_` を検証してから drop。PII の残留コピーを作らない） |
+| 未検証 | 監査ハッシュ鎖の再計算、role/ACL/所有権の一致（`--no-owner` のため）、RTO 計測 |
+
+### 7-2. Staging の機能実測（合成ユーザー）
+
+| 経路 | 結果 |
+|---|---|
+| `GET /`（未認証） | 401 |
+| `GET /`（`Cf-Access-Authenticated-User-Email: synthetic-staging@example.invalid` + proxy secret） | **200 / 893,003 bytes**（プロトタイプ HTML が release から配信されている） |
+| `GET /api/me`（同ユーザー） | 200（`source: mirai-info.employee_directory`、`employee: null`） |
+| DB | users=6 / knowledge=9 / cases=3（seed 済み） |
+
+これは「release の HTML 同梱」「アプリの起動」「DB 接続」「認証ゲート」が同時に成立していることの実測である。実 Access ログイン・実社員・貸与端末・主要業務フローの受入ではない。
+
+### 7-3. 未了のまま残るもの
+
+上記 §5 の S-1〜S-6 は変わらない。特に **S-1（`release.env` の unit 取り込み）が未了のため、Staging の health は `commit` が空**である。release と稼働 artifact の対応は `dist-manifest.json`（`082e815b…8481b`）で別途示せるが、health による束縛は成立していない。
+
