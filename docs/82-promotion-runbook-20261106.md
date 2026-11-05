@@ -552,11 +552,12 @@ df -h /home | tail -1
 if [ -e "$PROD_ROOT/current" ] || [ -L "$PROD_ROOT/current" ]; then
   echo 'MODE=subsequent（既存 current あり）'
   test -e "$HOME/.config/systemd/user/$UNIT.service" || { echo 'current はあるが unit が無い: 中止'; exit 1; }
+  [ "$(systemctl --user is-active ai-helpdesk-prod-api)" = active ] || { echo '本番 unit が active でない: 中止'; exit 1; }
 else
   echo 'MODE=bootstrap（current なし）'
-  test -e "$HOME/.config/systemd/user/$UNIT.service" && { echo 'current は無いが unit がある: 状態を確認して中止'; exit 1; }
+  if [ -e "$HOME/.config/systemd/user/$UNIT.service" ]; then echo 'current は無いが unit がある: 状態を確認して中止'; exit 1; fi
   [ "$(systemctl --user is-active ai-helpdesk-api)" = active ] || { echo '旧 unit が active でない: 中止'; exit 1; }
-  ss -ltn | grep -q ':18953\b' && { echo '18953 が使用中: 中止（precheck port を変える）'; exit 1; }
+  if ss -ltn | grep -q ':18953\b'; then echo '18953 が使用中: 中止（precheck port を変える）'; exit 1; fi
 fi
 ```
 
