@@ -7,19 +7,30 @@ import { hashPassword } from '../apps/api/src/auth/password.js';
 import { SEED_USER_IDS } from '../apps/api/src/domain/approval-origin.js';
 import { computeAuditHash, GENESIS_HASH } from '../apps/api/src/domain/audit.js';
 import { buildDemoPcSnapshot } from '../apps/api/src/domain/pc.js';
-import { assertCurrentTestDatabase, assertTestDatabase } from './lib/test-database-guard.mjs';
+import {
+  assertCurrentTestDatabase,
+  assertTestDatabase,
+  isEnvFileTestSwitch,
+} from './lib/test-database-guard.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..');
 
-const isTest = process.env.NODE_ENV === 'test';
+// dotenv 前の値を正本にし、モード判定はこの初期値だけを使う。
+const initialNodeEnv = process.env.NODE_ENV;
+const isTest = initialNodeEnv === 'test';
 if (!isTest) {
-  const envFile = process.env.NODE_ENV === 'production' ? null : '.env.local';
+  const envFile = initialNodeEnv === 'production' ? null : '.env.local';
   if (envFile && existsSync(path.join(root, envFile))) {
     config({ path: path.join(root, envFile), override: true });
   } else {
     config({ path: path.join(root, '.env') });
   }
+}
+// 環境ファイルで test を名乗らせない（test 専用ガードのすり抜けを防ぐ）。
+if (isEnvFileTestSwitch(initialNodeEnv, process.env.NODE_ENV)) {
+  console.error('[seed] env ファイルで NODE_ENV=test に切り替えることはできません。');
+  process.exit(1);
 }
 // config.ts を通る先行 import でも、ここでも test のファイル補完を行わない。
 const testDatabase = assertTestDatabase(process.env);
@@ -521,7 +532,10 @@ try {
   );
 } catch (error) {
   // DB driver の例外に資格情報が含まれ得るため、test の失敗は固定文言だけにする。
-  console.error('[seed] failed:', isTest ? 'test database operation rejected' : error);
+  console.error(
+    '[seed] failed:',
+    isTest || testDatabase !== undefined ? 'test database operation rejected' : error,
+  );
   process.exitCode = 1;
 } finally {
   await sql.end({ timeout: 5 });

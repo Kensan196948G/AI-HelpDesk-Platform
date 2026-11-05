@@ -341,7 +341,7 @@ npm run dev:api                 # http://127.0.0.1:18950/（開発モードは�
 ```bash
 npm run typecheck   # API + worker
 npm run lint
-npm test            # Unit / API integration（PostgreSQL テスト DB）
+npm test            # Unit / API integration（NODE_ENV=test と DATABASE_URL 等を明示。docs/06 §2-1）
 npm run build
 bash scripts/scan-secrets.sh
 npm audit --audit-level=high && npm audit --omit=dev --audit-level=high

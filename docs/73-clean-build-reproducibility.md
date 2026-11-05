@@ -89,3 +89,7 @@ task24の独立Security受入はPASS-with-limits、新規未修正Critical/High/
 task25の独立SRE受入も限定PASS。指定10proofsのhash一致、復元copy入力103件とA/B/Cの全588出力をhashだけ再計算し不一致0、A/B差0・C差2・欠落/余剰0を確認した。compiler payload・mapの意味解析は行わず、実compiler identity/元source一致/旧候補26保全/既存dist比較/本番不変はLeadの別実測として区別する。SREの再build・アプリ/DB/ネットワーク操作も0。
 
 先行cache未指定の参考履歴は最終証拠に混ぜない。どちらの受入も正規CI/署名出自/完全bundle/アプリ・DB・Staging・本番受入の代替ではない。
+
+## 2026-11-06 追記（現況）
+
+本記録は作成時点のもの。その後 PR #135 で commit・CI・merge 済み（merge `2deffab`）。現況と follow-up は [docs/76](76-followup-20261106.md) を参照。本文の実測結果・数値・限界は作成時点の記録としてそのまま維持する。

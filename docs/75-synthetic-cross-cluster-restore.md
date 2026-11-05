@@ -137,3 +137,7 @@
 - 独立監査: `independent-audit.py`、`independent-audit.json`
 - 引継ぎ: `AI-HelpDesk-Platform-cto-handoff/synthetic-restore-round-five/`
 - 生データ（dump・PGDATA・password・private log）は証跡に含めない。snapshotは行内容そのものではなく、テーブル別の行数とcanonical SHA-256だけを保持する。
+
+## 2026-11-06 追記（現況）
+
+本記録は作成時点のもの。その後 PR #135 で commit・CI・merge 済み（merge `2deffab`）。**要件1 は PARTIAL のまま**で、owner・ACL・role・default privileges・tablespace・database-level 設定が未比較である点も変わらない。現況と follow-up は [docs/76](76-followup-20261106.md) を参照。本文の実測結果・数値・限界は作成時点の記録としてそのまま維持する。

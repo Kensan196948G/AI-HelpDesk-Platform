@@ -82,3 +82,7 @@ scratch内に `input-hashes.json`、`install-summary.json`、`npm-ci.log`、`npm
 実験主体はLead、task21の独立Security受入はPASS-with-limits、新規未修正Critical/High/Medium/Low=0/0/0/0。指定安全証跡9/9のhash一致、input/source/copy/導入後の3manifest一致、実依存一覧の問題0・直接6entry・private権限・probe境界をreadonlyで独立照合した。再実行・全installed bytesの証明ではない。検証要約SHA-256は`d927a23a2eb70f9863343bc1265189889eee9100281274ebf974cd5ddaf43a42`。受入後の変更はこの結果追記だけで、旧候補25ファイル・probe/証跡は不変。
 
 Git root診断はSRE、契約案はArchitectのreadonly報告であり、実適用・配備完了の自己申告と混ぜない。正規commit/PR/今回必須CI/merge/配備は未実施。R2/R3 No-Go、独立Staging・復元・実社員/貸与PC・別人物承認の未受入を維持する。次は上記のGit管理境界の正規解消方法だけを数字選択で確認する。他root拡張・認可コード変更・秘密読取・配備の承認へ拡張しない。
+
+## 2026-11-06 追記（現況）
+
+本記録は作成時点のもの。その後 PR #135 で commit・CI・merge 済み（merge `2deffab`）。現況と follow-up は [docs/76](76-followup-20261106.md) を参照。本文の実測結果・数値・限界は作成時点の記録としてそのまま維持する。

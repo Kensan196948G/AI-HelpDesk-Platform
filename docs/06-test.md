@@ -20,16 +20,26 @@ npm test
 npm run build
 ```
 
+> `npm test` はプロセス環境の `NODE_ENV=test`・`DATABASE_URL` 等を明示する必要がある（§2-1）。
+
 ### 2-1. テスト DB の準備
 
-`vitest.config.ts` の `globalSetup` が以下を実行する（`NODE_ENV=test`）。
+`NODE_ENV=test` のとき、アプリと migrate / seed は **`.env` / `.env.local` / `.env.test.local` を読まない**（`apps/api/src/config.ts`・`scripts/migrate.ts`・`scripts/seed.ts`）。必要な値はすべてプロセスの環境変数で明示する。
 
 ```bash
-npx tsx scripts/migrate.ts   # .env.test.local を読む
-npx tsx scripts/seed.ts
+export NODE_ENV=test
+export DATABASE_URL='postgresql://aihd:<password>@127.0.0.1:5435/ai_helpdesk_test'
+export SESSION_SECRET='<32 文字以上のランダム値>'
+export SEED_PASSWORD='<seed のデモユーザー用パスワード>'
+npm test
 ```
 
-`ai_helpdesk_test` は専用 DB。開発 DB `ai_helpdesk_mvp` には触れない。
+- `DATABASE_URL` は単一ホストの loopback（`127.0.0.1` / `localhost` / `[::1]`）だけを許可する。query・fragment・複数ホスト・Unix ソケットは接続前に拒否される。DB 名は `ai_helpdesk_test` または `aihd_test_*`（63 文字以内）。
+- `AIHD_TEST_DATABASE_NAME` は、接続する DB 名が `ai_helpdesk_test` 以外のとき必須。期待名と `DATABASE_URL` の DB 名が完全一致しないと接続前に拒否される（省略時の既定は `ai_helpdesk_test`。DSN から期待名を推測しない）。
+- `vitest.config.ts` の `globalSetup` が `npx tsx scripts/migrate.ts` → `npx tsx scripts/seed.ts` を実行する。`globalSetup` は**親プロセス**の `NODE_ENV=test` を要求し、未設定なら migrate の前に拒否する（vitest の `env` は worker にしか適用されない）。
+- env ファイルで `NODE_ENV=test` へ切り替えることはできない。dotenv の読込で test になった場合は固定文言で exit 1（test 専用ガードのすり抜け防止）。
+- CI（`.github/workflows/ci.yml`）は `ai_helpdesk_test` の service DB にプロセス環境で固定値を渡す（後方互換。`AIHD_TEST_DATABASE_NAME` は未指定）。
+- `ai_helpdesk_test` は専用 DB。開発 DB `ai_helpdesk_mvp` には触れない。テスト DB は**事前に用意**する（例: `createdb -h 127.0.0.1 -p 5435 ai_helpdesk_test`。作成手順は環境依存）。本番 DB を接続先にしない。
 
 ## 3. 結果（2026-10-23 16:15 JST）
 

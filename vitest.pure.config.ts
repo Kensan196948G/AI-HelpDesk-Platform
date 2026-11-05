@@ -6,6 +6,10 @@ export default defineConfig({
     environment: 'node',
     include: [
       'scripts/lib/test-database-guard.test.mjs',
+      'scripts/lib/dist-manifest.test.mjs',
+      'scripts/lib/smoke-guards.test.mjs',
+      'scripts/staging-smoke.test.mjs',
+      'apps/api/src/lib/test-database.test.ts',
       'scripts/ops-readiness.test.mjs',
       'scripts/scan-secrets.test.mjs',
     ],

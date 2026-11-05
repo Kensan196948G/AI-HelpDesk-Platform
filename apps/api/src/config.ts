@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config as loadEnv } from 'dotenv';
 import { z } from 'zod';
-import { assertTestDatabase } from './lib/test-database.js';
+import { assertTestDatabase, isEnvFileTestSwitch } from './lib/test-database.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const repoRoot = path.resolve(here, '../../..');
@@ -11,12 +11,13 @@ export const repoRoot = path.resolve(here, '../../..');
 // 検証専用の設定（貸与照合の省略、模擬実行、検証用 manifest）は、開発か試験だと明示した環境だけで使う。
 // プロセスに渡された NODE_ENV で判定し、.env.local や .env が補った値は数えない。NODE_ENV の設定漏れ
 // （未設定）は本番と同じく拒否する（fail-closed。docs/62 §10-5 の検証は development を明示する。docs/69 S3）。
-const verificationOptionsAllowed =
-  process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test';
+// dotenv 前の値を正本にし、以降のモード判定はこの初期値だけを使う。
+const initialNodeEnv = process.env.NODE_ENV;
+const verificationOptionsAllowed = initialNodeEnv === 'development' || initialNodeEnv === 'test';
 
 // 本番（systemd）では Environment= を優先し、ローカルの .env.local を読み込まない。
-const isProduction = process.env.NODE_ENV === 'production';
-const isTest = process.env.NODE_ENV === 'test';
+const isProduction = initialNodeEnv === 'production';
+const isTest = initialNodeEnv === 'test';
 // test はプロセスから明示された設定だけを使う。seed の先行 import から到達しても
 // .env / .env.local / .env.test.local を読まず、接続先や本番資格情報を補完しない。
 if (!isTest) {
@@ -25,6 +26,11 @@ if (!isTest) {
   } else {
     loadEnv({ path: path.join(repoRoot, '.env') });
   }
+}
+// 環境ファイルで test を名乗ると、test 専用ガードや検証用設定の解放をすり抜ける。
+if (isEnvFileTestSwitch(initialNodeEnv, process.env.NODE_ENV)) {
+  console.error('[config] env ファイルで NODE_ENV=test に切り替えることはできません。');
+  process.exit(1);
 }
 assertTestDatabase(process.env);
 

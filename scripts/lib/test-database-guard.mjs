@@ -3,4 +3,5 @@ export {
   assertCurrentTestDatabase,
   assertTestDatabase,
   DEFAULT_TEST_DATABASE_NAME,
+  isEnvFileTestSwitch,
 } from '../../apps/api/src/lib/test-database.ts';

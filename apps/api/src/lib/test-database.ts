@@ -12,6 +12,18 @@ export interface TestDatabaseTarget {
 
 // 既存 CI の固定 fixture のみ後方互換にする。接続 URL から期待値を推測しない。
 export const DEFAULT_TEST_DATABASE_NAME = 'ai_helpdesk_test';
+
+/**
+ * dotenv の読み込みで NODE_ENV が test へ切り替わったかを判定する。
+ * 環境ファイル（.env / .env.local）で test を名乗ることは許さず、プロセス起動時の
+ * 明示指定だけを test モードの根拠にする（fail-closed）。
+ */
+export function isEnvFileTestSwitch(
+  initialNodeEnv: string | undefined,
+  currentNodeEnv: string | undefined,
+): boolean {
+  return initialNodeEnv !== 'test' && currentNodeEnv === 'test';
+}
 const TEST_DATABASE_NAME = /^(?:ai_helpdesk_test|aihd_test_[a-z0-9_]+)$/;
 const LOOPBACK_AUTHORITY = /^(?:127\.0\.0\.1|localhost|\[::1\])(?::([1-9][0-9]{0,4}))?$/;
 
