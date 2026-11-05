@@ -372,3 +372,22 @@ ss -ltnp | grep -E ':(18950|18952|5437)\b'
 5. **(5) 未実施:** §7 の U-1〜U-12 を未実施として明記。**完了扱いにしていない。**
 
 **総合:** 本 doc は Staging のローカル read-only 受入証拠の拡充であり、**Staging 受入の完了・本番昇格・`deploymentReady` の変更を意味しない。** 次の実質的な前進は、承認後に U-1（unit への `release.env` 取込 + restart）を実施し、health の `commit` が `359cbd0…` になることを再実測することである。
+
+## 10. 追加実測: 復元 DB 上の監査ハッシュ鎖（2026-11-06 07:12 JST / Lead）
+
+Ralph の完了後、Lead が R-6（復元後の監査鎖検証）を追加実施した。
+
+| 項目 | 結果 |
+|---|---|
+| 入力 | 最新 backup `ai_helpdesk_preview-20261106-023218.dump` |
+| 復元先 | `127.0.0.1:5437` / `aihd_restore_drill_20261106b`（staging クラスタ内の使い捨て DB。本番 DB・本番クラスタには触れない） |
+| 復元結果 | 成功（`pg_restore --no-owner --no-privileges --exit-on-error`） |
+| 検査 | `NODE_ENV=production AUDIT_SCAN_DATABASE_URL=<drill>` で `npx tsx scripts/audit-find-breaks.ts` |
+| `readOnly` | `true`（`default_transaction_read_only=on`） |
+| 検査行数 | **80 行** |
+| 検出 | **2 件（id 10010 / 10013、種別 `hash_mismatch`）** — いずれも本番が `AUDIT_KNOWN_BREAKS` に設定している既知破断と一致 |
+| `prev_hash_mismatch` | **0 件**（鎖の欠損・分岐なし） |
+| 後処理 | drill DB を削除（接頭辞を検証） |
+
+**意味**: バックアップから復元した DB の監査鎖は、本番が既知破断として扱っている 2 点以外に破断・欠損が無い。これは「復元しても監査鎖が壊れていない」ことの実測であり、監査チェーンの暗号学的な真正性や改ざん不能性の証明ではない。
+
