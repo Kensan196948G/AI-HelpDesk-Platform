@@ -15,7 +15,7 @@ import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
 import { lstat, open } from 'node:fs/promises';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { isMainModule } from './lib/is-main.mjs';
 
 export const LIMITS = Object.freeze({
   timeoutMs: 5_000,
@@ -464,6 +464,6 @@ export async function runCli(args = process.argv.slice(2), dependencies = {}) {
   return result.exitCode;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isMainModule(import.meta.url, process.argv[1])) {
   process.exitCode = await runCli();
 }
