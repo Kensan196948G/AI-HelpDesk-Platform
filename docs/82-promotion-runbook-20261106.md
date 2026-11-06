@@ -326,6 +326,7 @@ df -h /home | tail -1                                # 空き 50G 以上
 #### B-1. 新規 tunnel と資格情報（承認要: Cloudflare アカウントに資格情報が増える）
 
 ```bash
+set -euo pipefail
 cloudflared tunnel create ai-helpdesk-stg
 cloudflared tunnel list --output json \
   | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const t=JSON.parse(s).find(x=>x.name==="ai-helpdesk-stg");if(!t)process.exit(1);console.log(t.id)})' \
@@ -975,6 +976,8 @@ systemctl --user list-timers ai-helpdesk-tunnel-watch.timer --no-pager | head -3
 
 ```bash
 systemctl --user stop ai-helpdesk-prod-api || true
+# current を削除するため、新 unit は enabled のままにしない（両方 enabled + current 不在は起動不能）
+systemctl --user disable ai-helpdesk-prod-api 2>/dev/null || true
 rm -f /home/kensan/ai-helpdesk-prod/current
 # 初回の precheck 残骸を必ず除去（次回 deploy が 18953 に誤バインドしないため）
 rm -f "$HOME/.config/systemd/user/ai-helpdesk-prod-api.service.d/precheck-port.conf"
@@ -988,11 +991,17 @@ if [ ! -f "$HOME/.config/systemd/user/ai-helpdesk-api.service" ] && \
     "$HOME/.config/systemd/user/ai-helpdesk-api.service"
   systemctl --user daemon-reload
 fi
+systemctl --user enable ai-helpdesk-api
 systemctl --user start ai-helpdesk-api
+systemctl --user is-enabled ai-helpdesk-api          # 期待: enabled（再起動後も起動する）
+systemctl --user is-active ai-helpdesk-api           # 期待: active
+systemctl --user is-enabled ai-helpdesk-prod-api 2>/dev/null || true   # 期待: disabled / not-found
 curl -sS --noproxy '*' http://127.0.0.1:18950/api/health   # 期待: a5e0a67…（旧 checkout）
 ```
 
 （`current` は symlink なので `rm -f` で消える。release ディレクトリは証跡として残す。）
+
+**R-C1 の受入**: `ai-helpdesk-api` が `enabled` かつ `active`、`ai-helpdesk-prod-api` が `disabled`（または `not-found`）であること。**ホスト再起動後に `systemctl --user is-active ai-helpdesk-api` が active** であることを確認し、§6 に記録する（これが「rollback 後に再起動しても本番 API が起動する」の証拠）。
 
 **再試行しない場合の後始末（L-d）**: `current` が無いのに `ai-helpdesk-prod-api.service` が残ると、将来 `enable` した時に `WorkingDirectory`/`EnvironmentFile` 不在で起動失敗する。再試行しないなら次を実行する。
 
@@ -1030,6 +1039,8 @@ curl -sS --noproxy '*' http://127.0.0.1:18950/api/health
 
 ```bash
 systemctl --user stop ai-helpdesk-prod-api
+# current を削除するため、新 unit は enabled のままにしない
+systemctl --user disable ai-helpdesk-prod-api 2>/dev/null || true
 systemctl --user unmask ai-helpdesk-api || true
 if [ ! -f "$HOME/.config/systemd/user/ai-helpdesk-api.service" ] && \
    [ -f /home/kensan/ai-helpdesk-prod/state/ai-helpdesk-api.service.bak ]; then
@@ -1037,12 +1048,18 @@ if [ ! -f "$HOME/.config/systemd/user/ai-helpdesk-api.service" ] && \
     "$HOME/.config/systemd/user/ai-helpdesk-api.service"
   systemctl --user daemon-reload
 fi
+systemctl --user enable ai-helpdesk-api
 systemctl --user start ai-helpdesk-api
+systemctl --user is-enabled ai-helpdesk-api          # 期待: enabled
+systemctl --user is-active ai-helpdesk-api           # 期待: active
+systemctl --user is-enabled ai-helpdesk-prod-api 2>/dev/null || true   # 期待: disabled / not-found
 rm -f /home/kensan/ai-helpdesk-prod/current     # 旧 checkout 稼働時は current を残さない
 curl -sS --noproxy '*' http://127.0.0.1:18950/api/health
 ```
 
 `current` を残すと次回 deploy の `PREVIOUS` が壊れる（H-6）。`rm` の前に `readlink -f` で対象を確認する。
+
+**R-C3 の受入**: R-C1 と同じ。`ai-helpdesk-api` が `enabled` かつ `active`、`ai-helpdesk-prod-api` が `disabled`（または `not-found`）。**ホスト再起動後に `systemctl --user is-active ai-helpdesk-api` が active** であることを確認して §6 に記録する。
 
 ### 4-11. 事後（別承認でよい）
 
