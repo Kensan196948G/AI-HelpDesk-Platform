@@ -1,0 +1,16 @@
+[Unit]
+Description=Cloudflare Tunnel for ai-helpdesk-stg.mirai-dx-platform.com
+After=network-online.target ai-helpdesk-stg-proxy.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=__CLOUDFLARED__ --config __CFG_DIR__/ai-helpdesk-stg-config.yml --no-autoupdate tunnel run
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target
