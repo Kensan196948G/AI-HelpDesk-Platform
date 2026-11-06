@@ -133,6 +133,8 @@ install_unit() {
       -e "s|__STG_CONF__|$CONF|g" \
       -e "s|__NODE__|$NODE_BIN|g" \
       -e "s|__NODE_DIR__|$(dirname -- "$NODE_BIN")|g" \
+      -e "s|__CLOUDFLARED__|$(command -v cloudflared || true)|g" \
+      -e "s|__CFG_DIR__|$HOME/.cloudflared|g" \
       "$src" > "$dst"
   chmod 644 "$dst"
   note "unit installed: $dst"
@@ -146,6 +148,13 @@ install_unit "$REPO_SRC/ops/systemd/ai-helpdesk-stg-restore-drill.service" "$UNI
 install_unit "$REPO_SRC/ops/systemd/ai-helpdesk-stg-restore-drill.timer" "$UNIT_DIR/ai-helpdesk-stg-restore-drill.timer"
 install_unit "$REPO_SRC/ops/systemd/ai-helpdesk-stg-healthcheck.service" "$UNIT_DIR/ai-helpdesk-stg-healthcheck.service"
 install_unit "$REPO_SRC/ops/systemd/ai-helpdesk-stg-healthcheck.timer" "$UNIT_DIR/ai-helpdesk-stg-healthcheck.timer"
+# 公開 Staging の tunnel unit は、tunnel と config が既にある場合だけ配置する。
+# このスクリプトは Cloudflare 側（tunnel/DNS/Access）を作らない（docs/84 の手順で作成）。
+if [ -f "$HOME/.cloudflared/ai-helpdesk-stg-config.yml" ]; then
+  install_unit "$REPO_SRC/ops/systemd/ai-helpdesk-stg-cloudflared.service" "$UNIT_DIR/ai-helpdesk-stg-cloudflared.service"
+else
+  note 'skip: staging tunnel config not found (public staging is not created by this script)'
+fi
 systemctl --user daemon-reload
 
 STG_TIMERS=(
