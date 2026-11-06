@@ -790,7 +790,9 @@ cat /home/kensan/ai-helpdesk-prod/current/release.env
 MAINPID=$(systemctl --user show -p MainPID --value ai-helpdesk-prod-api)
 [ -n "$MAINPID" ] && [ "$MAINPID" -gt 0 ] || { echo 'MainPID が取れない: 中止'; exit 1; }
 [ "$(readlink -f "/proc/$MAINPID/cwd")" = "$CUR" ] || { echo 'cwd が current と不一致: 中止'; exit 1; }
-tr '\0' ' ' < "/proc/$MAINPID/cmdline" | grep -F "$CUR/apps/api/dist/index.js"
+# ExecStart は <root>/current 経由で書かれるため、cmdline は current パスで照合する
+# （$CUR は symlink 解決後の実体パスであり、cmdline とは一致しない。2026-11-06 の実配備で確認）
+tr '\0' ' ' < "/proc/$MAINPID/cmdline" | grep -F "$PROD_ROOT/current/apps/api/dist/index.js"
 ls -t /home/kensan/ai-helpdesk-prod/state/deploy-*.json | head -1 | xargs cat
 ```
 
@@ -839,7 +841,9 @@ fi
 CUR=$(readlink -f /home/kensan/ai-helpdesk-prod/current)
 MAINPID=$(systemctl --user show -p MainPID --value ai-helpdesk-prod-api)
 [ -n "$MAINPID" ] && [ "$(readlink -f "/proc/$MAINPID/cwd")" = "$CUR" ] || { echo 'cwd 不一致: 中止'; exit 1; }
-tr '\0' ' ' < "/proc/$MAINPID/cmdline" | grep -F "$CUR/apps/api/dist/index.js"
+# ExecStart は <root>/current 経由で書かれるため、cmdline は current パスで照合する
+# （$CUR は symlink 解決後の実体パスであり、cmdline とは一致しない。2026-11-06 の実配備で確認）
+tr '\0' ' ' < "/proc/$MAINPID/cmdline" | grep -F "$PROD_ROOT/current/apps/api/dist/index.js"
 
 # 4) 旧 unit を disable + mask（Wants による引き上げを止める）、新 unit を enable
 #    mask が unit ファイルを置換する実装に備え、定義を退避してから行う
