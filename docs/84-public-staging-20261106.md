@@ -105,9 +105,11 @@ $ curl -sS -m12 --noproxy '*' -o /dev/null -w '%{http_code}' https://ai-helpdesk
 | 検査 | 結果 |
 |---|---|
 | staging `/api/health`（18952） | 200 / `ok:true` / `commit 4465f8d…` |
-| staging `/`（18952 直） | **401 `UNAUTHORIZED`**（enforce が効いている） |
-| staging `/`（18951 proxy 経由） | **401 `UNAUTHORIZED`** |
+| staging `/`（18952 直） | **401 `PROXY_REQUIRED`**（proxy secret が無いための拒否） |
+| staging `/`（18951 proxy 経由） | **401 `UNAUTHORIZED`**（Access enforce による拒否） |
 | staging tunnel unit | active / MainPID 3326243 / NRestarts 0 / tunnel 接続 4 本 |
+
+**401 の意味を取り違えないこと（独立検証 F-1 の指摘を反映）**: 18952 直の 401 は `REQUIRE_PROXY_SECRET=true` により Access 判定より前に返る `PROXY_REQUIRED` であり、**Access enforce の証拠にはならない**。enforce が効いていることの証拠は、proxy 経由の `UNAUTHORIZED`（proxy が `X-Proxy-Secret` を付与した後に Access JWT が無いため拒否）と、公開側の 302 → Access である。
 
 ## 4. 未実施・制約
 
@@ -159,4 +161,5 @@ cloudflared --config ~/.cloudflared/ai-helpdesk-stg-config.yml tunnel route dns 
 - 本記録は「公開面が Access で保護され、未認証が 302 で拒否され、本番と分離されている」ことの証拠である。**認証後の機能受入ではない。**
 - Access ポリシーは単一メールの allow のみ。ステークホルダーを増やす場合はグループ作成（要 `access-acct.write` 権限のトークン）とポリシー更新が必要。
 - 同一ホスト・同一 UID のため、staging と本番は CPU・メモリ・ディスクを共有する。
+- 独立検証（`docs/evidence/public-staging-audit-20261106/audit.md`）は必須 7 項目すべて PASS。未確認は「Access ログイン後の実画面 200」と「業務フローを通した DB 分離の動的確認」の 2 点。
 - DNS の負のキャッシュにより、`dig` は構築直後に NXDOMAIN を返すことがある（`resolvectl flush-caches` で解消。実測済み）。
