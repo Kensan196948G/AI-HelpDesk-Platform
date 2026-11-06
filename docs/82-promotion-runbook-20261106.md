@@ -974,6 +974,13 @@ systemctl --user list-timers ai-helpdesk-tunnel-watch.timer --no-pager | head -3
 | `RC≠0` かつ `result=failed-no-previous` | 初回で health 失敗。`current` は新 release のまま | **R-C1** |
 | `RC≠0` かつ state が無い | build / 入力検証で停止（switch 前）。`current` は変わっていない | 原因を直して再実行（rollback 不要） |
 
+**`restart-failed` の到達条件（2026-11-06 実測）**: `restart-failed` は `systemctl --user restart <unit>` が非 0 を返したときだけ発生する。実測では次の 2 つは**到達しない**。
+
+- `ExecStart` の実行ファイルが存在しないだけ → `Type=simple` はプロセス起動直後に「started」とみなすため `restart` は 0 を返す（実際に踏むのは health 不合格 → `rolled-back` / `rollback-failed`）。
+- unit を `mask` しただけ → 既にロード済みの unit の `restart` は成功する。
+
+到達するのは **`--unit` の unit が存在しない／ロードできない**場合（実測: `restart RC=5`、state は `restart-failed`、`current` は直前 release へ復元）。したがって `restart-failed` を見たら、まず unit 名と unit ファイルの存在を確認する。検証記録は `docs/87`。
+
 #### R-C1. bootstrap の rollback（previous が無い初回）
 
 `current` を**削除**して旧 checkout 稼働に戻す。これを残すと次回 deploy の `PREVIOUS` が「失敗した新 release」になり、自動 rollback の基準が壊れる。
