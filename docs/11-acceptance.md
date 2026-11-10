@@ -78,10 +78,26 @@
 | 7 | Loading State | ⏸ **証拠なし** | 同上。 |
 | 8 | Input Error | ⏸ **証拠なし（UI）** | API の 400 は実測済み。UI の入力エラー確認は未実施。 |
 | 9 | Communication Error | ⏸ | トースト通知は実装済み（PR #32）。受入は未実施（[39](39-full-verification-result-20261027.md) §7-2）。 |
-| 17 | 既知の Critical/High なし | ⏸ 条件付き | High 4 件は修正・独立再検証 PASS、配備ドリフト H-01 も解消。残: proxy unit の恒久修正の**本番反映**（[85](85-production-cutover-20261106.md) U-5）と Medium 未修正（F-13/14/15/16/10）。 |
+| 17 | 既知の Critical/High なし | ⏸ 条件付き | High 4 件は修正・独立再検証 PASS、配備ドリフト H-01 も解消、proxy unit の本番反映も完了（[85](85-production-cutover-20261106.md) U-5 / [91](91-proxy-unit-applied-20261111.md)）。**F-13/14/15/16/F-10 は修正済み**（§「2026-11-11 追記」）。残: **F-06 の 4 ロール分離**（設計課題）と Low / 仕様差（A-12 / G-02-F2 / G-12-F1 等）。 |
 | 20 | 公開 API | ⏸ 一部 | 公開 `/` は 302（Access）、未認証 `/api/*` は 401 `UNAUTHORIZED`（アプリ到達）、proxy 経由 `/api/health` は 200。**認証後の一般 API は未実施**（[85](85-production-cutover-20261106.md) C-3）。 |
 | 21 | 公開 DB | ⏸ 一部 | proxy 経由 health の `db:"ok"`、本番 dump 復元の監査鎖検証（checked 80 / mismatch 2 は既知破断と一致、[88](88-production-dump-audit-chain-20261106.md)）。**書込経路は未実施**。 |
 
 **E2E を CI 必須にする場合の前提（2026-11-10 実測）**: `playwright-core` は package.json 未宣言で、クリーンなチェックアウトから解決できない（`MODULE_NOT_FOUND`。実行時は `PLAYWRIGHT_CORE_PATH` で外部パスを差し替える前提）。6 ロール分の API と stub をポート 19401〜19408 固定で起動し、DB 名が `_e2e` で終わる専用 DB と migrate が必要。まず `workflow_dispatch` / nightly で所要時間と失敗率を測り、その後 PR 必須化する（[89](89-round-20261110.md) §5）。
 
 **完了判定は引き続き「未完了」**: 実 Access OTP ログイン後の主要画面・API 確認（C-3）と、#6〜#8 の UI 状態の証拠が無いため。
+
+## 2026-11-11 追記（2026-11-10 追記の訂正）
+
+2026-11-10 追記の #17 に「Medium 未修正（F-13/14/15/16/10）」と書いたが、これは [39](39-full-verification-result-20261027.md)（2026-10-27 時点）の記載をそのまま引き、その後の修正を反映していなかった。**コードと記録を再確認した結果、5 件はすべて修正済み**である。QA のリリース判定に「未修正缺陷」として伝わらないよう、ここで訂正する。
+
+| ID | 現況 | 根拠 |
+|---|---|---|
+| F-13 | **修正済み** | [46](46-e2e-10-and-f13-20261027.md)（本番 UI で completed → STEP7 を確認）／[51](51-sm01-sm03-sm04-f13-20261027.md)（承認者名・日時の表示を PR #101 で実装） |
+| F-14 | **修正済み** | `apps/api/src/domain/final-report.ts:442-447` が `report.case.step` からバッジを生成 |
+| F-15 | **修正済み** | `apps/api/src/routes/reports.ts:173` が `report.final.build` を監査へ記録（`reports.integration.test.ts` で 1 行 / 0 行を固定） |
+| F-16 | **修正済み** | `final-report.ts:671` が `/?draft=<id>` リンクを生成（`final-report.test.ts:325`） |
+| F-10 | **修正済み** | `db/migrations/021_final_reports_unique.sql` ＋ `routes/reports.ts` の `reused` 分岐 |
+
+あわせて、proxy unit の恒久修正（[85](85-production-cutover-20261106.md) U-5）は **2026-11-11 に本番反映済み**（[91](91-proxy-unit-applied-20261111.md)）。
+
+**したがって #17 の残りは**、F-06 の 4 ロール分離（単一 Access ID 運用のため `ALLOW_SELF_APPROVAL=true` を維持する設計課題。サーバ永続化は PR #79 で解消済み）と、Low / 仕様差（A-12 / G-02-F2 / G-12-F1 等）である。**この訂正は受入 32 項目の PASS/FAIL 判定を変更しない**（#17 は引き続き ⏸）。
