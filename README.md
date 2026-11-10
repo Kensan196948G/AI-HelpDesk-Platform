@@ -307,7 +307,7 @@ Browser
 Cloudflare Tunnel  ai-helpdesk.mirai-dx-platform.com
   │
   ▼
-Node 22 / Fastify  ai-helpdesk-api.service（127.0.0.1:18950）
+Node 22 / Fastify  ai-helpdesk-prod-api.service（127.0.0.1:18950 / health の service 名は ai-helpdesk-api）
   │  ├─ 既存プロトタイプ HTML を配信（boot / bridge / device-bridge / assist-bridge を注入）
   │  ├─ /api/state（prototype_states。AI の根拠には使わない）
   │  ├─ /api/device/browser・/api/device/inventory（実 PC 情報）
@@ -347,14 +347,21 @@ bash scripts/scan-secrets.sh
 npm audit --audit-level=high && npm audit --omit=dev --audit-level=high
 ```
 
-### デプロイ（Preview）
+### デプロイ（release 方式）
+
+2026-11-06 の本番切替以降、公開面は `ai-helpdesk-prod-api`（`current` → `releases/<id>`）で動きます。
+手元の checkout を直接 restart するのではなく、release を作って切り替えます（手順と受入は [docs/82](docs/82-promotion-runbook-20261106.md) §4・[docs/85](docs/85-production-cutover-20261106.md)）。
 
 ```bash
 # api.conf は EnvironmentFile の形式なので、シェルで読み込まない。
-NODE_ENV=production node scripts/run-with-env-file.mjs ~/.config/ai-helpdesk/api.conf -- npx tsx scripts/migrate.ts
-npm run build
-systemctl --user restart ai-helpdesk-api
+bash scripts/deploy-release.sh --repo . --ref <40 hex> \
+  --root ~/ai-helpdesk-prod --env-file ~/.config/ai-helpdesk/api.conf \
+  --unit ai-helpdesk-prod-api --health-port 18950
+systemctl --user status ai-helpdesk-prod-api
+curl -sS --noproxy '*' http://127.0.0.1:18950/api/health   # commit が --ref と一致すること
 ```
+
+旧 `ai-helpdesk-api.service` は切替で退避済み（`not-found`）。戻す場合は [docs/82](docs/82-promotion-runbook-20261106.md) §4-10（`unmask` → `start`）に従います。
 
 ### 端末エージェント（任意・読み取りのみ）
 

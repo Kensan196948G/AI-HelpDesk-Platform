@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // apps/api/dist の canonical manifest を書き出す／検証する CLI。
 // 書き出しは 0600・O_NOFOLLOW、commit は 40 hex の明示指定か git HEAD に限る。
+// --verify に限り --root で repo 外（release）の dist を検証できる（release のコードは実行しない）。
 import { spawnSync } from 'node:child_process';
 import { constants } from 'node:fs';
 import { open } from 'node:fs/promises';
@@ -17,13 +18,29 @@ import {
 const root = path.resolve(import.meta.dirname, '..');
 
 function usage() {
-  return 'usage: dist-manifest.mjs (--write|--verify) --manifest <absolute path> [--commit <40hex>]';
+  return [
+    'usage: dist-manifest.mjs (--write|--verify) --manifest <absolute path> [--commit <40hex>]',
+    '       dist-manifest.mjs --verify --manifest <absolute path> --root <absolute path> --commit <40hex>',
+  ].join('\n');
+}
+
+// --root は検証対象の dist を辿る trust anchor。呼び出し側の解決規則を暗黙に変えないため、
+// 絶対・正規化済み・制御文字なしの path だけを受理する（相対・`..` 混じりは再現性を壊す）。
+// --root 自体は symlink（…/current）でもよい。dist 内部の symlink は collectDistFiles が拒否する。
+function assertVerifyRoot(value) {
+  if (!path.isAbsolute(value) || path.normalize(value) !== value) {
+    throw new Error('ARGUMENTS_INVALID');
+  }
+  if ([...value].some((character) => character.codePointAt(0) <= 0x1f)) {
+    throw new Error('ARGUMENTS_INVALID');
+  }
 }
 
 function parseArgs(argv) {
   let mode;
   let manifestPath;
   let commit;
+  let verifyRoot;
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (argument === '--write' || argument === '--verify') {
@@ -39,12 +56,25 @@ function parseArgs(argv) {
       index += 1;
       if (!value || commit) throw new Error('ARGUMENTS_INVALID');
       commit = value;
+    } else if (argument === '--root') {
+      const value = argv[index + 1];
+      index += 1;
+      if (!value || verifyRoot !== undefined) throw new Error('ARGUMENTS_INVALID');
+      verifyRoot = value;
     } else {
       throw new Error('ARGUMENTS_INVALID');
     }
   }
   if (!mode || !manifestPath) throw new Error('ARGUMENTS_INVALID');
-  return { mode, manifestPath, commit };
+  if (verifyRoot !== undefined) {
+    // 書き出しは常に repo 側（この CLI の apps/api/dist）に固定する。検証だけを repo 外へ向ける。
+    if (mode !== 'verify') throw new Error('ARGUMENTS_INVALID');
+    assertVerifyRoot(verifyRoot);
+    // 期待 commit を repo の HEAD で暗黙に埋めると release と repo を取り違えるため、
+    // --root 指定時は --commit を必須にする（release 側の commit を明示させる）。
+    if (commit === undefined) throw new Error('ARGUMENTS_INVALID');
+  }
+  return { mode, manifestPath, commit, verifyRoot };
 }
 
 function resolveCommit(explicitCommit) {
@@ -87,7 +117,7 @@ async function writeManifestFile(manifestPath, text) {
 }
 
 async function main(argv) {
-  const { mode, manifestPath, commit } = parseArgs(argv);
+  const { mode, manifestPath, commit, verifyRoot } = parseArgs(argv);
   if (mode === 'write') {
     const manifest = await buildManifest({ repoRoot: root, commit: resolveCommit(commit) });
     await writeManifestFile(manifestPath, serializeManifest(manifest));
@@ -95,7 +125,8 @@ async function main(argv) {
     return;
   }
   const manifest = await readManifestFile(manifestPath, { expectedCommit: resolveCommit(commit) });
-  await verifyManifestAgainstDist(manifest, { repoRoot: root });
+  // verifyRoot 未指定時は従来どおり repo 側の dist と照合する。
+  await verifyManifestAgainstDist(manifest, { repoRoot: verifyRoot ?? root });
   console.log(`DIST_MANIFEST_OK ${manifest.sha256}`);
 }
 

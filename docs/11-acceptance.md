@@ -65,3 +65,23 @@
   DB は日次バックアップを追加、disk は 87% → 81% に整理。
 - #15: テストは **201 件**に増加。
 - 総合: 個人利用 MVP の主要価値は公開 URL 上で操作可能。未対応の High 2 件は次ラウンドで修正する。
+
+## 2026-11-10 追記（現況整合・証拠マップ）
+
+**前提の更新**: 2026-11-06 に本番切替を実施し、公開面は Cloudflare Access 配下の本番（`ai-helpdesk-prod-api` / release 方式）になった（[85](85-production-cutover-20261106.md)）。下表は「Preview」を「公開面（本番）」と読み替え、未完了項目の現在地を証拠付きで整理したものである。**未実施を完了扱いにしない。**
+
+| # | 条件 | 現在地 | 根拠 / 未実施の理由 |
+|---|---|---|---|
+| 2 | 主要 1〜3 Flow E2E | ⏸ 一部 | `scripts/e2e/dataflow-integration.mjs` は 88 checks / failed 0 で通るが、stub AI・`--mock` 実行器・`AUTH_MODE=local` の条件（[65](65-readme-dataflow-map.md) §0-1）。CI には未配線（前提は [89](89-round-20261110.md) §5）。 |
+| 5 | Normal State | ⏸ 一部 | 実ブラウザで 34 画面を巡回し、主要 2 フローを完走（[24](24-verification-20261025.md)）。[39](39-full-verification-result-20261027.md) で A〜F を実測、D の一部は未実施。 |
+| 6 | Empty State | ⏸ **証拠なし** | 実装はあるが、体系的な確認記録がない。 |
+| 7 | Loading State | ⏸ **証拠なし** | 同上。 |
+| 8 | Input Error | ⏸ **証拠なし（UI）** | API の 400 は実測済み。UI の入力エラー確認は未実施。 |
+| 9 | Communication Error | ⏸ | トースト通知は実装済み（PR #32）。受入は未実施（[39](39-full-verification-result-20261027.md) §7-2）。 |
+| 17 | 既知の Critical/High なし | ⏸ 条件付き | High 4 件は修正・独立再検証 PASS、配備ドリフト H-01 も解消。残: proxy unit の恒久修正の**本番反映**（[85](85-production-cutover-20261106.md) U-5）と Medium 未修正（F-13/14/15/16/10）。 |
+| 20 | 公開 API | ⏸ 一部 | 公開 `/` は 302（Access）、未認証 `/api/*` は 401 `UNAUTHORIZED`（アプリ到達）、proxy 経由 `/api/health` は 200。**認証後の一般 API は未実施**（[85](85-production-cutover-20261106.md) C-3）。 |
+| 21 | 公開 DB | ⏸ 一部 | proxy 経由 health の `db:"ok"`、本番 dump 復元の監査鎖検証（checked 80 / mismatch 2 は既知破断と一致、[88](88-production-dump-audit-chain-20261106.md)）。**書込経路は未実施**。 |
+
+**E2E を CI 必須にする場合の前提（2026-11-10 実測）**: `playwright-core` は package.json 未宣言で、クリーンなチェックアウトから解決できない（`MODULE_NOT_FOUND`。実行時は `PLAYWRIGHT_CORE_PATH` で外部パスを差し替える前提）。6 ロール分の API と stub をポート 19401〜19408 固定で起動し、DB 名が `_e2e` で終わる専用 DB と migrate が必要。まず `workflow_dispatch` / nightly で所要時間と失敗率を測り、その後 PR 必須化する（[89](89-round-20261110.md) §5）。
+
+**完了判定は引き続き「未完了」**: 実 Access OTP ログイン後の主要画面・API 確認（C-3）と、#6〜#8 の UI 状態の証拠が無いため。

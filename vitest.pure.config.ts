@@ -10,6 +10,8 @@ export default defineConfig({
       'scripts/lib/smoke-guards.test.mjs',
       'scripts/lib/build-script.test.mjs',
       'scripts/lib/is-main.test.mjs',
+      'scripts/dist-manifest.test.mjs',
+      'scripts/set-smtp-password.test.mjs',
       'scripts/staging-smoke.test.mjs',
       'apps/api/src/lib/test-database.test.ts',
       'scripts/ops-readiness.test.mjs',

@@ -1,7 +1,11 @@
 [Unit]
 Description=AI HelpDesk local proxy (adds X-Proxy-Secret)
-After=network-online.target ai-helpdesk-api.service
-Wants=ai-helpdesk-api.service
+# 上流は prod unit（不変 release を 18950 で起動する）を After で待つ。Wants は付けない:
+# Wants は disable 済みの unit も起動するため、rollback 後に proxy を再起動すると prod unit が
+# 上がって 18950 を奪い、rollback が黙って巻き戻る。After だけで順序は成立し（両 unit とも
+# default.target 経由）、上流が落ちている間も proxy は 502 を返して稼働を続ける。
+# 旧 ai-helpdesk-api は切替前の本番 unit（rollback 時のみ有効）で、ここからは参照しない。
+After=network-online.target ai-helpdesk-prod-api.service
 
 [Service]
 Type=simple

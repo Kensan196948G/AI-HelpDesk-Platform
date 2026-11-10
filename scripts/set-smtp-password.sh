@@ -4,12 +4,13 @@
 #   bash scripts/set-smtp-password.sh
 #   bash scripts/set-smtp-password.sh --test-to user@example.com
 #   bash scripts/set-smtp-password.sh --file ~/新パスワード.txt
+#   bash scripts/set-smtp-password.sh --unit ai-helpdesk-prod-api.service
 #
 # やること:
 #   1) パスワードを安全に受け取る（画面に出さない）
 #   2) ~/.config/ai-helpdesk/api.conf の SMTP_PASS を差し替える（バックアップ + 0600）
 #   3) SMTP の認証だけ確認する（メールは送らない）
-#   4) サービスを再起動する
+#   4) サービスを再起動する（active な ai-helpdesk-prod-api を優先。--unit で明示指定も可）
 #   5) --test-to があれば、そのアドレスへテスト送信する
 #
 # 秘密はログ・画面・引数履歴に残さない（履歴に残る --password は用意していない）。
@@ -20,12 +21,13 @@ set -euo pipefail
 CONF="${HOME}/.config/ai-helpdesk/api.conf"
 PW_FILE=""
 TEST_TO=""
+UNIT_OVERRIDE=""
 DO_RESTART=1
 SKIP_VERIFY=0
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 usage() {
-  sed -n '2,15p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  sed -n '2,16p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
   exit 0
 }
 
@@ -36,6 +38,14 @@ while [ $# -gt 0 ]; do
     --test-to) TEST_TO="$2"; shift 2 ;;
     --no-restart) DO_RESTART=0; shift ;;
     --skip-verify) SKIP_VERIFY=1; shift ;;
+    --unit)
+      UNIT_OVERRIDE="${2:-}"
+      # 先頭 '-' を許すと `--unit -h` が `systemctl restart -h` の 0 終了で偽成功する。
+      if [ -z "$UNIT_OVERRIDE" ] || ! [[ "$UNIT_OVERRIDE" =~ ^[A-Za-z0-9_.@][A-Za-z0-9_.@-]*$ ]]; then
+        echo "unit 名が不正です: ${2:-}（許可文字: 英数字 . _ @ -。先頭は - 以外）" >&2
+        exit 2
+      fi
+      shift 2 ;;
     -h|--help) usage ;;
     *) echo "不明な引数: $1" >&2; exit 2 ;;
   esac
@@ -44,6 +54,39 @@ done
 [ -f "$CONF" ] || { echo "設定ファイルがありません: $CONF" >&2; exit 1; }
 # 後の処理は REPO_ROOT へ移動してから読むので、相対パスのまま渡さない。
 CONF="$(realpath -- "$CONF")"
+
+# ---- 書き換え前の検査: 再起動対象の決定（fail-closed） ----------------------
+# restart は停止中の unit も起動するため、unit ファイルの有無では選ばない。
+# rollback 後は prod unit が disabled でもファイルは残るので、ファイル存在で選ぶと
+# 18950 を奪って rollback を巻き戻し得る。よって active な unit だけを対象にする。
+SERVICE=""
+if [ "$DO_RESTART" -eq 1 ]; then
+  if [ -n "$UNIT_OVERRIDE" ]; then
+    # 明示指定は利用者の判断を優先する（停止中の unit を起こす意図的な指定も許す）。
+    SERVICE="$UNIT_OVERRIDE"
+  else
+    ACTIVE_UNITS=()
+    for candidate in ai-helpdesk-prod-api.service ai-helpdesk-api.service; do
+      if systemctl --user is-active --quiet -- "$candidate"; then
+        ACTIVE_UNITS+=("$candidate")
+      fi
+    done
+    case "${#ACTIVE_UNITS[@]}" in
+      1) SERVICE="${ACTIVE_UNITS[0]}" ;;
+      0)
+        echo "再起動対象の active な unit が見つかりません（ai-helpdesk-prod-api / ai-helpdesk-api）。" >&2
+        echo "SMTP_PASS は未更新です。unit を起動するか --unit <name> を指定するか、" >&2
+        echo "--no-restart で設定だけ更新してください。" >&2
+        exit 1
+        ;;
+      *)
+        echo "active な unit が複数あります: ${ACTIVE_UNITS[*]}" >&2
+        echo "SMTP_PASS は未更新です。--unit <name> で再起動対象を指定してください。" >&2
+        exit 1
+        ;;
+    esac
+  fi
+fi
 
 # ---- 1) パスワードの受け取り ------------------------------------------------
 PW=""
@@ -98,12 +141,17 @@ fi
 
 # ---- 4) 再起動 -------------------------------------------------------------
 if [ "$DO_RESTART" -eq 1 ]; then
-  systemctl --user restart ai-helpdesk-api.service
+  # 対象は上の検査で決定済み（active 判定 or --unit 指定）。
+  # set -e のままだと restart 失敗で即 abort し「設定は更新済み」を伝えられないため、明示的に受ける。
+  if ! systemctl --user restart -- "$SERVICE"; then
+    echo "❌ $SERVICE の再起動に失敗しました。SMTP_PASS は更新済みです。サービス状態を確認してください。" >&2
+    exit 1
+  fi
   sleep 2
-  if systemctl --user is-active ai-helpdesk-api.service >/dev/null; then
-    echo "✅ ai-helpdesk-api を再起動しました"
+  if systemctl --user is-active -- "$SERVICE" >/dev/null; then
+    echo "✅ ${SERVICE%.service} を再起動しました"
   else
-    echo "❌ サービスの起動に失敗しました" >&2
+    echo "❌ $SERVICE が起動していません。SMTP_PASS は更新済みです。サービス状態を確認してください。" >&2
     exit 1
   fi
 fi
