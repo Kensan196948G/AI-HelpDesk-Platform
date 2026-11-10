@@ -10,24 +10,27 @@ npm run dev:api
 npm run build
 npm run start:api
 
-# Preview（systemd）
-systemctl --user start ai-helpdesk-api.service
-systemctl --user stop ai-helpdesk-api.service
-systemctl --user restart ai-helpdesk-api.service
-systemctl --user status ai-helpdesk-api.service
+# 公開（systemd。2026-11-06 の本番切替以降は release 方式。docs/85）
+# unit は ai-helpdesk-prod-api で、current → releases/<id> の不変ファイルを実行する。
+systemctl --user start ai-helpdesk-prod-api.service
+systemctl --user stop ai-helpdesk-prod-api.service
+systemctl --user restart ai-helpdesk-prod-api.service
+systemctl --user status ai-helpdesk-prod-api.service
+
+# 旧 ai-helpdesk-api.service は切替で退避済み（not-found）。戻す場合は docs/82 §4-10（unmask → start）。
 
 # ローカル・プロキシ（Tunnel → 18949 → API 18950 / X-Proxy-Secret）
 systemctl --user status ai-helpdesk-proxy.service
 systemctl --user restart ai-helpdesk-proxy.service
-scripts/install-proxy-service.sh        # 初回登録（冪等）
+scripts/install-proxy-service.sh        # 初回登録（冪等。上流の状態は表示のみ、合否は health）
 curl -fsS http://127.0.0.1:18949/api/health
 ```
 
 ## 2. ログ
 
 ```bash
-# systemd
-journalctl --user -u ai-helpdesk-api.service -n 200 --no-pager
+# systemd（公開 API は prod unit。health の service 名は ai-helpdesk-api のまま）
+journalctl --user -u ai-helpdesk-prod-api.service -n 200 --no-pager
 journalctl --user -u ai-helpdesk-cloudflared.service -n 100 --no-pager
 
 # 開発

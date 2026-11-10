@@ -1,5 +1,11 @@
 # Deployment（Preview / 検証環境）
 
+> **2026-11-10 追記（現況）**: 2026-11-06 に本番切替（release 方式・unit は `ai-helpdesk-prod-api`）を実施した。
+> 公開面の現行手順は [82-promotion-runbook](82-promotion-runbook-20261106.md) と
+> [85-production-cutover](85-production-cutover-20261106.md) が正本である。
+> 本書 §1 以降の `ai-helpdesk-api.service` を前提にした記述は**初期構築（2026-10-23）の記録**であり、
+> 旧 unit は現在 `not-found` のため、そのまま再実行しないこと。
+
 ## 0. 実配備（2026-10-23 / Tunnel + Access）
 
 > ユーザー指示（2026-10-23）により、WebUI は既存プロトタイプ HTML をそのまま配信し、
