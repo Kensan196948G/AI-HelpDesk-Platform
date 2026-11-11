@@ -5,6 +5,7 @@ import { authenticateUi } from '../auth/ui.js';
 import { config, repoRoot } from '../config.js';
 import { badRequest } from '../errors.js';
 import { type EmployeeRow, findEmployeeByEmail } from '../lib/mirai-info.js';
+import { loadTicketsForUi } from './ops-tickets.js';
 
 /**
  * 運用統合 UI（新しい WebUI）の配信（docs/100）。
@@ -37,7 +38,7 @@ const CSP = [
 
 /** 画面下部に出す移行中の表示。実データへ接続するまで消さない。 */
 export const MIGRATION_BANNER =
-  '移行中：この画面は新しい運用統合 UI です。いま表示しているデータはサンプルです。①受付から順に実データへ接続します（docs/100）。';
+  '移行中：新しい運用統合 UI です。①受付と②AI一次対応は実データに接続済み。その他の画面は順次接続します（未接続の画面のデータはサンプルです）。';
 
 let cachedHtml: string | null = null;
 
@@ -89,10 +90,12 @@ export async function opsRoutes(app: FastifyInstance): Promise<void> {
     if (!request.uiEmail) throw badRequest('UI の認証情報がありません。');
     const roles = request.uiRoles ?? [];
     const actor = await resolveActor(request.uiEmail, roles);
+    const tickets = await loadTicketsForUi(request.uiEmail);
     const boot = {
       actor: { name: actor.name, role: actor.role, approver: actor.approver, email: actor.email },
-      // 将来ここに実データの初期状態を載せる（P2 以降）。P1 は画面側のサンプルを使う。
-      state: null,
+      // P2: 受付済みチケットは実 DB が正本。他の画面は P3 以降で順次接続する。
+      state: { tickets },
+      server: true,
       authMode: config.AUTH_MODE,
       banner: MIGRATION_BANNER,
     };

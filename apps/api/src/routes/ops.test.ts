@@ -52,11 +52,15 @@ describe('運用統合 UI（/ops）の配信', () => {
     expect(parsed.authMode).toMatch(/^(local|cloudflare-access)$/);
   });
 
-  it('P1 では実データの初期状態を載せない（サンプル表示であることを保つ）', async () => {
+  it('受付済みチケットを実 DB から初期状態として渡す（P2）', async () => {
     const response = await app.inject({ method: 'GET', url: '/ops' });
     const boot = /window\.__OPS_BOOT__=(\{.*?\});<\/script>/s.exec(response.body)?.[1];
-    const parsed = JSON.parse(boot as string) as { state: unknown };
-    expect(parsed.state).toBeNull();
+    const parsed = JSON.parse(boot as string) as {
+      state: { tickets: unknown[] };
+      server: boolean;
+    };
+    expect(parsed.server).toBe(true);
+    expect(Array.isArray(parsed.state.tickets)).toBe(true);
   });
 });
 

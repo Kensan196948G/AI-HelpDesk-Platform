@@ -1039,6 +1039,8 @@ function suggestAssignee(t){return t.sec?'伊藤':cat(t.cat).team}
 function kbMsg(t,r){t.activeKb=r.id;if(!t.shown.includes(r.id))t.shown.push(r.id);return {role:'ai',kind:'kb',kbId:r.id,score:r.score,hits:r.hits,tips:pcTips(t),text:r.score>=TH_HIGH?'次のナレッジで解決できる可能性が高いです。手順をお試しください。':'近いナレッジが見つかりました。この手順をお試しください。'}}
 
 function runTriage(t){
+ /* P2: サーバ配信では実 AI（/api/ops/tickets/:id/ai）へ回す。未接続のときだけ従来の疑似 AI。 */
+ if(window.__OPS_AI__&&window.__OPS_AI__(t))return;
  const msgs=[];
  msgs.push({role:'sys',text:`チケット ${t.id} を受け付けました（優先度 ${t.priority}）`});
  if(t.pc)msgs.push({role:'ai',kind:'pc',text:'相談者のPC情報を確認し、問い合わせ内容と突き合わせました。'});
@@ -2167,11 +2169,51 @@ window.App=App;
 try{const th=localStorage.getItem(LS+'-theme');if(th)document.documentElement.dataset.theme=th}catch(e){}
 document.querySelectorAll('[data-ic]').forEach(el=>el.insertAdjacentHTML('afterbegin',I(el.dataset.ic)));
 load();applySettings();buildIndex();
-/* --- サーバ配信時のブート（docs/100）。Access の身元と移行中の明示を差し込む。 --- */
+/* --- サーバ配信時のブート（docs/100）。Access の身元・実データ・サーバ接続を差し込む。 --- */
 try{const __b=window.__OPS_BOOT__;if(__b){
  if(__b.actor&&__b.actor.name){state.actor=__b.actor.name;if(Array.isArray(__b.actor.staff)&&__b.actor.staff.length){STAFF.length=0;__b.actor.staff.forEach(function(s){STAFF.push(s)})}}
+ /* P2: 受付済みチケットはサーバが正本（画面のローカル値より優先する）。 */
+ if(__b.state&&Array.isArray(__b.state.tickets)){state.tickets=__b.state.tickets}
  if(__b.banner){var __bd=document.createElement('div');__bd.id='ops-migration-banner';__bd.setAttribute('role','status');__bd.textContent=__b.banner;__bd.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:90;padding:7px 12px;font:12px/1.45 system-ui,-apple-system,"Hiragino Sans",sans-serif;background:#fbf0dc;color:#5a3a00;border-top:1px solid #e6c98a;text-align:center';
   document.body.appendChild(__bd)}
+ if(__b.server){
+  /* 受付: 実 DB に 1 件作成してから画面へ反映する（P2）。 */
+  App.submit=function(){
+   const subject=$('#i_sub').value.trim(),body=$('#i_body').value.trim(),req=$('#i_req').value.trim()||'（未記入）';
+   if(!subject||!body){toast('件名と内容を入力してください','bad');return}
+   const u=$('#i_u').value,im=$('#i_i').value,sec=secCheck(subject+' '+body);
+   const payload={subject:subject,body:body,category:$('#i_cat').value,urgency:u,impact:im,channel:$('#i_ch').value,requester:req,priority:calcPriority(u,im,sec)};
+   fetch('/api/ops/tickets',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify(payload)})
+    .then(function(r){return r.json()})
+    .then(function(d){
+     if(!d||!d.ticket){toast('受付を保存できませんでした','bad');return}
+     const t=Object.assign({},d.ticket,{sec:sec,aiLog:[],shown:[],candidates:[],extra:[],failedKb:[],history:[]});
+     if(ui.pcDraft){t.pc=Object.assign({},ui.pcDraft,{at:now()})}
+     hist(t,'受付',req);state.tickets.unshift(t);audit('受付',t.id,subject);ui.pcDraft=null;save();
+     ui.view='ai';ui.sel.ai=t.id;render();runTriage(t);
+    })
+    .catch(function(){toast('受付を保存できませんでした','bad')});
+  };
+  /* ② AI一次対応: サーバの承認済みナレッジを根拠にした実 AI の回答を使う（P2）。 */
+  window.__OPS_AI__=function(t){
+   if(!t||!t.serverId)return false;
+   const msgs=[{role:'sys',text:'チケット '+t.id+' を受け付けました（優先度 '+t.priority+'）'}];
+   play(t,msgs);
+   const patchStatus=function(status,note){
+    fetch('/api/ops/tickets/'+encodeURIComponent(t.serverId),{method:'PATCH',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({status:status,note:note})}).catch(function(){});
+   };
+   fetch('/api/ops/tickets/'+encodeURIComponent(t.serverId)+'/ai',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:'{}'})
+    .then(function(r){return r.json()})
+    .then(function(d){
+     if(!d||!d.answer){play(t,[{role:'ai',text:'AI の回答を取得できませんでした。担当者へ引き継ぎます。'}],function(){patchStatus('escalated','AI回答の取得に失敗');escalate(t,'AI回答の取得に失敗',true)});return}
+     const needHandoff=d.provider==='fallback'||/担当者へ引き継/.test(String(d.answer));
+     const m={role:'ai',text:d.answer,provider:d.provider};
+     play(t,[m],needHandoff?function(){patchStatus('escalated','AI回答が根拠不足のため引継ぎ');escalate(t,'AI回答が根拠不足のため引継ぎ',true)}:null);
+    })
+    .catch(function(){play(t,[{role:'ai',text:'AI の回答を取得できませんでした。担当者へ引き継ぎます。'}],function(){patchStatus('escalated','通信エラー');escalate(t,'通信エラー',true)})});
+   return true;
+  };
+ }
 }}catch(e){}
 $('#actor').innerHTML=STAFF.map(s=>`<option value="${s.name}">${s.name}（${s.role}）</option>`).join('');
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){App.closeDrawer();App.closeModal()}});

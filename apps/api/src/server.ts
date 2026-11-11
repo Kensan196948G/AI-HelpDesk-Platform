@@ -24,6 +24,7 @@ import { intakeRoutes } from './routes/intake.js';
 import { knowledgeRoutes } from './routes/knowledge.js';
 import { meRoutes } from './routes/me.js';
 import { opsRoutes } from './routes/ops.js';
+import { opsTicketRoutes } from './routes/ops-tickets.js';
 import { prototypeRoutes } from './routes/prototype.js';
 import { remoteAssistRoutes } from './routes/remote-assist.js';
 import { reportRoutes } from './routes/reports.js';
@@ -219,6 +220,8 @@ export async function buildServer(options?: {
   await app.register(prototypeRoutes);
   // 運用統合 UI（新画面）。機能パリティまで旧 UI（/）と並行配信する（docs/100）。
   await app.register(opsRoutes);
+  // 運用統合 UI の受付チケット API（P2・docs/100）。
+  await app.register(opsTicketRoutes, { prefix: '/api' });
   // 解決ループの Skill カタログを同期する。スクリプト未作成でも起動は止めない（draft 登録）。
   try {
     await ensureSkillCatalog();
