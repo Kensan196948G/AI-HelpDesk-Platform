@@ -28,6 +28,7 @@ const BRIDGE_FILES = [
   path.join('apps', 'api', 'src', 'prototype', 'resolve-bridge.js'),
   path.join('apps', 'api', 'src', 'prototype', 'remote-support-bridge.js'),
   path.join('apps', 'api', 'src', 'prototype', 'handover-workspace-bridge.js'),
+  path.join('apps', 'api', 'src', 'prototype', 'logout-bridge.js'),
 ];
 // 機能フラグが有効なときだけ配信する（無効時は読み込まれず、何も描画しない。docs/62）。
 const FOLDER_ACCESS_BRIDGE_FILE = path.join(
@@ -289,6 +290,8 @@ function renderPrototype(boot: {
     ...boot,
     // 本番では「操作する人」を本人以外へ切り替えさせない（デモ用アカウントだけ any）。
     switchMode: personaSwitchMode(boot.email),
+    // ログアウトの行き先を画面が推測しないよう、認証方式だけを渡す（docs/99）。
+    authMode: config.AUTH_MODE,
     meshcentralUrl: config.MESHCENTRAL_URL,
     rspBaseUrl: config.RSP_BASE_URL,
   }).replace(/</g, '\\u003c');

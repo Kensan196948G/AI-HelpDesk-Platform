@@ -14,6 +14,8 @@ export default defineConfig({
       'scripts/set-smtp-password.test.mjs',
       'scripts/staging-smoke.test.mjs',
       'apps/api/src/lib/test-database.test.ts',
+      // 画面ブリッジの純粋関数（DOM を起動しない・DB を読まない）。docs/99。
+      'apps/api/src/prototype/logout-bridge.test.ts',
       'scripts/ops-readiness.test.mjs',
       'scripts/scan-secrets.test.mjs',
     ],
