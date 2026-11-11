@@ -64,6 +64,21 @@ describe('運用統合 UI（/ops）の配信', () => {
   });
 });
 
+describe('旧 UI の残置（P7）', () => {
+  it('/legacy は旧 UI を配信する', async () => {
+    const response = await app.inject({ method: 'GET', url: '/legacy' });
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toContain('window.__AIHD_BOOT__');
+    expect(response.body).toContain('<title>みらいAI窓口 × ヘルプデスク ステップ受付 V3.1');
+  });
+
+  it('既定では / は旧 UI のまま（切替は OPS_UI_PRIMARY）', async () => {
+    const response = await app.inject({ method: 'GET', url: '/' });
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toContain('window.__AIHD_BOOT__');
+  });
+});
+
 describe('操作者の肩書き（表示用）', () => {
   it('ロール集合から 1 つの肩書きを決める', () => {
     expect(actorRoleLabel(['approver', 'helpdesk'])).toBe('ナレッジ承認者');

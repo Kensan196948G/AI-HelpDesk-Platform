@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { answerWithDeepSeek } from '../ai/deepseek.js';
 import { personaSwitchMode } from '../auth/persona-switch.js';
@@ -338,26 +338,30 @@ function renderPrototype(boot: {
   return html;
 }
 
-export async function prototypeRoutes(app: FastifyInstance): Promise<void> {
-  app.get('/', { preHandler: authenticateUi }, async (request, reply) => {
-    if (!request.uiEmail) throw badRequest('UI の認証情報がありません。');
-    const boot = { ...(await loadState(request.uiEmail)), loginEmail: request.loginEmail };
+export async function prototypeRoutes(
+  app: FastifyInstance,
+  opts: { legacyOnly?: boolean } = {},
+): Promise<void> {
+  async function serve(reply: FastifyReply, email: string, loginEmail?: string): Promise<void> {
+    const boot = { ...(await loadState(email)), loginEmail };
     reply
       .type('text/html; charset=utf-8')
       .header('Content-Security-Policy', CSP)
       .header('Cache-Control', 'no-store')
       .send(renderPrototype(boot));
-  });
+  }
 
-  app.get('/index.html', { preHandler: authenticateUi }, async (request, reply) => {
+  const handler = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
     if (!request.uiEmail) throw badRequest('UI の認証情報がありません。');
-    const boot = { ...(await loadState(request.uiEmail)), loginEmail: request.loginEmail };
-    reply
-      .type('text/html; charset=utf-8')
-      .header('Content-Security-Policy', CSP)
-      .header('Cache-Control', 'no-store')
-      .send(renderPrototype(boot));
-  });
+    await serve(reply, request.uiEmail, request.loginEmail);
+  };
+
+  // 「/」の正が運用統合 UI のときは、旧 UI は /legacy だけに残す（docs/100 P7）。
+  if (!opts.legacyOnly) {
+    app.get('/', { preHandler: authenticateUi }, handler);
+    app.get('/index.html', { preHandler: authenticateUi }, handler);
+  }
+  app.get('/legacy', { preHandler: authenticateUi }, handler);
 
   app.get('/api/state', { preHandler: authenticateUi }, async (request) => {
     if (!request.uiEmail) throw badRequest('UI の認証情報がありません。');

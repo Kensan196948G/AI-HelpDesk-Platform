@@ -177,6 +177,11 @@ const EnvSchema = z.object({
   REPORT_PDF_TIMEOUT_MS: z.coerce.number().int().positive().default(30000),
 
   // RSP / MeshCentral（B さんの GUI / PowerShell 操作の既存基盤）。
+  // 運用統合 UI（/ops）を「/」の正とするか（docs/100 P7）。既定 false = 旧 UI を / で配信。
+  OPS_UI_PRIMARY: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
   MESHCENTRAL_URL: z.string().url().default('https://mesh.mirai-remotetools.com/'),
   RSP_BASE_URL: z.string().url().default('https://rsp.mirai-remotetools.com/'),
 
