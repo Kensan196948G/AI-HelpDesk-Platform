@@ -101,6 +101,37 @@ describe('緊急停止（サーバ保存）', () => {
   });
 });
 
+describe('端末台帳（Mirai-Info）', () => {
+  it('検索 API は担当者に応答し、台帳が無い環境でも 500 にしない', async () => {
+    const response = await app.inject({ method: 'GET', url: '/api/ops/assets?q=PC-1234' });
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as { ok: boolean; items: unknown[]; error: string | null };
+    expect(body.ok).toBe(true);
+    expect(Array.isArray(body.items)).toBe(true);
+    // テスト環境は実名簿・実台帳に接続しない（mirai-info は無効）。
+    expect(body.items).toHaveLength(0);
+  });
+
+  it('2文字未満の検索語では照会しない', async () => {
+    const response = await app.inject({ method: 'GET', url: '/api/ops/assets?q=P' });
+    expect(response.statusCode).toBe(200);
+    expect((response.json() as { items: unknown[] }).items).toHaveLength(0);
+  });
+
+  it('DevOps 状態に台帳のサマリ（件数・鮮度・到達性）が入る', async () => {
+    await grantApprover();
+    const response = await app.inject({ method: 'GET', url: '/api/ops/status' });
+    const body = response.json() as {
+      devops: { assets?: { total: number; seenWithin7d: number; online: number; offline: number } };
+    };
+    expect(body.devops.assets).toBeTruthy();
+    expect(typeof body.devops.assets?.total).toBe('number');
+    expect(typeof body.devops.assets?.seenWithin7d).toBe('number');
+    expect(typeof body.devops.assets?.online).toBe('number');
+    expect(typeof body.devops.assets?.offline).toBe('number');
+  });
+});
+
 describe('DevOps の実測値', () => {
   it('DB 件数と稼働時間を返す（推測値を出さない）', async () => {
     await grantApprover();
