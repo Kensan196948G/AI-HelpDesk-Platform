@@ -137,9 +137,10 @@ Access OTP で Staging にログインした同一チームドメインの SSO �
 | #6 PC情報からの補足 | ★ が付く端末情報が必要（今回は PC 基本情報を取得せず） |
 | #5/#8 など残りの受入、新しいリリース判定 | 別項目 |
 
-### 7-2-6. 環境設定の変更（記録）
+### 7-2-6. 環境設定の変更（記録・すべて復元済み）
 
-- **Staging の Access アプリ許可リスト**（`~/.config/ai-helpdesk/stg-access-allowlist.txt`）は `synthetic-staging@example.invalid` の 1 行だけで、**実運用者のメールでは 403** になっていた（`apps/api/src/auth/ui.ts` のアプリ層許可リスト）。Staging の UI 受入のため、本番と同じ運用者メールを 1 行追加した（変更前ファイルは同ディレクトリに `*.bak-<timestamp>` で退避）。許可リストは mtime/size で次回リクエスト時に自動反映されるため、**再起動は不要**だった。
+- **Staging の Access アプリ許可リスト**（`~/.config/ai-helpdesk/stg-access-allowlist.txt`）は設計どおり**合成 1 件のみ**（[docs/78](78-staging-build-20261106.md)、`synthetic-staging@example.invalid`）。このため実運用者のメールでは `apps/api/src/auth/ui.ts` のアプリ層許可リストで **403** になる。
+- ログイン経路の確認時に運用者メールを一時的に 1 行追加したが、**設計（合成 1 件）を変えないため直ちに元の内容へ復元した**（`cmp` で退避ファイルと同一を確認）。許可リストは mtime/size で次回リクエスト時に自動反映されるため、追加・復元とも**再起動は不要**だった。実 Access のログイン確認は本番で行った（本番の許可リストは従来から運用者を含む）。
 - Staging は名簿（Mirai-Info）を持たない設計（[docs/77](77-staging-environment-design.md) の PII 非流入要件）のため、**担当者向け機能（候補一覧・AI検査・n/4・記録全件）は Staging では検証できない**。今回の受入は本番で実施した。
 - 本番 DB の変更は受入による `case_handovers` 1 行・`case_handover_notifications` 1 行・`audit_log` 1 行のみ。**残置**: 引継ぎ待ち 1 件（`CASE-39198` `【受入】…`）は人がクローズする必要がある。
 
