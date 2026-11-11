@@ -178,6 +178,38 @@ describe('受付チケット API', () => {
   });
 });
 
+describe('会話ログ（P8a）', () => {
+  it('受付とAI回答がチケットの会話として残り、再取得でも消えない', async () => {
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/ops/tickets',
+      payload: {
+        subject: `${MARK} 会話ログ`,
+        body: '会話が残るか確認します。',
+        category: 'other',
+      },
+    });
+    const ticket = (created.json() as { ticket: { serverId: string; id: string } }).ticket;
+    const ai = await app.inject({ method: 'POST', url: `/api/ops/tickets/${ticket.serverId}/ai` });
+    expect(ai.statusCode).toBe(200);
+
+    const list = await app.inject({ method: 'GET', url: '/api/ops/tickets' });
+    const items = (
+      list.json() as { tickets: { id: string; aiLog: { role: string; text: string }[] }[] }
+    ).tickets;
+    const found = items.find((t) => t.id === ticket.id);
+    expect(found).toBeTruthy();
+    const roles = (found as { aiLog: { role: string }[] }).aiLog.map((m) => m.role);
+    expect(roles[0]).toBe('sys');
+    expect(roles).toContain('user');
+    expect(roles).toContain('ai');
+    const aiText = (found as { aiLog: { role: string; text: string }[] }).aiLog.find(
+      (m) => m.role === 'ai',
+    );
+    expect((aiText?.text ?? '').length).toBeGreaterThan(0);
+  });
+});
+
 describe('画面へ渡す形', () => {
   it('画面が使う配列と項目を補う', () => {
     const dto = toUiTicket({
