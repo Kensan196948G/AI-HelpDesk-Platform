@@ -203,6 +203,23 @@ AI-HelpDesk の WebUI を、添付の**運用統合 UI（14 画面）**へ**段�
 - 画面の ⑦AI・Skills 反映は `state.skills`（カテゴリ→版）と `state.reflect`（反映履歴）を実 DB の値で表示する。
 - **検証（ローカル・実 DB）**: migration 041 適用後、ops 系 **18 件成功**（ops 4・チケット 7・ナレッジ 7）。
 
+## 8-6. P5 の実装（DevOps・SecOps）
+
+| ファイル | 内容 |
+|---|---|
+| `db/migrations/042_ops_estop.sql` | **新規** `ops_estop`（1 行）。緊急停止をサーバ保存に移す |
+| `apps/api/src/routes/ops-status.ts` | `GET /api/ops/status`（緊急停止・DevOps 実測・監査鎖検証）／`POST /api/ops/estop` |
+| `apps/api/src/routes/ops.ts` | 起動時に緊急停止の状態と DevOps 実測値を渡す |
+| `Mirai_AIHelpdesk_OpsConsole_V1.0.html` | 緊急停止をサーバ保存へ。DevOps に「サーバ実測」カードを追加。疑似/localStorage 表記を実態へ修正 |
+| `apps/api/src/routes/ops-status.test.ts` | 権限 403・有効化/解除・監査 2 行・DevOps 実測値の 3 件 |
+
+- **緊急停止**: `ops_estop` の 1 行が正本。**承認者・監査担当のみ**操作でき、`ops.estop.on` / `ops.estop.off` を監査に記録。画面はサーバ成功後にだけ状態を変える。
+- **監査鎖の検証**: 既存の `verifyAuditChain`（正本）を呼び、`ok` / `rows` を返す（推測値を出さない）。
+- **DevOps**: サーバが実測できる値だけ（commit / release / 稼働時間 / Node / `db.ok` / ナレッジ・チケット・引継ぎ・監査の件数）。**unit 名・CI の詳細・パス・秘密は返さない**。
+- 画面の「ブラウザ内（疑似AI）」「localStorage」等の表記を実態（サーバ AI・PostgreSQL）へ修正。
+- **検証（ローカル・実 DB）**: migration 042 適用後、ops 系 **21 件成功**（ops 4・チケット 7・ナレッジ 7・status 3）。
+- **残**: unit/CI/backup の実状態表示（シェル実行を伴うため別段で安全策と一緒に）、システム設定（P6）。
+
 ## 9. 参照
 
 - 旧 UI の配信とブリッジ: [docs/14](14-prototype-ui-integration.md)
