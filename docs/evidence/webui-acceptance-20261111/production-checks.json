@@ -1,0 +1,128 @@
+{
+  "run": {
+    "at": "2026-11-11T16:30:00+09:00",
+    "environment": "production",
+    "base": "https://ai-helpdesk.mirai-dx-platform.com",
+    "commit": "4ce1c7d79611e93581230b958963d632630c8c1d",
+    "release": "20261111T144004-4ce1c7d79611",
+    "browser": "Playwright (headless, Firefox)",
+    "evidence_kind": "DOM assertion / API JSON / network log (スクリーンショットなし)"
+  },
+  "identity": {
+    "endpoint": "GET /api/me",
+    "status": 200,
+    "roles": ["approver", "helpdesk"],
+    "helpdeskActor": true,
+    "resolveAdmin": true,
+    "employee": null,
+    "via": "PERSONA_SWITCH_ALLOWLIST (demo)",
+    "note": "名簿にメール未登録だがデモ用アカウントとして担当者権限が解決される"
+  },
+  "v3_page": {
+    "title": "みらいAI窓口 × ヘルプデスク ステップ受付 V3.1",
+    "navigation_status": 200,
+    "console_errors": 2,
+    "console_errors_are_favicon_csp_only": true,
+    "pageerror": 0
+  },
+  "v4_workspace_tabs": {
+    "tablist": "案件の詳細",
+    "tabs": ["案件", "実行", "端末", "ナレッジ", "記録"],
+    "tab_count": 5,
+    "switching": "各タブで可視パネルは 1",
+    "footer": {
+      "selector": ".hw-ev-foot",
+      "height_px": 48,
+      "position": "layout-pinned (pane 下端との差 1px、全 5 タブで同一)",
+      "scroll_pinning_delta_px": 0,
+      "scroll_region": "#hw-ev-scroll"
+    }
+  },
+  "v6_audit_tab": {
+    "case": "INC-1002",
+    "rows_visible": 3,
+    "badge": "記録 3",
+    "show_all_button": null,
+    "show_all_expected": false,
+    "reason": "6 件以下のため「すべて表示」は仕様どおり非表示（>6 の全件表示は未実行）"
+  },
+  "v7_public": {
+    "public_url_status": 302,
+    "note": "Access のゲート。ログイン後の 200 は v3_page"
+  },
+  "conditional_intake_preview": {
+    "endpoint": "POST /api/intake/preview",
+    "auth": "helpdesk actor",
+    "cases": [
+      {
+        "input": "件名=【受入】不審なメールを開いてしまった / 分野=security / 緊急=urgent / 本文にメールアドレス",
+        "status": 200,
+        "ms": 103,
+        "signal": "red",
+        "security": true,
+        "pii": [{ "type": "email", "count": 1 }],
+        "notes_levels": ["red", "warn"]
+      },
+      {
+        "input": "件名=【受入】印刷できない / 分野=pc_network / 緊急=normal",
+        "status": 200,
+        "ms": 84,
+        "signal": "blue",
+        "security": false,
+        "pii": []
+      }
+    ],
+    "ai_calls": 0
+  },
+  "conditional_knowledge_inspect": {
+    "endpoint": "POST /api/knowledge/inspect",
+    "status": 200,
+    "ms": 114,
+    "score": 88,
+    "maxScore": 100,
+    "reference": true,
+    "redactions": [{ "type": "email", "count": 1 }, { "type": "ip", "count": 1 }],
+    "blocking_deviceInfo": false,
+    "items_ok": 6,
+    "items_total": 7,
+    "redacted_placeholder_examples": ["[メールアドレス]", "[IPアドレス]"]
+  },
+  "handover_flow": {
+    "ui": {
+      "wizard_steps_reached": ["STEP1 はじめに", "STEP2 困りごと", "STEP3 AIの一次対応", "STEP4 引継ぎ"],
+      "case": "CASE-39198",
+      "pc_info_choice": "取得しない",
+      "ai_answer_rendered": true,
+      "roster_recommendation_resolved": true,
+      "client_ticket": "TKT-2026-0006",
+      "client_incident": "INC-1010",
+      "pageerror": 0
+    },
+    "server": {
+      "endpoint": "POST /api/case-handovers",
+      "status": 200,
+      "handoverId": "0cfd3aa9-f1da-4aa2-9df6-c2a7a9d0ddf9",
+      "caseId": "CASE-39198",
+      "status_value": "pending",
+      "notify": { "queued": 1, "transport": "smtp" },
+      "inbox_after": {
+        "status": 200,
+        "count": 2,
+        "contains_acceptance": true
+      },
+      "db": {
+        "case_handovers": "CASE-39198 / pending / 2026-11-11 07:39:28Z",
+        "audit_log": "case_handover.create / case_handover / 0cfd3aa9…",
+        "case_handover_notifications": "sent / 2026-11-11 07:39:28Z"
+      }
+    }
+  },
+  "not_executed": {
+    "candidate_methods_panel": "② 候補の手順: 今回のケースに候補提示が無く未表示（ローカル/CI で検証済み）",
+    "ai_inspect_panel": "⑤ AI検査の UI パネル: 下書きが無く未表示（API は直接検証済み）",
+    "approval_progress": "⑥ 確認の進捗 n/4: 下書きが無く未表示",
+    "reflect_after_approval": "⑧ 今回反映: 承認が本人承認禁止（ALLOW_SELF_APPROVAL=false）で実施できず未検証",
+    "audit_show_all": "記録タブの「すべて表示（n件）」: ライブデータが 6 件以下で未実行",
+    "pc_supplement": "#6 PC情報からの補足: ★ が付く端末情報が必要で未実行"
+  }
+}
