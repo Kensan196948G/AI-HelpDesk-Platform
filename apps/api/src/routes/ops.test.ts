@@ -61,6 +61,7 @@ describe('運用統合 UI（/ops）の配信', () => {
     };
     expect(parsed.server).toBe(true);
     expect(Array.isArray(parsed.state.tickets)).toBe(true);
+    expect(Array.isArray((parsed.state as { remote?: unknown[] }).remote)).toBe(true);
   });
 });
 

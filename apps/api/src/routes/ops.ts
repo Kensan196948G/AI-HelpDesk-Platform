@@ -7,7 +7,7 @@ import { badRequest } from '../errors.js';
 import { type EmployeeRow, findEmployeeByEmail, listEmployees } from '../lib/mirai-info.js';
 import { loadAuditForUi, loadKnowledgeForUi, loadSkillsForUi } from './ops-knowledge.js';
 import { loadSettings } from './ops-settings.js';
-import { loadDevopsStatus, loadEstop } from './ops-status.js';
+import { loadDevopsStatus, loadEstop, loadRemoteSessions } from './ops-status.js';
 import { loadTicketsForUi } from './ops-tickets.js';
 
 /**
@@ -123,6 +123,8 @@ export async function opsRoutes(
     const devops = await loadDevopsStatus();
     // P6: システム設定（サーバの 1 行。秘密値は持たない）。
     const settings = await loadSettings();
+    // P11: SecOps の「接続・同意」は resolution_sessions を正本にする。
+    const remote = await loadRemoteSessions();
     const boot = {
       actor: {
         name: actor.name,
@@ -140,6 +142,7 @@ export async function opsRoutes(
         reflect: skills.reflect,
         estop: estop.active,
         settings,
+        remote,
       },
       devops,
       server: true,
