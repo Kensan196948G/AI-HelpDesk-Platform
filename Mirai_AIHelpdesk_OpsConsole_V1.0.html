@@ -1615,7 +1615,7 @@ function applySettings(){const x=getSettings();TH_HIGH=x.thHigh;TH_LOW=x.thLow;C
 const isAdmin=n=>isApprover(n);
 const canRelease=n=>isApprover(n)||n==='伊藤';
 const secOpen=()=>state.tickets.filter(t=>(t.sec||t.cat==='security')&&isOpen(t));
-const rsLive=()=>state.tickets.filter(t=>t.rs&&!t.rs.off);
+const rsLive=()=>Array.isArray(window.__OPS_REMOTE_LIVE__)?window.__OPS_REMOTE_LIVE__:state.tickets.filter(t=>t.rs&&!t.rs.off);
 function lsChars(k){try{return (localStorage.getItem(k||LS)||'').length}catch(e){return 0}}
 const kbSize=n=>n>=1048576?(n/1048576).toFixed(2)+' MB':Math.max(1,Math.round(n/1024))+' KB';
 function perfProbe(){const t0=performance.now();const n=buildIndex();const t1=performance.now();for(let i=0;i<20;i++)search('現場からVPNに接続できない',5);const t2=performance.now();return {idx:t1-t0,q:(t2-t1)/20,n}}
@@ -1942,7 +1942,7 @@ const App={
   let n=0;rsLive().forEach(t=>{t.rs.off=true;t.rs.log.push({role:'sys',text:'緊急停止により切断しました',t:now()});n++});
   state.estop=true;audit('緊急停止','',`リモート接続 ${n}件を切断`);save();flash();render();toast('緊急停止しました','bad','stop');
  },
- rsKill(id){const t=tk(id);if(!t||!t.rs||t.rs.off)return;t.rs.off=true;t.rs.log.push({role:'sys',text:`${state.actor} が強制切断しました`,t:now()});audit('リモート切断',t.id,'SecOps から強制切断');save();render();toast(`${t.id} のリモート接続を切断しました`,'','x')},
+ rsKill(id){toast('リモート接続の強制切断は旧UI（/legacy）で行ってください（新UIでは未実装です）','bad','lock')},
  setLbl(){[['hi','st_hi'],['lo','st_lo'],['cm','st_cm']].forEach(p=>{const e=$('#'+p[1]),l=$('#lb_'+p[0]);if(e&&l)l.textContent=e.value+'%'})},
  saveSettings(){
   if(!isAdmin(state.actor)){toast('システム設定を変更できるのは承認者です','bad','lock');return}
@@ -2187,6 +2187,11 @@ try{const __b=window.__OPS_BOOT__;if(__b){
  if(__b.state&&Array.isArray(__b.state.reflect)){state.reflect=__b.state.reflect}
  if(__b.state&&typeof __b.state.estop==='boolean'){state.estop=__b.state.estop}
  window.__OPS_DEVOPS__=__b.devops||null;
+ if(__b.state&&Array.isArray(__b.state.remote)){
+  window.__OPS_REMOTE_LIVE__=__b.state.remote.map(function(x){
+   return {id:x.caseId||x.id,status:'in_progress',rs:{by:x.userLabel||'-',at:x.startedAt||Date.now(),off:false},pc:{rec:{asset:x.deviceId||'-',host:''}}};
+  });
+ }
  if(__b.state&&__b.state.settings&&typeof __b.state.settings==='object'){state.settings=__b.state.settings;try{applySettings()}catch(e){}}
  if(__b.banner){var __bd=document.createElement('div');__bd.id='ops-migration-banner';__bd.setAttribute('role','status');__bd.textContent=__b.banner;__bd.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:90;padding:7px 12px;font:12px/1.45 system-ui,-apple-system,"Hiragino Sans",sans-serif;background:#fbf0dc;color:#5a3a00;border-top:1px solid #e6c98a;text-align:center';
   document.body.appendChild(__bd)}

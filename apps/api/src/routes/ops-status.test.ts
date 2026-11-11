@@ -132,6 +132,23 @@ describe('端末台帳（Mirai-Info）', () => {
   });
 });
 
+describe('リモート支援セッション（P11）', () => {
+  it('有効なセッションを配列で返す（推測値を足さない）', async () => {
+    await grantApprover();
+    const response = await app.inject({ method: 'GET', url: '/api/ops/status' });
+    const body = response.json() as {
+      remote: { id: string; caseId: string; status: string; userLabel: string }[];
+    };
+    expect(Array.isArray(body.remote)).toBe(true);
+    for (const item of body.remote) {
+      expect(typeof item.caseId).toBe('string');
+      expect(item.status).toBe('escalated');
+      // メールはマスクして返す（生のメールを出さない）。
+      expect(item.userLabel).not.toContain('@example.com');
+    }
+  });
+});
+
 describe('DevOps の実測値', () => {
   it('DB 件数と稼働時間を返す（推測値を出さない）', async () => {
     await grantApprover();

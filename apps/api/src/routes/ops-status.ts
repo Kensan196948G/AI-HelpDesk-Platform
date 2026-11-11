@@ -101,6 +101,40 @@ export async function loadDevopsStatus(): Promise<Record<string, unknown>> {
   };
 }
 
+/** 有効なリモート支援セッション（resolution_sessions の正本）。 */
+export async function loadRemoteSessions(): Promise<Record<string, unknown>[]> {
+  const rows = await sql<
+    {
+      id: string;
+      case_id: string;
+      status: string;
+      device_id: string | null;
+      user_email: string;
+      started_at: Date | string;
+      expires_at: Date | string | null;
+    }[]
+  >`
+    SELECT id, case_id, status, device_id, user_email, started_at, expires_at
+    FROM resolution_sessions
+    WHERE status = 'escalated' AND (expires_at IS NULL OR expires_at > now())
+    ORDER BY started_at DESC
+    LIMIT 20
+  `;
+  return rows.map((row) => {
+    const [local, domain] = String(row.user_email || '').split('@');
+    const masked = local ? `${local.slice(0, 2)}***${domain ? `@${domain}` : ''}` : '-';
+    return {
+      id: row.id,
+      caseId: row.case_id,
+      status: row.status,
+      deviceId: row.device_id,
+      userLabel: masked,
+      startedAt: ms(row.started_at),
+      expiresAt: ms(row.expires_at),
+    };
+  });
+}
+
 /** 監査鎖の検証（approver / auditor / helpdesk のみ）。 */
 export async function verifyChain(): Promise<Record<string, unknown>> {
   const rows = await sql<
@@ -145,8 +179,12 @@ export async function opsStatusRoutes(app: FastifyInstance): Promise<void> {
     const privileged = roles.some((role) => ['approver', 'auditor', 'helpdesk'].includes(role));
     const estop = await loadEstop();
     if (!privileged) return { ok: true, estop, devops: null, audit: null };
-    const [devops, audit] = await Promise.all([loadDevopsStatus(), verifyChain()]);
-    return { ok: true, estop, devops, audit };
+    const [devops, audit, remote] = await Promise.all([
+      loadDevopsStatus(),
+      verifyChain(),
+      loadRemoteSessions(),
+    ]);
+    return { ok: true, estop, devops, audit, remote };
   });
 
   /** 端末台帳（Mirai-Info）の検索。担当者だけが使える。IP・シリアルは返さない。 */
