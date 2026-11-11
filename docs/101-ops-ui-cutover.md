@@ -182,6 +182,7 @@ systemctl --user restart ai-helpdesk-prod-api
 - 本番 / Staging とも `/api/health` は 200・`commit=1e2607c`・`db=ok`。
 - 本番 / Staging とも migrations 45、ops 6 テーブル、`ops_skills` 7 行、`ops_estop` 1 行。
 - 本番は `OPS_UI_PRIMARY=true`、`/` 新UI（12メニュー・移行バナー）をオーナーが確認。
+- 配備前の直近ダンプ: `ai_helpdesk_preview-20261111-023320.dump`（266,820 bytes、37 migrations 時点）。
 - 本番の配備後ダンプ: `ai_helpdesk_preview-20261111-202323.dump`（283,777 bytes、sha256 は `backup.log` に記録）。
 - 初回失敗の `.tmp`（350MB）と旧 `.tmp`（34MB）は削除済み。
 
