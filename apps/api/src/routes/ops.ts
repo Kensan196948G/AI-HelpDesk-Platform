@@ -6,6 +6,7 @@ import { config, repoRoot } from '../config.js';
 import { badRequest } from '../errors.js';
 import { type EmployeeRow, findEmployeeByEmail } from '../lib/mirai-info.js';
 import { loadAuditForUi, loadKnowledgeForUi, loadSkillsForUi } from './ops-knowledge.js';
+import { loadDevopsStatus, loadEstop } from './ops-status.js';
 import { loadTicketsForUi } from './ops-tickets.js';
 
 /**
@@ -97,6 +98,9 @@ export async function opsRoutes(app: FastifyInstance): Promise<void> {
     const audit = await loadAuditForUi(roles);
     // P4: ⑦ AI・Skills 反映（カテゴリの Skill 版と反映ログ）。
     const skills = await loadSkillsForUi();
+    // P5: SecOps の緊急停止（サーバ保存）と DevOps の実測値。
+    const estop = await loadEstop();
+    const devops = await loadDevopsStatus();
     const boot = {
       actor: { name: actor.name, role: actor.role, approver: actor.approver, email: actor.email },
       state: {
@@ -106,7 +110,9 @@ export async function opsRoutes(app: FastifyInstance): Promise<void> {
         audit,
         skills: skills.skills,
         reflect: skills.reflect,
+        estop: estop.active,
       },
+      devops,
       server: true,
       authMode: config.AUTH_MODE,
       banner: MIGRATION_BANNER,

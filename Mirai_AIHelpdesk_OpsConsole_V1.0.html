@@ -1654,12 +1654,12 @@ V.devops=function(){
  const used=lsChars(),snapRaw=(()=>{try{return JSON.parse(localStorage.getItem(LS+'-snap')||'null')}catch(e){return null}})();
  const lastSk=CATS.map(c=>({c,s:state.skills[c.k]})).sort((a,b)=>b.s.updatedAt-a.s.updatedAt)[0];
  const comps=[
-  ['bot','AI検索エンジン','ブラウザ内（疑似AI）',P.n===act?'ok':'bad',`インデックス ${P.n}件／有効ナレッジ ${act}件`],
-  ['db','ナレッジDB','localStorage',''+'ok',`全 ${state.kb.length}件（有効 ${act}件）`],
+  ['bot','AI検索エンジン','サーバAI（承認済みナレッジ）',P.n===act?'ok':'bad',`インデックス ${P.n}件／有効ナレッジ ${act}件`],
+  ['db','ナレッジDB','PostgreSQL',''+'ok',`全 ${state.kb.length}件（有効 ${act}件）`],
   ['cpu','Skill配信','SKILL.md 7本','ok',`最新 ${lastSk.c.skill} v1.${lastSk.s.minor}`],
   ['monitor','資産管理DB連携','疑似データ',x.pc?'ok':'off',x.pc?`${PCDB.length}台を照会可能`:'システム設定で無効'],
   ['wifi','リモート接続','疑似',state.estop?'bad':x.remote?'ok':'off',state.estop?'緊急停止中':x.remote?`接続中 ${rsLive().length}件`:'システム設定で無効'],
-  ['audit','監査ログ','localStorage',state.audit.length>=800?'warn':'ok',`${state.audit.length}／800件`]
+  ['audit','監査ログ','PostgreSQL（ハッシュ鎖）',state.audit.length>=800?'warn':'ok',`${state.audit.length}／800件`]
  ];
  const SB={ok:['稼働','b-ok','check'],bad:['異常','b-bad','alert'],warn:['注意','b-warn','alert'],off:['停止','','x']};
  const stP=`<div class="kgrid">
@@ -2180,6 +2180,8 @@ try{const __b=window.__OPS_BOOT__;if(__b){
  if(__b.state&&Array.isArray(__b.state.audit)){state.audit=__b.state.audit}
  if(__b.state&&__b.state.skills&&typeof __b.state.skills==='object'){state.skills=__b.state.skills}
  if(__b.state&&Array.isArray(__b.state.reflect)){state.reflect=__b.state.reflect}
+ if(__b.state&&typeof __b.state.estop==='boolean'){state.estop=__b.state.estop}
+ window.__OPS_DEVOPS__=__b.devops||null;
  if(__b.banner){var __bd=document.createElement('div');__bd.id='ops-migration-banner';__bd.setAttribute('role','status');__bd.textContent=__b.banner;__bd.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:90;padding:7px 12px;font:12px/1.45 system-ui,-apple-system,"Hiragino Sans",sans-serif;background:#fbf0dc;color:#5a3a00;border-top:1px solid #e6c98a;text-align:center';
   document.body.appendChild(__bd)}
  if(__b.server){
@@ -2216,6 +2218,31 @@ try{const __b=window.__OPS_BOOT__;if(__b){
     .then(function(r){if(!r.ok)throw new Error('claim');return r.json()})
     .then(function(){__origStartWork.call(App,id)})
     .catch(function(){toast('担当開始をサーバに保存できませんでした','bad')});
+  };
+  /* DevOps: サーバが実測した値（commit / release / 稼働時間 / DB）を先頭に出す（P5）。 */
+  const __origDevops=V.devops;
+  V.devops=function(){
+   let html=__origDevops();
+   const d=window.__OPS_DEVOPS__;
+   if(d){
+    const ok=d.db&&d.db.ok;
+    const card='<div class="note '+(ok?'n-ok':'n-bad')+'" style="margin-bottom:10px"><div><b>サーバ実測</b>：commit <span class="mono">'+esc(d.commit||'-')+'</span>　release <span class="mono">'+esc(d.release||'-')+'</span>　稼働 '+Math.round((d.uptimeSec||0)/60)+'分　DB '+(ok?'ok':'NG')+'　ナレッジ '+(d.db&&d.db.counts?d.db.counts.knowledge:'-')+'件／チケット '+(d.db&&d.db.counts?d.db.counts.tickets:'-')+'件</div></div>';
+    html=html.replace('<div class="kgrid">',card+'<div class="kgrid">');
+   }
+   return html;
+  };
+  /* 緊急停止: サーバの 1 行（ops_estop）へ保存してから画面を更新する（P5）。 */
+  const __origEstop=App.estop;
+  App.estop=function(){
+   const next=!state.estop;
+   if(!state.estop&&!confirm('緊急停止します。相談者PCへのリモート接続をすべて切断し、新しい接続を止めます。よろしいですか？'))return;
+   fetch('/api/ops/estop',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({active:next,reason:next?'画面から緊急停止':null})})
+    .then(function(r){return r.json().then(function(j){return {ok:r.ok,body:j}})})
+    .then(function(res){
+     if(!res.ok){toast((res.body&&res.body.error&&res.body.error.message)||'緊急停止を保存できませんでした','bad','lock');return}
+     __origEstop.call(App);
+    })
+    .catch(function(){toast('緊急停止をサーバに保存できませんでした','bad')});
   };
   /* ⑤ 下書き: 解決記録から作った下書きをサーバへ保存する（P3b）。 */
   const __origCreateDraft=createDraft;
