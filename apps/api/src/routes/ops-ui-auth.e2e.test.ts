@@ -33,6 +33,7 @@ const original = {
   ACCESS_ALLOWLIST_FILE: config.ACCESS_ALLOWLIST_FILE,
   REQUIRE_PROXY_SECRET: config.REQUIRE_PROXY_SECRET,
   OPS_UI_PRIMARY: config.OPS_UI_PRIMARY,
+  PERSONA_SWITCH_ALLOWLIST: config.PERSONA_SWITCH_ALLOWLIST,
 };
 let app: FastifyInstance | undefined;
 
@@ -56,6 +57,8 @@ beforeAll(async () => {
     REQUIRE_PROXY_SECRET: false,
     // `/` を新 UI にする（本番の 2026-11-11 切替と同じ状態）。
     OPS_UI_PRIMARY: true,
+    // 管理者 Gmail は PC ヘルプデスクのデモ許可で解決する（本番と同じ）。
+    PERSONA_SWITCH_ALLOWLIST: ALLOWED_EXACT,
   });
   resetAllowlistCache();
   app = await buildServer({ logger: false });
@@ -83,6 +86,32 @@ describe('OPS_UI_PRIMARY=true の / 切替', () => {
     expect(response.statusCode).toBe(200);
     expect(response.body).toContain(NEW_UI_TITLE);
     expect(response.body).not.toContain('window.__AIHD_BOOT__');
+  });
+
+  it('管理者 Gmail は「管理者」/ PCヘルプデスクとしてブートされる', async () => {
+    const response = await server().inject({
+      method: 'GET',
+      url: '/',
+      headers: accessHeaders(ALLOWED_EXACT),
+    });
+    expect(response.statusCode).toBe(200);
+    const boot = /window\.__OPS_BOOT__=(\{.*?\});<\/script>/s.exec(response.body)?.[1];
+    expect(boot).toBeTruthy();
+    const parsed = JSON.parse(boot as string) as {
+      actor: {
+        name: string;
+        role: string;
+        helpdesk: boolean;
+        staff: { name: string }[];
+      };
+    };
+    expect(parsed.actor.name).toBe('管理者');
+    expect(parsed.actor.role).toBe('PCヘルプデスク');
+    expect(parsed.actor.helpdesk).toBe(true);
+    // 名簿に居ないログイン本人も操作者候補の先頭に残る。
+    expect(parsed.actor.staff.some((entry) => entry.name === '管理者')).toBe(true);
+    expect(response.body).toContain('さん、こんにちは');
+    expect(response.body).toContain('PCヘルプデスクとして対応中');
   });
 
   it('/legacy は旧 UI のまま', async () => {
