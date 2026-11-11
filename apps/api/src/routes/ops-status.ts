@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { requireHelpdeskActor } from '../auth/helpdesk-scope.js';
 import { authenticateUi } from '../auth/ui.js';
 import { config, repoRoot } from '../config.js';
 import { sql } from '../db.js';
@@ -9,6 +10,7 @@ import { GENESIS_HASH, verifyAuditChain } from '../domain/audit.js';
 import { badRequest, forbidden } from '../errors.js';
 import { appendAudit } from '../lib/audit-log.js';
 import { asJsonObject } from '../lib/json.js';
+import { deviceStatus, findDevices } from '../lib/mirai-info.js';
 
 /**
  * 運用統合 UI の DevOps・SecOps（docs/100 P5）。
@@ -86,6 +88,7 @@ export async function loadDevopsStatus(): Promise<Record<string, unknown>> {
   } catch {
     dbOk = false;
   }
+  const assets = await deviceStatus();
   return {
     commit: info.commit,
     release: info.release,
@@ -93,6 +96,8 @@ export async function loadDevopsStatus(): Promise<Record<string, unknown>> {
     node: process.version,
     env: config.NODE_ENV,
     db: { ok: dbOk, counts: counts[0] ?? null },
+    // 端末台帳（Mirai-Info）の件数・鮮度・到達性。取れない環境では error が入る。
+    assets,
   };
 }
 
@@ -142,6 +147,17 @@ export async function opsStatusRoutes(app: FastifyInstance): Promise<void> {
     if (!privileged) return { ok: true, estop, devops: null, audit: null };
     const [devops, audit] = await Promise.all([loadDevopsStatus(), verifyChain()]);
     return { ok: true, estop, devops, audit };
+  });
+
+  /** 端末台帳（Mirai-Info）の検索。担当者だけが使える。IP・シリアルは返さない。 */
+  app.get('/ops/assets', { preHandler: authenticateUi }, async (request) => {
+    if (!request.uiEmail) throw badRequest('UI の認証情報がありません。');
+    await requireHelpdeskActor(request.uiEmail);
+    const query = z
+      .object({ q: z.string().trim().max(120).default('') })
+      .parse(request.query ?? {});
+    const result = await findDevices(query.q, 10);
+    return { ok: true, items: result.devices, error: result.error ?? null };
   });
 
   /** 緊急停止の設定・解除（承認者／監査担当のみ）。監査に 1 行残す。 */

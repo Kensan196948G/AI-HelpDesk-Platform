@@ -2220,9 +2220,22 @@ try{const __b=window.__OPS_BOOT__;if(__b){
     .then(function(){__origStartWork.call(App,id)})
     .catch(function(){toast('担当開始をサーバに保存できませんでした','bad')});
   };
+  /* SecOps: 端末台帳（Mirai-Info）の実件数を先頭に出す（P8c）。 */
+  const __origSecops=V.secops;
+  V.secops=function(){
+   let html=__origSecops();
+   const a=window.__OPS_DEVOPS__&&window.__OPS_DEVOPS__.assets;
+   if(a){
+    const cls=a.error?'n-warn':'n-ok';
+    const txt='端末台帳（Mirai-Info）: 全 '+a.total+'台／7日以内に確認 '+a.seenWithin7d+'台／オンライン '+a.online+'台／オフライン '+a.offline+'台'+(a.latestSeenAt?'／最終確認 '+esc(String(a.latestSeenAt).slice(0,10)):'')+(a.error?'（取得できませんでした）':'');
+    html=html.replace('<div class="op lr">','<div class="note '+cls+'" style="margin-bottom:10px"><div>'+txt+'</div></div><div class="op lr">');
+   }
+   return html;
+  };
   /* PC情報: ブラウザから取得した情報をサーバへも保存し、AIの切り分けに使えるようにする（P8b）。 */
   const __origPcFetch=App.pcFetch;
   App.pcFetch=function(src){
+   if(src==='cmdb'){toast('資産管理DBの検索は準備中です（台帳APIは用意済み・画面接続は次段）。「このPCのブラウザから取得」をご利用ください','','info');return}
    const result=__origPcFetch.call(App,src);
    if(src!=='browser')return result;
    setTimeout(function(){

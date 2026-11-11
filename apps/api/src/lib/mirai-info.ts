@@ -117,6 +117,107 @@ export async function listEmployees(scope: EmployeeScope): Promise<{
   }
 }
 
+export interface DeviceRow {
+  assetTag: string;
+  hostname: string | null;
+  osFamily: string | null;
+  osVersion: string | null;
+  manufacturer: string | null;
+  model: string | null;
+  ownerName: string | null;
+  employeeNo: string | null;
+  siteCode: string | null;
+  orgUnitCode: string | null;
+  lastSeenAt: string | null;
+  reachability: string | null;
+}
+
+/**
+ * 端末台帳（mirai_info.devices）を検索する。
+ * 返すのは資産番号・ホスト名・OS・型番・利用者・拠点・最終確認だけ。
+ * **IP アドレスとシリアルは返さない**（画面にも出さない方針）。
+ */
+export async function findDevices(
+  query: string,
+  limit = 10,
+): Promise<{ devices: DeviceRow[]; error?: string }> {
+  const q = String(query || '').trim();
+  if (q.length < 2) return { devices: [] };
+  try {
+    const sql = await getClient();
+    const like = `%${q}%`;
+    const rows = await sql<DeviceRow[]>`
+      SELECT
+        asset_tag AS "assetTag",
+        hostname,
+        os_family AS "osFamily",
+        os_version AS "osVersion",
+        manufacturer,
+        model,
+        owner_name AS "ownerName",
+        employee_no AS "employeeNo",
+        site_code AS "siteCode",
+        org_unit_code AS "orgUnitCode",
+        last_seen_at AS "lastSeenAt",
+        reachability
+      FROM mirai_info.devices
+      WHERE asset_tag ILIKE ${like} OR hostname ILIKE ${like} OR owner_name ILIKE ${like}
+      ORDER BY last_seen_at DESC NULLS LAST
+      LIMIT ${limit}
+    `;
+    return { devices: rows };
+  } catch (error) {
+    return {
+      devices: [],
+      error: error instanceof Error ? error.message.slice(0, 200) : 'mirai-info-unavailable',
+    };
+  }
+}
+
+export interface DeviceStatus {
+  total: number;
+  seenWithin7d: number;
+  online: number;
+  offline: number;
+  latestSeenAt: string | null;
+  error?: string;
+}
+
+/** 端末台帳のサマリ（件数・鮮度・到達性）。取れない環境では 0 件と理由を返す。 */
+export async function deviceStatus(): Promise<DeviceStatus> {
+  try {
+    const sql = await getClient();
+    const rows = await sql<
+      { total: number; seen7: number; online: number; offline: number; latest: string | null }[]
+    >`
+      SELECT
+        count(*)::int AS total,
+        count(*) FILTER (WHERE last_seen_at >= now() - interval '7 days')::int AS seen7,
+        count(*) FILTER (WHERE reachability = 'online')::int AS online,
+        count(*) FILTER (WHERE reachability = 'offline')::int AS offline,
+        max(last_seen_at)::text AS latest
+      FROM mirai_info.devices
+    `;
+    const row = rows[0];
+    return {
+      total: row?.total ?? 0,
+      seenWithin7d: row?.seen7 ?? 0,
+      online: row?.online ?? 0,
+      offline: row?.offline ?? 0,
+      latestSeenAt: row?.latest ?? null,
+    };
+  } catch (error) {
+    return {
+      total: 0,
+      seenWithin7d: 0,
+      online: 0,
+      offline: 0,
+      latestSeenAt: null,
+      error: error instanceof Error ? error.message.slice(0, 200) : 'mirai-info-unavailable',
+    };
+  }
+}
+
 /** テスト用にキャッシュをリセットする。 */
 export function resetEmployeeCache(): void {
   cache = null;
