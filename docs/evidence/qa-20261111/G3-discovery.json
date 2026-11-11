@@ -1,0 +1,69 @@
+{
+  "url": "http://127.0.0.1:19360/",
+  "status": 200,
+  "title": "みらいAI窓口 × ヘルプデスク ステップ受付 V3.1",
+  "bodyLength": 670383,
+  "hasKeyText": {
+    "aiConsult": true,
+    "step1": true
+  },
+  "consoleErrors": [],
+  "visible": {
+    "buttons": [
+      {
+        "text": "ホーム",
+        "id": null,
+        "cls": "on"
+      },
+      {
+        "text": "新しい相談",
+        "id": null,
+        "cls": null
+      },
+      {
+        "text": "ボード",
+        "id": null,
+        "cls": null
+      },
+      {
+        "text": "一覧",
+        "id": null,
+        "cls": null
+      },
+      {
+        "text": "業務ツール",
+        "id": null,
+        "cls": null
+      },
+      {
+        "text": "データ",
+        "id": null,
+        "cls": null
+      },
+      {
+        "text": "緊急停止",
+        "id": "uxEstop",
+        "cls": "u-estop"
+      },
+      {
+        "text": "プロフィール",
+        "id": null,
+        "cls": "u-pill"
+      },
+      {
+        "text": "新しい相談をはじめる",
+        "id": null,
+        "cls": "u-btn go"
+      }
+    ],
+    "inputs": [
+      {
+        "tag": "INPUT",
+        "type": "search",
+        "id": "uxFind",
+        "placeholder": "🔍 社員を検索"
+      }
+    ],
+    "hasAiChat": false
+  }
+}

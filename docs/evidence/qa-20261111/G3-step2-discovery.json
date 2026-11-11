@@ -1,0 +1,194 @@
+{
+  "errors": [],
+  "snap": {
+    "buttons": [
+      {
+        "text": "ホーム",
+        "disabled": false,
+        "cls": null
+      },
+      {
+        "text": "新しい相談",
+        "disabled": false,
+        "cls": "on"
+      },
+      {
+        "text": "ボード",
+        "disabled": false,
+        "cls": null
+      },
+      {
+        "text": "一覧",
+        "disabled": false,
+        "cls": null
+      },
+      {
+        "text": "業務ツール",
+        "disabled": false,
+        "cls": null
+      },
+      {
+        "text": "データ",
+        "disabled": false,
+        "cls": null
+      },
+      {
+        "text": "緊急停止",
+        "disabled": false,
+        "cls": "u-estop"
+      },
+      {
+        "text": "プロフィール",
+        "disabled": false,
+        "cls": "u-pill"
+      },
+      {
+        "text": "STEP 1はじめに",
+        "disabled": false,
+        "cls": "w-stp done"
+      },
+      {
+        "text": "STEP 2困りごと",
+        "disabled": false,
+        "cls": "w-stp on"
+      },
+      {
+        "text": "STEP 3AIの一次対応",
+        "disabled": true,
+        "cls": "w-stp "
+      },
+      {
+        "text": "STEP 4引継ぎ",
+        "disabled": true,
+        "cls": "w-stp "
+      },
+      {
+        "text": "STEP 5担当者の対応",
+        "disabled": true,
+        "cls": "w-stp "
+      },
+      {
+        "text": "STEP 6ナレッジ化",
+        "disabled": true,
+        "cls": "w-stp "
+      },
+      {
+        "text": "STEP 7完了",
+        "disabled": true,
+        "cls": "w-stp "
+      },
+      {
+        "text": "＋ 印刷ができません",
+        "disabled": false,
+        "cls": null
+      },
+      {
+        "text": "＋ VPNにつながらない",
+        "disabled": false,
+        "cls": null
+      },
+      {
+        "text": "＋ Teamsの音が出ない",
+        "disabled": false,
+        "cls": null
+      },
+      {
+        "text": "＋ PCが遅い・容量不足",
+        "disabled": false,
+        "cls": null
+      },
+      {
+        "text": "取得する（おすすめ）",
+        "disabled": false,
+        "cls": "w-chip on"
+      },
+      {
+        "text": "取得しない",
+        "disabled": false,
+        "cls": "w-chip "
+      },
+      {
+        "text": "通常",
+        "disabled": false,
+        "cls": "w-chip on"
+      },
+      {
+        "text": "急ぎ（業務が止まっている）",
+        "disabled": false,
+        "cls": "w-chip "
+      },
+      {
+        "text": "PCから選ぶ",
+        "disabled": false,
+        "cls": "w-chip"
+      },
+      {
+        "text": "🧪 工事日報.csv",
+        "disabled": false,
+        "cls": "w-chip"
+      },
+      {
+        "text": "🧪 VPN接続ログ.log",
+        "disabled": false,
+        "cls": "w-chip"
+      },
+      {
+        "text": "🧪 人事評価一覧.xlsx",
+        "disabled": false,
+        "cls": "w-chip"
+      },
+      {
+        "text": "🧪 見積書.pdf",
+        "disabled": false,
+        "cls": "w-chip"
+      },
+      {
+        "text": "もどる",
+        "disabled": false,
+        "cls": "u-btn"
+      },
+      {
+        "text": "AIに相談する",
+        "disabled": false,
+        "cls": "u-btn go"
+      }
+    ],
+    "inputs": [
+      {
+        "tag": "SELECT",
+        "id": "uxWho",
+        "type": "select-one",
+        "placeholder": null
+      },
+      {
+        "tag": "INPUT",
+        "id": "uxFind",
+        "type": "search",
+        "placeholder": "🔍 社員を検索"
+      },
+      {
+        "tag": "INPUT",
+        "id": null,
+        "type": "text",
+        "placeholder": "例：VPNに接続できない"
+      },
+      {
+        "tag": "TEXTAREA",
+        "id": null,
+        "type": "textarea",
+        "placeholder": "例：今朝から、現場のモバイルルーターでVPNに接続すると途中で止まります"
+      },
+      {
+        "tag": "SELECT",
+        "id": null,
+        "type": "select-one",
+        "placeholder": null
+      }
+    ],
+    "activeStep": "STEP 2困りごと",
+    "markers": [
+      "入力してください"
+    ],
+    "textHead": "ホーム\n新しい相談\nボード\n一覧\n業務ツール\nデータ\nみらいAI窓口 × ヘルプデスク\nCloudflare Access\n緊急停止\n操作する人\n山田 太郎（東京支店／工事部）\n木村 花子（九州支店／営業部）\n小川 一郎（管理本部／経理部）\n佐藤 健（L1窓口）\n鈴木 学（ネットワーク／IT端末管理者）\n高橋 直人（M365・ID管理）\n田中 誠（端末・業務アプリ／IT端末管理者）\n伊藤 彩（セキュリティ）\n渡辺 修（課長・ナレッジ承認者）\n山本 由美（ナレッジ管理者・承認者）\n中島 恵（監査担当）\n一般社員\nプロフィール\nSTEP 1\nはじめに\nSTEP 2\n困りごと\nSTEP 3\nAIの一次対応\nSTEP 4\n引継ぎ\nSTEP 5\n担当者の対応\nSTEP 6\nナレッジ化\nSTEP 7\n完了\n困っていることを教えてください\n\n「いつから・何をしたら・どうなるか」を普通の言葉で。例を押すと入ります。\n\n＋ 印刷ができません\n＋ VPNにつながらない\n＋ Teamsの音が出ない\n＋ PCが遅い・容量不足\n件名\n内容必須\nPC基本情報の事前取得\n取得する（おすすめ）\n取得しない\n読み取りのみ。ファイルの中身・閲覧履歴・画面・キー入力は取得しません\nPC基本情報を取得中…\n2/8\n✓ 端末\n✓ アカウント\n… ネットワーク\n・ リソース\n・ セキュリティ\n・ 周辺機器\n・ ソフトウェア\n・ 最近のエラー\n読み取りだけで集めています。入力はこのまま続けられます。\n急ぎ具合\n通常\n急ぎ（業務が止まっている）\n使うAI（模擬）\nDeepSeek-V4.1-Flash（自由記述のみ）\nDeepSeek-V4.1-Flash（承認済み外部・自由記述のみ）\n添付ファイル（任意）\nPCから選ぶ\n🧪 工事日報.csv\n🧪 VPN接続ログ.log\n🧪 人事評価一覧.xlsx\n🧪 見積書.p"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "verdict": "PASS",
+  "reachedStep2": true,
+  "stepAtStart": "STEP 2困りごと",
+  "stepAfterSend": "STEP 2困りごと",
+  "sendButtonFound": true,
+  "toastShown": true,
+  "message": "内容を入力してください",
+  "stayedOnStep2": true,
+  "postApiCases": [],
+  "consoleErrors": [],
+  "bodyLenBefore": 1264,
+  "bodyLenAfter": 1276
+}
