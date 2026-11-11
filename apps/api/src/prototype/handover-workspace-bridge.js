@@ -91,6 +91,9 @@
       report: null,
       knowledge: null,
     },
+    /* 右ペインのタブ（案件/実行/端末/ナレッジ/記録）。再描画しても選択とスクロールを保つ。 */
+    evTab: 'case',
+    evScroll: {},
     scrollTop: 0,
     timer: null,
   };
@@ -1203,9 +1206,9 @@
     const t = current();
     const ev = $('#hw-ev');
     if (!ev || !t) return;
-    const top = ev.scrollTop;
+    HW.evScroll[HW.evTab] = ev.scrollTop;
     ev.innerHTML = evHTML(t);
-    ev.scrollTop = top;
+    ev.scrollTop = HW.evScroll[HW.evTab] || 0;
   }
 
   function tcCaptureHTML() {
@@ -1889,10 +1892,81 @@
     );
   }
 
-  function evHTML(t) {
-    if (!t)
-      return '<div class="hw-empty">案件を選択すると、案件情報・共有情報・記録を表示します。</div>';
-    const cw = cowork(t);
+  /*
+   * 右ペインのタブ（画面仕様書 V1.0 の「右詳細パネルの 1 ページ化」を既存の
+   * 引継ぎワークスペースへ取り込む。新しい画面は増やさない）。
+   * 既存のカードを並べ直すだけで、データの取得・更新は変えない（読み取り専用）。
+   */
+  const EV_TABS = [
+    { id: 'case', label: '案件' },
+    { id: 'exec', label: '実行' },
+    { id: 'device', label: '端末' },
+    { id: 'knowledge', label: 'ナレッジ' },
+    { id: 'record', label: '記録' },
+  ];
+  const EV_AUDIT_SHOWN = 6;
+
+  /** タブの件数。パネルに実際に出す件数だけを数える（件数と中身を食い違わせない）。 */
+  function evTabCount(t, id) {
+    if (!t) return 0;
+    if (id === 'device') {
+      const shared = t.coworkShared && typeof t.coworkShared === 'object' ? t.coworkShared : {};
+      return Object.keys(shared).length;
+    }
+    if (id === 'knowledge') return relatedKbs(t).length + (t.draftId ? 1 : 0);
+    if (id === 'record') {
+      const rows = auditList().filter(
+        (a) => a && (a.target === t.id || (t.draftId && a.target === t.draftId)),
+      );
+      return Math.min(rows.length, EV_AUDIT_SHOWN);
+    }
+    return 0;
+  }
+
+  function evTabHTML(t) {
+    return (
+      '<div class="hw-tabs" role="tablist" aria-label="案件の詳細">' +
+      EV_TABS.map((tab) => {
+        const active = HW.evTab === tab.id;
+        const count = evTabCount(t, tab.id);
+        return (
+          '<button type="button" class="hw-tab" role="tab" id="hw-tab-' +
+          tab.id +
+          '" aria-controls="hw-panel-' +
+          tab.id +
+          '" aria-selected="' +
+          (active ? 'true' : 'false') +
+          '" tabindex="' +
+          (active ? '0' : '-1') +
+          '" data-hw="evtab" data-tab="' +
+          tab.id +
+          '">' +
+          esc(tab.label) +
+          (count ? '<b class="hw-tab-n">' + count + '</b>' : '') +
+          '</button>'
+        );
+      }).join('') +
+      '</div>'
+    );
+  }
+
+  /** 全パネルを DOM に残し、選択中だけを見せる（タブを移っても入力値を失わない）。 */
+  function evPanelHTML(id, body) {
+    const active = HW.evTab === id;
+    return (
+      '<div class="hw-panel" role="tabpanel" id="hw-panel-' +
+      id +
+      '" aria-labelledby="hw-tab-' +
+      id +
+      '"' +
+      (active ? '' : ' hidden') +
+      '>' +
+      body +
+      '</div>'
+    );
+  }
+
+  function evCaseHTML(t) {
     return (
       '<div class="hw-ev-card"><h3>案件情報</h3><dl class="hw-kv"><dt>案件</dt><dd class="hw-mono">' +
       esc(t.id) +
@@ -1908,22 +1982,42 @@
       esc(t.assignee || '未割当') +
       '</dd><dt>分野</dt><dd>' +
       esc(CATEGORY[t.cat] || t.cat || '-') +
-      '</dd></dl></div>' +
+      '</dd></dl></div><div class="hw-ev-card"><h3>開く</h3><div class="hw-actions"><button type="button" class="hw-btn sm" data-hw="legacy">既存の画面で開く</button>' +
+      (t.coworkTicket
+        ? '<button type="button" class="hw-btn sm" data-hw="cowork">利用者の受付番号</button>'
+        : '') +
+      '</div></div>'
+    );
+  }
+
+  function evExecHTML(t, cw) {
+    return (
       '<div class="hw-ev-card hw-tc" id="hw-tc-card"><h3>RSP実行セッション ' +
       tcStatusChip() +
       '</h3>' +
       tcHTML(t) +
       '</div>' +
-      '<div class="hw-ev-card"><h3>端末・共有情報 <span class="hw-chip info">本人同意</span></h3>' +
-      sharedHTML(t) +
-      '</div>' +
       (cw && cw.proposals.length
         ? '<div class="hw-ev-card"><h3>AI操作の承認記録</h3>' + proposalsHTML(cw) + '</div>'
-        : '') +
+        : '')
+    );
+  }
+
+  function evDeviceHTML(t) {
+    return (
+      '<div class="hw-ev-card"><h3>端末・共有情報 <span class="hw-chip info">本人同意</span></h3>' +
+      sharedHTML(t) +
+      '</div>'
+    );
+  }
+
+  function evKnowledgeHTML(t) {
+    const kbs = relatedKbs(t);
+    return (
       '<div class="hw-ev-card"><h3>関連ナレッジ</h3>' +
-      (relatedKbs(t).length
+      (kbs.length
         ? '<div class="hw-kb-list">' +
-          relatedKbs(t)
+          kbs
             .map(
               (kb) =>
                 '<div class="hw-kb"><div><b class="hw-mono">' +
@@ -1942,14 +2036,48 @@
         : '<p class="hw-empty sm">関連ナレッジはありません。</p>') +
       '</div><div class="hw-ev-card"><h3>ナレッジ下書き</h3>' +
       draftHTML(t) +
-      '</div><div class="hw-ev-card"><h3>操作の記録</h3>' +
-      auditHTML(t) +
-      '</div><div class="hw-ev-card"><h3>開く</h3><div class="hw-actions"><button type="button" class="hw-btn sm" data-hw="legacy">既存の画面で開く</button>' +
-      (t.coworkTicket
-        ? '<button type="button" class="hw-btn sm" data-hw="cowork">利用者の受付番号</button>'
-        : '') +
-      '</div></div>'
+      '</div>'
     );
+  }
+
+  function evRecordHTML(t) {
+    return '<div class="hw-ev-card"><h3>操作の記録</h3>' + auditHTML(t) + '</div>';
+  }
+
+  function evHTML(t) {
+    if (!t)
+      return '<div class="hw-empty">案件を選択すると、案件情報・共有情報・記録を表示します。</div>';
+    const cw = cowork(t);
+    return (
+      evTabHTML(t) +
+      evPanelHTML('case', evCaseHTML(t)) +
+      evPanelHTML('exec', evExecHTML(t, cw)) +
+      evPanelHTML('device', evDeviceHTML(t)) +
+      evPanelHTML('knowledge', evKnowledgeHTML(t)) +
+      evPanelHTML('record', evRecordHTML(t))
+    );
+  }
+
+  /** タブを切り替える（再描画しない。フォーカスとスクロールだけ移す）。 */
+  function setEvTab(tabId, opts) {
+    if (!EV_TABS.some((tab) => tab.id === tabId)) return;
+    if (HW.evTab === tabId) return;
+    const ev = $('#hw-ev');
+    if (ev) HW.evScroll[HW.evTab] = ev.scrollTop;
+    HW.evTab = tabId;
+    $$('#hw-ev [role="tab"]').forEach((button) => {
+      const active = button.dataset.tab === tabId;
+      button.setAttribute('aria-selected', active ? 'true' : 'false');
+      button.tabIndex = active ? 0 : -1;
+    });
+    $$('#hw-ev [role="tabpanel"]').forEach((panel) => {
+      panel.hidden = panel.id !== 'hw-panel-' + tabId;
+    });
+    if (ev) ev.scrollTop = HW.evScroll[tabId] || 0;
+    if (opts && opts.focus) {
+      const button = $('#hw-tab-' + tabId);
+      if (button) button.focus();
+    }
   }
 
   function updateHead(t) {
@@ -1969,7 +2097,10 @@
       if (caseBody) caseBody.scrollTop = HW.scrollTop || 0;
     }
     const ev = $('#hw-ev');
-    if (ev) ev.innerHTML = evHTML(t);
+    if (ev) {
+      ev.innerHTML = evHTML(t);
+      ev.scrollTop = HW.evScroll[HW.evTab] || 0;
+    }
     updateHead(t);
   }
 
@@ -2282,6 +2413,7 @@
 #ahd-hw:focus{outline:none}
 #ahd-hw.hw-embedded .hw-grid{padding:8px;gap:8px}
 #ahd-hw.hw-embedded .hw-ev{padding:7px}
+#ahd-hw.hw-embedded .hw-ev .hw-tabs{top:-7px;margin:-7px -7px 0;padding:6px 7px 0}
 #ahd-hw[hidden]{display:none!important}
 #ahd-hw *{box-sizing:border-box}
 #ahd-hw .hw-top{flex:none;height:54px;display:flex;align-items:center;gap:9px;padding:0 14px;background:linear-gradient(180deg,#173352,#122a45);color:#fff;border-bottom:3px solid var(--u-safety,#f5b800)}
@@ -2412,6 +2544,14 @@
 #ahd-hw .hw-tl-x{color:var(--u-ink,#1b222b)}
 #ahd-hw .hw-endnote{font-size:9.5px;color:var(--u-muted,#5f6874);border-top:1px dashed var(--u-line,#e1ddd2);padding-top:8px;line-height:1.6}
 #ahd-hw .hw-ev{background:var(--u-surface2,#efede6);padding:8px;gap:7px;overflow:auto}
+#ahd-hw .hw-tabs{position:sticky;top:-8px;z-index:3;flex:none;display:flex;gap:4px;margin:-8px -8px 0;padding:7px 8px 0;background:var(--u-surface2,#efede6);border-bottom:1px solid var(--u-line,#e1ddd2)}
+#ahd-hw .hw-tab{flex:1 1 0;min-width:0;display:flex;align-items:center;justify-content:center;gap:3px;border:1px solid var(--u-line,#e1ddd2);border-bottom:0;border-radius:8px 8px 0 0;background:var(--u-surface,#fff);color:var(--u-muted,#5f6874);padding:5px 3px;font:inherit;font-size:10px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+#ahd-hw .hw-tab:hover{color:var(--u-ink,#1b222b)}
+#ahd-hw .hw-tab[aria-selected="true"]{background:var(--u-surface2,#efede6);color:var(--u-navy,#16314f);box-shadow:inset 0 2px 0 var(--u-teal,#0f9d9a)}
+#ahd-hw .hw-tab:focus-visible{outline:2px solid var(--u-teal,#0f9d9a);outline-offset:-2px}
+#ahd-hw .hw-tab-n{flex:none;font-size:9px;font-weight:700;line-height:1.5;padding:0 4px;border-radius:7px;background:var(--u-line,#e1ddd2);color:var(--u-ink,#1b222b)}
+#ahd-hw .hw-panel{flex:none;display:flex;flex-direction:column;gap:7px}
+#ahd-hw .hw-panel[hidden]{display:none!important}
 #ahd-hw .hw-ev-card{flex:none;background:var(--u-surface,#fff);border:1px solid var(--u-line,#e1ddd2);border-radius:10px;overflow:hidden}
 #ahd-hw .hw-ev-card h3{margin:0;padding:6px 9px;background:var(--u-surface2,#efede6);border-bottom:1px solid var(--u-line,#e1ddd2);font-size:10.2px;display:flex;align-items:center;gap:5px;justify-content:space-between}
 #ahd-hw .hw-kv{display:grid;grid-template-columns:62px minmax(0,1fr);gap:2px 7px;margin:0;padding:7px 9px;font-size:10.4px}
@@ -2502,7 +2642,7 @@ body.ahd-hw-open{overflow:hidden}
   root.innerHTML =
     '<header class="hw-top"><span class="hw-mark">み</span><span class="hw-title">引継ぎワークスペース</span><span class="hw-sub" id="hw-sub">案件を選択してください</span><span class="hw-sp"></span><button type="button" class="hw-btn sm" data-hw="refresh">⟳ 更新</button><button type="button" class="hw-close" data-hw="close" aria-label="閉じる">×</button></header>' +
     '<div class="hw-top-note">既存の引継ぎ案件を表示します（デモデータではありません）。担当開始・解決記録は既存の「③ 引継ぎ・④ 解決記録」と同じ処理を呼び出します。</div>' +
-    '<main class="hw-grid"><aside class="hw-pane hw-queue"><div class="hw-ph"><h2>引継ぎボード</h2><p id="hw-counts"></p></div><div class="hw-tools"><div class="hw-seg" id="hw-filters"><button type="button" data-hw="filter" data-filter="all">すべて <b>0</b></button><button type="button" data-hw="filter" data-filter="open">引継ぎ待ち <b>0</b></button><button type="button" data-hw="filter" data-filter="progress">対応中 <b>0</b></button><button type="button" data-hw="filter" data-filter="done">解決 <b>0</b></button></div><input id="hw-search" class="hw-search" type="search" placeholder="案件番号・件名・依頼者で検索" autocomplete="off"></div><div class="hw-list" id="hw-list"></div><div class="hw-foot">赤→黄→青の順。担当開始・解決記録は既存の画面と同じ処理を呼びます。</div></aside><section class="hw-pane hw-case" id="hw-case" aria-label="案件の経過と次の一手"></section><aside class="hw-pane hw-ev" id="hw-ev" aria-label="案件情報・共有情報・記録"></aside></main><div class="hw-toasts" id="hw-toasts" aria-live="polite"></div>';
+    '<main class="hw-grid"><aside class="hw-pane hw-queue"><div class="hw-ph"><h2>引継ぎボード</h2><p id="hw-counts"></p></div><div class="hw-tools"><div class="hw-seg" id="hw-filters"><button type="button" data-hw="filter" data-filter="all">すべて <b>0</b></button><button type="button" data-hw="filter" data-filter="open">引継ぎ待ち <b>0</b></button><button type="button" data-hw="filter" data-filter="progress">対応中 <b>0</b></button><button type="button" data-hw="filter" data-filter="done">解決 <b>0</b></button></div><input id="hw-search" class="hw-search" type="search" placeholder="案件番号・件名・依頼者で検索" autocomplete="off"></div><div class="hw-list" id="hw-list"></div><div class="hw-foot">赤→黄→青の順。担当開始・解決記録は既存の画面と同じ処理を呼びます。</div></aside><section class="hw-pane hw-case" id="hw-case" aria-label="案件の経過と次の一手"></section><aside class="hw-pane hw-ev" id="hw-ev" aria-label="案件の詳細（案件・実行・端末・ナレッジ・記録）"></aside></main><div class="hw-toasts" id="hw-toasts" aria-live="polite"></div>';
   document.body.appendChild(root);
 
   function helpdeskActive() {
@@ -2649,12 +2789,17 @@ body.ahd-hw-open{overflow:hidden}
     if (action === 'select') {
       HW.selected = target.dataset.id;
       HW.scrollTop = 0;
+      HW.evScroll = {};
       renderAll();
       return;
     }
     if (action === 'filter') {
       HW.filter = target.dataset.filter;
       renderList();
+      return;
+    }
+    if (action === 'evtab') {
+      setEvTab(target.dataset.tab, { focus: true });
       return;
     }
     if (action === 'claim') {
@@ -2746,12 +2891,33 @@ body.ahd-hw-open{overflow:hidden}
   root.addEventListener(
     'scroll',
     (event) => {
-      if (event.target && event.target.classList && event.target.classList.contains('hw-cbody')) {
-        HW.scrollTop = event.target.scrollTop;
-      }
+      const target = event.target;
+      if (!target || !target.classList) return;
+      if (target.classList.contains('hw-cbody')) HW.scrollTop = target.scrollTop;
+      if (target.id === 'hw-ev') HW.evScroll[HW.evTab] = target.scrollTop;
     },
     true,
   );
+
+  /* 右ペインのタブは左右キー・Home/End でも移動できる（WAI-ARIA の tabs パターン）。 */
+  root.addEventListener('keydown', (event) => {
+    const tab =
+      event.target && event.target.closest ? event.target.closest('[data-hw="evtab"]') : null;
+    if (!tab) return;
+    const tabs = $$('#hw-ev [role="tab"]');
+    const index = tabs.indexOf(tab);
+    if (index < 0) return;
+    let next = null;
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown')
+      next = tabs[(index + 1) % tabs.length];
+    else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp')
+      next = tabs[(index - 1 + tabs.length) % tabs.length];
+    else if (event.key === 'Home') next = tabs[0];
+    else if (event.key === 'End') next = tabs[tabs.length - 1];
+    if (!next) return;
+    event.preventDefault();
+    setEvTab(next.dataset.tab, { focus: true });
+  });
 
   document.addEventListener(
     'keydown',
