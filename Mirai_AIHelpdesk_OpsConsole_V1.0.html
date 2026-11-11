@@ -2196,7 +2196,7 @@ try{const __b=window.__OPS_BOOT__;if(__b){
     .then(function(r){return r.json()})
     .then(function(d){
      if(!d||!d.ticket){toast('受付を保存できませんでした','bad');return}
-     const t=Object.assign({},d.ticket,{sec:sec,aiLog:[],shown:[],candidates:[],extra:[],failedKb:[],history:[]});
+     const t=Object.assign({},d.ticket,{sec:sec,aiLog:Array.isArray(d.ticket.aiLog)?d.ticket.aiLog:[],shown:[],candidates:[],extra:[],failedKb:[],history:[]});
      if(ui.pcDraft){t.pc=Object.assign({},ui.pcDraft,{at:now()})}
      hist(t,'受付',req);state.tickets.unshift(t);audit('受付',t.id,subject);ui.pcDraft=null;save();
      ui.view='ai';ui.sel.ai=t.id;render();runTriage(t);

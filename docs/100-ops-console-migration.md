@@ -273,6 +273,19 @@ AI-HelpDesk の WebUI を、添付の**運用統合 UI（14 画面）**へ**段�
 
 **判断**: 主要な業務フロー（受付→AI→引継ぎ→解決→下書き→承認→KB→反映→監査→設定）は新 UI で実データ動作する。一方、**端末系（PC情報・診断・リモート）とフォルダアクセス/サポートセッション**は未接続のため、`/` の切替は保留する。これらを移植するか、新 UI から外す（受容する）かを決めた時点で `OPS_UI_PRIMARY=true` にする。
 
+## 8-9. P8a の実装（会話ログ全量）
+
+| ファイル | 内容 |
+|---|---|
+| `db/migrations/044_ops_ticket_messages.sql` | **新規** `ops_ticket_messages`（チケットごとの発話 1 行） |
+| `apps/api/src/routes/ops-tickets.ts` | 受付・AI回答・引継ぎ・担当開始・解決のたびに 1 行記録し、一覧/初期表示で `aiLog` として返す |
+| `Mirai_AIHelpdesk_OpsConsole_V1.0.html` | 受付直後の `aiLog` をサーバの値から消さないよう修正 |
+| `apps/api/src/routes/ops-tickets.test.ts` | 受付→AI→再取得でも会話が消えない試験を追加（計 8 件） |
+
+- 記録する role: `sys`（受付・引継ぎ・担当開始・解決）／`user`（相談内容）／`ai`（回答。provider と出所を meta に保存）。
+- 再読み込みしても会話が復元される（これまでは最新回答 1 件だけだった）。
+- **未接続の残**: 相談者からの追加質問（②のチャット入力は今は画面ローカル）。
+
 ## 9. 参照
 
 - 旧 UI の配信とブリッジ: [docs/14](14-prototype-ui-integration.md)

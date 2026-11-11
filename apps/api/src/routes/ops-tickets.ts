@@ -77,6 +77,49 @@ interface OpsTicketRow {
   started_at: Date | string | null;
 }
 
+interface OpsMessageRow {
+  ticket_id: string;
+  role: string;
+  text: string;
+  provider: string | null;
+  created_at: Date | string;
+}
+
+/** 会話ログを 1 行足す（受付・AI回答・引継ぎ・解決）。 */
+async function appendMessage(
+  tx: any,
+  ticketId: string,
+  role: 'sys' | 'user' | 'ai',
+  text: string,
+  extra: { provider?: string | null; meta?: Record<string, unknown> } = {},
+): Promise<void> {
+  await tx`
+    INSERT INTO ops_ticket_messages (ticket_id, role, text, provider, meta)
+    VALUES (
+      ${ticketId}, ${role}, ${text}, ${extra.provider ?? null},
+      ${jsonbValue(extra.meta ?? {})}
+    )
+  `;
+}
+
+/** チケット群の会話ログをまとめて取り、チケット ID で束ねる。 */
+async function loadMessages(ticketIds: string[]): Promise<Map<string, OpsMessageRow[]>> {
+  const map = new Map<string, OpsMessageRow[]>();
+  if (!ticketIds.length) return map;
+  const rows = await sql<OpsMessageRow[]>`
+    SELECT ticket_id, role, text, provider, created_at
+    FROM ops_ticket_messages
+    WHERE ticket_id IN ${sql(ticketIds)}
+    ORDER BY created_at ASC
+  `;
+  for (const row of rows) {
+    const list = map.get(row.ticket_id) ?? [];
+    list.push(row);
+    map.set(row.ticket_id, list);
+  }
+  return map;
+}
+
 function ms(value: Date | string | null): number | null {
   if (!value) return null;
   const date = value instanceof Date ? value : new Date(value);
@@ -84,17 +127,27 @@ function ms(value: Date | string | null): number | null {
 }
 
 /** 画面（既存のチケット描画）が期待する形へ写す。足りない配列は空で埋める。 */
-export function toUiTicket(row: OpsTicketRow): Record<string, unknown> {
-  const aiLog = row.ai_answer
-    ? [
-        {
-          role: 'ai',
-          text: row.ai_answer,
-          t: ms(row.updated_at) ?? Date.now(),
-          provider: row.ai_provider ?? undefined,
-        },
-      ]
-    : [];
+export function toUiTicket(
+  row: OpsTicketRow,
+  messages: OpsMessageRow[] = [],
+): Record<string, unknown> {
+  const aiLog = messages.length
+    ? messages.map((message) => ({
+        role: message.role,
+        text: message.text,
+        t: ms(message.created_at) ?? Date.now(),
+        ...(message.provider ? { provider: message.provider } : {}),
+      }))
+    : row.ai_answer
+      ? [
+          {
+            role: 'ai',
+            text: row.ai_answer,
+            t: ms(row.updated_at) ?? Date.now(),
+            provider: row.ai_provider ?? undefined,
+          },
+        ]
+      : [];
   return {
     id: row.tkt_no,
     serverId: row.id,
@@ -158,7 +211,9 @@ export async function loadTicketsForUi(email: string): Promise<Record<string, un
   } catch {
     all = false;
   }
-  return (await listRows(email, all)).map(toUiTicket);
+  const rows = await listRows(email, all);
+  const messages = await loadMessages(rows.map((row) => row.id));
+  return rows.map((row) => toUiTicket(row, messages.get(row.id) ?? []));
 }
 
 export async function opsTicketRoutes(app: FastifyInstance): Promise<void> {
@@ -174,7 +229,12 @@ export async function opsTicketRoutes(app: FastifyInstance): Promise<void> {
       all = false;
     }
     const rows = await listRows(email, all);
-    return { ok: true, scope: all ? 'all' : 'mine', tickets: rows.map(toUiTicket) };
+    const messages = await loadMessages(rows.map((row) => row.id));
+    return {
+      ok: true,
+      scope: all ? 'all' : 'mine',
+      tickets: rows.map((row) => toUiTicket(row, messages.get(row.id) ?? [])),
+    };
   });
 
   /** 受付（1 件作成）。監査に 1 行残す。 */
@@ -212,10 +272,13 @@ export async function opsTicketRoutes(app: FastifyInstance): Promise<void> {
             subject: input.subject.slice(0, 120),
           },
         });
+        await appendMessage(tx, created.id, 'sys', `チケット ${created.tkt_no} を受け付けました`);
+        await appendMessage(tx, created.id, 'user', `${input.subject}\n${input.body}`);
         return created.id;
       });
       const row = await loadRow(id);
-      return { ok: true, ticket: toUiTicket(row) };
+      const messages = await loadMessages([row.id]);
+      return { ok: true, ticket: toUiTicket(row, messages.get(row.id) ?? []) };
     },
   );
 
@@ -245,15 +308,21 @@ export async function opsTicketRoutes(app: FastifyInstance): Promise<void> {
         );
       }
       const answer = await answerWithDeepSeek(`${row.subject}\n${row.body}`, email);
-      await sql`
-        UPDATE ops_tickets
-        SET ai_answer = ${answer.answer},
-            ai_sources = ${jsonbValue(answer.sources)},
-            ai_provider = ${answer.provider},
-            ai_model = ${answer.model},
-            updated_at = now()
-        WHERE id = ${row.id}
-      `;
+      await sql.begin(async (tx) => {
+        await tx`
+          UPDATE ops_tickets
+          SET ai_answer = ${answer.answer},
+              ai_sources = ${jsonbValue(answer.sources)},
+              ai_provider = ${answer.provider},
+              ai_model = ${answer.model},
+              updated_at = now()
+          WHERE id = ${row.id}
+        `;
+        await appendMessage(tx, row.id, 'ai', answer.answer, {
+          provider: answer.provider,
+          meta: { sources: answer.sources, confidence: answer.confidence },
+        });
+      });
       return {
         ok: true,
         answer: answer.answer,
@@ -297,6 +366,7 @@ export async function opsTicketRoutes(app: FastifyInstance): Promise<void> {
           targetId: row.tkt_no,
           detail: { email, assignee },
         });
+        await appendMessage(tx, row.id, 'sys', `${assignee} が対応を開始しました`);
       });
       return { ok: true, ticket: toUiTicket(await loadRow(row.id)) };
     },
@@ -342,6 +412,7 @@ export async function opsTicketRoutes(app: FastifyInstance): Promise<void> {
             cause: body.cause.slice(0, 200),
           },
         });
+        await appendMessage(tx, row.id, 'sys', `解決記録を登録（所要 ${body.minutes ?? 0} 分）`);
       });
       return { ok: true, ticket: toUiTicket(await loadRow(row.id)) };
     },
@@ -385,6 +456,14 @@ export async function opsTicketRoutes(app: FastifyInstance): Promise<void> {
           targetId: row.tkt_no,
           detail: { email, from: row.status, to: body.status, note: body.note ?? null },
         });
+        if (body.status === 'escalated') {
+          await appendMessage(
+            tx,
+            row.id,
+            'sys',
+            `人間の担当者へ引継ぎ${body.note ? `（${body.note}）` : ''}`,
+          );
+        }
       });
       return { ok: true, ticket: toUiTicket(await loadRow(row.id)) };
     },
