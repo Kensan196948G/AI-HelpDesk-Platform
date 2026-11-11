@@ -385,6 +385,9 @@ AI-HelpDesk の WebUI を、添付の**運用統合 UI（14 画面）**へ**段�
 
 ## 9. 参照
 
+- **配備・切替・ロールバックの手順**: [docs/101](101-ops-ui-cutover.md)（未実施。実施時に実測値を追記）
+
+
 - 旧 UI の配信とブリッジ: [docs/14](14-prototype-ui-integration.md)
 - 受付・引継ぎ・承認の仕様: [docs/14](14-prototype-ui-integration.md) / [docs/93](93-right-panel-tabs.md) / [docs/94](94-knowledge-trial-and-review.md) / [docs/95](95-right-panel-footer-and-reflect.md)
 - 配備: [docs/82](82-promotion-runbook-20261106.md) / [docs/98](98-deploy-webui-20261111.md)
