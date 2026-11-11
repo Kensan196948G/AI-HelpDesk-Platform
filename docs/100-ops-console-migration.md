@@ -158,6 +158,21 @@ AI-HelpDesk の WebUI を、添付の**運用統合 UI（14 画面）**へ**段�
 - **検証（ローカル・実 DB）**: 使い捨て DB に migration 038 を適用し、`vitest` で 6 件成功（AI は鍵なしのフォールバック経路）。
 - **未接続**: 引継ぎ（`case_handovers`）との接続、③以降の画面。P3 で行う。
 
+## 8-3. P3a の実装（③引継ぎ・④解決記録）
+
+| ファイル | 内容 |
+|---|---|
+| `db/migrations/039_ops_ticket_resolution.sql` | `ops_tickets` に担当・原因・手順・所要・各時刻を追加 |
+| `apps/api/src/routes/ops-tickets.ts` | `POST /api/ops/tickets/:id/claim`・`POST /api/ops/tickets/:id/resolve`、PATCH の引継ぎ時刻 |
+| `Mirai_AIHelpdesk_OpsConsole_V1.0.html` | 引継ぎ・担当開始・解決記録をサーバ API へ（失敗時は画面を進めない） |
+| `apps/api/src/routes/ops-tickets.test.ts` | 担当開始→解決記録→二重解決 409→監査 2 行の試験を追加（計 7 件） |
+
+- **③ 引継ぎ**: ヘルプデスク相当のみ。`escalated` → `in_progress`、担当者名と開始時刻を保存。監査 `ops.ticket.claim`。
+- **④ 解決記録**: 原因・手順（配列）・所要分・備考を保存し `resolved` へ。監査 `ops.ticket.resolve`。**二重解決は 409**。
+- **失敗時**: サーバ保存に失敗したら画面を先へ進めない（ローカルだけ進む状態を作らない）。
+- **検証（ローカル・実 DB）**: migration 039 適用後、`vitest` 7 件成功。
+- **未接続**: ⑤ 下書き・⑥ 承認・⑦ KB・監査ログ画面（P3b）。
+
 ## 9. 参照
 
 - 旧 UI の配信とブリッジ: [docs/14](14-prototype-ui-integration.md)

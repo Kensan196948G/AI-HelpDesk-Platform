@@ -1082,6 +1082,7 @@ function play(t,msgs,after){
 function refreshFor(t){if(ui.view==='ai'&&ui.sel.ai===t.id)render();else renderNav()}
 
 function escalate(t,reason,byAi){
+ if(window.__OPS_ESCALATE__)window.__OPS_ESCALATE__(t,reason);
  t.status='escalated';t.escalatedAt=now();t.suggest=suggestAssignee(t);
  t.handover={reason,at:now()};t.handover.summary=buildHandover(t);
  t.aiLog.push({role:'ai',text:`担当者へ引き継ぎます。ここまでの経過はAIが要約して担当者に渡すので、同じ説明を繰り返す必要はありません。\n推奨担当：${t.suggest}（${staff(t.suggest).role}）　SLA期限：${fmt(due(t))}`,t:now()});
@@ -2193,6 +2194,38 @@ try{const __b=window.__OPS_BOOT__;if(__b){
      ui.view='ai';ui.sel.ai=t.id;render();runTriage(t);
     })
     .catch(function(){toast('受付を保存できませんでした','bad')});
+  };
+  /* ③ 引継ぎ: 人間へ渡す時点でサーバ状態も更新する（P3）。 */
+  window.__OPS_ESCALATE__=function(t,reason){
+   if(!t||!t.serverId)return;
+   fetch('/api/ops/tickets/'+encodeURIComponent(t.serverId),{method:'PATCH',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({status:'escalated',note:String(reason||'').slice(0,200)})})
+    .catch(function(){toast('引継ぎのサーバ反映に失敗しました','bad')});
+  };
+  /* ③ 担当開始: サーバで claim してから画面を更新する（P3）。 */
+  const __origStartWork=App.startWork;
+  App.startWork=function(id){
+   const t=tk(id);
+   if(!t||!t.serverId)return __origStartWork.call(App,id);
+   const assignee=$('#q_as')?$('#q_as').value:'';
+   fetch('/api/ops/tickets/'+encodeURIComponent(t.serverId)+'/claim',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({assignee:assignee})})
+    .then(function(r){if(!r.ok)throw new Error('claim');return r.json()})
+    .then(function(){__origStartWork.call(App,id)})
+    .catch(function(){toast('担当開始をサーバに保存できませんでした','bad')});
+  };
+  /* ④ 解決記録: サーバへ保存してから画面を更新する（P3）。 */
+  const __origResolve=App.resolve;
+  App.resolve=function(id){
+   const t=tk(id);
+   if(!t||!t.serverId)return __origResolve.call(App,id);
+   const cause=$('#r_cause')?$('#r_cause').value.trim():'';
+   const steps=$('#r_steps')?$('#r_steps').value.split('\n').map(function(s){return s.trim()}).filter(Boolean):[];
+   if(!cause||!steps.length)return __origResolve.call(App,id);
+   const minutes=Number($('#r_min')?$('#r_min').value:0)||0;
+   const note=$('#r_note')?$('#r_note').value.trim():'';
+   fetch('/api/ops/tickets/'+encodeURIComponent(t.serverId)+'/resolve',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({cause:cause,steps:steps,minutes:minutes,note:note})})
+    .then(function(r){if(!r.ok)throw new Error('resolve');return r.json()})
+    .then(function(){__origResolve.call(App,id)})
+    .catch(function(){toast('解決記録をサーバに保存できませんでした','bad')});
   };
   /* ② AI一次対応: サーバの承認済みナレッジを根拠にした実 AI の回答を使う（P2）。 */
   window.__OPS_AI__=function(t){

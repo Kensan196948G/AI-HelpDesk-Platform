@@ -4,7 +4,7 @@ import { answerWithDeepSeek } from '../ai/deepseek.js';
 import { requireHelpdeskActor } from '../auth/helpdesk-scope.js';
 import { authenticateUi } from '../auth/ui.js';
 import { sql } from '../db.js';
-import { ApiError, badRequest, forbidden, notFound } from '../errors.js';
+import { ApiError, badRequest, conflict, forbidden, notFound } from '../errors.js';
 import { appendAudit } from '../lib/audit-log.js';
 import { jsonbValue } from '../lib/jsonb-value.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
@@ -34,6 +34,17 @@ const PatchSchema = z.object({
   note: z.string().trim().max(500).optional(),
 });
 
+const ClaimSchema = z.object({
+  assignee: z.string().trim().max(120).optional(),
+});
+
+const ResolveSchema = z.object({
+  cause: z.string().trim().min(1).max(4000),
+  steps: z.array(z.string().trim().min(1).max(1000)).min(1).max(50),
+  minutes: z.number().int().min(0).max(100000).optional(),
+  note: z.string().trim().max(2000).optional(),
+});
+
 interface OpsTicketRow {
   id: string;
   tkt_no: string;
@@ -56,6 +67,14 @@ interface OpsTicketRow {
   created_at: Date | string;
   updated_at: Date | string;
   resolved_at: Date | string | null;
+  assignee_email: string | null;
+  assignee_name: string | null;
+  cause: string | null;
+  steps: unknown;
+  resolution_minutes: number | null;
+  resolution_note: string | null;
+  escalated_at: Date | string | null;
+  started_at: Date | string | null;
 }
 
 function ms(value: Date | string | null): number | null {
@@ -98,6 +117,17 @@ export function toUiTicket(row: OpsTicketRow): Record<string, unknown> {
     history: [],
     aiProvider: row.ai_provider ?? null,
     aiModel: row.ai_model ?? null,
+    assignee: row.assignee_name ?? null,
+    escalatedAt: ms(row.escalated_at) ?? null,
+    startedAt: ms(row.started_at) ?? null,
+    resolution: row.cause
+      ? {
+          cause: row.cause,
+          steps: Array.isArray(row.steps) ? row.steps : [],
+          minutes: row.resolution_minutes ?? 0,
+          note: row.resolution_note ?? '',
+        }
+      : null,
   };
 }
 
@@ -235,6 +265,88 @@ export async function opsTicketRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
+  /** ③ 引継ぎ: 担当者が引き受けて対応を開始する（ヘルプデスク相当のみ）。 */
+  app.post(
+    '/ops/tickets/:id/claim',
+    { preHandler: authenticateUi, bodyLimit: 8 * 1024 },
+    async (request) => {
+      if (!request.uiEmail) throw badRequest('UI の認証情報がありません。');
+      const email = request.uiEmail;
+      const actor = await requireHelpdeskActor(email);
+      const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+      const body = ClaimSchema.parse(request.body ?? {});
+      const row = await loadRow(id);
+      if (row.status === 'resolved' || row.status === 'closed') {
+        throw conflict('解決済み・完了のチケットは引き受けられません。');
+      }
+      const assignee = (body.assignee || actor.name || email).slice(0, 120);
+      await sql.begin(async (tx) => {
+        await tx`
+          UPDATE ops_tickets
+          SET status = 'in_progress',
+              assignee_email = ${email},
+              assignee_name = ${assignee},
+              started_at = COALESCE(started_at, now()),
+              updated_at = now()
+          WHERE id = ${row.id}
+        `;
+        await appendAudit(tx, {
+          actorId: null,
+          action: 'ops.ticket.claim',
+          targetType: 'ops_ticket',
+          targetId: row.tkt_no,
+          detail: { email, assignee },
+        });
+      });
+      return { ok: true, ticket: toUiTicket(await loadRow(row.id)) };
+    },
+  );
+
+  /** ④ 解決記録（原因・手順・所要）。ヘルプデスク相当のみ。 */
+  app.post(
+    '/ops/tickets/:id/resolve',
+    { preHandler: authenticateUi, bodyLimit: 32 * 1024 },
+    async (request) => {
+      if (!request.uiEmail) throw badRequest('UI の認証情報がありません。');
+      const email = request.uiEmail;
+      const actor = await requireHelpdeskActor(email);
+      const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+      const body = ResolveSchema.parse(request.body ?? {});
+      const row = await loadRow(id);
+      if (row.status === 'resolved' || row.status === 'closed') {
+        throw conflict('このチケットはすでに解決済みです。');
+      }
+      await sql.begin(async (tx) => {
+        await tx`
+          UPDATE ops_tickets
+          SET status = 'resolved',
+              cause = ${body.cause},
+              steps = ${jsonbValue(body.steps)},
+              resolution_minutes = ${body.minutes ?? null},
+              resolution_note = ${body.note ?? null},
+              assignee_email = COALESCE(assignee_email, ${email}),
+              assignee_name = COALESCE(assignee_name, ${actor.name ?? email}),
+              resolved_at = now(),
+              updated_at = now()
+          WHERE id = ${row.id}
+        `;
+        await appendAudit(tx, {
+          actorId: null,
+          action: 'ops.ticket.resolve',
+          targetType: 'ops_ticket',
+          targetId: row.tkt_no,
+          detail: {
+            email,
+            minutes: body.minutes ?? null,
+            steps: body.steps.length,
+            cause: body.cause.slice(0, 200),
+          },
+        });
+      });
+      return { ok: true, ticket: toUiTicket(await loadRow(row.id)) };
+    },
+  );
+
   /** 状態の更新（引継ぎ・対応中・解決）。本人は「引継ぎ」まで、担当者はそれ以降も。 */
   app.patch(
     '/ops/tickets/:id',
@@ -262,6 +374,7 @@ export async function opsTicketRoutes(app: FastifyInstance): Promise<void> {
           UPDATE ops_tickets
           SET status = ${body.status},
               resolved_at = CASE WHEN ${body.status} = 'resolved' THEN now() ELSE resolved_at END,
+              escalated_at = CASE WHEN ${body.status} = 'escalated' THEN COALESCE(escalated_at, now()) ELSE escalated_at END,
               updated_at = now()
           WHERE id = ${row.id}
         `;
