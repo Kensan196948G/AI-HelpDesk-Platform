@@ -210,6 +210,56 @@ describe('会話ログ（P8a）', () => {
   });
 });
 
+describe('③ リモート対応の準備（P12）', () => {
+  it('引継ぎ後のチケットに解決セッションを作り、再実行では再利用する', async () => {
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/ops/tickets',
+      payload: {
+        subject: `${MARK} リモート準備`,
+        body: 'VPNにつながらないので遠隔で見てほしい。',
+        category: 'network',
+      },
+    });
+    const ticket = (created.json() as { ticket: { serverId: string; id: string } }).ticket;
+
+    // 引継ぎ前は準備できない（409）。
+    const early = await app.inject({
+      method: 'POST',
+      url: `/api/ops/tickets/${ticket.serverId}/remote-session`,
+    });
+    expect(early.statusCode).toBe(409);
+
+    await app.inject({
+      method: 'PATCH',
+      url: `/api/ops/tickets/${ticket.serverId}`,
+      payload: { status: 'escalated', note: '引継ぎ' },
+    });
+    const first = await app.inject({
+      method: 'POST',
+      url: `/api/ops/tickets/${ticket.serverId}/remote-session`,
+    });
+    expect(first.statusCode).toBe(200);
+    const firstBody = first.json() as { sessionId: string; caseId: string; reused: boolean };
+    expect(firstBody.caseId).toBe(ticket.id);
+    expect(firstBody.reused).toBe(false);
+
+    const second = await app.inject({
+      method: 'POST',
+      url: `/api/ops/tickets/${ticket.serverId}/remote-session`,
+    });
+    const secondBody = second.json() as { sessionId: string; reused: boolean };
+    expect(secondBody.sessionId).toBe(firstBody.sessionId);
+    expect(secondBody.reused).toBe(true);
+
+    const rows = await sql<{ status: string; case_id: string }[]>`
+      SELECT status, case_id FROM resolution_sessions WHERE id = ${firstBody.sessionId}
+    `;
+    expect(rows[0]?.status).toBe('escalated');
+    expect(rows[0]?.case_id).toBe(ticket.id);
+  });
+});
+
 describe('② 追加質問（P9）', () => {
   it('追加の質問に回答し、会話へ1往復を足す', async () => {
     const created = await app.inject({

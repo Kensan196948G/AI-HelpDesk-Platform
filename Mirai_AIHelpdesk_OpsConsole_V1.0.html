@@ -1440,10 +1440,10 @@ function queuePanel(t){
  let action='',al='対応',ai_='wrench';const rd=t.rd||{};
  if(t.status==='escalated'){
   al='担当割り当て';ai_='user';
-  action=`<div class="suggest">${av(t.suggest)}<div><b>${esc(t.suggest)}</b>（${esc(staff(t.suggest).role)}）<div class="hint">${I('sparkles','sm')} AI推奨担当（カテゴリとSkillから推定）</div></div></div><div class="row" style="align-items:flex-end"><label class="f" style="flex:1 1 200px">担当者<select id="q_as">${STAFF.filter(s=>!s.approver).map(s=>`<option value="${s.name}" ${s.name===t.suggest?'selected':''}>${s.name}（${s.role}）${s.name===t.suggest?' ← AI推奨':''}</option>`).join('')}</select></label><div style="margin-bottom:10px"><button class="btn" onclick="App.startWork('${t.id}')">${I('play')}担当して対応開始</button></div></div><div class="note n-acc">${I('info')}<div>対応を開始すると「リモート対応」で相談者のPCにログインし、解決するまで指示を出せます。解決後は「④ 解決記録」に進みます。</div></div>`;
+  action=`<div class="suggest">${av(t.suggest)}<div><b>${esc(t.suggest)}</b>（${esc(staff(t.suggest).role)}）<div class="hint">${I('sparkles','sm')} AI推奨担当（カテゴリとSkillから推定）</div></div></div><div class="row" style="align-items:flex-end"><label class="f" style="flex:1 1 200px">担当者<select id="q_as">${STAFF.filter(s=>!s.approver).map(s=>`<option value="${s.name}" ${s.name===t.suggest?'selected':''}>${s.name}（${s.role}）${s.name===t.suggest?' ← AI推奨':''}</option>`).join('')}</select></label><div style="margin-bottom:10px"><button class="btn" onclick="App.startWork('${t.id}')">${I('play')}担当して対応開始</button> <button class="btn ghost" onclick="App.remoteSession('${t.id}')">${I('wifi')}リモート対応の準備</button></div></div><div class="note n-acc">${I('info')}<div>対応を開始すると「リモート対応」で相談者のPCにログインし、解決するまで指示を出せます。解決後は「④ 解決記録」に進みます。</div></div>`;
  }else if(t.status==='in_progress'){
   al='④ 解決記録';
-  action=`${t.rs&&(t.rs.done.length||t.rs.manual.length)?`<div class="note n-ai">${I('sparkles')}<div>リモート対応の記録から、AIが原因と手順を下書きしました。内容を確認・修正してから記録してください。</div></div>`:''}<div class="cols-w"><div>
+  action=`<div class="btns" style="margin-bottom:8px"><button class="btn ghost" onclick="App.remoteSession('${t.id}')">${I('wifi')}リモート対応の準備</button></div>${t.rs&&(t.rs.done.length||t.rs.manual.length)?`<div class="note n-ai">${I('sparkles')}<div>リモート対応の記録から、AIが原因と手順を下書きしました。内容を確認・修正してから記録してください。</div></div>`:''}<div class="cols-w"><div>
   <label class="f">原因<textarea id="r_cause" rows="3" placeholder="何が原因だったか（事実のみ）" oninput="App.rd('${t.id}')">${esc(rd.cause||'')}</textarea></label>
   <label class="f">対応手順（1行に1手順）<textarea id="r_steps" rows="6" placeholder="第三者が再現できる粒度で書いてください" oninput="App.rd('${t.id}')">${esc(rd.steps||'')}</textarea></label></div><div>
   <label class="f">所要時間（分）<input id="r_min" type="number" min="0" value="${esc(rd.min||30)}" oninput="App.rd('${t.id}')"></label><label class="f">備考・再発防止<input id="r_note" placeholder="任意" value="${esc(rd.note||'')}" oninput="App.rd('${t.id}')"></label>
@@ -2212,6 +2212,18 @@ try{const __b=window.__OPS_BOOT__;if(__b){
      ui.view='ai';ui.sel.ai=t.id;render();runTriage(t);
     })
     .catch(function(){toast('受付を保存できませんでした','bad')});
+  };
+  /* ③ リモート対応の準備: 解決セッション（escalated）を作る。端末の特定・接続は旧UI（P12）。 */
+  App.remoteSession=function(id){
+   const t=tk(id);
+   if(!t||!t.serverId)return;
+   fetch('/api/ops/tickets/'+encodeURIComponent(t.serverId)+'/remote-session',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:'{}'})
+    .then(function(r){return r.json().then(function(j){return {ok:r.ok,body:j}})})
+    .then(function(res){
+     if(!res.ok){toast((res.body&&res.body.error&&res.body.error.message)||'リモート対応を準備できませんでした','bad','lock');return}
+     toast(res.body.reused?'リモート対応のセッションは既にあります（端末の特定・接続は /legacy で行います）':'リモート対応のセッションを作成しました（端末の特定・接続は /legacy で行います）','ok','wifi');
+    })
+    .catch(function(){toast('リモート対応を準備できませんでした','bad')});
   };
   /* ② 追加質問: サーバの実AIへ問い合わせ、会話に1往復を足す（P9）。 */
   const __origAddInfo=App.addInfo;
