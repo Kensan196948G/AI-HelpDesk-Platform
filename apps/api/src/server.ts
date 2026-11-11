@@ -20,6 +20,7 @@ import { deskRoutes } from './routes/desk.js';
 import { deviceRoutes } from './routes/device.js';
 import { employeeRoutes } from './routes/employees.js';
 import { healthRoutes } from './routes/health.js';
+import { intakeRoutes } from './routes/intake.js';
 import { knowledgeRoutes } from './routes/knowledge.js';
 import { meRoutes } from './routes/me.js';
 import { prototypeRoutes } from './routes/prototype.js';
@@ -234,6 +235,7 @@ export async function buildServer(options?: {
   await app.register(terminalRoutes, { prefix: '/api' });
   await app.register(remoteAssistRoutes, { prefix: '/api' });
   await app.register(knowledgeRoutes, { prefix: '/api' });
+  await app.register(intakeRoutes, { prefix: '/api' });
   await app.register(auditRoutes, { prefix: '/api' });
   await app.register(dashboardRoutes, { prefix: '/api' });
   await app.register(resolveRoutes, { prefix: '/api' });
