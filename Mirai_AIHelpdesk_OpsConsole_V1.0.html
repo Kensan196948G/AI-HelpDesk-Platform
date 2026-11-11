@@ -839,6 +839,11 @@ function pcCard(pc,F,compact){
 function tipsCard(tips){return `<div class="kbcard tips"><span class="kbt">${I('monitor')}<b>PC情報からの補足</b></span><ul class="tipl">${tips.map((x,i)=>`<li style="--i:${i}">${I('arrow','sm')}<span>${esc(x)}</span></li>`).join('')}</ul></div>`}
 function pcBoxHtml(){
  const d=ui.pcDraft;
+ if(d&&d.ledger){
+  const a=d.ledger;
+  const rows=[['端末',a.asset],['ホスト名',a.host],['OS',((a.osFamily||'')+' '+(a.osVersion||'')).trim()],['利用者',a.ownerName],['拠点',a.siteCode],['到達性',a.reachability],['最終確認',a.lastSeenAt?String(a.lastSeenAt).slice(0,10):null]];
+  return '<div class="card"><div class="hint">'+I('db','sm')+' 台帳（Mirai-Info）の情報です。IPアドレス・シリアルは表示しません。</div><div class="tbl"><table><tbody>'+rows.map(function(r){return '<tr><th style="text-align:left;white-space:nowrap">'+esc(r[0])+'</th><td>'+esc(String(r[1]==null||r[1]===''?'-':r[1]))+'</td></tr>'}).join('')+'</tbody></table></div><div class="note n-acc" style="margin-top:8px">ウイルス対策・更新状況・MFA・証明書はこの台帳に無いため、PC診断は行いません。</div></div>';
+ }
  return d?pcCard(d,pcDiagnose(d,'',null),false):emptyBox('monitor','未取得です。左の「資産管理DBから取得」または「このPCのブラウザから取得」を押してください。<br>取得しない場合、AIは一般的な手順で回答します。');
 }
 function pcSection(){
@@ -853,7 +858,7 @@ function pcSection(){
   <li>実運用では SKYSEA Client View・Active Directory・Entra ID（Intune）から取得する想定。このサンプルの資産情報は疑似データ（ブラウザ情報のみ実測）</li></ul></details>
  <div class="row" style="align-items:flex-end"><div class="fld" style="flex:1 1 170px;margin-bottom:0"><div class="lbl">${I('search','sm')}資産番号・ホスト名（空欄なら依頼者名で検索）</div><input id="pc_q" placeholder="例：PC-30412"></div>
  <div class="btns"><button class="btn sm" id="pc_db" onclick="App.pcFetch('cmdb')">${I('db')}資産管理DBから取得</button><button class="btn ghost sm" onclick="App.pcFetch('browser')">${I('globe')}このPCのブラウザから取得</button></div></div>
- <div class="pcstat ${d?'ok':''}">${d?`${I('check','sm')}取得済み：${esc(d.rec?d.rec.asset:'ブラウザ実測')}<a href="#" onclick="App.tab('intake','pc');return false">右の「PC情報」で確認</a><a href="#" onclick="App.pcClear();return false">外す</a>`:`${I('info','sm')}未取得です。取得すると右の「PC情報」「AI判定」に反映します。`}</div></div>`;
+ <div class="pcstat ${d?'ok':''}">${d?`${I('check','sm')}取得済み：${esc(d.rec?d.rec.asset:(d.ledger?d.ledger.asset:'ブラウザ実測'))}<a href="#" onclick="App.tab('intake','pc');return false">右の「PC情報」で確認</a><a href="#" onclick="App.pcClear();return false">外す</a>`:`${I('info','sm')}未取得です。取得すると右の「PC情報」「AI判定」に反映します。`}</div></div>`;
 }
 function pcPv(PF,text){
  if(text.length<4)return '';
@@ -2191,7 +2196,7 @@ try{const __b=window.__OPS_BOOT__;if(__b){
    const subject=$('#i_sub').value.trim(),body=$('#i_body').value.trim(),req=$('#i_req').value.trim()||'（未記入）';
    if(!subject||!body){toast('件名と内容を入力してください','bad');return}
    const u=$('#i_u').value,im=$('#i_i').value,sec=secCheck(subject+' '+body);
-   const payload={subject:subject,body:body,category:$('#i_cat').value,urgency:u,impact:im,channel:$('#i_ch').value,requester:req,priority:calcPriority(u,im,sec),pc:(ui.pcDraft&&ui.pcDraft.br)?{br:ui.pcDraft.br,at:ui.pcDraft.at||now()}:undefined};
+   const payload={subject:subject,body:body,category:$('#i_cat').value,urgency:u,impact:im,channel:$('#i_ch').value,requester:req,priority:calcPriority(u,im,sec),pc:ui.pcDraft?{br:ui.pcDraft.br||null,ledger:ui.pcDraft.ledger||null,at:ui.pcDraft.at||now()}:undefined};
    fetch('/api/ops/tickets',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify(payload)})
     .then(function(r){return r.json()})
     .then(function(d){
@@ -2251,7 +2256,23 @@ try{const __b=window.__OPS_BOOT__;if(__b){
   /* PC情報: ブラウザから取得した情報をサーバへも保存し、AIの切り分けに使えるようにする（P8b）。 */
   const __origPcFetch=App.pcFetch;
   App.pcFetch=function(src){
-   if(src==='cmdb'){toast('資産管理DBの検索は準備中です（台帳APIは用意済み・画面接続は次段）。「このPCのブラウザから取得」をご利用ください','','info');return}
+   if(src==='cmdb'){
+    const okEl=$('#pc_ok');if(!okEl||!okEl.checked){toast('先に相談者の同意を確認してください','bad','lock');const l=$('#pc_okl');if(l){l.classList.remove('need');void l.offsetWidth;l.classList.add('need')}return}
+    if(!getSettings().pc){toast('システム設定で資産管理DBからの取得が無効になっています','bad','lock');return}
+    const q=($('#pc_q')?$('#pc_q').value.trim():'')||($('#i_req')?$('#i_req').value.trim():'');
+    if(!q){toast('資産番号・ホスト名・依頼者名を入力してください','bad','search');return}
+    fetch('/api/ops/assets?q='+encodeURIComponent(q),{credentials:'include'})
+     .then(function(r){return r.json()})
+     .then(function(d){
+      if(!d||!d.ok||!d.items||!d.items.length){toast(q?'該当する端末が見つかりません':'端末が見つかりません。資産番号で検索してください','bad','search');return}
+      const a=d.items[0];
+      ui.pcDraft={ledger:a,rec:null,br:(ui.pcDraft&&ui.pcDraft.br)||null,consent:true,at:now()};
+      App.tab('intake','pc');App.pcRefresh();App.preview(true);
+      toast(a.asset+' を台帳から取得しました','ok','db');
+     })
+     .catch(function(){toast('資産管理DBに接続できませんでした','bad')});
+    return;
+   }
    const result=__origPcFetch.call(App,src);
    if(src!=='browser')return result;
    setTimeout(function(){
