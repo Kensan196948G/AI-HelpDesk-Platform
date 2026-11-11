@@ -6,6 +6,7 @@ import { config, repoRoot } from '../config.js';
 import { badRequest } from '../errors.js';
 import { type EmployeeRow, findEmployeeByEmail } from '../lib/mirai-info.js';
 import { loadAuditForUi, loadKnowledgeForUi, loadSkillsForUi } from './ops-knowledge.js';
+import { loadSettings } from './ops-settings.js';
 import { loadDevopsStatus, loadEstop } from './ops-status.js';
 import { loadTicketsForUi } from './ops-tickets.js';
 
@@ -101,6 +102,8 @@ export async function opsRoutes(app: FastifyInstance): Promise<void> {
     // P5: SecOps の緊急停止（サーバ保存）と DevOps の実測値。
     const estop = await loadEstop();
     const devops = await loadDevopsStatus();
+    // P6: システム設定（サーバの 1 行。秘密値は持たない）。
+    const settings = await loadSettings();
     const boot = {
       actor: { name: actor.name, role: actor.role, approver: actor.approver, email: actor.email },
       state: {
@@ -111,6 +114,7 @@ export async function opsRoutes(app: FastifyInstance): Promise<void> {
         skills: skills.skills,
         reflect: skills.reflect,
         estop: estop.active,
+        settings,
       },
       devops,
       server: true,

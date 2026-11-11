@@ -2182,6 +2182,7 @@ try{const __b=window.__OPS_BOOT__;if(__b){
  if(__b.state&&Array.isArray(__b.state.reflect)){state.reflect=__b.state.reflect}
  if(__b.state&&typeof __b.state.estop==='boolean'){state.estop=__b.state.estop}
  window.__OPS_DEVOPS__=__b.devops||null;
+ if(__b.state&&__b.state.settings&&typeof __b.state.settings==='object'){state.settings=__b.state.settings;try{applySettings()}catch(e){}}
  if(__b.banner){var __bd=document.createElement('div');__bd.id='ops-migration-banner';__bd.setAttribute('role','status');__bd.textContent=__b.banner;__bd.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:90;padding:7px 12px;font:12px/1.45 system-ui,-apple-system,"Hiragino Sans",sans-serif;background:#fbf0dc;color:#5a3a00;border-top:1px solid #e6c98a;text-align:center';
   document.body.appendChild(__bd)}
  if(__b.server){
@@ -2218,6 +2219,25 @@ try{const __b=window.__OPS_BOOT__;if(__b){
     .then(function(r){if(!r.ok)throw new Error('claim');return r.json()})
     .then(function(){__origStartWork.call(App,id)})
     .catch(function(){toast('担当開始をサーバに保存できませんでした','bad')});
+  };
+  /* システム設定: 既定値のままローカルに閉じず、サーバの 1 行へ保存する（P6）。 */
+  const __origSaveSettings=App.saveSettings;
+  App.saveSettings=function(){
+   const before=JSON.stringify(getSettings());
+   __origSaveSettings.call(App);
+   const cur=getSettings();
+   if(!state.settings||JSON.stringify(cur)===before)return;
+   fetch('/api/ops/settings',{method:'PUT',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify(cur)})
+    .then(function(r){return r.json().then(function(j){return {ok:r.ok,body:j}})})
+    .then(function(res){
+     if(!res.ok){
+      toast((res.body&&res.body.error&&res.body.error.message)||'設定をサーバに保存できませんでした','bad','lock');
+      fetch('/api/ops/settings',{credentials:'include'}).then(function(r){return r.json()}).then(function(j){if(j&&j.settings){state.settings=j.settings;applySettings();render()}}).catch(function(){});
+      return;
+     }
+     state.settings=res.body.settings;applySettings();render();
+    })
+    .catch(function(){toast('設定をサーバに保存できませんでした','bad')});
   };
   /* DevOps: サーバが実測した値（commit / release / 稼働時間 / DB）を先頭に出す（P5）。 */
   const __origDevops=V.devops;

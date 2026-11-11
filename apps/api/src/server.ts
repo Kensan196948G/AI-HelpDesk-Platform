@@ -25,6 +25,7 @@ import { knowledgeRoutes } from './routes/knowledge.js';
 import { meRoutes } from './routes/me.js';
 import { opsRoutes } from './routes/ops.js';
 import { opsKnowledgeRoutes } from './routes/ops-knowledge.js';
+import { opsSettingsRoutes } from './routes/ops-settings.js';
 import { opsStatusRoutes } from './routes/ops-status.js';
 import { opsTicketRoutes } from './routes/ops-tickets.js';
 import { prototypeRoutes } from './routes/prototype.js';
@@ -226,6 +227,7 @@ export async function buildServer(options?: {
   await app.register(opsTicketRoutes, { prefix: '/api' });
   await app.register(opsKnowledgeRoutes, { prefix: '/api' });
   await app.register(opsStatusRoutes, { prefix: '/api' });
+  await app.register(opsSettingsRoutes, { prefix: '/api' });
   // 解決ループの Skill カタログを同期する。スクリプト未作成でも起動は止めない（draft 登録）。
   try {
     await ensureSkillCatalog();
