@@ -220,6 +220,21 @@ AI-HelpDesk の WebUI を、添付の**運用統合 UI（14 画面）**へ**段�
 - **検証（ローカル・実 DB）**: migration 042 適用後、ops 系 **21 件成功**（ops 4・チケット 7・ナレッジ 7・status 3）。
 - **残**: unit/CI/backup の実状態表示（シェル実行を伴うため別段で安全策と一緒に）、システム設定（P6）。
 
+## 8-7. P6 の実装（システム設定）
+
+| ファイル | 内容 |
+|---|---|
+| `db/migrations/043_ops_settings.sql` | **新規** `ops_settings`（key='ui' の 1 行。秘密値は置かない） |
+| `apps/api/src/routes/ops-settings.ts` | `GET/PUT /api/ops/settings`（承認者のみ変更・監査 `ops.settings.update`） |
+| `apps/api/src/routes/ops.ts` | 起動時に設定を実 DB から渡す |
+| `Mirai_AIHelpdesk_OpsConsole_V1.0.html` | 設定の保存をサーバへ（失敗時はサーバ値へ戻す） |
+| `apps/api/src/routes/ops-settings.test.ts` | 既定値・非承認者 403・保存＋監査・順序違反 400 の 4 件 |
+
+- 設定項目: 一致度しきい値（手順提示・候補下限・ほか手順下限）、SLA（P1〜P4）、社内指定版（FortiClient / DirectCloud）、PC情報・リモート・アニメーションの有効化。
+- 変更は**承認者のみ**。しきい値と SLA の順序はサーバでも検証する（画面の検証だけに頼らない）。
+- 保存に失敗したら**サーバの値へ戻す**（画面とサーバが食い違ったまま進まない）。
+- **検証（ローカル・実 DB）**: migration 043 適用後、ops 系 **25 件成功**（ops 4・チケット 7・ナレッジ 7・status 3・settings 4）。
+
 ## 9. 参照
 
 - 旧 UI の配信とブリッジ: [docs/14](14-prototype-ui-integration.md)
