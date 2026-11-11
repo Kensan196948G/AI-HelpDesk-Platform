@@ -1,0 +1,143 @@
+{
+  "errors": [],
+  "snap": {
+    "buttons": [
+      {
+        "text": "ホーム",
+        "id": null,
+        "cls": null
+      },
+      {
+        "text": "新しい相談",
+        "id": null,
+        "cls": "on"
+      },
+      {
+        "text": "ボード",
+        "id": null,
+        "cls": null
+      },
+      {
+        "text": "一覧",
+        "id": null,
+        "cls": null
+      },
+      {
+        "text": "業務ツール",
+        "id": null,
+        "cls": null
+      },
+      {
+        "text": "データ",
+        "id": null,
+        "cls": null
+      },
+      {
+        "text": "緊急停止",
+        "id": "uxEstop",
+        "cls": "u-estop"
+      },
+      {
+        "text": "プロフィール",
+        "id": null,
+        "cls": "u-pill"
+      },
+      {
+        "text": "STEP 1はじめに",
+        "id": null,
+        "cls": "w-stp on"
+      },
+      {
+        "text": "STEP 2困りごと",
+        "id": null,
+        "cls": "w-stp "
+      },
+      {
+        "text": "STEP 3AIの一次対応",
+        "id": null,
+        "cls": "w-stp "
+      },
+      {
+        "text": "STEP 4引継ぎ",
+        "id": null,
+        "cls": "w-stp "
+      },
+      {
+        "text": "STEP 5担当者の対応",
+        "id": null,
+        "cls": "w-stp "
+      },
+      {
+        "text": "STEP 6ナレッジ化",
+        "id": null,
+        "cls": "w-stp "
+      },
+      {
+        "text": "STEP 7完了",
+        "id": null,
+        "cls": "w-stp "
+      },
+      {
+        "text": "PC・周辺機器・ネットワーク印刷できない・VPNにつながらない・音が出ない・PC",
+        "id": null,
+        "cls": "w-choice  "
+      },
+      {
+        "text": "アカウント・ログインログインできない・ロックされた・多要素認証",
+        "id": null,
+        "cls": "w-choice  "
+      },
+      {
+        "text": "ファイル・共有フォルダ共有フォルダが開けない・同期エラー・ファイルの整理や集計",
+        "id": null,
+        "cls": "w-choice  "
+      },
+      {
+        "text": "社内の手続き・規程経費精算・備品・人事の手続き・安全報告の様式",
+        "id": null,
+        "cls": "w-choice  "
+      },
+      {
+        "text": "セキュリティの心配不審なメールを開いた・ウイルス・PCの紛失（すぐ担当者へ）",
+        "id": null,
+        "cls": "w-choice red "
+      },
+      {
+        "text": "その他・相談どこに聞けばよいか分からないこと",
+        "id": null,
+        "cls": "w-choice  "
+      },
+      {
+        "text": "もどる",
+        "id": null,
+        "cls": "u-btn"
+      },
+      {
+        "text": "つぎへ",
+        "id": null,
+        "cls": "u-btn pri"
+      }
+    ],
+    "inputs": [
+      {
+        "tag": "SELECT",
+        "type": "select-one",
+        "id": "uxWho",
+        "placeholder": null
+      },
+      {
+        "tag": "INPUT",
+        "type": "search",
+        "id": "uxFind",
+        "placeholder": "🔍 社員を検索"
+      }
+    ],
+    "markers": [
+      "入力してください",
+      "選んでください",
+      "STEP 1",
+      "STEP 2"
+    ],
+    "textHead": "ホーム\n新しい相談\nボード\n一覧\n業務ツール\nデータ\nみらいAI窓口 × ヘルプデスク\nCloudflare Access\n緊急停止\n操作する人\n山田 太郎（東京支店／工事部）\n木村 花子（九州支店／営業部）\n小川 一郎（管理本部／経理部）\n佐藤 健（L1窓口）\n鈴木 学（ネットワーク／IT端末管理者）\n高橋 直人（M365・ID管理）\n田中 誠（端末・業務アプリ／IT端末管理者）\n伊藤 彩（セキュリティ）\n渡辺 修（課長・ナレッジ承認者）\n山本 由美（ナレッジ管理者・承認者）\n中島 恵（監査担当）\n一般社員\nプロフィール\nSTEP 1\nはじめに\nSTEP 2\n困りごと\nSTEP 3\nAIの一次対応\nSTEP 4\n引継ぎ\nSTEP 5\n担当者の対応\nSTEP 6\nナレッジ化\nSTEP 7\n完了\nどんな相談ですか？\n\n近いものを選んでください。迷ったら「その他・相談」で大丈夫です。\n\nPC・周辺機器・ネットワーク\n印刷できない・VPNにつながらない・音が出ない・PCが遅い\nアカウント・ログイン\nログインできない・ロックされた・多要素認証\nファイル・共有フォルダ\n共有フォルダが開けない・同期エラー・ファイルの整理や集計\n社内の手続き・規程\n経費精算・備品・人事の手続き・安全報告の様式\nセキュリティの心配\n不審なメールを開いた・ウイルス・PCの紛失（すぐ担当者へ）\nその他・相談\nどこに聞"
+  }
+}
