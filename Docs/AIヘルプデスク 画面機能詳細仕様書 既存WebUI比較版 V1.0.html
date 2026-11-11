@@ -1,0 +1,436 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AIヘルプデスク 画面機能詳細仕様書 既存WebUI比較版 V1.0</title>
+<style>
+:root{--bg:#f4f6f9;--panel:#fff;--panel2:#f7f9fc;--ink:#18212c;--mute:#5d6977;--line:#dde3ea;--accent:#1d5fc4;--accent-soft:#e6eefb;--ai:#6941c6;--ai-soft:#f1ecfc;--ok:#18794e;--ok-soft:#e3f4ea;--warn:#a1640c;--warn-soft:#fbf0dc;--bad:#c2292e;--bad-soft:#fbe5e5;--chip:#eef1f5;--a:#0f766e;--a-soft:#dff3f0;color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0e131a;--panel:#161d26;--panel2:#1b2430;--ink:#e5ebf2;--mute:#93a0af;--line:#2a3441;--accent:#5c9bff;--accent-soft:#1c2c45;--ai:#a88bf0;--ai-soft:#262040;--ok:#4cc38a;--ok-soft:#173326;--warn:#e0a43c;--warn-soft:#352a15;--bad:#f07178;--bad-soft:#3a1d20;--chip:#222b37;--a:#4fd1c5;--a-soft:#12302d;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0e131a;--panel:#161d26;--panel2:#1b2430;--ink:#e5ebf2;--mute:#93a0af;--line:#2a3441;--accent:#5c9bff;--accent-soft:#1c2c45;--ai:#a88bf0;--ai-soft:#262040;--ok:#4cc38a;--ok-soft:#173326;--warn:#e0a43c;--warn-soft:#352a15;--bad:#f07178;--bad-soft:#3a1d20;--chip:#222b37;--a:#4fd1c5;--a-soft:#12302d;color-scheme:dark}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:16px}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.75 "Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif}
+.wrap{display:grid;grid-template-columns:280px minmax(0,1fr);min-height:100vh}
+aside{background:var(--panel);border-right:1px solid var(--line);padding:18px 14px;position:sticky;top:0;height:100vh;overflow:auto}
+aside .ttl{font-weight:800;font-size:15px;line-height:1.4;margin-bottom:2px}
+aside small{color:var(--mute);font-size:11.5px}
+aside nav{margin-top:14px;font-size:13px}
+aside nav a{display:block;color:var(--ink);text-decoration:none;padding:4px 8px;border-radius:7px;border-left:3px solid transparent}
+aside nav a:hover{background:var(--chip)}
+aside nav a.on{background:var(--accent-soft);color:var(--accent);font-weight:700;border-left-color:var(--accent)}
+aside nav a.s{padding-left:22px;font-size:12.5px;color:var(--mute)}
+aside nav a.s.on{color:var(--accent)}
+.tbtn{margin-top:14px;font:inherit;font-size:12px;padding:5px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);color:var(--ink);cursor:pointer}
+main{padding:28px 36px 80px;max-width:1180px;min-width:0}
+.cover{background:linear-gradient(135deg,var(--a),var(--accent) 55%,var(--ai));color:#fff;border-radius:16px;padding:30px 32px;margin-bottom:26px}
+.cover h1{margin:0 0 6px;font-size:25px;line-height:1.35}
+.cover p{margin:0;opacity:.93}
+.meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-top:18px}
+.meta div{background:rgba(255,255,255,.15);border-radius:10px;padding:8px 12px;font-size:12.5px}
+.meta b{display:block;font-size:13.5px;word-break:break-word}
+h2{font-size:20px;margin:42px 0 12px;padding-bottom:8px;border-bottom:2px solid var(--line)}
+h2 .n{color:var(--accent);margin-right:8px}
+h3{font-size:16px;margin:26px 0 8px}
+h4{font-size:14px;margin:18px 0 6px;color:var(--accent)}
+p{margin:6px 0 10px}
+ul,ol{margin:6px 0 12px;padding-left:22px}
+li{margin:2px 0}
+code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;background:var(--chip);padding:1px 5px;border-radius:5px;word-break:break-word}
+.tw{overflow-x:auto;margin:8px 0 14px;border:1px solid var(--line);border-radius:10px;background:var(--panel)}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+tr:last-child td{border-bottom:0}
+th{background:var(--panel2);font-size:12px;color:var(--mute);white-space:nowrap}
+th.ca{color:var(--a)}th.cb{color:var(--ai)}
+td.nw,th.nw{white-space:nowrap}
+table.cmp td:nth-child(1){width:15%;font-weight:700}
+table.cmp td:nth-child(2),table.cmp td:nth-child(3){width:29%}
+.sc{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:6px 22px 16px;margin:18px 0}
+.sc>h3{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:16px}
+.id{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;background:var(--accent);color:#fff;border-radius:6px;padding:1px 8px}
+.tag{display:inline-block;font-size:11px;font-weight:700;border-radius:9px;padding:0 8px;line-height:1.8;background:var(--chip);color:var(--mute);white-space:nowrap}
+.t-same{background:var(--ok-soft);color:var(--ok)}.t-ui{background:var(--accent-soft);color:var(--accent)}.t-new{background:var(--ai-soft);color:var(--ai)}.t-old{background:var(--a-soft);color:var(--a)}.t-ng{background:var(--bad-soft);color:var(--bad)}.t-q{background:var(--warn-soft);color:var(--warn)}
+.note{border-radius:10px;padding:10px 14px;margin:10px 0;font-size:13px;background:var(--accent-soft);border-left:4px solid var(--accent)}
+.note.w{background:var(--warn-soft);border-left-color:var(--warn)}
+.note.b{background:var(--bad-soft);border-left-color:var(--bad)}
+.kp{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin:12px 0}
+.kp>div{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;border-top:4px solid var(--accent)}
+.kp>div.a{border-top-color:var(--a)}.kp>div.b{border-top-color:var(--ai)}.kp>div.r{border-top-color:var(--bad)}
+.kp b{display:block;margin-bottom:4px}
+.leg{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 14px;font-size:12.5px;align-items:center}
+@media (max-width:900px){.wrap{grid-template-columns:1fr}aside{position:static;height:auto;border-right:0;border-bottom:1px solid var(--line)}aside nav{columns:2}main{padding:18px 16px 60px}.cover{padding:22px 18px}.cover h1{font-size:20px}.sc{padding:4px 14px 12px}table.cmp td{width:auto!important}}
+@media print{aside{display:none}.wrap{display:block}main{max-width:none;padding:0}body{background:#fff}.sc,.tw{break-inside:avoid}h2{break-after:avoid}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<aside>
+  <div class="ttl">AIヘルプデスク<br>画面機能詳細仕様書<br>既存WebUI比較版</div>
+  <small>V1.0／2026-11-10</small>
+  <nav id="toc"></nav>
+  <button class="tbtn" onclick="var r=document.documentElement,d=r.dataset.theme||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');r.dataset.theme=d==='dark'?'light':'dark'">表示テーマ切替</button>
+</aside>
+<main>
+
+<div class="cover">
+  <h1>AIヘルプデスク 画面機能詳細仕様書<br>既存WebUI比較版</h1>
+  <p>既存の「みらいAI窓口 × ヘルプデスク ステップ受付 V3.1」と、新サンプル（対応フロー版）の画面・機能の差分と取り込み方針</p>
+  <div class="meta">
+    <div>版・作成日<b>V1.0／2026-11-10</b></div>
+    <div>比較対象A（既存WebUI）<b>Kensan196948G/AI-HelpDesk-Platform<br>コミット 78c5655（2026-11-10）</b></div>
+    <div>比較対象B（新サンプル）<b>ai-helpdesk-flow.html<br>（ログアウト対応版）</b></div>
+    <div>関連文書<b>AIヘルプデスク 画面機能詳細仕様書 V1.0</b></div>
+  </div>
+</div>
+
+<div class="note w"><b>調査の範囲と限界：</b>既存WebUIは、リポジトリのコードと文書（README、<code>docs/</code>、原本HTML、ブリッジ）を読んで整理した。公開環境（ai-helpdesk.mirai-dx-platform.com）の実画面は開いておらず、アプリも起動していない。原本HTMLの個々の画面の細部は、本文で「未確認」と書いた箇所がある。新サンプルは実ブラウザで動作確認済みである。</div>
+
+<h2 id="s1"><span class="n">1</span>結論の要約</h2>
+<div class="kp">
+  <div class="a"><b>既存WebUI（A）の性格</b>相談者本人が使う STEP 1〜7 のウィザードと、担当者向けの業務ツール28画面を1つにまとめた実稼働の試作（MVP）。認証・DB保存・実AI・同意・承認の束縛をサーバーで扱う。</div>
+  <div class="b"><b>新サンプル（B）の性格</b>担当者側の ①〜⑦（受付〜ナレッジ反映）を、1ページ表示と対話操作で作り直した表示・操作の試作。サーバーを持たず、AI・PC情報・リモート対応は疑似。</div>
+  <div><b>重なる範囲</b>Bの10画面は、Aの「ヘルプデスク業務」「ナレッジ」グループの8画面と STEP 3〜6 に対応する。Aの残り20画面と、相談者本人の画面・同意・提案カードはBに無い。</div>
+  <div class="r"><b>最大の差分</b>Bの「リモート対応」は、担当者の指示でAIが相談者PCの修復を実行する。Aは「担当者は案内文まで」「本人の Y／N と許可リスト」を原則とし、本人PCをAIが操作するリリースを No-Go と判定している（<code>docs/68</code>）。このままでは取り込めない。</div>
+</div>
+<p>取り込みやすいのは、表示と操作の改善（右詳細パネルの1ページ化、手順の繰り返し試行の一覧、承認ボタンの制御、AI検査の指摘表示、「今回反映」の強調）である。PC情報の同意の取り方、リモート対応、ログアウトは、既存の方針との整合について判断が要る（8章）。</p>
+
+<h2 id="s2"><span class="n">2</span>比較対象の構成</h2>
+
+<h3 id="s2-1">2.1 既存WebUI（A）</h3>
+<div class="tw"><table>
+<thead><tr><th>項目</th><th>内容</th><th>根拠</th></tr></thead>
+<tbody>
+<tr><td class="nw">画面の正本</td><td><code>Mirai_AIHelpdesk_Cowork_StepWizard_V3.1_PCinfo_Offline.html</code>（約52万バイト）。サーバーはこのHTMLのDOM・CSS・画面遷移を変えずに配信し、ブリッジのスクリプトを追加する</td><td>docs/14 §2-1</td></tr>
+<tr><td class="nw">左レール</td><td>ホーム／新しい相談／ボード／一覧／業務ツール／データ（＋ブリッジで「引継ぎ」）</td><td>原本HTML、docs/33</td></tr>
+<tr><td class="nw">ステップ受付</td><td>STEP 1 はじめに → 2 困りごと → 3 AIの一次対応 → 4 引継ぎ → 5 担当者の対応 → 6 ナレッジ化 → 7 完了</td><td>原本HTML</td></tr>
+<tr><td class="nw">業務ツール</td><td>7グループ28画面（下表）。ロールにより表示を分ける</td><td>原本HTML</td></tr>
+<tr><td class="nw">ロール</td><td>一般社員／ヘルプデスク担当／IT端末管理者／ナレッジ承認者／監査担当者</td><td>原本HTML、docs/49</td></tr>
+<tr><td class="nw">認証</td><td>Cloudflare Access（ワンタイムPIN、12時間）と許可リスト。アプリ独自のログイン・セッションは持たない</td><td>docs/14 §2-2</td></tr>
+<tr><td class="nw">保存</td><td>PostgreSQL（利用者ごとの画面状態、端末情報、ナレッジ、引継ぎ、監査など）。ブラウザの localStorage はキャッシュ</td><td>docs/14 §2-6</td></tr>
+<tr><td class="nw">AI</td><td>自由記述の相談は DeepSeek（承認済みナレッジとPC情報を根拠、600字以内）。定型の相談は決定ルールとデモデータ</td><td>docs/14 §2-3、README</td></tr>
+<tr><td class="nw">状態</td><td>試作（MVP）。機能ごとに「実データ／デモ／未接続／未検証」を区別して管理</td><td>README、docs/65</td></tr>
+</tbody></table></div>
+
+<h4>業務ツール28画面</h4>
+<div class="tw"><table>
+<thead><tr><th>グループ</th><th>画面</th><th>表示対象</th></tr></thead>
+<tbody>
+<tr><td class="nw">相談する</td><td>統合の流れ／AI相談／問い合わせ状況／ナレッジ検索／組織別の使い方</td><td>全員</td></tr>
+<tr><td class="nw">ヘルプデスク業務</td><td>全体の状況／① 代行受付（電話・メール）／② 運び役・AI一次対応／③ 引継ぎ・④ 解決記録／⑤ ナレッジ下書き／⑥ 承認者の確認</td><td>担当・IT管理者・承認者</td></tr>
+<tr><td class="nw">ナレッジ</td><td>⑦ ナレッジDB／本棚・分野別のきまり</td><td>上記＋監査</td></tr>
+<tr><td class="nw">端末操作</td><td>承認キュー／PC基本情報（事前取得）／操作許可リスト</td><td>全員（操作許可リストは担当側）</td></tr>
+<tr><td class="nw">AIの運用</td><td>運び役の日記／AIへの指示書／AIの種類と試験／門番・費用・動かし方</td><td>担当側</td></tr>
+<tr><td class="nw">台帳・記録</td><td>問い合わせ台帳／機器・サービス台帳／監査ログ（端末操作・相談）／操作の記録（ヘルプデスク）／受け入れ試験／AI窓口の利用状況</td><td>担当側（監査ログは全員）</td></tr>
+<tr><td class="nw">説明・設定</td><td>12のルール・導入チェック／設定・データ</td><td>担当側（設定は全員）</td></tr>
+</tbody></table></div>
+
+<h4>サーバーが追加するブリッジ（11本）</h4>
+<div class="tw"><table>
+<thead><tr><th>ブリッジ</th><th>追加する機能（文書の記述から）</th></tr></thead>
+<tbody>
+<tr><td class="nw"><code>bridge.js</code></td><td>画面状態のDB同期、DeepSeek連携</td></tr>
+<tr><td class="nw"><code>device-bridge.js</code></td><td>実PC情報（ブラウザ＋端末エージェント、35項目）への差し替え</td></tr>
+<tr><td class="nw"><code>employee-bridge.js</code>／<code>staff-access-bridge.js</code></td><td>実名簿による「操作する人」、担当者画面の表示制御</td></tr>
+<tr><td class="nw"><code>honest-labels-bridge.js</code></td><td>実AIとデモデータの表示の区別</td></tr>
+<tr><td class="nw"><code>assist-bridge.js</code></td><td>最終報告書（HTML／PDF）の出力、遠隔支援コンソール（案内文の送信）</td></tr>
+<tr><td class="nw"><code>handover-workspace-bridge.js</code></td><td>引継ぎワークスペース（3ペイン）、RSP実行セッション</td></tr>
+<tr><td class="nw"><code>resolve-bridge.js</code></td><td>解決ループ（読み取り診断と本人の Y／N）。本番では閉じている</td></tr>
+<tr><td class="nw"><code>remote-support-bridge.js</code>／<code>support-session-bridge.js</code>／<code>folder-access-bridge.js</code></td><td>遠隔サポート、共通支援セッション、本人同意付きフォルダ一覧。支援セッションとフォルダ一覧は既定で無効</td></tr>
+</tbody></table></div>
+
+<h3 id="s2-2">2.2 新サンプル（B）</h3>
+<p>単一HTML（<code>ai-helpdesk-flow.html</code>）。画面は SC-00 ログイン、SC-01 ダッシュボード、SC-02 ① 受付、SC-03 ② AI一次対応、SC-04 ③ 人間へ引継ぎ・④ 解決記録、SC-05 ⑤ ナレッジ下書き、SC-06 ⑥ 人間の承認、SC-07 ⑦ ナレッジDB、SC-08 ⑦ AI・Skills反映、SC-09 監査ログ、SC-10 共通部品。詳細は「AIヘルプデスク 画面機能詳細仕様書 V1.0」を参照。</p>
+<div class="note">Aの「ヘルプデスク業務」の画面群と、Bの出発点になったサンプルは同じ系統である（リポジトリの <code>File-Archieves/ai-helpdesk-sample.html</code>）。そのため ①〜⑦ の業務の流れ、4項目のチェックリスト、職務分離、SKILL.md の考え方は共通している。</div>
+
+<h3 id="s2-3">2.3 画面の対応</h3>
+<div class="tw"><table>
+<thead><tr><th>新サンプル（B）</th><th>既存WebUI（A）で対応する画面</th><th>対応の度合い</th></tr></thead>
+<tbody>
+<tr><td class="nw">SC-00 ログイン</td><td>Cloudflare Access のログイン画面、ヘッダーの「操作する人」</td><td><span class="tag t-q">方式が異なる</span></td></tr>
+<tr><td class="nw">SC-01 ダッシュボード</td><td>ホーム、ボード、一覧、業務ツール「全体の状況」「AI窓口の利用状況」</td><td><span class="tag t-ui">部分的に対応</span></td></tr>
+<tr><td class="nw">SC-02 ① 受付</td><td>STEP 1・2（本人）、業務ツール「① 代行受付」「PC基本情報（事前取得）」</td><td><span class="tag t-ui">代行受付に相当</span></td></tr>
+<tr><td class="nw">SC-03 ② AI一次対応</td><td>STEP 3（本人）、業務ツール「② 運び役・AI一次対応」「AI相談」「承認キュー」</td><td><span class="tag t-ui">部分的に対応</span></td></tr>
+<tr><td class="nw">SC-04 ③④</td><td>STEP 4・5、業務ツール「③ 引継ぎ・④ 解決記録」、引継ぎワークスペース、遠隔支援コンソール、RSP実行セッション</td><td><span class="tag t-ng">リモート対応が衝突</span></td></tr>
+<tr><td class="nw">SC-05 ⑤ ナレッジ下書き</td><td>STEP 6 前半、業務ツール「⑤ ナレッジ下書き」</td><td><span class="tag t-same">ほぼ対応</span></td></tr>
+<tr><td class="nw">SC-06 ⑥ 人間の承認</td><td>STEP 6 後半、業務ツール「⑥ 承認者の確認」、承認者パネル</td><td><span class="tag t-same">ほぼ対応</span></td></tr>
+<tr><td class="nw">SC-07 ⑦ ナレッジDB</td><td>業務ツール「⑦ ナレッジDB」「ナレッジ検索」</td><td><span class="tag t-same">ほぼ対応</span></td></tr>
+<tr><td class="nw">SC-08 AI・Skills反映</td><td>業務ツール「本棚・分野別のきまり」</td><td><span class="tag t-same">ほぼ対応</span></td></tr>
+<tr><td class="nw">SC-09 監査ログ</td><td>業務ツール「監査ログ（端末操作・相談）」「操作の記録（ヘルプデスク）」</td><td><span class="tag t-ui">部分的に対応</span></td></tr>
+<tr><td class="nw">（対応なし）</td><td>STEP 7 完了、最終報告書、統合の流れ、問い合わせ状況、組織別の使い方、操作許可リスト、運び役の日記、AIへの指示書、AIの種類と試験、門番・費用・動かし方、問い合わせ台帳、機器・サービス台帳、受け入れ試験、12のルール・導入チェック、設定・データ</td><td><span class="tag t-old">既存のみ</span></td></tr>
+</tbody></table></div>
+
+<h2 id="s3"><span class="n">3</span>画面別の比較</h2>
+<div class="leg"><b>判定：</b><span class="tag t-same">同等</span>業務上の機能は同じ <span class="tag t-ui">表示・操作の差</span>見せ方が違う <span class="tag t-new">新サンプルのみ</span> <span class="tag t-old">既存のみ</span> <span class="tag t-q">要判断</span>方針の確認が要る <span class="tag t-ng">衝突</span>既存の方針と合わない</div>
+
+<div class="sc" id="c00">
+<h3><span class="id">SC-00</span>ログイン・ログアウト</h3>
+<div class="tw"><table class="cmp">
+<thead><tr><th>項目</th><th class="ca">既存WebUI（A）</th><th class="cb">新サンプル（B）</th><th>判定と対応</th></tr></thead>
+<tbody>
+<tr><td>ログイン</td><td>Cloudflare Access のワンタイムPIN。許可リストに無いメールは拒否。サーバーも許可リストで二重に確認</td><td>操作者7名から選ぶだけ（パスワードなし）</td><td><span class="tag t-old">既存のみ</span> Bのログイン画面は取り込まない</td></tr>
+<tr><td>ログアウト</td><td>アプリ内のボタンは無い。12時間で Access のセッションが切れる</td><td>ヘッダーの「ログアウト」。確認後にログイン画面を表示し、その操作者のリモート接続を切断</td><td><span class="tag t-q">要判断</span> 設けるなら Access のログアウトへ誘導する形になる</td></tr>
+<tr><td>操作者の切替</td><td>「操作する人」。本番では本人以外に切り替えられず、デモ用アカウントだけ切替可</td><td>ヘッダーの選択で常に切替可</td><td><span class="tag t-old">既存の制御を維持</span></td></tr>
+<tr><td>氏名・所属</td><td>プロフィールで氏名を入力、所属は組織マスタから選択。実名簿と連携</td><td>固定の7名</td><td><span class="tag t-old">既存のみ</span></td></tr>
+</tbody></table></div>
+</div>
+
+<div class="sc" id="c01">
+<h3><span class="id">SC-01</span>ダッシュボード</h3>
+<div class="tw"><table class="cmp">
+<thead><tr><th>項目</th><th class="ca">既存WebUI（A）</th><th class="cb">新サンプル（B）</th><th>判定と対応</th></tr></thead>
+<tbody>
+<tr><td>入口</td><td>ホーム（挨拶、「新しい相談をはじめる」）。ロールにより最初の画面が変わる（一般社員はAI相談、監査は監査ログ、担当は全体の状況）</td><td>全員がダッシュボード</td><td><span class="tag t-old">既存のロール別表示を維持</span></td></tr>
+<tr><td>工程の見える化</td><td>ボード（自分の番の件数をレールに表示）、一覧、全体の状況</td><td>7工程のカード（滞留件数、対応待ちの脈動）と流れるレール</td><td><span class="tag t-ui">表示の差</span> 「全体の状況」への適用候補</td></tr>
+<tr><td>チケット一覧</td><td>一覧、問い合わせ台帳、問い合わせ状況（本人には「私の問い合わせ」）</td><td>絞り込み4種、行クリックで詳細</td><td><span class="tag t-same">同等</span></td></tr>
+<tr><td>指標</td><td>全体の状況、AI窓口の利用状況。「役に立った率」は利用者の画面内の記録で、全体集計はしていない</td><td>AI自己解決率、ナレッジ有効率、平均解決時間、SLA超過、承認待ち（右パネル「KPI」）</td><td><span class="tag t-q">要判断</span> 実運用にはサーバー側の集計が要る</td></tr>
+<tr><td>右詳細パネル</td><td>無い（画面ごとに1列または複数カード）</td><td>KPI／内訳／AI反映／履歴のタブで1ページ表示</td><td><span class="tag t-new">新サンプルのみ</span></td></tr>
+</tbody></table></div>
+</div>
+
+<div class="sc" id="c02">
+<h3><span class="id">SC-02</span>① 受付</h3>
+<div class="tw"><table class="cmp">
+<thead><tr><th>項目</th><th class="ca">既存WebUI（A）</th><th class="cb">新サンプル（B）</th><th>判定と対応</th></tr></thead>
+<tbody>
+<tr><td>受付する人</td><td>本人が STEP 1・2 で入力するのが基本。電話・メール分は担当者が「① 代行受付」で登録</td><td>窓口担当が代わりに入力する画面のみ</td><td><span class="tag t-ui">Bは代行受付に相当</span> 本人向けは既存のSTEPを使う</td></tr>
+<tr><td>相談する人</td><td>ログインした本人に固定（自由入力にしない）。代行受付の依頼者は自由入力</td><td>依頼者は自由入力</td><td><span class="tag t-same">代行受付として同等</span></td></tr>
+<tr><td>困りごとの種類</td><td>6種：PC・周辺機器・ネットワーク／アカウント・ログイン／ファイル・共有フォルダ／社内の手続き・規程／セキュリティの心配／その他・相談。種類ごとに例文</td><td>7種：アカウント・認証／メール・Teams／ネットワーク・VPN／PC・周辺機器／ファイル共有・業務アプリ／セキュリティ／わからない（AIが推定）</td><td><span class="tag t-q">要判断</span> 分類を既存の6種にそろえる。Bには「社内の手続き・規程」が無い</td></tr>
+<tr><td>緊急度・影響範囲・優先度</td><td>原本HTMLに緊急度・影響範囲・優先度の記述あり（画面の細部は未確認）</td><td>緊急度3段階×影響範囲3段階から P1〜P4 を算出。SLAを表示</td><td><span class="tag t-same">同等の見込み</span>（算出規則の一致は未確認）</td></tr>
+<tr><td>受付チャネル</td><td>代行受付は「電話・メール」</td><td>ポータル／メール／Teams／電話</td><td><span class="tag t-ui">表示の差</span></td></tr>
+<tr><td>添付ファイルと区分</td><td>添付の区分を確認。「機密」は社内のAIだけ、「極秘」はAIで扱わない</td><td>添付なし</td><td><span class="tag t-old">既存のみ</span></td></tr>
+<tr><td>PC情報の取得</td><td>入力中に自動で事前取得（読み取りのみ）。ブラウザ＋端末エージェントの35項目、8分類（端末、アカウント、ネットワーク、リソース、セキュリティ、周辺機器、ソフトウェア、最近のエラー）。先頭は「コンピュータ名」</td><td>担当者が同意チェック後にボタンで取得。資産管理DB（疑似9台）またはブラウザ実測。項目は約20</td><td><span class="tag t-q">要判断</span> 取得の契機と同意の取り方が違う（8章）</td></tr>
+<tr><td>PC情報の同意</td><td>取得は自動。担当者へ渡すかどうかを STEP 4 で本人が選ぶ</td><td>取得の前に、担当者が「相談者の同意を得た」にチェック。外すと破棄</td><td><span class="tag t-q">要判断</span></td></tr>
+<tr><td>取得しない情報</td><td>ファイルの中身、閲覧履歴、画面、キー入力、メール本文、個人フォルダの一覧</td><td>ファイルの中身、閲覧履歴、操作ログ、位置情報</td><td><span class="tag t-same">趣旨は同じ</span> 既存の一覧にそろえる</td></tr>
+<tr><td>入力中の判定</td><td>PC基本情報の気になる点は STEP 3 で表示（入力中の判定表示は未確認）</td><td>右パネル「AI判定」に予測優先度、回答可否、最有力ナレッジ、PC診断を随時表示</td><td><span class="tag t-new">新サンプルのみ</span></td></tr>
+<tr><td>伏せ字</td><td>保存・送信の前に自動で伏せ字（メール、電話、IP、カード番号など）</td><td>受付時は注意書きのみ。ナレッジ化の段階でマスキング</td><td><span class="tag t-old">既存が厳しい</span> 既存に合わせる</td></tr>
+</tbody></table></div>
+</div>
+
+<div class="sc" id="c03">
+<h3><span class="id">SC-03</span>② AI一次対応</h3>
+<div class="tw"><table class="cmp">
+<thead><tr><th>項目</th><th class="ca">既存WebUI（A）</th><th class="cb">新サンプル（B）</th><th>判定と対応</th></tr></thead>
+<tbody>
+<tr><td>回答の作り方</td><td>自由記述は実AI（DeepSeek）が承認済みナレッジとPC情報を根拠に回答。定型の相談は決定ルールとデモデータ（画面に明示）。印刷の相談は案内のみ</td><td>ブラウザ内の類似度計算で承認済みナレッジを選び、手順をそのまま提示</td><td><span class="tag t-old">既存を維持</span> Bの検索は疑似</td></tr>
+<tr><td>根拠にするナレッジ</td><td>DBに承認の記録があり、作成者と承認者のアカウントが別のものだけ。出所を3種に分けて表示</td><td>状態が「有効」のナレッジすべて</td><td><span class="tag t-old">既存の条件を維持</span></td></tr>
+<tr><td>判定の区分</td><td>信号：青（AIで進められる）／黄（担当者の対応が必要）／赤（AIに任せない）</td><td>一致度42%以上で提示、22〜42%で候補提示、22%未満で引継ぎ、セキュリティ語で即時引継ぎ</td><td><span class="tag t-ui">表示の差</span> 一致度の数値表示はBのみ</td></tr>
+<tr><td>手順の試行</td><td>候補の選択と「他の候補」（原本HTMLに記述あり）。解決した／しなかったをボタンで選ぶ</td><td>ほかの手順を一覧で常に表示し、「この手順を試す」を回数制限なく繰り返せる。試行済み・関連は低めを表示</td><td><span class="tag t-new">Bで強化</span> 取り込み候補</td></tr>
+<tr><td>PC情報の使い方</td><td>事前取得したPC基本情報から気になる点（★＝相談に関係しそう）を最初に示す。「最新にする」で前回からの変化を表示</td><td>PC診断ルール（17条件）で指摘し、症状に関連する指摘を「PC情報からの補足」として手順に添える</td><td><span class="tag t-ui">趣旨は同じ</span> ルールの正本を一本化する</td></tr>
+<tr><td>修復の提案</td><td>提案カード（操作、対象、影響、戻し方、必要な承認、承認ハッシュ）。本人が Y／N。設定変更（L4）はIT端末管理者の承認も必要。禁止操作（L5）は提案しない。1相談15回まで。現在の実行は模擬</td><td>無い（手順を文章で示すだけ）</td><td><span class="tag t-old">既存のみ</span></td></tr>
+<tr><td>緊急停止</td><td>ヘッダーの「緊急停止」。すべてのPC操作の実行を止める。解除はIT端末管理者のみ</td><td>無い</td><td><span class="tag t-old">既存のみ</span></td></tr>
+<tr><td>セキュリティ事象</td><td>「セキュリティの心配」は赤（すぐ担当者へ）。初動の案内あり</td><td>検知語で即時引継ぎ、初動手順4項目、画面の赤い点滅</td><td><span class="tag t-same">同等</span></td></tr>
+<tr><td>解決したとき</td><td>最終報告書（HTML／PDF）を出力できる</td><td>状態を「AI解決」にして終了。紙吹雪</td><td><span class="tag t-old">報告書は既存のみ</span></td></tr>
+<tr><td>解決しないとき</td><td>STEP 4 へ進み、本人が共有範囲に同意して引き継ぐ</td><td>ボタン1つで引継ぎメモを作り、SC-04 へ自動で移る（同意の画面なし）</td><td><span class="tag t-q">要判断</span> 同意の段階を省かない</td></tr>
+<tr><td>画面構成</td><td>ウィザードのペインと対話</td><td>左に一覧、右に対話。操作ボタンを下端に固定して1ページ表示</td><td><span class="tag t-ui">表示の差</span></td></tr>
+</tbody></table></div>
+</div>
+
+<div class="sc" id="c04">
+<h3><span class="id">SC-04</span>③ 人間へ引継ぎ・④ 解決記録</h3>
+<div class="tw"><table class="cmp">
+<thead><tr><th>項目</th><th class="ca">既存WebUI（A）</th><th class="cb">新サンプル（B）</th><th>判定と対応</th></tr></thead>
+<tbody>
+<tr><td>引継ぎの同意</td><td>STEP 4 で本人が渡す情報を項目ごとに選ぶ（相談内容だけ必須、PC基本情報は任意）。「同意して引き継ぐ」</td><td>無い</td><td><span class="tag t-old">既存のみ</span></td></tr>
+<tr><td>宛先</td><td>グループ（DX推進部）。必要なら名簿から担当者を選ぶ（自由入力ではない）。届いた人が受信箱から引き受ける</td><td>AI推奨担当を表示し、5名から選んで「担当して対応開始」</td><td><span class="tag t-ui">表示の差</span> 推奨担当の表示はBのみ</td></tr>
+<tr><td>引継ぎメモ</td><td>同意した範囲のやりとりとPC情報から自動作成</td><td>AI要約（経過、PC情報、推奨担当、推奨アクション）。PC情報のIPアドレスを含む</td><td><span class="tag t-q">要判断</span> 同意した範囲に限定し、IPなどの扱いを既存に合わせる</td></tr>
+<tr><td>担当者の画面</td><td>業務ツール「③ 引継ぎ・④ 解決記録」（1列）と、引継ぎワークスペース（左：引継ぎボード／中：経過と次の一手／右：案件情報・端末・承認記録・関連ナレッジ・監査）</td><td>左に一覧、右に5タブ（引継ぎメモ／PC情報／類似ナレッジ／リモート対応／解決記録）</td><td><span class="tag t-ui">役割が重なる</span> ワークスペースへの統合を検討</td></tr>
+<tr><td>相談者PCへの関与</td><td>担当者が送れるのは案内文まで（遠隔支援コンソール）。担当者が相談者PCで任意のコマンドを実行する設計にしない。画面を見るには別の同意が要る（未実装）</td><td>同意チェック後に「ログイン」し、対話形式で指示。AIが診断・ログ確認・疎通確認・修復を実行（すべて疑似）</td><td><span class="tag t-ng">衝突</span> 5章を参照</td></tr>
+<tr><td>コマンドの実行</td><td>RSP実行セッション：AIの提案を担当者が確認し、担当者自身がRSPのターミナルで実行。サーバーは実行しない。実行した内容をハッシュで固定</td><td>「推奨の修復を実行」でAIが実行し「完了」と表示</td><td><span class="tag t-ng">衝突</span></td></tr>
+<tr><td>AIへの追加質問</td><td>担当者がAIに追加で質問できる</td><td>「ナレッジの手順を表示」と自由入力の指示</td><td><span class="tag t-same">趣旨は同じ</span></td></tr>
+<tr><td>解決記録</td><td>原因と手順を記録。記入例あり。記録からAIが個人情報を隠して下書きを作る</td><td>原因、手順、所要時間、備考。リモート対応の記録から自動で下書き。「解決を記録」で ⑤ へ移る</td><td><span class="tag t-same">同等</span> 自動下書きは実行記録の扱いに注意</td></tr>
+<tr><td>完了の承認</td><td>案件の完了の承認がある（別の人の画面からの導線は未整備）</td><td>無い（解決を記録した時点で解決済）</td><td><span class="tag t-old">既存のみ</span></td></tr>
+<tr><td>報告書</td><td>STEP 5 で解決したときに最終報告書を出力</td><td>無い</td><td><span class="tag t-old">既存のみ</span></td></tr>
+</tbody></table></div>
+</div>
+
+<div class="sc" id="c05">
+<h3><span class="id">SC-05</span>⑤ ナレッジ下書き</h3>
+<div class="tw"><table class="cmp">
+<thead><tr><th>項目</th><th class="ca">既存WebUI（A）</th><th class="cb">新サンプル（B）</th><th>判定と対応</th></tr></thead>
+<tbody>
+<tr><td>下書きの生成</td><td>症状は相談内容だけから作る。端末の番号やPC基本情報は入れない</td><td>症状は問い合わせ内容の先頭180文字。PC情報は転記しない</td><td><span class="tag t-same">同等</span></td></tr>
+<tr><td>伏せ字</td><td>メールアドレス、電話番号、端末の番号、ホスト名などを保存前に自動で伏せ字。残っていれば承認できない</td><td>メール、IP、電話、パスワード、社員番号、資産番号、氏名をマスキング。申請時にも再検査</td><td><span class="tag t-same">同等</span> 規則の正本を既存に一本化</td></tr>
+<tr><td>編集項目</td><td>タイトル、分野、症状、原因、手順、キーワードなど（細部は未確認）。改訂の扱いあり</td><td>タイトル、カテゴリ、登録方法（新規／改訂）、症状、原因、手順、キーワード</td><td><span class="tag t-same">同等の見込み</span></td></tr>
+<tr><td>AI検査・指摘</td><td>「AI検査」の画面は無い。保存・承認の段階でサーバーが検査</td><td>「AI検査・指摘」ボタンで10項目を検査し、100点満点の点数と指摘を表示。2項目は自動修正</td><td><span class="tag t-new">新サンプルのみ</span> 取り込み候補</td></tr>
+<tr><td>承認申請</td><td>担当者が整えて申請</td><td>タイトルと手順が必須。申請後に ⑥ へ移る</td><td><span class="tag t-same">同等</span></td></tr>
+<tr><td>画面構成</td><td>業務ツールの1画面と STEP 6</td><td>右パネルに「編集」「AI検査・指摘」の2タブ。操作ボタンを下端に固定</td><td><span class="tag t-ui">表示の差</span></td></tr>
+</tbody></table></div>
+</div>
+
+<div class="sc" id="c06">
+<h3><span class="id">SC-06</span>⑥ 人間の承認</h3>
+<div class="tw"><table class="cmp">
+<thead><tr><th>項目</th><th class="ca">既存WebUI（A）</th><th class="cb">新サンプル（B）</th><th>判定と対応</th></tr></thead>
+<tbody>
+<tr><td>承認できる人</td><td>申請者とは別のアカウントの承認者。画面から承認できるのはDX推進部の承認者。自己承認のナレッジはAIの根拠にしない</td><td>承認者2名。申請者本人は不可</td><td><span class="tag t-same">趣旨は同じ</span> 判定はサーバー側を正とする</td></tr>
+<tr><td>チェックリスト</td><td>4項目</td><td>同じ4項目。進捗バーと「n/4」を表示</td><td><span class="tag t-same">同等</span></td></tr>
+<tr><td>承認ボタン</td><td>細部は未確認</td><td>全項目にチェックするまで押せない。そろうと光る</td><td><span class="tag t-new">Bで強化</span> 取り込み候補</td></tr>
+<tr><td>承認の束縛</td><td>承認時の本文の指紋と版を記録。承認後に本文が変わると根拠に使わない</td><td>無い</td><td><span class="tag t-old">既存のみ</span></td></tr>
+<tr><td>差戻し</td><td>あり</td><td>コメント必須で差戻し</td><td><span class="tag t-same">同等</span></td></tr>
+<tr><td>改訂の比較</td><td>細部は未確認</td><td>現行版と改訂案を左右に並べて表示</td><td><span class="tag t-ui">表示の差</span></td></tr>
+<tr><td>承認後</td><td>本棚へ反映し、次の相談からAIの根拠になる。STEP 7 完了へ</td><td>5段階の反映表示、紙吹雪。「⑦ ナレッジDBの一覧で確認」で一覧へ移り「今回反映」を強調</td><td><span class="tag t-ui">表示の差</span> 取り込み候補</td></tr>
+</tbody></table></div>
+</div>
+
+<div class="sc" id="c07">
+<h3><span class="id">SC-07・08</span>⑦ ナレッジDB、AI・Skills反映</h3>
+<div class="tw"><table class="cmp">
+<thead><tr><th>項目</th><th class="ca">既存WebUI（A）</th><th class="cb">新サンプル（B）</th><th>判定と対応</th></tr></thead>
+<tbody>
+<tr><td>一覧</td><td>業務ツール「⑦ ナレッジDB」。利用者向けに「ナレッジ検索」（所属により閲覧範囲を制御）</td><td>検索、カテゴリ、アーカイブ表示の切替。8列の一覧表</td><td><span class="tag t-same">同等</span> 閲覧範囲の制御は既存のみ</td></tr>
+<tr><td>出所の表示</td><td>別の担当者が承認／同一人物の別アカウントが承認／初期登録の資料、を分けて表示</td><td>承認者名のみ</td><td><span class="tag t-old">既存のみ</span></td></tr>
+<tr><td>利用実績</td><td>「役に立った率」（利用者の画面内の記録）</td><td>利用回数、有効率、「改訂推奨」（利用3回以上で有効率60%未満）</td><td><span class="tag t-ui">Bで強化</span> 全体集計が前提</td></tr>
+<tr><td>アーカイブ</td><td>原本HTMLに「アーカイブ」の語は見当たらない（同等機能は未確認）</td><td>承認者がアーカイブ・復元。AIの回答対象から外す</td><td><span class="tag t-q">未確認</span></td></tr>
+<tr><td>分野別のきまり</td><td>「本棚・分野別のきまり」。SKILL.md と反映ログ、検索テストの記述あり</td><td>Skill概要（ルール、ナレッジ）、AI検索テスト、反映ログの3タブ。全文表示、コピー、ダウンロード</td><td><span class="tag t-same">同等</span> タブ構成はBのみ</td></tr>
+</tbody></table></div>
+</div>
+
+<div class="sc" id="c09">
+<h3><span class="id">SC-09</span>監査ログ</h3>
+<div class="tw"><table class="cmp">
+<thead><tr><th>項目</th><th class="ca">既存WebUI（A）</th><th class="cb">新サンプル（B）</th><th>判定と対応</th></tr></thead>
+<tbody>
+<tr><td>記録の種類</td><td>「監査ログ（端末操作・相談）」と「操作の記録（ヘルプデスク）」の2系統。サーバー側にも監査の記録</td><td>1系統（15種類の操作）。ブラウザ内に最大800件</td><td><span class="tag t-old">既存を維持</span></td></tr>
+<tr><td>閲覧</td><td>監査担当者のロールで閲覧</td><td>全員が閲覧</td><td><span class="tag t-old">既存を維持</span></td></tr>
+<tr><td>出力</td><td>CSVの記述あり（対象の細部は未確認）</td><td>CSVエクスポート</td><td><span class="tag t-same">同等の見込み</span></td></tr>
+</tbody></table></div>
+</div>
+
+<h2 id="s4"><span class="n">4</span>機能横断の比較</h2>
+<div class="tw"><table class="cmp">
+<thead><tr><th>観点</th><th class="ca">既存WebUI（A）</th><th class="cb">新サンプル（B）</th><th>差分の要点</th></tr></thead>
+<tbody>
+<tr><td>利用者</td><td>一般社員（本人）と担当側4ロール</td><td>担当側のみ（窓口・担当・承認者）</td><td>Bには相談者本人の画面が無い</td></tr>
+<tr><td>ロールによる表示</td><td>画面ごとに全員／担当側／担当側＋監査を制御</td><td>全画面を全員が見られる。承認とアーカイブだけ権限で制御</td><td>既存の制御が細かい</td></tr>
+<tr><td>同意</td><td>共有範囲の同意（STEP 4）、操作ごとの Y／N、遠隔支援の同意。開発中の経路ではフォルダ・操作範囲・AI入力の同意を分離</td><td>PC情報取得とリモート接続の2か所。担当者がチェックで代行</td><td>本人が画面で決める点が既存の中心。Bは担当者の自己申告</td></tr>
+<tr><td>端末の操作</td><td>操作レベル L0〜L5 と操作許可リスト。L3 は本人の Y、L4 は管理者承認、L5 は禁止。緊急停止</td><td>手順の案内と、リモート対応での修復実行（疑似）。レベル分けなし</td><td>Bには許可リストと承認の仕組みが無い</td></tr>
+<tr><td>AIの費用・運用</td><td>門番・費用・動かし方、AIへの指示書、AIの種類と試験、運び役の日記</td><td>無い</td><td>既存のみ</td></tr>
+<tr><td>正直な表示</td><td>実AIとデモデータを画面で区別。実行は「模擬」と表示</td><td>ログイン画面とリモート接続の説明に「疑似」と表示</td><td>取り込む場合は既存の表示規則に従う</td></tr>
+<tr><td>画面の密度</td><td>1列または複数カード。画面によって縦に長い</td><td>右詳細パネルをタブで1ページに収める。主要ボタンは下端に固定</td><td>Bの主な改善点</td></tr>
+<tr><td>動きの表現</td><td>CSSアニメーションは少数（定義8件）</td><td>順次表示、カウントアップ、脈動、タブ切替、処理中表示、紙吹雪、赤い点滅。「動きを減らす」設定で抑制</td><td>Bで多用</td></tr>
+<tr><td>表示テーマ</td><td>OSのダーク設定に対応する記述あり（細部は未確認）</td><td>ライト／ダークの切替ボタン</td><td>ほぼ同等</td></tr>
+<tr><td>試験・証跡</td><td>受け入れ試験の画面、自動テスト、E2E、実機の証跡</td><td>無い（作成時にブラウザで動作確認）</td><td>既存のみ</td></tr>
+</tbody></table></div>
+
+<h2 id="s5"><span class="n">5</span>最大の差分：リモート対応と修復の実行</h2>
+<div class="note b">新サンプルの「リモート対応」は、既存の設計判断と向きが逆である。画面だけを移植すると、既存が意図して閉じている経路を開くことになる。</div>
+<div class="tw"><table>
+<thead><tr><th>論点</th><th class="ca">既存WebUI（A）の方針</th><th class="cb">新サンプル（B）の動作</th></tr></thead>
+<tbody>
+<tr><td class="nw">担当者ができること</td><td>共有された情報を見る、案内文を送る。画面の閲覧は別の同意が必要で未実装（docs/22）</td><td>相談者PCに「ログイン」して指示を出す</td></tr>
+<tr><td class="nw">誰が実行するか</td><td>本人の Y を受けた端末側の実行器、または担当者自身がRSPのターミナルで実行。サーバーとAIは実行しない（docs/35）</td><td>AIが「管理者権限で実行」と表示して修復する</td></tr>
+<tr><td class="nw">実行できる操作</td><td>操作許可リストと承認済みSkillだけ。任意のコマンドは不可</td><td>PC診断の指摘に対応する修復。自由入力の指示も「実行した」と記録</td></tr>
+<tr><td class="nw">本人の関与</td><td>操作ごとに本人が Y／N。期限切れ、二重、他人の Y をサーバーが拒否</td><td>担当者が「同意を得た」にチェックするだけ</td></tr>
+<tr><td class="nw">本人確認</td><td>相談者と端末の利用者の照合が未整備であることを理由に、読み取り診断の経路を本番で閉じている（docs/67、68）</td><td>照合なし</td></tr>
+<tr><td class="nw">リリース判定</td><td>本人のPCをAIが操作するリリースは No-Go。端末コマンドの入口は閉鎖（docs/68）</td><td>-</td></tr>
+</tbody></table></div>
+<h4>取り込む場合の置き換え案</h4>
+<div class="tw"><table>
+<thead><tr><th>新サンプルの要素</th><th>既存の仕組みへの置き換え</th></tr></thead>
+<tbody>
+<tr><td>対話形式の画面（指示と結果が交互に並ぶ）</td><td>そのまま使える。引継ぎワークスペースの中央ペイン、またはRSP実行セッションの表示に適用</td></tr>
+<tr><td>状態を診断／アプリの版を確認</td><td>共有済みのPC基本情報（35項目）の再表示にとどめる。新たな読み取りは承認済みSkillと本人の Y を通す</td></tr>
+<tr><td>イベントログ・疎通の確認</td><td>読み取りSkillとして定義し、本人の Y を通す。または担当者がRSPで実行して結果を記録</td></tr>
+<tr><td>推奨の修復を実行</td><td>提案カード（L3 は本人の Y、L4 は管理者承認）に置き換える。AIが直接実行する表示にしない</td></tr>
+<tr><td>自由入力の指示</td><td>「相談者への案内文」または「担当者が実行した操作の記録」として扱い、どちらかを明示する</td></tr>
+<tr><td>解決記録の自動下書き</td><td>「実際に実行した操作」だけを材料にする。AIの提案は証拠にしない（docs/35 の原則）</td></tr>
+<tr><td>同意のチェック</td><td>担当者の自己申告ではなく、本人の画面での同意に置き換える</td></tr>
+</tbody></table></div>
+
+<h2 id="s6"><span class="n">6</span>既存にあり、新サンプルに無い機能</h2>
+<p>新サンプルの画面で既存を置き換える場合、次を失わないようにする必要がある。</p>
+<div class="tw"><table>
+<thead><tr><th>分類</th><th>機能</th></tr></thead>
+<tbody>
+<tr><td class="nw">相談者本人</td><td>STEP 1〜7 のウィザード、ホーム、問い合わせ状況（私の問い合わせ）、AI相談、ナレッジ検索、結果の通知</td></tr>
+<tr><td class="nw">同意と承認</td><td>共有範囲の選択、提案カードの Y／N、管理者承認、承認キュー、承認ハッシュ、緊急停止、操作許可リスト</td></tr>
+<tr><td class="nw">認証と権限</td><td>Cloudflare Access、許可リスト、5ロール、実名簿、ロール別の画面表示、プロフィール</td></tr>
+<tr><td class="nw">AI</td><td>実AIの回答、ナレッジの出所表示、実AIとデモの区別、AIへの指示書、AIの種類と試験、門番・費用、運び役の日記</td></tr>
+<tr><td class="nw">端末</td><td>端末エージェントによる35項目の取得、「最新にする」での差分、機器・サービス台帳</td></tr>
+<tr><td class="nw">引継ぎ</td><td>引継ぎワークスペース、遠隔支援コンソール、RSP実行セッション、完了の承認、最終報告書（HTML／PDF）</td></tr>
+<tr><td class="nw">ナレッジ</td><td>承認の指紋と版の記録、自己承認の除外、閲覧範囲の制御</td></tr>
+<tr><td class="nw">運用</td><td>添付ファイルの区分、問い合わせ台帳、受け入れ試験、12のルール・導入チェック、組織別の使い方、設定・データ、DB保存</td></tr>
+</tbody></table></div>
+
+<h2 id="s7"><span class="n">7</span>新サンプルの機能の取り込み評価</h2>
+<p>既存は「画面の正本は原本HTMLで、DOM・CSS・画面遷移を変えない。追加はブリッジで行う」方針である（docs/14）。新しい画面は「新画面として追加」した前例がある（引継ぎワークスペース、docs/33）。この前提で評価した。</p>
+<div class="tw"><table>
+<thead><tr><th>#</th><th>新サンプルの機能</th><th>評価</th><th>理由と条件</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>右詳細パネルの1ページ化（タブ、固定フッター）</td><td><span class="tag t-ui">条件付きで可</span></td><td>原本の画面は変えられないため、新画面として追加する。担当者向けは引継ぎワークスペースと役割が重なるので、そちらへの適用が自然</td></tr>
+<tr><td>2</td><td>手順の繰り返し試行（候補の一覧、試行済みの表示）</td><td><span class="tag t-same">可</span></td><td>候補は「別アカウントが承認したナレッジ」に限る。「解決しなかった」の記録を全体で集計するにはサーバー側の保存が要る</td></tr>
+<tr><td>3</td><td>PC診断ルールと「PC情報からの補足」</td><td><span class="tag t-ui">条件付きで可</span></td><td>既存の★表示と重なる。社内指定版などのルールの正本を1か所に置く。AIへ渡す情報からIP・シリアル・資産番号・メールアドレスを除く既存の方針を守る</td></tr>
+<tr><td>4</td><td>入力中のAIリアルタイム判定</td><td><span class="tag t-ui">条件付きで可</span></td><td>代行受付の画面向け。自由記述で入力のたびに実AIを呼ぶと費用がかかるため、ルールベースの判定に限る</td></tr>
+<tr><td>5</td><td>取得前の同意チェック（PC情報）</td><td><span class="tag t-q">要判断</span></td><td>既存は自動取得で、共有時に本人が選ぶ。代行受付で担当者が代わりに確認する運用を認めるかどうか</td></tr>
+<tr><td>6</td><td>リモート対応（AIによる修復の実行）</td><td><span class="tag t-ng">このままでは不可</span></td><td>5章のとおり。対話形式の表示だけを使い、実行は既存の経路に置き換える</td></tr>
+<tr><td>7</td><td>リモート対応の記録からの解決記録の下書き</td><td><span class="tag t-ui">条件付きで可</span></td><td>実際に実行した操作の記録だけを材料にする</td></tr>
+<tr><td>8</td><td>AI検査・指摘（点数、指摘、自動修正）</td><td><span class="tag t-same">可</span></td><td>検査規則はサーバーの伏せ字・承認の検査と同じ正本を使う。点数は参考表示とし、承認の可否はサーバーの検査で決める</td></tr>
+<tr><td>9</td><td>承認ボタンの制御、チェックの進捗表示</td><td><span class="tag t-same">可</span></td><td>表示の改善。承認の正当性の検証はサーバー側のまま</td></tr>
+<tr><td>10</td><td>承認後の「ナレッジDBの一覧で確認」「今回反映」</td><td><span class="tag t-same">可</span></td><td>表示の改善</td></tr>
+<tr><td>11</td><td>有効率、「改訂推奨」</td><td><span class="tag t-ui">条件付きで可</span></td><td>全体の集計が前提（現状は利用者の画面内の記録）</td></tr>
+<tr><td>12</td><td>ダッシュボードのKPI</td><td><span class="tag t-ui">条件付きで可</span></td><td>「全体の状況」「AI窓口の利用状況」に統合。サーバー側の集計が要る</td></tr>
+<tr><td>13</td><td>ログアウトボタン</td><td><span class="tag t-q">要判断</span></td><td>アプリ独自のセッションが無い。設けるなら Access のログアウトへの誘導になる</td></tr>
+<tr><td>14</td><td>アイコンとアニメーションの多用</td><td><span class="tag t-q">要判断</span></td><td>「原本に100%合わせる」方針との関係。新画面に限れば適用できる</td></tr>
+<tr><td>15</td><td>ログイン画面（操作者の選択）</td><td><span class="tag t-ng">不可</span></td><td>Access の認証に置き換わる</td></tr>
+</tbody></table></div>
+
+<h2 id="s8"><span class="n">8</span>判断が必要な事項</h2>
+<div class="tw"><table>
+<thead><tr><th>#</th><th>事項</th><th>選択肢</th><th>影響</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>新サンプルの画面の位置づけ</td><td>(a) 既存に新画面として追加する　(b) 既存の「ヘルプデスク業務」の画面を置き換える　(c) 説明用のサンプルにとどめる</td><td>(b) は「原本に100%合わせる」方針（docs/14）の変更になる</td></tr>
+<tr><td>2</td><td>リモート対応の扱い</td><td>(a) 対話形式の表示だけ採用し、実行は既存の経路に置き換える　(b) 採用しない　(c) AIによる実行を目指す</td><td>(c) は docs/68 の No-Go 判定と、本人確認・同意・許可リストの設計の見直しが前提になる</td></tr>
+<tr><td>3</td><td>PC情報の取得と同意</td><td>(a) 既存どおり自動取得＋共有時に本人が選ぶ　(b) 代行受付に限り、担当者が同意を確認して取得する</td><td>(b) は本人の画面を通らない同意になる</td></tr>
+<tr><td>4</td><td>困りごとの分類</td><td>(a) 既存の6種にそろえる　(b) 新サンプルの7種を採用する</td><td>Skill（分野別のきまり）の構成と一致させる必要がある</td></tr>
+<tr><td>5</td><td>AI検査の位置づけ</td><td>(a) 参考表示にとどめる　(b) 一定点数以上を承認申請の条件にする</td><td>(b) は検査規則の精度の確認が要る</td></tr>
+<tr><td>6</td><td>ログアウトボタン</td><td>(a) 設けない　(b) Access のログアウトへ誘導するボタンを設ける</td><td>共有PCで使う場面があるかどうか</td></tr>
+</tbody></table></div>
+
+<h2 id="s9"><span class="n">9</span>未確認事項</h2>
+<ul>
+  <li>公開環境の実画面の表示と操作（本書はコードと文書の読解による）。</li>
+  <li>原本HTMLの「① 代行受付」「⑤ ナレッジ下書き」「⑥ 承認者の確認」「⑦ ナレッジDB」の入力項目と一覧の列の細部。</li>
+  <li>既存の優先度・SLAの算出規則と、新サンプルの規則（緊急度×影響範囲）が一致するか。</li>
+  <li>既存のナレッジのアーカイブに相当する機能の有無。</li>
+  <li>リポジトリの各ブランチ・未マージのPRの内容（main の最新コミットだけを見た）。</li>
+  <li>リポジトリの文書が示す本番の状態（2026-11-04 の配備以降）が、現在の本番と一致しているか。</li>
+</ul>
+
+<h2 id="s10"><span class="n">10</span>参照した資料</h2>
+<div class="tw"><table>
+<thead><tr><th>資料</th><th>使った内容</th></tr></thead>
+<tbody>
+<tr><td class="nw">README.md</td><td>全体の流れ、AIの範囲、提案カード、ナレッジの条件、安全上の扱い</td></tr>
+<tr><td class="nw">原本HTML</td><td>レール、STEP、業務ツール28画面、ロール、困りごとの種類、操作レベルと操作一覧、PC基本情報の分類</td></tr>
+<tr><td class="nw">docs/14</td><td>原本HTMLへの100%適用、認証、DeepSeek、実PC情報、データ保存</td></tr>
+<tr><td class="nw">docs/21、22、33、35</td><td>最終報告書、遠隔支援の方針、引継ぎワークスペース、RSP実行セッション</td></tr>
+<tr><td class="nw">docs/62、63、67、68</td><td>フォルダ一覧、共通支援セッション、端末操作の3経路、リリース判定</td></tr>
+<tr><td class="nw">docs/65</td><td>機能ごとの「実データ／デモ／未接続／未検証」の区別</td></tr>
+<tr><td class="nw">apps/api/src/prototype/</td><td>ブリッジ11本の構成</td></tr>
+</tbody></table></div>
+
+<h2 id="s11"><span class="n">11</span>改版履歴</h2>
+<div class="tw"><table>
+<thead><tr><th>版</th><th>日付</th><th>内容</th></tr></thead>
+<tbody>
+<tr><td>V1.0</td><td>2026-11-10</td><td>初版。既存WebUI（コミット 78c5655）と新サンプル（ai-helpdesk-flow.html）を比較</td></tr>
+</tbody></table></div>
+
+</main>
+</div>
+<script>
+(function(){
+ var toc=document.getElementById('toc'),hs=document.querySelectorAll('main h2[id], main .sc[id]'),links=[];
+ hs.forEach(function(h){
+  var a=document.createElement('a');a.href='#'+h.id;
+  if(h.tagName==='H2'){a.textContent=h.textContent.replace(/^(\d+)/,'$1. ')}
+  else{a.className='s';a.textContent=h.querySelector('h3').textContent.replace(/^(SC-[\d・]+)/,'$1 ')}
+  toc.appendChild(a);links.push([h,a]);
+ });
+ function upd(){var y=window.scrollY+90,cur=links[0];links.forEach(function(l){if(l[0].offsetTop<=y)cur=l});links.forEach(function(l){l[1].classList.toggle('on',l===cur)})}
+ window.addEventListener('scroll',upd,{passive:true});upd();
+})();
+</script>
+</body>
+</html>
