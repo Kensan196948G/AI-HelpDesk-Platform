@@ -210,6 +210,39 @@ describe('会話ログ（P8a）', () => {
   });
 });
 
+describe('② 追加質問（P9）', () => {
+  it('追加の質問に回答し、会話へ1往復を足す', async () => {
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/ops/tickets',
+      payload: {
+        subject: `${MARK} 追加質問`,
+        body: 'VPNにつながりません。',
+        category: 'network',
+      },
+    });
+    const ticket = (created.json() as { ticket: { serverId: string; id: string } }).ticket;
+    const ask = await app.inject({
+      method: 'POST',
+      url: `/api/ops/tickets/${ticket.serverId}/ask`,
+      payload: { text: '自宅回線でも同じですか？' },
+    });
+    expect(ask.statusCode).toBe(200);
+    const answer = ask.json() as { answer: string; provider: string };
+    expect(answer.answer.length).toBeGreaterThan(0);
+    expect(['deepseek', 'fallback']).toContain(answer.provider);
+
+    const list = await app.inject({ method: 'GET', url: '/api/ops/tickets' });
+    const items = (
+      list.json() as { tickets: { id: string; aiLog: { role: string; text: string }[] }[] }
+    ).tickets;
+    const found = items.find((t) => t.id === ticket.id);
+    const log = (found as { aiLog: { role: string; text: string }[] }).aiLog;
+    expect(log.some((m) => m.role === 'user' && m.text.includes('自宅回線'))).toBe(true);
+    expect(log.filter((m) => m.role === 'ai').length).toBeGreaterThanOrEqual(1);
+  });
+});
+
 describe('PC基本情報（P8b）', () => {
   it('受付時に取得した PC 情報を保存して返す', async () => {
     const pc = {

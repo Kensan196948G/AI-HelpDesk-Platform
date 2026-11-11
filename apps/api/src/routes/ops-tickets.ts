@@ -31,6 +31,10 @@ const CreateSchema = z.object({
   pc: z.record(z.string(), z.unknown()).optional(),
 });
 
+const AskSchema = z.object({
+  text: z.string().trim().min(1).max(2000),
+});
+
 const PatchSchema = z.object({
   status: z.enum(OPS_STATUS),
   note: z.string().trim().max(500).optional(),
@@ -335,6 +339,50 @@ export async function opsTicketRoutes(app: FastifyInstance): Promise<void> {
         confidence: answer.confidence,
         provider: answer.provider,
         model: answer.model,
+      };
+    },
+  );
+
+  /** ② AI一次対応の追加質問。会話に 1 往復を追加し、回答を保存する。 */
+  app.post(
+    '/ops/tickets/:id/ask',
+    { preHandler: authenticateUi, bodyLimit: 16 * 1024 },
+    async (request) => {
+      if (!request.uiEmail) throw badRequest('UI の認証情報がありません。');
+      const email = request.uiEmail;
+      const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+      const body = AskSchema.parse(request.body ?? {});
+      const row = await loadRow(id);
+      const owner = row.requester_email === email;
+      let helpdesk = false;
+      try {
+        await requireHelpdeskActor(email);
+        helpdesk = true;
+      } catch {
+        helpdesk = false;
+      }
+      if (!owner && !helpdesk) throw forbidden('このチケットを操作する権限がありません。');
+      if (!checkRateLimit(`ops-ask:${email}`, 30, 60_000)) {
+        throw new ApiError(429, 'RATE_LIMITED', '追加の質問が多すぎます。少し待ってください。');
+      }
+      // チケットの文脈（件名・本文）と追加質問をまとめて 1 回だけ問い合わせる。
+      const answer = await answerWithDeepSeek(
+        `${row.subject}\n${row.body}\n\n追加の質問: ${body.text}`,
+        email,
+      );
+      await sql.begin(async (tx) => {
+        await appendMessage(tx, row.id, 'user', body.text);
+        await appendMessage(tx, row.id, 'ai', answer.answer, {
+          provider: answer.provider,
+          meta: { sources: answer.sources, confidence: answer.confidence, kind: 'followup' },
+        });
+      });
+      return {
+        ok: true,
+        answer: answer.answer,
+        sources: answer.sources,
+        confidence: answer.confidence,
+        provider: answer.provider,
       };
     },
   );
