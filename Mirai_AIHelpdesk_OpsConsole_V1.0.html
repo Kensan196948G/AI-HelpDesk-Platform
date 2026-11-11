@@ -2203,6 +2203,22 @@ try{const __b=window.__OPS_BOOT__;if(__b){
     })
     .catch(function(){toast('受付を保存できませんでした','bad')});
   };
+  /* ② 追加質問: サーバの実AIへ問い合わせ、会話に1往復を足す（P9）。 */
+  const __origAddInfo=App.addInfo;
+  App.addInfo=function(id){
+   const t=tk(id);const el=$('#addinfo');const v=el?el.value.trim():'';
+   if(!t||!v)return;
+   if(!t.serverId)return __origAddInfo.call(App,id);
+   if(el)el.value='';
+   play(t,[{role:'user',text:v}]);
+   fetch('/api/ops/tickets/'+encodeURIComponent(t.serverId)+'/ask',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({text:v})})
+    .then(function(r){return r.json()})
+    .then(function(d){
+     if(!d||!d.answer){toast('追加の質問に回答できませんでした','bad');return}
+     play(t,[{role:'ai',text:d.answer,provider:d.provider}]);
+    })
+    .catch(function(){toast('追加の質問を送信できませんでした','bad')});
+  };
   /* ③ 引継ぎ: 人間へ渡す時点でサーバ状態も更新する（P3）。 */
   window.__OPS_ESCALATE__=function(t,reason){
    if(!t||!t.serverId)return;
