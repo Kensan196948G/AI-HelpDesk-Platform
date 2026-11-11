@@ -93,7 +93,7 @@
 
 ## 4. 次
 
-- UI 受入（#5 / #8 / A05 / A08a 等）の再実行とレポート v5（[docs/92](92-webui-flow-sample-adoption.md) §3-3 の受入）
+- UI 受入（#5 / #8 / A05 / A08a 等）の再実行: **A05 / A08a はローカル開発サーバーで PASS**（[レポート v5](evidence/qa-20261111-v5/report-v5.md)）。本番・Staging（Access OTP）と他の項目は未実行。
 - 新しいリリース判定（既存の条件付き GO は `7573784` に対する履歴）
 
 ## 5. 参照
