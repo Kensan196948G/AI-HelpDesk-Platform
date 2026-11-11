@@ -79,6 +79,68 @@ describe('受付チケット API', () => {
     expect(rows.length).toBe(1);
   });
 
+  it('引継ぎ後に担当開始・解決記録を登録し、監査に残る（P3）', async () => {
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/ops/tickets',
+      payload: {
+        subject: `${MARK} Wi-Fiが切れる`,
+        body: '会議室でWi-Fiが頻繁に切れます。',
+        category: 'network',
+      },
+    });
+    const ticket = (created.json() as { ticket: { serverId: string; id: string } }).ticket;
+    await app.inject({
+      method: 'PATCH',
+      url: `/api/ops/tickets/${ticket.serverId}`,
+      payload: { status: 'escalated', note: '引継ぎ' },
+    });
+    const claim = await app.inject({
+      method: 'POST',
+      url: `/api/ops/tickets/${ticket.serverId}/claim`,
+      payload: { assignee: 'テスト担当' },
+    });
+    expect(claim.statusCode).toBe(200);
+    const claimed = (claim.json() as { ticket: { status: string; assignee: string } }).ticket;
+    expect(claimed.status).toBe('in_progress');
+    expect(claimed.assignee).toBe('テスト担当');
+
+    const resolve = await app.inject({
+      method: 'POST',
+      url: `/api/ops/tickets/${ticket.serverId}/resolve`,
+      payload: {
+        cause: 'アクセスポイントのチャネル干渉',
+        steps: ['チャネルを変更', '再接続を確認'],
+        minutes: 15,
+        note: '再発なし',
+      },
+    });
+    expect(resolve.statusCode).toBe(200);
+    const resolved = (
+      resolve.json() as {
+        ticket: { status: string; resolution: { cause: string; steps: string[]; minutes: number } };
+      }
+    ).ticket;
+    expect(resolved.status).toBe('resolved');
+    expect(resolved.resolution.cause).toBe('アクセスポイントのチャネル干渉');
+    expect(resolved.resolution.steps).toHaveLength(2);
+    expect(resolved.resolution.minutes).toBe(15);
+
+    // 二重解決は 409。
+    const again = await app.inject({
+      method: 'POST',
+      url: `/api/ops/tickets/${ticket.serverId}/resolve`,
+      payload: { cause: '再実行', steps: ['x'] },
+    });
+    expect(again.statusCode).toBe(409);
+
+    const rows = await sql<{ action: string }[]>`
+      SELECT action FROM audit_log
+      WHERE target_id = ${ticket.id} AND action IN ('ops.ticket.claim', 'ops.ticket.resolve')
+    `;
+    expect(rows.map((r) => r.action).sort()).toEqual(['ops.ticket.claim', 'ops.ticket.resolve']);
+  });
+
   it('AI 一次対応を実行し、回答をチケットへ残す（鍵が無ければフォールバック）', async () => {
     const created = await app.inject({
       method: 'POST',
