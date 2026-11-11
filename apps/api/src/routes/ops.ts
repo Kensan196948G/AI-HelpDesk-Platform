@@ -4,7 +4,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { authenticateUi } from '../auth/ui.js';
 import { config, repoRoot } from '../config.js';
 import { badRequest } from '../errors.js';
-import { type EmployeeRow, findEmployeeByEmail } from '../lib/mirai-info.js';
+import { type EmployeeRow, findEmployeeByEmail, listEmployees } from '../lib/mirai-info.js';
 import { loadAuditForUi, loadKnowledgeForUi, loadSkillsForUi } from './ops-knowledge.js';
 import { loadSettings } from './ops-settings.js';
 import { loadDevopsStatus, loadEstop } from './ops-status.js';
@@ -96,6 +96,22 @@ export async function opsRoutes(
     if (!request.uiEmail) throw badRequest('UI の認証情報がありません。');
     const roles = request.uiRoles ?? [];
     const actor = await resolveActor(request.uiEmail, roles);
+    // 担当者選択の候補は実名簿（DX 推進部）から作る。名簿が引けない環境では本人だけ。
+    let staff: { name: string; role: string; approver: boolean }[] = [
+      { name: actor.name, role: actor.role, approver: actor.approver },
+    ];
+    try {
+      const roster = await listEmployees('staff');
+      if (roster.employees.length) {
+        staff = roster.employees.map((employee) => ({
+          name: employee.name,
+          role: employee.section ?? employee.division ?? '',
+          approver: employee.name === actor.name ? actor.approver : false,
+        }));
+      }
+    } catch {
+      // 名簿が引けないときは本人だけを候補にする（架空の名前を出さない）。
+    }
     const tickets = await loadTicketsForUi(request.uiEmail);
     // P3b: ⑦ ナレッジDB・監査ログも実 DB から渡す（⑤⑥ の操作接続は次の段）。
     const knowledge = await loadKnowledgeForUi(request.uiEmail, actor.approver);
@@ -108,7 +124,13 @@ export async function opsRoutes(
     // P6: システム設定（サーバの 1 行。秘密値は持たない）。
     const settings = await loadSettings();
     const boot = {
-      actor: { name: actor.name, role: actor.role, approver: actor.approver, email: actor.email },
+      actor: {
+        name: actor.name,
+        role: actor.role,
+        approver: actor.approver,
+        email: actor.email,
+        staff,
+      },
       state: {
         tickets,
         kb: knowledge.approved,
