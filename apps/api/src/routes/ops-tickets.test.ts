@@ -210,6 +210,57 @@ describe('会話ログ（P8a）', () => {
   });
 });
 
+describe('PC基本情報（P8b）', () => {
+  it('受付時に取得した PC 情報を保存して返す', async () => {
+    const pc = {
+      br: {
+        os: 'Windows 11',
+        browser: 'Firefox',
+        cores: 8,
+        mem: 16,
+        screen: '1920×1080',
+        online: true,
+      },
+      at: Date.now(),
+    };
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/ops/tickets',
+      payload: {
+        subject: `${MARK} PC情報つき`,
+        body: 'PC情報を添えて受付します。',
+        category: 'device',
+        pc,
+      },
+    });
+    expect(created.statusCode).toBe(200);
+    const ticket = created.json() as { ticket: { id: string; pc: { br: { os: string } } | null } };
+    expect(ticket.ticket.pc?.br.os).toBe('Windows 11');
+
+    const list = await app.inject({ method: 'GET', url: '/api/ops/tickets' });
+    const items = (list.json() as { tickets: { id: string; pc: unknown }[] }).tickets;
+    const found = items.find((t) => t.id === ticket.ticket.id);
+    expect(found?.pc).toBeTruthy();
+  });
+
+  it('ブラウザ情報の取り込み（/api/device/browser）が成立する', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/device/browser',
+      payload: {
+        deviceId: `ops-test-${Date.now()}`,
+        platform: 'Win32',
+        os: 'Windows 11',
+        hardware: { cpuCores: 8, deviceMemoryGB: 16, screen: { width: 1920, height: 1080 } },
+        browser: { name: 'Firefox', userAgent: 'Mozilla/5.0', languages: ['ja'] },
+        collectedAt: new Date().toISOString(),
+      },
+    });
+    expect(response.statusCode).toBe(200);
+    expect((response.json() as { ok: boolean }).ok).toBe(true);
+  });
+});
+
 describe('画面へ渡す形', () => {
   it('画面が使う配列と項目を補う', () => {
     const dto = toUiTicket({

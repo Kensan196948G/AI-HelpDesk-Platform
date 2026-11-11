@@ -27,6 +27,8 @@ const CreateSchema = z.object({
   channel: z.string().trim().max(40).optional(),
   requester: z.string().trim().max(120).optional(),
   priority: z.string().trim().max(8).optional(),
+  // 受付時にブラウザから取得した PC 基本情報（同意済みの範囲だけ）。
+  pc: z.record(z.string(), z.unknown()).optional(),
 });
 
 const PatchSchema = z.object({
@@ -75,6 +77,7 @@ interface OpsTicketRow {
   resolution_note: string | null;
   escalated_at: Date | string | null;
   started_at: Date | string | null;
+  pc_info: unknown;
 }
 
 interface OpsMessageRow {
@@ -170,6 +173,7 @@ export function toUiTicket(
     history: [],
     aiProvider: row.ai_provider ?? null,
     aiModel: row.ai_model ?? null,
+    pc: row.pc_info ?? null,
     assignee: row.assignee_name ?? null,
     escalatedAt: ms(row.escalated_at) ?? null,
     startedAt: ms(row.started_at) ?? null,
@@ -250,12 +254,13 @@ export async function opsTicketRoutes(app: FastifyInstance): Promise<void> {
         const rows = (await tx`
           INSERT INTO ops_tickets (
             tkt_no, requester_email, requester_label, channel, category,
-            subject, body, urgency, impact, priority
+            subject, body, urgency, impact, priority, pc_info
           ) VALUES (
             'OPS-' || lpad(nextval('ops_ticket_seq')::text, 4, '0'),
             ${email}, ${input.requester ?? null}, ${input.channel ?? null},
             ${category}, ${input.subject}, ${input.body}, ${input.urgency ?? '中'},
-            ${input.impact ?? null}, ${input.priority ?? null}
+            ${input.impact ?? null}, ${input.priority ?? null},
+            ${input.pc ? jsonbValue(input.pc) : null}
           )
           RETURNING id, tkt_no
         `) as unknown as { id: string; tkt_no: string }[];
