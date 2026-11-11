@@ -22,6 +22,7 @@ const BRIDGE_FILES = [
   path.join('apps', 'api', 'src', 'prototype', 'employee-bridge.js'),
   path.join('apps', 'api', 'src', 'prototype', 'assist-bridge.js'),
   path.join('apps', 'api', 'src', 'prototype', 'knowledge-review-bridge.js'),
+  path.join('apps', 'api', 'src', 'prototype', 'kb-reflect-bridge.js'),
   path.join('apps', 'api', 'src', 'prototype', 'resolve-bridge.js'),
   path.join('apps', 'api', 'src', 'prototype', 'remote-support-bridge.js'),
   path.join('apps', 'api', 'src', 'prototype', 'handover-workspace-bridge.js'),

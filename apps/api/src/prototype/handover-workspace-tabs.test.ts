@@ -16,15 +16,25 @@ function evTabs(): Array<{ id: string; label: string }> {
 }
 
 function counterFor(t: Record<string, unknown>, audit: unknown[] = []) {
-  const match = /function evTabCount\([\s\S]*?\n {2}}\n/.exec(code);
-  if (!match) throw new Error('evTabCount が見つかりません');
+  const parts = ['evTabCount', 'recordCount', 'auditRows', 'auditShown'].map((name) => {
+    const match = new RegExp(`function ${name}\\([\\s\\S]*?\\n {2}}\\n`).exec(code);
+    if (!match) throw new Error(name + ' が見つかりません');
+    return match[0];
+  });
   const sandbox = {
     EV_AUDIT_SHOWN: 6,
+    EV_AUDIT_PAGE: 50,
+    HW: { evAuditAll: false },
     relatedKbs: (ticket: { kbs?: unknown[] }) => ticket.kbs || [],
     auditList: () => audit,
   };
-  const fn = vm.runInNewContext(`(${match[0]})`, sandbox);
-  return (id: string): number => fn(t, id);
+  const fn = vm.runInNewContext(`${parts.join('\n')}\n; evTabCount;`, sandbox);
+  return {
+    count: (id: string): number => fn(t, id),
+    setAll: (all: boolean) => {
+      (sandbox.HW as { evAuditAll: boolean }).evAuditAll = all;
+    },
+  };
 }
 
 describe('右ペインのタブの構成', () => {
@@ -69,21 +79,29 @@ describe('右ペインのタブの構成', () => {
 describe('タブの件数と中身を食い違わせない', () => {
   it('端末タブは本人が共有した項目の数', () => {
     const count = counterFor({ id: 'INC-1', coworkShared: { pc: 'PC-1', os: 'Windows 11' } });
-    expect(count('device')).toBe(2);
-    expect(counterFor({ id: 'INC-1' })('device')).toBe(0);
+    expect(count.count('device')).toBe(2);
+    expect(counterFor({ id: 'INC-1' }).count('device')).toBe(0);
   });
 
   it('ナレッジタブは関連ナレッジ＋下書きの有無', () => {
-    expect(counterFor({ id: 'INC-1', kbs: [{}, {}] })('knowledge')).toBe(2);
-    expect(counterFor({ id: 'INC-1', kbs: [{}, {}], draftId: 'DR-1' })('knowledge')).toBe(3);
+    expect(counterFor({ id: 'INC-1', kbs: [{}, {}] }).count('knowledge')).toBe(2);
+    expect(counterFor({ id: 'INC-1', kbs: [{}, {}], draftId: 'DR-1' }).count('knowledge')).toBe(3);
   });
 
   it('記録タブはパネルに出す 6 件までを数える', () => {
     const rows = (target: string, n: number) =>
       Array.from({ length: n }, () => ({ target, t: 1, action: 'a' }));
-    expect(counterFor({ id: 'INC-1' }, rows('INC-1', 3))('record')).toBe(3);
-    expect(counterFor({ id: 'INC-1' }, rows('INC-1', 9))('record')).toBe(6);
-    expect(counterFor({ id: 'INC-1' }, rows('INC-2', 4))('record')).toBe(0);
+    expect(counterFor({ id: 'INC-1' }, rows('INC-1', 3)).count('record')).toBe(3);
+    expect(counterFor({ id: 'INC-1' }, rows('INC-1', 9)).count('record')).toBe(6);
+    expect(counterFor({ id: 'INC-1' }, rows('INC-2', 4)).count('record')).toBe(0);
+  });
+
+  it('全件表示にすると 50 件まで数える', () => {
+    const rows = (n: number) =>
+      Array.from({ length: n }, () => ({ target: 'INC-1', t: 1, action: 'a' }));
+    const counter = counterFor({ id: 'INC-1' }, rows(80));
+    counter.setAll(true);
+    expect(counter.count('record')).toBe(50);
   });
 
   it('下書きの監査ログも同じ案件の記録として数える', () => {
@@ -91,13 +109,45 @@ describe('タブの件数と中身を食い違わせない', () => {
       counterFor({ id: 'INC-1', draftId: 'DR-1' }, [
         { target: 'INC-1', t: 1, action: 'a' },
         { target: 'DR-1', t: 2, action: 'b' },
-      ])('record'),
+      ]).count('record'),
     ).toBe(2);
   });
 
   it('案件・実行タブは件数を出さない（状態はカード側に出す）', () => {
     const count = counterFor({ id: 'INC-1', draftId: 'DR-1' });
-    expect(count('case')).toBe(0);
-    expect(count('exec')).toBe(0);
+    expect(count.count('case')).toBe(0);
+    expect(count.count('exec')).toBe(0);
+  });
+});
+
+describe('PR-3: 固定フッターと監査ログの全件表示（docs/95）', () => {
+  it('右ペインは タブ → スクロール領域 → 固定フッター の順に組む', () => {
+    expect(code).toContain('class="hw-ev-scroll" id="hw-ev-scroll"');
+    expect(code).toContain('class="hw-ev-foot"');
+    const evHtml = /function evHTML\([\s\S]*?\n {2}}\n/.exec(code)?.[0] || '';
+    expect(evHtml).toMatch(/evTabHTML\(t\)[\s\S]*hw-ev-scroll[\s\S]*evFootHTML\(t\)/);
+  });
+
+  it('「開く」は案件パネルではなく、どのタブでも使えるフッターに置く', () => {
+    const caseHtml = /function evCaseHTML\([\s\S]*?\n {2}}\n/.exec(code)?.[0] || '';
+    const footHtml = /function evFootHTML\([\s\S]*?\n {2}}\n/.exec(code)?.[0] || '';
+    expect(caseHtml).not.toContain('data-hw="legacy"');
+    expect(caseHtml).not.toContain('data-hw="cowork"');
+    expect(footHtml).toContain('data-hw="legacy"');
+    expect(footHtml).toContain('data-hw="cowork"');
+  });
+
+  it('記録は 6 件を超えると「すべて表示」を出し、全件表示に切り替えられる', () => {
+    const auditHtml = /function auditHTML\([\s\S]*?\n {2}}\n/.exec(code)?.[0] || '';
+    expect(auditHtml).toContain('data-hw="ev-audit"');
+    expect(auditHtml).toContain('すべて表示');
+    expect(auditHtml).toContain('最新 6 件に戻す');
+    expect(code).toContain("if (action === 'ev-audit')");
+    expect(code).toContain('HW.evAuditAll = !HW.evAuditAll');
+  });
+
+  it('右ペインのスクロールは内側の領域で保持する', () => {
+    expect(code).toContain("$('#hw-ev-scroll')");
+    expect(code).toContain("target.id === 'hw-ev-scroll'");
   });
 });
