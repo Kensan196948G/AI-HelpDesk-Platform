@@ -602,7 +602,7 @@ body::before{content:"";position:fixed;z-index:-1;width:60vw;height:60vw;left:-1
 <header class="top">
   <div class="brand">
     <span class="logo" data-ic="bot"></span>
-    <div><b>AIヘルプデスク</b><small>インシデント対応・ナレッジ循環 サンプル（完全オフライン）</small></div>
+    <div><b>AIヘルプデスク</b><small>インシデント対応・ナレッジ循環（運用統合）</small></div>
     <span class="live" id="aistat"><i class="ld"></i>AI 待機中</span>
   </div>
   <div class="topctl">
@@ -1186,7 +1186,7 @@ function renderNav(){
   return `<a class="${ui.view===n[0]?'on':''}" onclick="App.go('${n[0]}')"><span class="ni">${I(n[2])}</span><span class="lb">${n[1]}</span>${c?`<span class="cnt ${c[1]&&c[0]?'hot':''}">${c[0]}</span>`:''}</a>`;
  }).join('')+`<div class="navnote">${I('lock','sm')}<span>AIは回答・下書き・反映処理を担い、ナレッジの正式化は必ず人間が承認します。データはこのブラウザ内（localStorage）に保存されます。</span></div>`;
  const eb=$('#estopbar');if(eb){eb.classList.toggle('on',!!state.estop);eb.innerHTML=state.estop?I('stop')+'緊急停止中：相談者PCへのリモート接続と指示の実行を止めています（受付・AI一次対応・ナレッジ業務は利用できます）。解除はセキュリティ担当または承認者のみ。':''}
- const st=$('#aistat');if(st){const n=busy.size;st.className='live'+(n?' busy':'');st.innerHTML=`<i class="ld"></i>${n?`AI処理中 ${n}件`:'AI 待機中（ローカル）'}`}
+ const st=$('#aistat');if(st){const n=busy.size;st.className='live'+(n?' busy':'');st.innerHTML=`<i class="ld"></i>${n?`AI処理中 ${n}件`:'AI 待機中'}`}
 }
 
 /* ===================== 各画面 ===================== */
@@ -2160,7 +2160,7 @@ function syncLogin(){
  if(!out){el.innerHTML='';return}
  el.innerHTML=`<div class="lgcard"><span class="logo">${I('bot')}</span><h2>AIヘルプデスク</h2><div class="hint">${I('lock','sm')} ログアウトしました${state.lastUser?`（前回の操作者：${esc(state.lastUser)}）`:''}。操作者を選んでログインしてください。</div>
  <div class="lglist">${STAFF.map((u,i)=>`<button type="button" class="lgu" style="--i:${i}" onclick="App.login('${u.name}')">${av(u.name)}<span><b>${u.name}</b><small>${u.role}</small></span></button>`).join('')}</div>
- <div class="hint">${I('info','sm')} このサンプルにはパスワード認証がありません。実運用では Entra ID（HENNGE One 経由）のシングルサインオンに置き換える想定です。データはこのブラウザ内に残ります。</div></div>`;
+ <div class="hint">${I('info','sm')} ログインは Cloudflare Access（メール）です。画面のデータはサーバ（PostgreSQL）に保存されます。</div></div>`;
 }
 function updTheme(){const b=$('#themebtn');if(!b)return;const cur=document.documentElement.dataset.theme||(window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');b.innerHTML=I(cur==='dark'?'sun':'moon')+`<span class="hide-sm">${cur==='dark'?'ライト':'ダーク'}</span>`}
 function tickClock(){const el=$('#clock');if(!el)return;const d=new Date();el.innerHTML=I('clock','sm')+`${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`}
@@ -2340,18 +2340,15 @@ try{const __b=window.__OPS_BOOT__;if(__b){
    if(!t||!t.serverId)return false;
    const msgs=[{role:'sys',text:'チケット '+t.id+' を受け付けました（優先度 '+t.priority+'）'}];
    play(t,msgs);
-   const patchStatus=function(status,note){
-    fetch('/api/ops/tickets/'+encodeURIComponent(t.serverId),{method:'PATCH',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({status:status,note:note})}).catch(function(){});
-   };
    fetch('/api/ops/tickets/'+encodeURIComponent(t.serverId)+'/ai',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:'{}'})
     .then(function(r){return r.json()})
     .then(function(d){
-     if(!d||!d.answer){play(t,[{role:'ai',text:'AI の回答を取得できませんでした。担当者へ引き継ぎます。'}],function(){patchStatus('escalated','AI回答の取得に失敗');escalate(t,'AI回答の取得に失敗',true)});return}
-     const needHandoff=d.provider==='fallback'||/担当者へ引き継/.test(String(d.answer));
+     if(!d||!d.answer){play(t,[{role:'ai',text:'AI の回答を取得できませんでした。担当者へ引き継ぎます。'}],function(){escalate(t,'AI回答の取得に失敗',true)});return}
+     const needHandoff=/担当者へ引き継/.test(String(d.answer));
      const m={role:'ai',text:d.answer,provider:d.provider};
-     play(t,[m],needHandoff?function(){patchStatus('escalated','AI回答が根拠不足のため引継ぎ');escalate(t,'AI回答が根拠不足のため引継ぎ',true)}:null);
+     play(t,[m],needHandoff?function(){escalate(t,'AI回答が根拠不足のため引継ぎ',true)}:null);
     })
-    .catch(function(){play(t,[{role:'ai',text:'AI の回答を取得できませんでした。担当者へ引き継ぎます。'}],function(){patchStatus('escalated','通信エラー');escalate(t,'通信エラー',true)})});
+    .catch(function(){play(t,[{role:'ai',text:'AI の回答を取得できませんでした。担当者へ引き継ぎます。'}],function(){escalate(t,'通信エラー',true)})});
    return true;
   };
  }
