@@ -6,6 +6,7 @@ import { authenticateUi } from '../auth/ui.js';
 import { sql } from '../db.js';
 import { ApiError, badRequest, conflict, forbidden, notFound } from '../errors.js';
 import { appendAudit } from '../lib/audit-log.js';
+import { loadClientInventory } from '../lib/device-inventory.js';
 import { jsonbValue } from '../lib/jsonb-value.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
 
@@ -422,6 +423,62 @@ export async function opsTicketRoutes(app: FastifyInstance): Promise<void> {
         await appendMessage(tx, row.id, 'sys', `${assignee} が対応を開始しました`);
       });
       return { ok: true, ticket: toUiTicket(await loadRow(row.id)) };
+    },
+  );
+
+  /** ③ リモート対応の準備: 引継ぎ済みチケットに解決セッション（escalated）を作る。 */
+  app.post(
+    '/ops/tickets/:id/remote-session',
+    { preHandler: authenticateUi, bodyLimit: 8 * 1024 },
+    async (request) => {
+      if (!request.uiEmail) throw badRequest('UI の認証情報がありません。');
+      const email = request.uiEmail;
+      await requireHelpdeskActor(email);
+      const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+      const row = await loadRow(id);
+      if (!['escalated', 'in_progress'].includes(row.status)) {
+        throw conflict('引継ぎ後のチケットでのみリモート対応を準備できます。');
+      }
+      // 端末は、チケットに保存したブラウザ端末 ID を優先し、無ければ最新の端末情報を使う。
+      const pc = (row.pc_info ?? null) as { deviceId?: unknown } | null;
+      let deviceId =
+        pc && typeof pc.deviceId === 'string' && pc.deviceId.trim() ? pc.deviceId.trim() : null;
+      if (!deviceId) {
+        const inventory = await loadClientInventory(row.requester_email).catch(() => null);
+        deviceId = inventory?.deviceId ?? 'unknown';
+      }
+      // 冪等: 同じチケットに有効なセッションがあれば再利用する。
+      const existing = await sql<{ id: string }[]>`
+        SELECT id FROM resolution_sessions
+        WHERE case_id = ${row.tkt_no} AND status = 'escalated' AND expires_at > now()
+        ORDER BY started_at DESC LIMIT 1
+      `;
+      let sessionId = existing[0]?.id ?? null;
+      const reused = Boolean(sessionId);
+      if (!sessionId) {
+        sessionId = await sql.begin(async (tx) => {
+          const rows = (await tx`
+            INSERT INTO resolution_sessions (
+              user_email, case_id, device_id, status, step_count, max_steps, expires_at
+            ) VALUES (
+              ${row.requester_email}, ${row.tkt_no}, ${deviceId}, 'escalated', 0, 6,
+              now() + interval '30 minutes'
+            )
+            RETURNING id
+          `) as unknown as { id: string }[];
+          const created = rows[0];
+          if (!created) throw new Error('resolution session insert failed');
+          await appendAudit(tx, {
+            actorId: null,
+            action: 'remote_support.session_created',
+            targetType: 'resolution_session',
+            targetId: created.id,
+            detail: { email, caseId: row.tkt_no, deviceId },
+          });
+          return created.id;
+        });
+      }
+      return { ok: true, sessionId, caseId: row.tkt_no, deviceId, reused };
     },
   );
 
