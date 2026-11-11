@@ -173,6 +173,54 @@ export async function loadAuditForUi(roles: readonly string[]): Promise<Record<s
   });
 }
 
+/** `/ops` の ⑦AI・Skills 画面用。カテゴリ単位の Skill 版と反映ログ。 */
+export async function loadSkillsForUi(): Promise<{
+  skills: Record<string, { name: string; minor: number; updatedAt: number }>;
+  reflect: Record<string, unknown>[];
+}> {
+  const skills = await sql<
+    { category: string; name: string; minor: number; updated_at: Date | string }[]
+  >`
+    SELECT category, name, minor, updated_at FROM ops_skills ORDER BY category
+  `;
+  const map: Record<string, { name: string; minor: number; updatedAt: number }> = {};
+  for (const row of skills) {
+    map[row.category] = {
+      name: row.name,
+      minor: row.minor,
+      updatedAt: ms(row.updated_at) ?? Date.now(),
+    };
+  }
+  const reflect = await sql<
+    {
+      kb_no: string;
+      kb_version: number;
+      skill_name: string;
+      skill_version: string;
+      index_size: number;
+      action: string;
+      actor_email: string | null;
+      created_at: Date | string;
+    }[]
+  >`
+    SELECT kb_no, kb_version, skill_name, skill_version, index_size, action, actor_email, created_at
+    FROM ops_reflect ORDER BY created_at DESC LIMIT 50
+  `;
+  return {
+    skills: map,
+    reflect: reflect.map((row) => ({
+      t: ms(row.created_at) ?? Date.now(),
+      kbId: row.kb_no,
+      ver: `${row.kb_version}.0`,
+      skill: row.skill_name,
+      skillVer: row.skill_version,
+      indexSize: row.index_size,
+      by: row.actor_email ?? '-',
+      action: row.action,
+    })),
+  };
+}
+
 export async function opsKnowledgeRoutes(app: FastifyInstance): Promise<void> {
   /** ⑤下書き・⑥承認待ち・⑦承認済みをまとめて返す。 */
   app.get('/ops/knowledge', { preHandler: authenticateUi }, async (request) => {
@@ -241,7 +289,7 @@ export async function opsKnowledgeRoutes(app: FastifyInstance): Promise<void> {
       if (row.author_email && row.author_email === email) {
         throw forbidden('自分が作成した下書きは承認できません（職務分掌）。');
       }
-      await sql.begin(async (tx) => {
+      const reflected = await sql.begin(async (tx) => {
         await tx`
           UPDATE knowledge
           SET status = 'approved',
@@ -250,6 +298,36 @@ export async function opsKnowledgeRoutes(app: FastifyInstance): Promise<void> {
               updated_at = now()
           WHERE id = ${row.id}
         `;
+        // ⑦ AI・Skills 反映: カテゴリの Skill を 1 つ進め、反映ログを残す（外部呼び出しなし）。
+        const category = row.category ?? 'other';
+        const skillName = `helpdesk-${category}`;
+        const bumped = (await tx`
+          UPDATE ops_skills SET minor = minor + 1, updated_at = now()
+          WHERE category = ${category}
+          RETURNING minor
+        `) as unknown as { minor: number }[];
+        let minor = bumped[0]?.minor;
+        if (minor === undefined) {
+          const inserted = (await tx`
+            INSERT INTO ops_skills (category, name, minor)
+            VALUES (${category}, ${skillName}, 1)
+            RETURNING minor
+          `) as unknown as { minor: number }[];
+          minor = inserted[0]?.minor ?? 1;
+        }
+        const counted = (await tx`
+          SELECT count(*)::int AS n FROM knowledge
+          WHERE status = 'approved' AND category = ${category}
+        `) as unknown as { n: number }[];
+        const indexSize = counted[0]?.n ?? 0;
+        await tx`
+          INSERT INTO ops_reflect (
+            kb_no, kb_version, skill_name, skill_version, index_size, action, actor_email
+          ) VALUES (
+            ${row.kb_no}, ${row.version}, ${skillName}, ${`1.${minor}`}, ${indexSize},
+            ${row.version > 1 ? '改訂' : '新規'}, ${email}
+          )
+        `;
         await appendAudit(tx, {
           actorId: null,
           action: 'ops.knowledge.approve',
@@ -257,13 +335,20 @@ export async function opsKnowledgeRoutes(app: FastifyInstance): Promise<void> {
           targetId: row.kb_no,
           detail: { email, author: row.author_email ?? null },
         });
+        return { skillName, skillVersion: `1.${minor}`, indexSize, category };
       });
       const after = await sql<KnowledgeRow[]>`SELECT * FROM knowledge WHERE id = ${row.id} LIMIT 1`;
       const updated = after[0];
       if (!updated) throw notFound('ナレッジが見つかりません。');
-      return { ok: true, kb: toUiKb(updated) };
+      return { ok: true, kb: toUiKb(updated), reflect: reflected };
     },
   );
+
+  /** ⑦ AI・Skills 反映（カテゴリの Skill 版と反映ログ）。 */
+  app.get('/ops/skills', { preHandler: authenticateUi }, async () => {
+    const data = await loadSkillsForUi();
+    return { ok: true, skills: data.skills, reflect: data.reflect };
+  });
 
   /** 監査ログ（直近 50 件）。担当者・承認者・監査担当のみ。 */
   app.get('/ops/audit', { preHandler: authenticateUi }, async (request) => {

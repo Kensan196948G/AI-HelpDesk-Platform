@@ -2178,6 +2178,8 @@ try{const __b=window.__OPS_BOOT__;if(__b){
  if(__b.state&&Array.isArray(__b.state.kb)){state.kb=__b.state.kb}
  if(__b.state&&Array.isArray(__b.state.drafts)){state.drafts=__b.state.drafts}
  if(__b.state&&Array.isArray(__b.state.audit)){state.audit=__b.state.audit}
+ if(__b.state&&__b.state.skills&&typeof __b.state.skills==='object'){state.skills=__b.state.skills}
+ if(__b.state&&Array.isArray(__b.state.reflect)){state.reflect=__b.state.reflect}
  if(__b.banner){var __bd=document.createElement('div');__bd.id='ops-migration-banner';__bd.setAttribute('role','status');__bd.textContent=__b.banner;__bd.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:90;padding:7px 12px;font:12px/1.45 system-ui,-apple-system,"Hiragino Sans",sans-serif;background:#fbf0dc;color:#5a3a00;border-top:1px solid #e6c98a;text-align:center';
   document.body.appendChild(__bd)}
  if(__b.server){

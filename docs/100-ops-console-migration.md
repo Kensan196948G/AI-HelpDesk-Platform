@@ -78,8 +78,7 @@ AI-HelpDesk の WebUI を、添付の**運用統合 UI（14 画面）**へ**段�
 
 - 目的: 承認済みナレッジを **AI の検索対象（索引）とスキル定義**へ反映し、反映状態を画面で見せる。
 - テーブル: `ops_skills`（id, key, title, category, version, status, source_kb_id, updated_at）／`ops_reflect`（kb_id, skill_key, reflected_at, result）。
-- 反映は**承認イベント起点**（承認 API のトランザクション内で outbox に行を積み、反映処理が拾う）。
-- 失敗しても承認は成立させる（outbox 方式。[docs/05](05-api.md) の状態遷移と同じ考え方）。
+- 反映は**承認と同じトランザクション**で行う（外部 AI 呼び出しが無く DB 書き込みだけのため、途中失敗は承認ごとロールバックする方が整合的）。実装は §8-5。
 
 ### 4-2. DevOps（`/api/ops/devops`）
 
@@ -189,6 +188,20 @@ AI-HelpDesk の WebUI を、添付の**運用統合 UI（14 画面）**へ**段�
 - **監査**: `audit_log` の直近 50 件を表示（担当者・承認者・監査担当のみ）。
 - **検証（ローカル・実 DB）**: migration 040 適用後、ops 系 **17 件成功**（ops 4・チケット 7・ナレッジ 6）。
 - **残**: 差戻し（rejected）のサーバ接続、ナレッジの版管理・有効率、Skills 反映への連動（P4）。
+
+## 8-5. P4 の実装（⑦ AI・Skills 反映）
+
+| ファイル | 内容 |
+|---|---|
+| `db/migrations/041_ops_skills.sql` | **新規** `ops_skills`（カテゴリ単位の Skill 版）と `ops_reflect`（反映ログ）。7 カテゴリの初期行も投入 |
+| `apps/api/src/routes/ops-knowledge.ts` | 承認トランザクション内で Skill の版を進め、`ops_reflect` に 1 行記録。`GET /api/ops/skills` を追加 |
+| `apps/api/src/routes/ops.ts` | 起動時に Skill 版と反映ログを実 DB から渡す |
+| `apps/api/src/routes/ops-knowledge.test.ts` | 承認→Skill 版 +1→反映ログ先頭が該当 KB、の試験を追加（計 7 件） |
+
+- 承認すると `ops_skills.minor` が 1 進み、`ops_reflect` に「KB番号・版・Skill名・Skill版・索引件数・新規/改訂・承認者」を記録する。
+- **AI の根拠**は従来どおり `knowledge.status='approved'`（同じ表）なので、承認した瞬間から検索対象になる。
+- 画面の ⑦AI・Skills 反映は `state.skills`（カテゴリ→版）と `state.reflect`（反映履歴）を実 DB の値で表示する。
+- **検証（ローカル・実 DB）**: migration 041 適用後、ops 系 **18 件成功**（ops 4・チケット 7・ナレッジ 7）。
 
 ## 9. 参照
 
