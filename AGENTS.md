@@ -79,6 +79,11 @@ powershell -ExecutionPolicy Bypass -File scripts/windows/install-collector-task.
 DOM / CSS / 画面遷移を変更しない。状態保存・AI・認証のブリッジのみ追加する。
 やむを得ず表示文言を変える場合は `docs/14-prototype-ui-integration.md` に理由を記録し、ユーザーに報告する。
 
+ユーザー指示（2026-11-11、選択「1,2」）により、画面仕様書 V1.0 とサンプルの取り込みは
+**新画面・ブリッジの追加**として行う（既存画面の置換はしない）。原本 HTML は変更しない。
+判断の正本は [docs/92](docs/92-webui-flow-sample-adoption.md)、PR-1 の実施は
+[docs/93](docs/93-right-panel-tabs.md)。
+
 ## 8. Git / PR
 
 - 基準ブランチ: `main`（保護）
