@@ -142,6 +142,22 @@ AI-HelpDesk の WebUI を、添付の**運用統合 UI（14 画面）**へ**段�
 
 **P1 でまだ実データではないもの**: 画面内のチケット・下書き・KB・監査・Skills は**サンプル**（画面下部に「移行中」を常時表示）。P2 以降で上から順に実データへ置き換える。
 
+## 8-2. P2 の実装（①受付・②AI一次対応）
+
+| ファイル | 内容 |
+|---|---|
+| `db/migrations/038_ops_tickets.sql` | **新規** `ops_tickets`（受付チケット）と採番 sequence |
+| `apps/api/src/routes/ops-tickets.ts` | `GET/POST /api/ops/tickets`・`POST /api/ops/tickets/:id/ai`・`PATCH /api/ops/tickets/:id` |
+| `apps/api/src/routes/ops.ts` | 起動時に**実 DB の受付済みチケット**を `boot.state` へ載せる |
+| `Mirai_AIHelpdesk_OpsConsole_V1.0.html` | 受付の送信と AI 一次対応をサーバ API へ（疑似 AI は未接続時のフォールバックに降格） |
+| `apps/api/src/routes/ops-tickets.test.ts` | 受付・一覧・状態更新・AI 回答・404/400・画面写像の 6 件 |
+
+- **受付**: 送信すると `ops_tickets` に 1 行作成（番号は `OPS-####`）。作成は監査 `ops.ticket.create` に残る。
+- **AI 一次対応**: サーバの**承認済みナレッジだけ**を根拠にした回答（`answerWithDeepSeek`）をチケットへ保存。鍵が無い環境ではフォールバック回答になり、その場合も記録は残る。
+- **権限**: 本人は自分のチケットのみ。ヘルプデスク相当は全件。本人が変更できるのは「引継ぎ（escalated）」までで、それ以降は担当者のみ。
+- **検証（ローカル・実 DB）**: 使い捨て DB に migration 038 を適用し、`vitest` で 6 件成功（AI は鍵なしのフォールバック経路）。
+- **未接続**: 引継ぎ（`case_handovers`）との接続、③以降の画面。P3 で行う。
+
 ## 9. 参照
 
 - 旧 UI の配信とブリッジ: [docs/14](14-prototype-ui-integration.md)
