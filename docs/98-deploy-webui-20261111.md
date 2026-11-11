@@ -6,7 +6,7 @@ PR-1〜3・条件付き 2 機能・受入レポート（main `4ce1c7d`）を **S
 
 - 配備後の health は両環境とも `commit=4ce1c7d`、`db=ok`、`ok=true`。unit は active、`NRestarts=0`。
 - ただし**本番の最初の配備で、unit の `EnvironmentFile` が一時ファイルに置き換わり、本番 API が約 2 分 25 秒停止した**（14:37:30〜14:39:54）。復旧後、正しい設定で再配備して成功した。
-- Access OTP による UI 受入（V-3〜V-6）と #5 の通しは**未実施**（人間のログインが必要）。
+- Access OTP による UI 受入（V-3〜V-6）と #5 の通しは**当日 16:30〜16:40 に本番で実施済み**（§7-2。Access の SSO セッションを再利用）。未実施の残りは §7-2-5 に整理した。
 
 ## 1. 配備対象
 
@@ -84,10 +84,69 @@ PR-1〜3・条件付き 2 機能・受入レポート（main `4ce1c7d`）を **S
 | 本番 | `4ce1c7d`（release `20261111T144004-4ce1c7d79611`）、health OK、unit active |
 | Staging | `4ce1c7d`（release `20261111T143657-4ce1c7d79611`）、health OK、unit active |
 | 本番 DB | 変更なし。backup `ai_helpdesk_preview-20261111-023320.dump` は有効 |
-| 未実施 | Access OTP での V-3〜V-6、#5 の通し、#5/#8 など残りの受入、新しいリリース判定 |
+| 未実施（当初） | Access OTP での V-3〜V-6、#5 の通し、#5/#8 など残りの受入、新しいリリース判定 |
+
+## 7-2. 受入（本番・2026-11-11 16:30〜16:40 JST）— §7 の「未実施」のうち V-3〜V-6 と #5 を実施
+
+Access OTP で Staging にログインした同一チームドメインの SSO セッションを再利用し、**本番**（`https://ai-helpdesk.mirai-dx-platform.com`）で受入を実施した。証跡はスクリーンショットではなく、**DOM アサーション・API の JSON・ネットワークログ**（`docs/evidence/webui-acceptance-20261111/production-checks.json`）。
+
+### 7-2-1. 身元と配備の一致
+
+| 項目 | 実測 |
+|---|---|
+| `GET /api/me` | 200、`roles=[approver,helpdesk]`、`helpdeskActor=true`、`resolveAdmin=true` |
+| 解決経路 | 名簿にメール未登録のため `PERSONA_SWITCH_ALLOWLIST` の**デモ経路**（`via=demo`）。担当者向け API はこの経路で許可される |
+| health | `commit=4ce1c7d79611e93581230b958963d632630c8c1d`、`db=ok`、`ok=true`（Staging も同一） |
+| unit | 本番 MainPID 266866・`NRestarts=0`（14:40:20 起動）／Staging MainPID 241415・`NRestarts=0`（14:37:11 起動） |
+
+### 7-2-2. V-3〜V-6（本番 UI）
+
+| # | 結果 |
+|---|---|
+| V-3 | 画面 200・title「みらいAI窓口 × ヘルプデスク ステップ受付 V3.1」。コンソールエラーは **favicon の CSP のみ**（`img-src data: blob:`、変更前から存在）。`pageerror` 0 |
+| V-4 | 引継ぎワークスペースの右ペインは **5 タブ**（案件／実行／端末／ナレッジ／記録）。各タブで可視パネルは 1 |
+| V-4' | **固定フッター**あり（`.hw-ev-foot`・高さ 48px）。全 5 タブで右ペイン下端との差 1px、内側スクロール領域 `#hw-ev-scroll` を最下部まで動かしてもフッター位置の変化 **0px** |
+| V-6 | 記録タブは 3 件・バッジ「記録 3」。6 件以下のため「すべて表示（n 件）」は**仕様どおり非表示** |
+| V-7 | 公開 URL は 302（Access のゲート）。ログイン後は V-3 のとおり 200 |
+
+### 7-2-3. 条件付き 2 機能（本番 API を直接実測）
+
+| 機能 | 実測 |
+|---|---|
+| #7 入力チェック（`POST /api/intake/preview`） | 赤サンプル → `signal=red`・`security=true`・PII メール 1 件・指摘（red/warn）、103ms。青サンプル → `signal=blue`・PII 0 件、84ms。**AI 呼び出し 0**（ルールベース） |
+| #4 AI検査（`POST /api/knowledge/inspect`） | 200、`score=88/100`（参考）、伏せ字は email 1 件・IP 1 件、項目 7 中 6 合格（不合格は「個人情報・端末情報が残っていない」＝保存時に伏せ字になるため）、`blocking.deviceInfo=false`、伏せ字後本文に `[メールアドレス]`・`[IPアドレス]` |
+
+### 7-2-4. #5 通し（サーバー経由）
+
+1. 画面で **STEP1→STEP4** まで操作（分野=PC・周辺機器、PC基本情報は「取得しない」、件名 `【受入】本番動作確認（WebUI 4ce1c7d）`）。AI 一次対応が表示され、**名簿から「おすすめの担当」が解決**した（本番の Mirai-Info 名簿接続の実証）。
+2. 同意して引き継ぐ → 画面は `TKT-2026-0006` / `INC-1010` を受付として表示（**この時点ではクライアント側の表示のみ**）。
+3. サーバー側は `POST /api/case-handovers` を発行して確認した: **200**、`handoverId=0cfd3aa9-f1da-4aa2-9df6-c2a7a9d0ddf9`、`status=pending`、`notify={queued:1,transport:smtp}`。
+4. `GET /api/case-handovers/inbox` が **2 件**になり、`【受入】本番動作確認（WebUI 4ce1c7d）`（`CASE-39198`）が含まれる。
+5. DB/監査: `case_handovers` に `CASE-39198 / pending / 2026-11-11 07:39:28Z`、`audit_log` に `case_handover.create`、`case_handover_notifications` は `sent`。
+6. UI 側でも「引継ぎ」を開くと `INC-1010 ／ 【受入】…` が引継ぎ待ち 1 として現れ、**サーバー → 画面の受信箱**が通ることを確認した。
+
+> これは 10 月のローカル受入で残っていた「名簿が無いため `POST /api/case-handovers` が発行されず受信箱 0 件」の未検証点を、本番の名簿接続で埋めたもの。
+
+### 7-2-5. 未実施（今回の範囲外・条件未成立）
+
+| 項目 | 理由 |
+|---|---|
+| ② 候補の手順／⑤ AI検査の UI パネル／⑥ 確認の進捗 n/4 | 今回の受入ケースに**候補提示・下書きが無く**パネルが表示されない。ローカル受入（[docs/94](94-knowledge-trial-and-review.md)）と CI（205 件）で検証済み。AI検査は API を直接検証（7-2-3） |
+| ⑧「今回反映」 | 承認が **本人承認禁止**（`ALLOW_SELF_APPROVAL=false`）のため、1 名では承認まで到達できない |
+| 記録タブの「すべて表示（n 件）」 | ライブデータが 6 件以下。CI の試験で検証済み |
+| #6 PC情報からの補足 | ★ が付く端末情報が必要（今回は PC 基本情報を取得せず） |
+| #5/#8 など残りの受入、新しいリリース判定 | 別項目 |
+
+### 7-2-6. 環境設定の変更（記録・すべて復元済み）
+
+- **Staging の Access アプリ許可リスト**（`~/.config/ai-helpdesk/stg-access-allowlist.txt`）は設計どおり**合成 1 件のみ**（[docs/78](78-staging-build-20261106.md)、`synthetic-staging@example.invalid`）。このため実運用者のメールでは `apps/api/src/auth/ui.ts` のアプリ層許可リストで **403** になる。
+- ログイン経路の確認時に運用者メールを一時的に 1 行追加したが、**設計（合成 1 件）を変えないため直ちに元の内容へ復元した**（`cmp` で退避ファイルと同一を確認）。許可リストは mtime/size で次回リクエスト時に自動反映されるため、追加・復元とも**再起動は不要**だった。実 Access のログイン確認は本番で行った（本番の許可リストは従来から運用者を含む）。
+- Staging は名簿（Mirai-Info）を持たない設計（[docs/77](77-staging-environment-design.md) の PII 非流入要件）のため、**担当者向け機能（候補一覧・AI検査・n/4・記録全件）は Staging では検証できない**。今回の受入は本番で実施した。
+- 本番 DB の変更は受入による `case_handovers` 1 行・`case_handover_notifications` 1 行・`audit_log` 1 行のみ。**残置**: 引継ぎ待ち 1 件（`CASE-39198` `【受入】…`）は人がクローズする必要がある。
 
 ## 8. 参照
 
+- 受入の機械可読な証跡: [docs/evidence/webui-acceptance-20261111/production-checks.json](evidence/webui-acceptance-20261111/production-checks.json)
 - 配備準備: [docs/96](96-release-prep-webui-20261111.md)
 - 機能: [docs/93](93-right-panel-tabs.md) / [docs/94](94-knowledge-trial-and-review.md) / [docs/95](95-right-panel-footer-and-reflect.md) / [docs/97](97-conditional-features.md)
 - 正本の手順: [docs/82](82-promotion-runbook-20261106.md)、[docs/85](85-production-cutover-20261106.md)
