@@ -78,6 +78,13 @@ if [ -n "$UNIT_TEMPLATE" ]; then
     || fail 'env file passed with --unit-template lacks SESSION_SECRET; pass the real EnvironmentFile'
 fi
 
+# --migrate / --seed は DB へ接続するため、env file に DATABASE_URL が必須。
+# --unit-template を付けない呼び出し（Staging など）でも、build 前に落とす。
+if [ "$DO_MIGRATE" = 1 ] || [ "$DO_SEED" = 1 ]; then
+  grep -q '^DATABASE_URL=' "$ENV_FILE" \
+    || fail 'env file passed with --migrate/--seed lacks DATABASE_URL; pass the service EnvironmentFile'
+fi
+
 mkdir -p "$ROOT/releases" "$ROOT/state"
 ROOT=$(realpath -- "$ROOT")
 LOCK="$ROOT/.deploy.lock"
