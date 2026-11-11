@@ -1,0 +1,729 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AIヘルプデスク 画面機能詳細仕様書 V1.0</title>
+<style>
+:root{--bg:#f4f6f9;--panel:#fff;--panel2:#f7f9fc;--ink:#18212c;--mute:#5d6977;--line:#dde3ea;--accent:#1d5fc4;--accent-soft:#e6eefb;--ai:#6941c6;--ai-soft:#f1ecfc;--ok:#18794e;--ok-soft:#e3f4ea;--warn:#a1640c;--warn-soft:#fbf0dc;--bad:#c2292e;--bad-soft:#fbe5e5;--chip:#eef1f5;color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0e131a;--panel:#161d26;--panel2:#1b2430;--ink:#e5ebf2;--mute:#93a0af;--line:#2a3441;--accent:#5c9bff;--accent-soft:#1c2c45;--ai:#a88bf0;--ai-soft:#262040;--ok:#4cc38a;--ok-soft:#173326;--warn:#e0a43c;--warn-soft:#352a15;--bad:#f07178;--bad-soft:#3a1d20;--chip:#222b37;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0e131a;--panel:#161d26;--panel2:#1b2430;--ink:#e5ebf2;--mute:#93a0af;--line:#2a3441;--accent:#5c9bff;--accent-soft:#1c2c45;--ai:#a88bf0;--ai-soft:#262040;--ok:#4cc38a;--ok-soft:#173326;--warn:#e0a43c;--warn-soft:#352a15;--bad:#f07178;--bad-soft:#3a1d20;--chip:#222b37;color-scheme:dark}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:16px}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.75 "Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI","Meiryo",system-ui,sans-serif}
+.wrap{display:grid;grid-template-columns:270px minmax(0,1fr);min-height:100vh}
+aside{background:var(--panel);border-right:1px solid var(--line);padding:18px 14px;position:sticky;top:0;height:100vh;overflow:auto}
+aside .ttl{font-weight:800;font-size:15px;line-height:1.4;margin-bottom:2px}
+aside small{color:var(--mute);font-size:11.5px}
+aside nav{margin-top:14px;font-size:13px}
+aside nav a{display:block;color:var(--ink);text-decoration:none;padding:4px 8px;border-radius:7px;border-left:3px solid transparent}
+aside nav a:hover{background:var(--chip)}
+aside nav a.on{background:var(--accent-soft);color:var(--accent);font-weight:700;border-left-color:var(--accent)}
+aside nav a.s{padding-left:22px;font-size:12.5px;color:var(--mute)}
+aside nav a.s.on{color:var(--accent)}
+.tbtn{margin-top:14px;font:inherit;font-size:12px;padding:5px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);color:var(--ink);cursor:pointer}
+main{padding:28px 36px 80px;max-width:1120px;min-width:0}
+.cover{background:linear-gradient(135deg,var(--accent),var(--ai));color:#fff;border-radius:16px;padding:30px 32px;margin-bottom:26px}
+.cover h1{margin:0 0 6px;font-size:26px;line-height:1.35}
+.cover p{margin:0;opacity:.92}
+.meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-top:18px}
+.meta div{background:rgba(255,255,255,.14);border-radius:10px;padding:8px 12px;font-size:12.5px}
+.meta b{display:block;font-size:14px}
+h2{font-size:20px;margin:42px 0 12px;padding-bottom:8px;border-bottom:2px solid var(--line)}
+h2 .n{color:var(--accent);margin-right:8px}
+h3{font-size:16px;margin:28px 0 8px}
+h4{font-size:14px;margin:18px 0 6px;color:var(--accent)}
+p{margin:6px 0 10px}
+ul,ol{margin:6px 0 12px;padding-left:22px}
+li{margin:2px 0}
+code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;background:var(--chip);padding:1px 5px;border-radius:5px}
+.tw{overflow-x:auto;margin:8px 0 14px;border:1px solid var(--line);border-radius:10px;background:var(--panel)}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+tr:last-child td{border-bottom:0}
+th{background:var(--panel2);font-size:12px;color:var(--mute);white-space:nowrap}
+td.nw,th.nw{white-space:nowrap}
+.sc{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:6px 22px 16px;margin:18px 0}
+.sc>h3{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:16px}
+.id{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;background:var(--accent);color:#fff;border-radius:6px;padding:1px 8px}
+.tag{display:inline-block;font-size:11px;font-weight:700;border-radius:9px;padding:0 8px;line-height:1.8;background:var(--chip);color:var(--mute);white-space:nowrap}
+.t-ai{background:var(--ai-soft);color:var(--ai)}.t-h{background:var(--warn-soft);color:var(--warn)}.t-ok{background:var(--ok-soft);color:var(--ok)}.t-bad{background:var(--bad-soft);color:var(--bad)}.t-u{background:var(--accent-soft);color:var(--accent)}
+.note{border-radius:10px;padding:10px 14px;margin:10px 0;font-size:13px;background:var(--accent-soft);color:var(--ink);border-left:4px solid var(--accent)}
+.note.w{background:var(--warn-soft);border-left-color:var(--warn)}
+.note.b{background:var(--bad-soft);border-left-color:var(--bad)}
+.fig{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px;margin:10px 0 14px;overflow-x:auto}
+.fig svg{display:block;min-width:860px;width:100%;height:auto}
+.fig figcaption,.cap{font-size:12px;color:var(--mute);margin-top:6px}
+figure{margin:0}
+.lay{display:grid;grid-template-columns:150px 1fr;gap:8px;font-size:12px;margin:8px 0 14px}
+.lay>div{border:1.5px dashed var(--line);border-radius:9px;padding:8px 10px;background:var(--panel2)}
+.lay .hd{grid-column:1/-1}
+.lay .mn{display:grid;grid-template-columns:1fr 1.4fr;gap:8px;border:0;padding:0;background:none}
+.lay .mn>div{border:1.5px dashed var(--line);border-radius:9px;padding:8px 10px;background:var(--panel2)}
+.lay .mn .fl{grid-column:1/-1}
+.lay b{display:block;font-size:12.5px}
+@media (max-width:900px){.wrap{grid-template-columns:1fr}aside{position:static;height:auto;border-right:0;border-bottom:1px solid var(--line)}aside nav{columns:2}main{padding:18px 16px 60px}.cover{padding:22px 18px}.cover h1{font-size:21px}.sc{padding:4px 14px 12px}}
+@media print{aside{display:none}.wrap{display:block}main{max-width:none;padding:0}body{background:#fff}.sc,.tw,.fig{break-inside:avoid}h2{break-after:avoid}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<aside>
+  <div class="ttl">AIヘルプデスク<br>画面機能詳細仕様書</div>
+  <small>V1.0／2026-11-10</small>
+  <nav id="toc"></nav>
+  <button class="tbtn" onclick="var r=document.documentElement,d=r.dataset.theme||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');r.dataset.theme=d==='dark'?'light':'dark'">表示テーマ切替</button>
+</aside>
+<main>
+
+<div class="cover">
+  <h1>AIヘルプデスク<br>画面機能詳細仕様書</h1>
+  <p>インシデント対応・ナレッジ循環サンプルアプリ（完全オフライン Standalone HTML）</p>
+  <div class="meta">
+    <div>版<b>V1.0</b></div>
+    <div>作成日<b>2026-11-10</b></div>
+    <div>対象ファイル<b>ai-helpdesk-flow.html</b></div>
+    <div>位置づけ<b>サンプル（疑似AI・疑似連携）</b></div>
+  </div>
+</div>
+
+<h2 id="s1"><span class="n">1</span>概要</h2>
+<h3 id="s1-1">1.1 目的</h3>
+<p>本書は、AIヘルプデスク サンプルアプリの全画面について、表示項目・操作・入力チェック・画面遷移・業務ルール・保存データを定義する。受付からナレッジ反映までの一連の流れ（受付 → AI一次対応 → 人間へ引継ぎ → 解決記録 → ナレッジ下書き → 人間の承認 → DB保存・AI/Skills反映）を、画面単位で再現・検証できることを目的とする。</p>
+<h3 id="s1-2">1.2 基本方針</h3>
+<ul>
+  <li>AIは回答・下書き・検査・反映処理を担当する。ナレッジの正式化（承認）は必ず人間が行う。</li>
+  <li>AIは承認済みナレッジだけを根拠に回答する。確度が低い場合、解決しない場合、セキュリティ事象の場合は人間へ引き継ぐ。</li>
+  <li>相談者のPC情報の取得とリモート接続は、相談者の同意の確認を前提とする。</li>
+  <li>申請者本人はナレッジを承認できない（職務分掌）。</li>
+  <li>すべての主要操作を監査ログに記録する。</li>
+</ul>
+<h3 id="s1-3">1.3 前提と制約（サンプルとしての範囲）</h3>
+<div class="tw"><table>
+<thead><tr><th>項目</th><th>本サンプルでの実装</th><th>実運用時の想定</th></tr></thead>
+<tbody>
+<tr><td class="nw">動作形態</td><td>HTMLファイル1本。外部通信・外部ライブラリなし</td><td>Webアプリ（サーバー＋DB）</td></tr>
+<tr><td class="nw">データ保存</td><td>ブラウザの localStorage（端末・ブラウザごと）</td><td>業務DB（例：AppSuite、RDB）</td></tr>
+<tr><td class="nw">AI回答</td><td>文字バイグラム類似度とキーワード一致による疑似AI</td><td>LLM＋検索拡張（RAG）</td></tr>
+<tr><td class="nw">PC情報</td><td>固定の疑似資産データ9台＋ブラウザ実測</td><td>SKYSEA Client View／Active Directory／Entra ID</td></tr>
+<tr><td class="nw">リモート対応</td><td>疑似（接続・実行結果とも画面上の再現）</td><td>SKYSEA Client View のリモート操作など</td></tr>
+<tr><td class="nw">認証</td><td>操作者の選択のみ（パスワードなし）</td><td>Entra ID（HENNGE One 経由）のシングルサインオン</td></tr>
+</tbody></table></div>
+
+<h2 id="s2"><span class="n">2</span>全体構成</h2>
+<h3 id="s2-1">2.1 画面一覧</h3>
+<div class="tw"><table>
+<thead><tr><th>画面ID</th><th>画面名</th><th>工程</th><th>主な操作者</th><th>概要</th></tr></thead>
+<tbody>
+<tr><td class="nw">SC-00</td><td class="nw">ログイン</td><td>-</td><td>全員</td><td>ログアウト後に表示。操作者を選んでログインする</td></tr>
+<tr><td class="nw">SC-01</td><td class="nw">ダッシュボード</td><td>全体</td><td>全員</td><td>7工程の滞留件数、チケット一覧、KPI、最近の反映と履歴</td></tr>
+<tr><td class="nw">SC-02</td><td class="nw">① 受付</td><td>1</td><td>L1窓口</td><td>問い合わせ登録、PC情報の取得、AIリアルタイム判定</td></tr>
+<tr><td class="nw">SC-03</td><td class="nw">② AI一次対応</td><td>2</td><td>利用者／L1窓口</td><td>AIの回答、手順の繰り返し試行、解決または引継ぎ</td></tr>
+<tr><td class="nw">SC-04</td><td class="nw">③ 人間へ引継ぎ・④ 解決記録</td><td>3・4</td><td>担当者</td><td>引継ぎメモ、担当割り当て、リモート対応、解決記録</td></tr>
+<tr><td class="nw">SC-05</td><td class="nw">⑤ ナレッジ下書き</td><td>5</td><td>担当者</td><td>AI生成下書きの編集、AI検査・指摘、承認申請</td></tr>
+<tr><td class="nw">SC-06</td><td class="nw">⑥ 人間の承認</td><td>6</td><td>承認者</td><td>申請内容の確認、チェックリスト、承認／差戻し</td></tr>
+<tr><td class="nw">SC-07</td><td class="nw">⑦ ナレッジDB</td><td>7</td><td>全員</td><td>承認済みナレッジの一覧・検索・詳細・アーカイブ</td></tr>
+<tr><td class="nw">SC-08</td><td class="nw">⑦ AI・Skills反映</td><td>7</td><td>全員</td><td>Skill概要、AI検索テスト、反映ログ</td></tr>
+<tr><td class="nw">SC-09</td><td class="nw">監査ログ</td><td>-</td><td>全員</td><td>操作履歴の一覧とCSV出力</td></tr>
+<tr><td class="nw">SC-10</td><td class="nw">共通部品</td><td>-</td><td>-</td><td>チケット詳細、ナレッジ詳細、反映完了、SKILL.md全文、通知</td></tr>
+</tbody></table></div>
+
+<h3 id="s2-2">2.2 画面遷移</h3>
+<figure class="fig">
+<svg viewBox="0 0 980 260" role="img" aria-label="画面遷移図">
+<defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="context-stroke"/></marker></defs>
+<g stroke="var(--mute)" stroke-width="1.5" fill="none" marker-end="url(#ar)"><path d="M126 150H152"/><path d="M266 150H292"/><path d="M406 150H432"/><path d="M546 150H572"/><path d="M686 150H712"/><path d="M826 150H852"/><path d="M210 128V86"/><path d="M770 128V86"/><path d="M770 172V222H630V176" stroke-dasharray="5 4"/></g>
+<g font-size="12.5" font-family="inherit" text-anchor="middle"><rect x="14" y="128" width="112" height="44" rx="9" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.5"/><text x="70" y="146" fill="var(--ink)" font-size="11.5">SC-02</text><text x="70" y="162" fill="var(--ink)" font-weight="700" font-size="12">① 受付</text><rect x="154" y="128" width="112" height="44" rx="9" fill="var(--ai-soft)" stroke="var(--ai)" stroke-width="1.5"/><text x="210" y="146" fill="var(--ink)" font-size="11.5">SC-03</text><text x="210" y="162" fill="var(--ink)" font-weight="700" font-size="12">② AI一次対応</text><rect x="294" y="128" width="112" height="44" rx="9" fill="var(--warn-soft)" stroke="var(--warn)" stroke-width="1.5"/><text x="350" y="146" fill="var(--ink)" font-size="11.5">SC-04</text><text x="350" y="162" fill="var(--ink)" font-weight="700" font-size="12">③ 人間へ引継ぎ</text><rect x="434" y="128" width="112" height="44" rx="9" fill="var(--warn-soft)" stroke="var(--warn)" stroke-width="1.5"/><text x="490" y="146" fill="var(--ink)" font-size="11.5">SC-04</text><text x="490" y="162" fill="var(--ink)" font-weight="700" font-size="12">④ 解決記録</text><rect x="574" y="128" width="112" height="44" rx="9" fill="var(--ai-soft)" stroke="var(--ai)" stroke-width="1.5"/><text x="630" y="146" fill="var(--ink)" font-size="11.5">SC-05</text><text x="630" y="162" fill="var(--ink)" font-weight="700" font-size="12">⑤ ナレッジ下書き</text><rect x="714" y="128" width="112" height="44" rx="9" fill="var(--warn-soft)" stroke="var(--warn)" stroke-width="1.5"/><text x="770" y="146" fill="var(--ink)" font-size="11.5">SC-06</text><text x="770" y="162" fill="var(--ink)" font-weight="700" font-size="12">⑥ 人間の承認</text><rect x="854" y="128" width="112" height="44" rx="9" fill="var(--ok-soft)" stroke="var(--ok)" stroke-width="1.5"/><text x="910" y="146" fill="var(--ink)" font-size="11.5">SC-07</text><text x="910" y="162" fill="var(--ink)" font-weight="700" font-size="12">⑦ ナレッジDB</text><rect x="154" y="40" width="112" height="44" rx="9" fill="var(--ok-soft)" stroke="var(--ok)" stroke-width="1.5"/><text x="210" y="58" fill="var(--ink)" font-size="11.5">終了</text><text x="210" y="74" fill="var(--ink)" font-weight="700" font-size="12">AI解決</text><rect x="714" y="40" width="112" height="44" rx="9" fill="var(--ok-soft)" stroke="var(--ok)" stroke-width="1.5"/><text x="770" y="58" fill="var(--ink)" font-size="11.5">SC-08</text><text x="770" y="74" fill="var(--ink)" font-weight="700" font-size="12">AI・Skills反映</text><g fill="var(--mute)" font-size="11"><text x="140" y="120">受付</text><text x="280" y="120">解決しない</text><text x="420" y="120">担当開始</text><text x="560" y="120">解決を記録</text><text x="700" y="120">承認申請</text><text x="840" y="120">承認</text><text x="218" y="100" text-anchor="start">この手順で解決した</text><text x="778" y="100" text-anchor="start">承認時にSkill更新</text><text x="700" y="240">差戻し</text></g></g>
+</svg>
+<figcaption>青＝利用者・窓口、紫＝AIが主に処理、橙＝人間が処理、緑＝完了・反映。破線は差戻し。③と④は同じ画面（SC-04）内のタブで切り替わる。SC-01 ダッシュボードからは全画面へ移動できる。</figcaption>
+</figure>
+<p>左ナビゲーションと画面上部のフローバーから、どの画面へも直接移動できる。業務操作による自動遷移は次のとおり。</p>
+<div class="tw"><table>
+<thead><tr><th>操作</th><th>遷移元</th><th>遷移先</th></tr></thead>
+<tbody>
+<tr><td>受付してAI一次対応を開始</td><td>SC-02</td><td>SC-03（登録したチケットを選択）</td></tr>
+<tr><td>解決しない → 担当者へ引継ぎ／担当者へ引き継ぐ</td><td>SC-03</td><td>SC-04（同チケット、「引継ぎメモ」タブ）</td></tr>
+<tr><td>解決を記録（下書き作成あり）</td><td>SC-04</td><td>SC-05（生成した下書きを選択）</td></tr>
+<tr><td>承認申請</td><td>SC-05</td><td>SC-06（同下書きを選択）</td></tr>
+<tr><td>承認 → 反映完了 →「⑦ ナレッジDBの一覧で確認」</td><td>SC-06</td><td>SC-07（今回反映した行を強調）</td></tr>
+<tr><td>ログアウト／ログイン</td><td>全画面</td><td>SC-00／SC-01</td></tr>
+</tbody></table></div>
+
+<h3 id="s2-3">2.3 共通レイアウト</h3>
+<div class="lay">
+  <div class="hd"><b>ヘッダー</b>ロゴ、AI稼働状態、時計、操作者、テーマ切替、エクスポート、インポート、初期化、ログアウト</div>
+  <div><b>左ナビ</b>10メニュー。件数バッジ付き</div>
+  <div class="mn">
+    <div class="fl"><b>フローバー＋画面見出し</b>7工程のうち現在の工程を強調。クリックで各工程へ移動</div>
+    <div><b>左側</b>一覧または入力フォーム（多い場合はこの中だけスクロール）</div>
+    <div><b>右端の詳細パネル</b>見出し、タブ、タブ本文、固定フッター（主要ボタン）。1ページに収める</div>
+  </div>
+</div>
+<div class="tw"><table>
+<thead><tr><th>部品</th><th>仕様</th></tr></thead>
+<tbody>
+<tr><td class="nw">AI稼働状態</td><td>AIまたはリモート実行の処理中は「AI処理中 n件」、それ以外は「AI 待機中（ローカル）」</td></tr>
+<tr><td class="nw">操作者</td><td>選択すると操作者が切り替わる（権限の確認用）。切替時に通知を表示</td></tr>
+<tr><td class="nw">テーマ切替</td><td>ライト／ダークを切り替え、選択をブラウザに保存。未選択時はOS設定に従う</td></tr>
+<tr><td class="nw">エクスポート</td><td>全データをJSONファイル（<code>aihelpdesk-data-YYYYMMDD.json</code>）で保存</td></tr>
+<tr><td class="nw">インポート</td><td>エクスポートしたJSONを読み込み、全データを置き換える。形式不正は「読み込めないファイルです」</td></tr>
+<tr><td class="nw">初期化</td><td>確認後、全データを初期サンプルに戻す</td></tr>
+<tr><td class="nw">ログアウト</td><td>SC-00 参照</td></tr>
+<tr><td class="nw">ナビの件数</td><td>② AI対応中、③④ 引継ぎ待ち＋対応中、⑤ 下書き＋差戻し、⑥ 承認待ち、⑦ 有効ナレッジ数。P1・SLA超過・承認待ちがあると赤く強調</td></tr>
+<tr><td class="nw">右詳細パネル</td><td>タブはすべて同時に保持し、切り替えても入力内容を失わない。一覧で別の項目を選ぶとタブは既定に戻る</td></tr>
+<tr><td class="nw">通知（トースト）</td><td>画面下中央に約3.2秒表示。通常／成功（緑）／エラー（赤）</td></tr>
+</tbody></table></div>
+
+<h2 id="s3"><span class="n">3</span>利用者と権限</h2>
+<div class="tw"><table>
+<thead><tr><th>操作者</th><th>役割</th><th>承認権限</th><th>担当カテゴリ（AI推奨担当）</th></tr></thead>
+<tbody>
+<tr><td>佐藤</td><td>L1窓口</td><td>-</td><td>その他</td></tr>
+<tr><td>鈴木</td><td>ネットワーク</td><td>-</td><td>ネットワーク・VPN</td></tr>
+<tr><td>高橋</td><td>M365・ID管理</td><td>-</td><td>アカウント・認証、メール・Teams</td></tr>
+<tr><td>田中</td><td>端末・業務アプリ</td><td>-</td><td>PC・周辺機器、ファイル共有・業務アプリ</td></tr>
+<tr><td>伊藤</td><td>セキュリティ</td><td>-</td><td>セキュリティ（セキュリティ事象は常に伊藤）</td></tr>
+<tr><td>渡辺</td><td>課長・ナレッジ承認者</td><td>あり</td><td>-</td></tr>
+<tr><td>山本</td><td>ナレッジ管理者・承認者</td><td>あり</td><td>-</td></tr>
+</tbody></table></div>
+<div class="tw"><table>
+<thead><tr><th>操作</th><th>一般の担当者</th><th>承認者</th><th>備考</th></tr></thead>
+<tbody>
+<tr><td>受付、AI一次対応、引継ぎ対応、解決記録、下書き編集・申請</td><td>可</td><td>可</td><td></td></tr>
+<tr><td>担当者への割り当て先</td><td>対象</td><td>対象外</td><td>割り当て候補は承認者以外の5名</td></tr>
+<tr><td>ナレッジの承認・差戻し</td><td>不可</td><td>可</td><td>申請者本人は承認者でも不可</td></tr>
+<tr><td>ナレッジのアーカイブ・復元</td><td>不可</td><td>可</td><td></td></tr>
+</tbody></table></div>
+
+<h2 id="s4"><span class="n">4</span>画面別仕様</h2>
+
+<div class="sc" id="sc00">
+<h3><span class="id">SC-00</span>ログイン</h3>
+<p>ログアウト状態のときに全画面を覆って表示する。ページを再読み込みしてもログアウト状態を維持する。</p>
+<div class="tw"><table>
+<thead><tr><th>項目・操作</th><th>仕様</th></tr></thead>
+<tbody>
+<tr><td class="nw">表示</td><td>アプリ名、前回の操作者、操作者7名のカード（氏名・役割）、認証についての注記</td></tr>
+<tr><td class="nw">操作者カード</td><td>選択した操作者でログインし、SC-01 を表示。「〇〇でログインしました」を通知。監査ログに「ログイン」を記録</td></tr>
+<tr><td class="nw">ログアウト（ヘッダー）</td><td>確認ダイアログ「〇〇をログアウトします。よろしいですか？」→ 承諾で実行。その操作者がログイン中のリモート接続をすべて切断し、受付で取得途中のPC情報を破棄する。開いている詳細・モーダルを閉じる。監査ログに「リモート切断」「ログアウト」を記録</td></tr>
+</tbody></table></div>
+</div>
+
+<div class="sc" id="sc01">
+<h3><span class="id">SC-01</span>ダッシュボード</h3>
+<p>工程ごとの滞留と全体の指標を確認する。60秒ごとに自動で再表示する（残り時間・SLA表示の更新）。</p>
+<h4>左側</h4>
+<div class="tw"><table>
+<thead><tr><th>項目</th><th>仕様</th></tr></thead>
+<tbody>
+<tr><td class="nw">工程カード（7枚）</td><td>受付（累計）、AI一次対応（AI解決数／対応中）、人間へ引継ぎ（待ち＋対応中）、解決記録（人間が解決）、ナレッジ下書き（下書き＋差戻し）、人間の承認（承認待ち）、DB保存・AI/Skills反映（有効ナレッジ数）。クリックで該当画面へ移動。対応待ちがある工程はアイコンが脈打つ</td></tr>
+<tr><td class="nw">チケット一覧</td><td>列：ID、件名（カテゴリアイコン付き）、優先度、状態、担当、SLA。受付の新しい順。行クリックでチケット詳細を開く</td></tr>
+<tr><td class="nw">絞り込み</td><td>未解決（AI対応中・引継ぎ待ち・対応中）／すべて／AI解決／人間が解決。既定は未解決</td></tr>
+<tr><td class="nw">新規受付</td><td>SC-02 へ移動</td></tr>
+</tbody></table></div>
+<h4>右詳細パネル</h4>
+<div class="tw"><table>
+<thead><tr><th>タブ</th><th>内容</th></tr></thead>
+<tbody>
+<tr><td class="nw">KPI</td><td>AI自己解決率、ナレッジ有効率、平均解決時間、SLA超過、承認待ちナレッジ（クリックで SC-06）。色の凡例</td></tr>
+<tr><td class="nw">内訳</td><td>状態の内訳バー、カテゴリ別の受付件数</td></tr>
+<tr><td class="nw">AI反映</td><td>最近の反映 6件（ナレッジ・版、種別、Skill版、日時、承認者）</td></tr>
+<tr><td class="nw">履歴</td><td>監査ログの最新 7件。「監査ログを見る」で SC-09</td></tr>
+</tbody></table></div>
+<h4>KPIの算出</h4>
+<div class="tw"><table>
+<thead><tr><th>指標</th><th>算出方法</th></tr></thead>
+<tbody>
+<tr><td class="nw">AI自己解決率</td><td>AI解決件数 ÷（AI解決件数＋人間へ引き継いだ件数）</td></tr>
+<tr><td class="nw">ナレッジ有効率</td><td>有効ナレッジのうち利用実績があるものについて、「解決した」÷（「解決した」＋「解決しない」）の平均</td></tr>
+<tr><td class="nw">平均解決時間</td><td>人間が解決したチケットの（解決記録日時 − 受付日時）の平均</td></tr>
+<tr><td class="nw">SLA超過</td><td>未解決チケットのうち SLA期限を過ぎた件数</td></tr>
+</tbody></table></div>
+</div>
+
+<div class="sc" id="sc02">
+<h3><span class="id">SC-02</span>① 受付</h3>
+<p>問い合わせを登録する。入力中にAIが優先度・セキュリティ・回答可否を判定し、右パネルに表示する。</p>
+<h4>入力項目（左側）</h4>
+<div class="tw"><table>
+<thead><tr><th>項目</th><th>形式</th><th>必須</th><th>既定値・選択肢</th></tr></thead>
+<tbody>
+<tr><td class="nw">サンプル入力</td><td>ボタン</td><td>-</td><td>MFA・機種変更／VPN接続不可／不審メール／未知の事象／同期エラー。押すと各項目を埋め、取得済みPC情報を外す</td></tr>
+<tr><td class="nw">依頼者</td><td>テキスト</td><td>-</td><td>未入力時は「（未記入）」で登録。PC情報の検索キーにもなる</td></tr>
+<tr><td class="nw">受付チャネル</td><td>単一選択</td><td>○</td><td>ポータル（既定）／メール／Teams／電話</td></tr>
+<tr><td class="nw">カテゴリ</td><td>タイル選択</td><td>○</td><td>わからない（AIが推定）（既定）／アカウント・認証／メール・Teams／ネットワーク・VPN／PC・周辺機器／ファイル共有・業務アプリ／セキュリティ</td></tr>
+<tr><td class="nw">緊急度</td><td>単一選択</td><td>○</td><td>高／中（既定）／低</td></tr>
+<tr><td class="nw">影響範囲</td><td>単一選択</td><td>○</td><td>個人（既定）／部署／全社</td></tr>
+<tr><td class="nw">件名</td><td>テキスト</td><td>○</td><td></td></tr>
+<tr><td class="nw">内容</td><td>複数行</td><td>○</td><td></td></tr>
+</tbody></table></div>
+<h4>相談者のPC情報</h4>
+<div class="tw"><table>
+<thead><tr><th>項目・操作</th><th>仕様</th></tr></thead>
+<tbody>
+<tr><td class="nw">同意チェック</td><td>「相談者から、PC情報の取得と一次対応での利用について同意を得た」。未チェックで取得を押すと「先に相談者の同意を確認してください」を表示し、チェック欄を強調。取得後にチェックを外すと取得済み情報を破棄</td></tr>
+<tr><td class="nw">資産番号・ホスト名</td><td>任意。空欄なら依頼者名で検索</td></tr>
+<tr><td class="nw">資産管理DBから取得</td><td>3段階の照会表示のあと、右パネル「PC情報」タブに結果を表示。該当なしは「該当する端末が見つかりません」または「依頼者名で端末が見つかりません。資産番号で検索してください」</td></tr>
+<tr><td class="nw">このPCのブラウザから取得</td><td>操作中のブラウザからOS、ブラウザ、CPUコア数、メモリ、画面、言語、接続状態・回線種別を取得。資産管理DBの結果と併用できる</td></tr>
+<tr><td class="nw">取得状況</td><td>「取得済み：資産番号」と「右のPC情報で確認」「外す」のリンク、または未取得の案内</td></tr>
+</tbody></table></div>
+<h4>右詳細パネル</h4>
+<div class="tw"><table>
+<thead><tr><th>タブ</th><th>内容</th></tr></thead>
+<tbody>
+<tr><td class="nw">AI判定</td><td>予測優先度とSLA、判定（手順を提示できる見込み／候補を提示／人間へ引継ぎの見込み／セキュリティ検知）、最有力ナレッジと一致度、PC診断の要点、しきい値の凡例。件名・内容が合計4文字未満の間は案内のみ。入力から約0.2秒後に更新</td></tr>
+<tr><td class="nw">PC情報</td><td>取得元、端末・OS・CPU／メモリ・ディスク空き・ネットワーク・ウイルス対策・更新プログラム・MFA登録端末・ブラウザ実測、主要アプリの版、診断結果。バッジは「済／未」</td></tr>
+<tr><td class="nw">流れ</td><td>受付後の7ステップとセキュリティ事象の扱い</td></tr>
+<tr><td class="nw">優先度</td><td>優先度マトリクスとSLA</td></tr>
+</tbody></table></div>
+<h4>受付ボタン</h4>
+<p>「受付してAI一次対応を開始」：件名または内容が空なら「件名と内容を入力してください」。正常時はチケット（状態：AI対応中）を採番して登録し、PC情報があれば診断結果とともに添付して SC-03 へ遷移、AIの一次対応を開始する。</p>
+</div>
+
+<div class="sc" id="sc03">
+<h3><span class="id">SC-03</span>② AI一次対応</h3>
+<p>AIが対話形式で回答する。利用者が納得するまで手順を繰り返し試し、解決または引継ぎで終了する。</p>
+<h4>表示</h4>
+<div class="tw"><table>
+<thead><tr><th>領域</th><th>内容</th></tr></thead>
+<tbody>
+<tr><td class="nw">左側一覧</td><td>チケット最大20件（AI対応中を先頭、以降は受付の新しい順）。ID、優先度、状態、PC情報の有無</td></tr>
+<tr><td class="nw">見出し</td><td>件名、ID、優先度、状態、カテゴリ、SLA残り、7工程の進行表示、「詳細」ボタン</td></tr>
+<tr><td class="nw">対話領域</td><td>問い合わせ内容、システム行、AIの発言、利用者の発言。AI処理中は「照合中」を表示。常に最新の発言までスクロール</td></tr>
+<tr><td class="nw">固定フッター</td><td>状態に応じた操作ボタン（下表）</td></tr>
+</tbody></table></div>
+<h4>AIの発言の種類</h4>
+<div class="tw"><table>
+<thead><tr><th>種類</th><th>内容</th></tr></thead>
+<tbody>
+<tr><td class="nw">PC情報の確認</td><td>PC情報がある場合に最初に表示。PCの要約と診断結果</td></tr>
+<tr><td class="nw">ナレッジ提示</td><td>ナレッジID・タイトル、一致度、一致キーワード、手順、参照元（版・承認者・Skill）。PC診断で症状に関連する指摘があれば「PC情報からの補足」を付ける</td></tr>
+<tr><td class="nw">候補提示</td><td>確度が中程度のとき、候補を最大3件。各候補に「この手順を試す」</td></tr>
+<tr><td class="nw">セキュリティ検知</td><td>赤色の発言と初動手順4項目。画面全体が赤く点滅</td></tr>
+<tr><td class="nw">該当なし</td><td>引継ぎの案内。PC情報から原因候補があれば補足を付ける</td></tr>
+</tbody></table></div>
+<h4>操作（状態が「AI対応中」で、AIが処理中でないとき）</h4>
+<div class="tw"><table>
+<thead><tr><th>操作</th><th>表示条件</th><th>動作</th></tr></thead>
+<tbody>
+<tr><td class="nw">この手順で解決した</td><td>提示中の手順あり</td><td>ナレッジの利用回数・有効回数を加算。状態を「AI解決」にして終了</td></tr>
+<tr><td class="nw">解決しない → 担当者へ引継ぎ</td><td>提示中の手順あり</td><td>ナレッジの利用回数・無効回数を加算。引継ぎメモを生成して状態を「引継ぎ待ち」にし、SC-04 へ遷移</td></tr>
+<tr><td class="nw">担当者へ引き継ぐ</td><td>提示中の手順なし</td><td>同上（理由「利用者が引継ぎを希望」）</td></tr>
+<tr><td class="nw">この手順を試す／もう一度試す</td><td>ほかに一致度10%以上のナレッジあり（最大3件）</td><td>直前の手順を「解決せず」として記録し、選んだ手順を提示。回数制限なし。試した手順は「試行済み」、一致度22%未満は「関連は低め」と表示</td></tr>
+<tr><td class="nw">追加情報の送信</td><td>常時</td><td>追加情報を加えて再検索し、未提示のナレッジがあれば提示。なければ引継ぎを勧める</td></tr>
+<tr><td class="nw">PC情報を取得して再診断</td><td>PC情報なし</td><td>同意の確認ダイアログ後、依頼者名で端末を検索して診断し、再検索する</td></tr>
+<tr><td class="nw">試した手順 n件</td><td>常時</td><td>提示済みナレッジ数の表示</td></tr>
+</tbody></table></div>
+<p>「AI解決」「引継ぎ待ち・対応中」「解決済」のチケットでは、フッターに状態の案内と次画面へのボタンを表示する。</p>
+</div>
+
+<div class="sc" id="sc04">
+<h3><span class="id">SC-04</span>③ 人間へ引継ぎ・④ 解決記録</h3>
+<p>担当者がAIの引継ぎメモを確認し、相談者のPCへリモートログインして解決まで対応し、解決内容を記録する。</p>
+<h4>左側一覧</h4>
+<ul>
+  <li>引継ぎ待ち・対応中：優先度（P1→P4）、SLA期限の近い順。ID、優先度、状態、SLA、担当者。</li>
+  <li>最近解決したチケット：解決の新しい順に最大6件。</li>
+</ul>
+<h4>右詳細パネルのタブ</h4>
+<div class="tw"><table>
+<thead><tr><th>タブ</th><th>表示条件</th><th>内容</th></tr></thead>
+<tbody>
+<tr><td class="nw">引継ぎメモ</td><td>常時</td><td>AI要約（概要、依頼者、優先度・SLA期限、引継ぎ理由、AI一次対応の経過、PC情報、推定カテゴリ・推奨担当、推奨アクション）と問い合わせ内容。セキュリティ事象は警告を表示</td></tr>
+<tr><td class="nw">PC情報</td><td>常時</td><td>取得済みのPC情報と診断結果。バッジは指摘件数</td></tr>
+<tr><td class="nw">類似ナレッジ</td><td>常時</td><td>類似上位3件と一致度。利用者が試して解決しなかったものを明示。クリックでナレッジ詳細</td></tr>
+<tr><td class="nw">リモート対応</td><td>対応中のみ</td><td>下記参照</td></tr>
+<tr><td class="nw">担当割り当て</td><td>引継ぎ待ち</td><td>AI推奨担当の表示、担当者の選択、「担当して対応開始」</td></tr>
+<tr><td class="nw">④ 解決記録</td><td>対応中</td><td>解決記録の入力</td></tr>
+<tr><td class="nw">解決記録</td><td>解決済</td><td>原因、手順、担当・所要時間の表示。下書きへのリンク</td></tr>
+</tbody></table></div>
+<h4>担当割り当て</h4>
+<p>「担当して対応開始」：選択した担当者を設定し、状態を「対応中」にして「リモート対応」タブを開く。</p>
+<h4>リモート対応</h4>
+<div class="tw"><table>
+<thead><tr><th>項目・操作</th><th>仕様</th></tr></thead>
+<tbody>
+<tr><td class="nw">ログイン前</td><td>対象端末（PC情報の端末、なければ依頼者名で検索。見つからなければ資産番号の入力欄）、同意チェック「相談者から、リモート接続と画面操作について同意を得た」、「ログインして対応を開始」。未同意は「先に相談者の同意を確認してください」、端末不明は「該当する端末が見つかりません。資産番号で指定してください」</td></tr>
+<tr><td class="nw">ログイン後の表示</td><td>ログイン中の表示、資産番号／ホスト名、相談者名、操作者、修復件数、指示回数。対話領域は SC-03 と同じ形式（操作者の指示は右、AIの実行結果は左）</td></tr>
+<tr><td class="nw">指示の候補</td><td>状態を診断／イベントログを確認／ネットワーク疎通を確認／アプリの版を確認／推奨の修復を実行／ナレッジの手順を表示／再現確認</td></tr>
+<tr><td class="nw">自由入力</td><td>入力文に含まれる語から候補と同じ処理に振り分ける。どれにも当たらない指示は「実行した対応」として記録し、解決記録の手順になる</td></tr>
+<tr><td class="nw">推奨の修復を実行</td><td>未対処の指摘のうち、症状に関連する要対応・注意、および要対応のものを実行（該当がなければ注意レベルを実行）。実行済みの指摘は以降の診断から除く</td></tr>
+<tr><td class="nw">再現確認</td><td>修復または対応の記録が1件以上あれば「再現しませんでした」、なければ「再現します」</td></tr>
+<tr><td class="nw">解決した → 解決記録へ</td><td>実行した修復と対応から、原因・手順・所要時間（5分以上）を下書きし、「④ 解決記録」タブを開く。再現確認が済むとボタンが光る</td></tr>
+<tr><td class="nw">切断</td><td>リモート接続を切断。再ログインすると記録を引き継ぐ</td></tr>
+</tbody></table></div>
+<h4>④ 解決記録</h4>
+<div class="tw"><table>
+<thead><tr><th>項目</th><th>形式</th><th>必須</th><th>備考</th></tr></thead>
+<tbody>
+<tr><td class="nw">原因</td><td>複数行</td><td>○</td><td>リモート対応から下書きされる</td></tr>
+<tr><td class="nw">対応手順</td><td>複数行（1行1手順）</td><td>○</td><td>同上</td></tr>
+<tr><td class="nw">所要時間（分）</td><td>数値</td><td>-</td><td>既定 30</td></tr>
+<tr><td class="nw">備考・再発防止</td><td>テキスト</td><td>-</td><td></td></tr>
+<tr><td class="nw">ナレッジ下書きを作成する</td><td>チェック</td><td>-</td><td>既定オン</td></tr>
+</tbody></table></div>
+<p>「解決を記録 → ⑤ ナレッジ下書きへ」：原因または手順が空なら「原因と対応手順を入力してください」。正常時は状態を「解決済」にし、リモート接続中なら切断する。チェックがオンならAIが下書きを生成して SC-05 へ遷移する。入力途中の内容はタブを切り替えても保持する。</p>
+</div>
+
+<div class="sc" id="sc05">
+<h3><span class="id">SC-05</span>⑤ ナレッジ下書き</h3>
+<p>解決記録からAIが生成した下書きを担当者が整え、AI検査を受けて承認申請する。</p>
+<h4>右詳細パネル（状態が「下書き」「差戻し」のとき）</h4>
+<div class="tw"><table>
+<thead><tr><th>タブ・項目</th><th>仕様</th></tr></thead>
+<tbody>
+<tr><td class="nw">編集：タイトル</td><td>必須。生成時は「件名＋ときの対処」</td></tr>
+<tr><td class="nw">編集：カテゴリ</td><td>反映先のSkillを決める</td></tr>
+<tr><td class="nw">編集：登録方法</td><td>新規ナレッジとして登録／既存ナレッジの改訂（有効ナレッジから選択。同じカテゴリを先頭に表示）</td></tr>
+<tr><td class="nw">編集：症状／原因</td><td>複数行。生成時、症状は問い合わせ内容の先頭180文字</td></tr>
+<tr><td class="nw">編集：対応手順</td><td>必須。1行1手順</td></tr>
+<tr><td class="nw">編集：キーワード</td><td>カンマ区切り。生成時は最大8個を自動抽出</td></tr>
+<tr><td class="nw">AI検査・指摘</td><td>差戻しコメント、AIが解決できなかったナレッジの注記、AI検査の結果（点数と指摘）、生成時のマスキング結果。差戻しのときはこのタブを最初に開く</td></tr>
+</tbody></table></div>
+<h4>操作（固定フッター）</h4>
+<div class="tw"><table>
+<thead><tr><th>操作</th><th>動作</th></tr></thead>
+<tbody>
+<tr><td class="nw">下書き保存</td><td>編集内容を保存</td></tr>
+<tr><td class="nw">AI検査・指摘</td><td>編集中の内容を保存してAIが検査し、「AI検査・指摘」タブに点数（100点満点）と指摘を表示。何度でも実行できる。監査ログに記録</td></tr>
+<tr><td class="nw">AIが自動修正</td><td>個人情報の指摘ではマスキングを適用、キーワード不足の指摘ではキーワードを追加し、再検査する</td></tr>
+<tr><td class="nw">承認申請</td><td>タイトルまたは手順が空なら「タイトルと手順は必須です」。申請時にAIが再度マスキング検査を行い、検出があれば自動でマスクして通知。状態を「承認待ち」、申請者を現在の操作者にして SC-06 へ遷移</td></tr>
+</tbody></table></div>
+<p>状態が「承認待ち」「承認・反映済」の下書きは閲覧のみ。「内容」タブに記事、「AI検査・状態」タブに検査結果と承認画面・ナレッジへのリンクを表示する。</p>
+</div>
+
+<div class="sc" id="sc06">
+<h3><span class="id">SC-06</span>⑥ 人間の承認</h3>
+<p>承認者が申請内容を確認し、チェックリストをすべて満たしたうえで承認する。</p>
+<h4>表示</h4>
+<div class="tw"><table>
+<thead><tr><th>領域</th><th>内容</th></tr></thead>
+<tbody>
+<tr><td class="nw">左側一覧</td><td>承認待ち（申請の古い順）と、最近の判断5件（承認・差戻し）</td></tr>
+<tr><td class="nw">申請内容タブ</td><td>新規：症状・原因・キーワードと対応手順。改訂：現行版と改訂案の左右比較</td></tr>
+<tr><td class="nw">チェックリストタブ</td><td>進捗バーと4項目、生成時のマスキング結果、コメント欄。タブのバッジに「n/4」</td></tr>
+</tbody></table></div>
+<h4>チェックリスト（4項目すべて必須）</h4>
+<ol>
+  <li>技術的に正確で、第三者が再現できる手順になっている</li>
+  <li>個人情報・認証情報・IPアドレス等の機密情報が含まれていない</li>
+  <li>特定の個人を評価・非難する記述がない（事実と手順のみ）</li>
+  <li>適用範囲（対象拠点・端末・バージョン）が明確である</li>
+</ol>
+<h4>操作（固定フッター）</h4>
+<div class="tw"><table>
+<thead><tr><th>操作</th><th>条件</th><th>動作</th></tr></thead>
+<tbody>
+<tr><td class="nw">承認してDB保存・AI/Skills反映</td><td>承認者であり、申請者本人でなく、4項目すべてチェック済みのときだけ押せる</td><td>ナレッジDBへ保存し、検索インデックスとSkillを更新。反映完了モーダルを表示</td></tr>
+<tr><td class="nw">差戻し</td><td>承認者であり申請者本人でない。コメント必須</td><td>コメント未入力は「差戻しの理由をコメントに書いてください」。状態を「差戻し」にする</td></tr>
+<tr><td class="nw">権限の案内</td><td>承認権限なし／申請者本人</td><td>理由を表示。権限なしの場合は承認者への切替ボタンを表示</td></tr>
+</tbody></table></div>
+<h4>承認時の処理</h4>
+<ol>
+  <li>承認記録を保存（承認者・チェック結果・コメント）。</li>
+  <li>新規：ナレッジIDを採番し版 1.0 で登録。改訂：対象ナレッジを上書きし、版の小数部を +1。版履歴に記録。</li>
+  <li>有効ナレッジからAI検索インデックスを再構築。</li>
+  <li>該当カテゴリのSkillの版を +1（改訂でカテゴリが変わった場合は旧カテゴリのSkillも +1）。</li>
+  <li>反映ログと監査ログに記録。元チケットにナレッジIDを記録。</li>
+</ol>
+</div>
+
+<div class="sc" id="sc07">
+<h3><span class="id">SC-07</span>⑦ ナレッジDB</h3>
+<p>承認済みナレッジを一覧表で確認する。AIの回答に使われるのは状態が「有効」のものだけである。</p>
+<div class="tw"><table>
+<thead><tr><th>項目・操作</th><th>仕様</th></tr></thead>
+<tbody>
+<tr><td class="nw">検索</td><td>ID、タイトル、症状、キーワードの部分一致。入力のたびに絞り込む</td></tr>
+<tr><td class="nw">カテゴリ</td><td>すべて／各カテゴリ</td></tr>
+<tr><td class="nw">アーカイブも表示</td><td>オンでアーカイブ済みも表示</td></tr>
+<tr><td class="nw">一覧の列</td><td>ID、タイトル、カテゴリ、版、利用回数、有効率（メーター）、承認者、更新日時。更新の新しい順</td></tr>
+<tr><td class="nw">改訂推奨</td><td>利用3回以上かつ有効率60%未満のナレッジに表示</td></tr>
+<tr><td class="nw">今回反映</td><td>反映完了モーダルから移動したとき、該当行を色付きで強調し「今回反映」を表示</td></tr>
+<tr><td class="nw">行クリック</td><td>ナレッジ詳細モーダルを開く</td></tr>
+</tbody></table></div>
+</div>
+
+<div class="sc" id="sc08">
+<h3><span class="id">SC-08</span>⑦ AI・Skills反映</h3>
+<p>カテゴリ別Skill（SKILL.md）への反映状況と、AIの現在の回答を確認する。</p>
+<div class="tw"><table>
+<thead><tr><th>領域・タブ</th><th>仕様</th></tr></thead>
+<tbody>
+<tr><td class="nw">左側一覧</td><td>Skill 7件（名称、版、ナレッジ件数、更新日時）。更新から30秒以内のSkillは強調</td></tr>
+<tr><td class="nw">Skill概要</td><td>ファイル名、カテゴリ、更新日時、版、AIが守るルール、承認済みナレッジ（最大5件表示、クリックで詳細）。「SKILL.md 全文を表示」「コピー」「ダウンロード」</td></tr>
+<tr><td class="nw">AI検索テスト</td><td>問い合わせ文を入力して「AIに問い合わせ」。判定（手順で回答／候補提示／引継ぎ／セキュリティ事象）と上位4件の一致度を表示</td></tr>
+<tr><td class="nw">反映ログ</td><td>最新8件（日時、ナレッジ・版、種別、Skill版、承認者）。9件目以降は監査ログで確認</td></tr>
+</tbody></table></div>
+<h4>Skillとカテゴリの対応</h4>
+<div class="tw"><table>
+<thead><tr><th>カテゴリ</th><th>Skill名</th><th>固有ルール</th></tr></thead>
+<tbody>
+<tr><td>アカウント・認証</td><td><code>helpdesk-account</code></td><td>本人確認が必要な操作はAIが実行せず、手順案内と引継ぎのみ</td></tr>
+<tr><td>メール・Teams</td><td><code>helpdesk-mail-collab</code></td><td>-</td></tr>
+<tr><td>ネットワーク・VPN</td><td><code>helpdesk-network</code></td><td>-</td></tr>
+<tr><td>PC・周辺機器</td><td><code>helpdesk-device</code></td><td>-</td></tr>
+<tr><td>ファイル共有・業務アプリ</td><td><code>helpdesk-file-apps</code></td><td>-</td></tr>
+<tr><td>セキュリティ</td><td><code>helpdesk-security-triage</code></td><td>AIで自己解決しない。初動手順を案内して即時引継ぎ。被害の可能性があればP1</td></tr>
+<tr><td>その他</td><td><code>helpdesk-general</code></td><td>-</td></tr>
+</tbody></table></div>
+</div>
+
+<div class="sc" id="sc09">
+<h3><span class="id">SC-09</span>監査ログ</h3>
+<div class="tw"><table>
+<thead><tr><th>項目・操作</th><th>仕様</th></tr></thead>
+<tbody>
+<tr><td class="nw">一覧の列</td><td>日時、操作者、操作、対象、内容。新しい順。最大800件を保持</td></tr>
+<tr><td class="nw">CSVエクスポート</td><td><code>audit-log.csv</code>（BOM付きUTF-8）で保存</td></tr>
+</tbody></table></div>
+<p>記録する操作は「6. 監査ログ記録イベント」を参照。</p>
+</div>
+
+<div class="sc" id="sc10">
+<h3><span class="id">SC-10</span>共通部品</h3>
+<div class="tw"><table>
+<thead><tr><th>部品</th><th>開き方</th><th>内容・操作</th></tr></thead>
+<tbody>
+<tr><td class="nw">チケット詳細（右ドロワー）</td><td>一覧の行、「詳細」ボタン、チケットIDのリンク</td><td>基本情報、7工程の進行、内容、PC情報、AI一次対応ログ、引継ぎメモ、解決記録、タイムライン。「閉じる」または Esc で閉じる</td></tr>
+<tr><td class="nw">ナレッジ詳細（モーダル）</td><td>ナレッジ一覧・類似ナレッジ・Skill概要のクリック</td><td>記事、利用・有効率、版履歴、元チケット。「アーカイブ／復元」は承認者のみ（権限なしは「アーカイブ・復元は承認者のみ操作できます」）。実行するとSkill版 +1、インデックス再構築、反映ログ記録</td></tr>
+<tr><td class="nw">反映完了（モーダル）</td><td>承認時</td><td>5段階の進行表示（承認記録、DB保存、インデックス再構築、Skill更新、配信）。完了後に「⑦ ナレッジDBの一覧で確認」「受付で反映を試す」「Skillを見る」「閉じる」</td></tr>
+<tr><td class="nw">SKILL.md 全文（モーダル）</td><td>SC-08「全文を表示」</td><td>選択中SkillのSKILL.md全文</td></tr>
+</tbody></table></div>
+</div>
+
+<h2 id="s5"><span class="n">5</span>業務ルール</h2>
+
+<h3 id="s5-1">5.1 状態遷移</h3>
+<div class="tw"><table>
+<thead><tr><th>対象</th><th>状態</th><th>次の状態と契機</th></tr></thead>
+<tbody>
+<tr><td rowspan="5" class="nw">チケット</td><td class="nw">AI対応中</td><td>AI解決（この手順で解決した）／引継ぎ待ち（解決しない、引継ぎ希望、該当なし、セキュリティ検知）</td></tr>
+<tr><td class="nw">AI解決</td><td>終了</td></tr>
+<tr><td class="nw">引継ぎ待ち</td><td>対応中（担当して対応開始）</td></tr>
+<tr><td class="nw">対応中</td><td>解決済（解決を記録）</td></tr>
+<tr><td class="nw">解決済</td><td>終了（下書きがあればナレッジ化へ）</td></tr>
+<tr><td rowspan="4" class="nw">ナレッジ下書き</td><td class="nw">下書き</td><td>承認待ち（承認申請）</td></tr>
+<tr><td class="nw">承認待ち</td><td>承認・反映済（承認）／差戻し（差戻し）</td></tr>
+<tr><td class="nw">差戻し</td><td>承認待ち（修正して再申請）</td></tr>
+<tr><td class="nw">承認・反映済</td><td>終了</td></tr>
+<tr><td rowspan="2" class="nw">ナレッジ</td><td class="nw">有効</td><td>アーカイブ（承認者がアーカイブ）</td></tr>
+<tr><td class="nw">アーカイブ</td><td>有効（承認者が復元）</td></tr>
+</tbody></table></div>
+
+<h3 id="s5-2">5.2 優先度とSLA</h3>
+<p>緊急度（高3・中2・低1）と影響範囲（個人1・部署2・全社3）の合計で決める。合計6以上＝P1、5＝P2、4＝P3、3以下＝P4。</p>
+<div class="tw"><table>
+<thead><tr><th>緊急度＼影響</th><th>個人</th><th>部署</th><th>全社</th></tr></thead>
+<tbody>
+<tr><th>高</th><td>P3</td><td>P2</td><td>P1</td></tr>
+<tr><th>中</th><td>P4</td><td>P3</td><td>P2</td></tr>
+<tr><th>低</th><td>P4</td><td>P4</td><td>P3</td></tr>
+</tbody></table></div>
+<ul>
+  <li>セキュリティ事象で被害の可能性がある場合は P1。疑いの場合は P2 以上に引き上げる。</li>
+  <li>PC診断に「要対応」がある場合は P2 以上に引き上げる。</li>
+  <li>SLA（解決目標）：P1 1時間、P2 4時間、P3 8時間、P4 3日。期限は受付日時から起算する。</li>
+</ul>
+
+<h3 id="s5-3">5.3 AIの判定</h3>
+<div class="tw"><table>
+<thead><tr><th>条件</th><th>AIの動作</th></tr></thead>
+<tbody>
+<tr><td>セキュリティ関連語を検知</td><td>カテゴリをセキュリティにし、初動手順を案内して即時に引継ぎ（推奨担当：伊藤）</td></tr>
+<tr><td>最有力の一致度 42%以上</td><td>そのナレッジの手順を提示</td></tr>
+<tr><td>22%以上 42%未満</td><td>候補を最大3件提示し、利用者が選ぶ</td></tr>
+<tr><td>22%未満</td><td>「ナレッジ該当なし」として引継ぎ</td></tr>
+<tr><td>カテゴリが「わからない」で一致度22%以上</td><td>最有力ナレッジのカテゴリを推定カテゴリとして設定</td></tr>
+</tbody></table></div>
+<h4>一致度の算出</h4>
+<ol>
+  <li>問い合わせ文（件名＋内容＋追加情報＋PC診断の関連キーワード）と、ナレッジ（タイトル×2＋症状＋キーワード）を文字2文字単位に分け、コサイン類似度を求める。</li>
+  <li>類似度×0.9 に、ナレッジのキーワードが問い合わせ文に含まれる数×0.12（上限0.45）を加える。</li>
+  <li>利用3回以上のナレッジは、（有効率−0.5）×0.08 を加減する。</li>
+  <li>0〜0.96 に収め、0.05 以下は対象外とする。対象は有効ナレッジのみ。</li>
+</ol>
+<h4>セキュリティ検知語</h4>
+<div class="tw"><table>
+<thead><tr><th>区分</th><th>語</th></tr></thead>
+<tbody>
+<tr><td class="nw">検知（疑い）</td><td>フィッシング、不審なメール、不審メール、怪しいメール、ランサム、暗号化され、情報漏え、情報漏洩、漏えい、漏洩、紛失、盗難、ウイルス、マルウェア、不正アクセス、乗っ取、身代金、標的型</td></tr>
+<tr><td class="nw">被害の可能性（P1）</td><td>上記に加えて次のいずれかを含む：開いてしまった、クリックしてしまった、入力してしまった、暗号化され、感染、紛失、盗難、漏え、漏洩、乗っ取</td></tr>
+</tbody></table></div>
+<h4>セキュリティ初動手順</h4>
+<ol>
+  <li>メール内のリンク・添付ファイルはこれ以上開かない</li>
+  <li>PCをネットワークから切り離す（LANケーブルを抜く／Wi-Fiをオフ）。電源は切らない</li>
+  <li>IDやパスワードを入力した場合は、その事実だけを担当者に伝える（パスワード自体は書かない）</li>
+  <li>画面・メールはそのまま残し、セキュリティ担当からの連絡を待つ</li>
+</ol>
+
+<h3 id="s5-4">5.4 PC診断ルール</h3>
+<p>社内指定版は FortiClient 7.2.10、DirectCloudドライブ 5.4.2 とする。「症状に関連」は、問い合わせ文に該当語があるときに付く。関連のある指摘を先頭に、要対応→注意→参考の順に並べる。</p>
+<div class="tw"><table>
+<thead><tr><th>条件</th><th>レベル</th><th>指摘</th><th>症状に関連とする語</th></tr></thead>
+<tbody>
+<tr><td>セキュリティ事象のチケット</td><td><span class="tag t-bad">要対応</span></td><td>端末がネットワークに接続中 → 至急切り離す</td><td>常に関連</td></tr>
+<tr><td>ウイルス対策が正常でない</td><td><span class="tag t-bad">要対応</span></td><td>定義更新とフルスキャン</td><td>セキュリティ事象のとき</td></tr>
+<tr><td>OSが Windows 10</td><td><span class="tag t-h">注意</span></td><td>サポート終了OS → 入替計画に登録</td><td>-</td></tr>
+<tr><td>更新プログラム未適用 30日超</td><td><span class="tag t-h">注意</span></td><td>Windows Update を適用して再起動</td><td>-</td></tr>
+<tr><td>ディスク空き 10%未満または15GB未満</td><td><span class="tag t-h">注意</span></td><td>不要ファイルの削除、オンライン専用化</td><td>同期、DirectCloud、OneDrive、保存、アップロード、遅</td></tr>
+<tr><td>FortiClient が指定版でない</td><td><span class="tag t-h">注意</span></td><td>指定版へ更新</td><td>VPN、FortiClient、リモート（該当時のみ指摘）</td></tr>
+<tr><td>回線がモバイル・自宅・テザリング</td><td><span class="tag t-u">参考</span></td><td>別の回線で切り分け</td><td>同上</td></tr>
+<tr><td>MFA登録端末が旧端末</td><td><span class="tag t-h">注意</span></td><td>MFAの再登録（本人確認のうえ管理者）</td><td>MFA、Authenticator、多要素、サインイン、機種変更（該当時のみ）</td></tr>
+<tr><td>デバイス証明書が期限切れ</td><td><span class="tag t-bad">要対応</span></td><td>再発行してインストール</td><td>HENNGE、ログイン、アクセス、サインイン</td></tr>
+<tr><td>デバイス証明書の残り30日未満</td><td><span class="tag t-u">参考</span></td><td>期限前に更新を案内</td><td>-</td></tr>
+<tr><td>GPUドライバが1年超前の版</td><td><span class="tag t-h">注意</span></td><td>認定の最新ドライバへ更新</td><td>BIM、CAD、レンダリング、GPU、描画、3D（該当時のみ）</td></tr>
+<tr><td>メールボックス使用率 90%以上</td><td><span class="tag t-h">注意</span></td><td>不要メールの削除・アーカイブ</td><td>Outlook、メール、受信、送受信（該当時のみ）</td></tr>
+<tr><td>DirectCloudドライブが指定版でない</td><td><span class="tag t-h">注意</span></td><td>指定版へ更新</td><td>DirectCloud、同期（該当時のみ）</td></tr>
+<tr><td>最終再起動から7日以上</td><td><span class="tag t-u">参考</span></td><td>再起動で改善する場合あり</td><td>-</td></tr>
+<tr><td>ブラウザがオフライン（実測）</td><td><span class="tag t-bad">要対応</span></td><td>ケーブル・Wi-Fiを確認</td><td>接続、ネットワーク、遅</td></tr>
+<tr><td>回線種別が 2g／3g（実測）</td><td><span class="tag t-h">注意</span></td><td>有線LANまたは別の回線で再確認</td><td>遅、同期、Teams、会議、接続</td></tr>
+<tr><td>上記のいずれにも当たらない</td><td><span class="tag t-ok">正常</span></td><td>PC側に既知の問題は見つかりませんでした</td><td>-</td></tr>
+</tbody></table></div>
+<p>取得する項目：資産番号、ホスト名、機種、OSとビルド、更新状況、ディスク、メモリ、CPU、GPUとドライバ、最終再起動、ネットワーク種別とIP、FortiClient・DirectCloudの版、ウイルス対策の状態、デバイス証明書の残日数、MFA登録端末、メールボックス使用率。取得しない項目：ファイルの中身、閲覧履歴、操作ログ、位置情報。PC情報はナレッジ下書きに転記しない。</p>
+
+<h3 id="s5-5">5.5 リモート対応の指示の振り分け</h3>
+<div class="tw"><table>
+<thead><tr><th>処理</th><th>自由入力で振り分ける語（上から順に判定）</th><th>結果</th></tr></thead>
+<tbody>
+<tr><td class="nw">推奨の修復を実行</td><td>修復、更新して、適用して、直して、再登録、再発行、インストール</td><td>修復の実行結果</td></tr>
+<tr><td class="nw">再現確認</td><td>再現、直った、治った、解消したか</td><td>再現有無</td></tr>
+<tr><td class="nw">イベントログを確認</td><td>ログ、イベント</td><td>未対処の指摘に対応するログ行と、最有力の原因</td></tr>
+<tr><td class="nw">ネットワーク疎通を確認</td><td>ping、疎通、ネットワーク、回線、dns、速度</td><td>ゲートウェイ・DNS・インターネット・VPNポートの疎通。社内LANで「遅」を含む問い合わせはリンク速度の警告</td></tr>
+<tr><td class="nw">アプリの版を確認</td><td>バージョン、アプリの版、ドライバ</td><td>主要アプリの版と指定版との一致</td></tr>
+<tr><td class="nw">状態を診断</td><td>診断、状態、スキャン</td><td>PC要約と未対処の指摘</td></tr>
+<tr><td class="nw">ナレッジの手順を表示</td><td>ナレッジ、kb</td><td>未表示の最有力ナレッジ（一致度15%以上）</td></tr>
+<tr><td class="nw">その他の指示</td><td>上記以外</td><td>実行した対応として記録</td></tr>
+</tbody></table></div>
+
+<h3 id="s5-6">5.6 個人情報・機密情報のマスキング</h3>
+<p>下書き生成時と承認申請時に、タイトル・症状・原因・手順へ適用する。AI検査では検出のみ行い、「AIが自動修正」で適用する。</p>
+<div class="tw"><table>
+<thead><tr><th>対象</th><th>検出条件</th><th>置換後</th></tr></thead>
+<tbody>
+<tr><td>メールアドレス</td><td>xxx@xxx.xx 形式</td><td>[メールアドレス]</td></tr>
+<tr><td>IPアドレス</td><td>数字4組のIPv4形式</td><td>[IPアドレス]</td></tr>
+<tr><td>電話番号</td><td>0 から始まるハイフン区切りの番号</td><td>[電話番号]</td></tr>
+<tr><td>秘匿情報</td><td>「パスワード」「password」「PW」の後に区切り（: ： =）と値</td><td>パスワード：[秘匿情報]</td></tr>
+<tr><td>社員番号</td><td>「社員番号」に続く4桁以上の数字</td><td>社員番号[番号]</td></tr>
+<tr><td>資産番号</td><td>PC／NB／DT に続く4桁以上の数字</td><td>[資産番号]</td></tr>
+<tr><td>氏名</td><td>依頼者の氏名部分と担当者7名の姓（さん・様・氏を含む）</td><td>[氏名]</td></tr>
+</tbody></table></div>
+
+<h3 id="s5-7">5.7 AI検査・指摘の項目と点数</h3>
+<p>点数＝100 −（要対応 30点、注意 12点、参考 4点の合計）。下限は0点。80点以上は緑、50点以上は橙、それ未満は赤で表示する。</p>
+<div class="tw"><table>
+<thead><tr><th>検査項目</th><th>レベル</th><th>条件</th><th>自動修正</th></tr></thead>
+<tbody>
+<tr><td>個人情報・機密情報の残り</td><td><span class="tag t-bad">要対応</span></td><td>5.6 の検出条件に該当</td><td>マスキング</td></tr>
+<tr><td>未記入の項目</td><td><span class="tag t-bad">要対応</span></td><td>「（…記入）」「（手順n）」などの仮の文言</td><td>-</td></tr>
+<tr><td>手順不足</td><td><span class="tag t-bad">要対応</span></td><td>手順が1件以下</td><td>-</td></tr>
+<tr><td>タイトルが短い</td><td><span class="tag t-h">注意</span></td><td>8文字未満</td><td>-</td></tr>
+<tr><td>原因の記述不足</td><td><span class="tag t-h">注意</span></td><td>10文字未満</td><td>-</td></tr>
+<tr><td>短すぎる手順</td><td><span class="tag t-h">注意</span></td><td>8文字未満の手順がある</td><td>-</td></tr>
+<tr><td>適用範囲の限定・未確認</td><td><span class="tag t-h">注意</span></td><td>「のみ対象」「未確認」「に限る」「限定」を含む</td><td>-</td></tr>
+<tr><td>個人を評価・非難する表現</td><td><span class="tag t-h">注意</span></td><td>「ミス」「不注意」「怠っ」「怠慢」「勝手に」を含む</td><td>-</td></tr>
+<tr><td>キーワード不足</td><td><span class="tag t-h">注意</span></td><td>3個未満</td><td>キーワード追加</td></tr>
+<tr><td>既存ナレッジとの重複</td><td><span class="tag t-u">参考</span></td><td>新規登録で、一致度42%以上の既存ナレッジがある</td><td>-</td></tr>
+<tr><td>問題なし</td><td><span class="tag t-ok">正常</span></td><td>上記すべて該当なし</td><td>-</td></tr>
+</tbody></table></div>
+
+<h3 id="s5-8">5.8 採番と版</h3>
+<div class="tw"><table>
+<thead><tr><th>対象</th><th>形式</th><th>規則</th></tr></thead>
+<tbody>
+<tr><td>チケット</td><td><code>INC-nnnn</code></td><td>連番（初期サンプルは 1001〜1005）</td></tr>
+<tr><td>ナレッジ</td><td><code>KB-nnn</code></td><td>連番（初期サンプルは 101〜110）</td></tr>
+<tr><td>下書き</td><td><code>DR-nnn</code></td><td>3桁の連番</td></tr>
+<tr><td>ナレッジの版</td><td><code>1.n</code></td><td>新規は 1.0。改訂の承認ごとに n を +1</td></tr>
+<tr><td>Skillの版</td><td><code>1.n</code></td><td>承認・アーカイブ・復元のたびに該当カテゴリの n を +1</td></tr>
+</tbody></table></div>
+
+<h2 id="s6"><span class="n">6</span>監査ログ記録イベント</h2>
+<div class="tw"><table>
+<thead><tr><th>操作</th><th>対象</th><th>内容</th><th>発生画面</th></tr></thead>
+<tbody>
+<tr><td>受付</td><td>チケットID</td><td>件名</td><td>SC-02</td></tr>
+<tr><td>PC情報を取得</td><td>チケットID</td><td>資産番号・取得元／同意あり</td><td>SC-02、SC-03</td></tr>
+<tr><td>AI一次対応で解決</td><td>チケットID</td><td>ナレッジID</td><td>SC-03</td></tr>
+<tr><td>人間へ引継ぎ</td><td>チケットID</td><td>引継ぎ理由</td><td>SC-03</td></tr>
+<tr><td>担当割り当て</td><td>チケットID</td><td>担当者</td><td>SC-04</td></tr>
+<tr><td>リモート接続／リモート切断</td><td>チケットID</td><td>資産番号／同意あり、切断の契機</td><td>SC-04、ログアウト</td></tr>
+<tr><td>解決記録を登録</td><td>チケットID</td><td>所要時間</td><td>SC-04</td></tr>
+<tr><td>ナレッジ下書きを生成</td><td>下書きID</td><td>マスキング件数</td><td>SC-04</td></tr>
+<tr><td>AI検査・指摘</td><td>下書きID</td><td>点数・指摘件数</td><td>SC-05</td></tr>
+<tr><td>承認申請</td><td>下書きID</td><td>新規／改訂対象</td><td>SC-05</td></tr>
+<tr><td>承認／差戻し</td><td>下書きID</td><td>ナレッジID・版、差戻し理由</td><td>SC-06</td></tr>
+<tr><td>DB保存・AI/Skills反映</td><td>ナレッジID</td><td>Skill版の変化、インデックス件数</td><td>SC-06</td></tr>
+<tr><td>アーカイブ／復元</td><td>ナレッジID</td><td>Skill版の変化</td><td>SC-10</td></tr>
+<tr><td>データをエクスポート／インポート</td><td>ファイル名</td><td>-</td><td>ヘッダー</td></tr>
+<tr><td>ログアウト／ログイン</td><td>-</td><td>切断したリモート接続数、役割</td><td>ヘッダー、SC-00</td></tr>
+</tbody></table></div>
+
+<h2 id="s7"><span class="n">7</span>データ仕様</h2>
+<p>保存先はブラウザの localStorage。キー <code>aihd-sample-v1</code> に全データを1つのJSONで保存し、<code>aihd-sample-v1-theme</code> に表示テーマを保存する。</p>
+<div class="tw"><table>
+<thead><tr><th>データ</th><th>主な項目</th></tr></thead>
+<tbody>
+<tr><td class="nw">全体</td><td>操作者、ログアウト状態、前回の操作者、採番カウンタ、ナレッジ、チケット、下書き、Skill、反映ログ、監査ログ</td></tr>
+<tr><td class="nw">チケット</td><td>ID、受付日時、受付チャネル、依頼者、カテゴリ、緊急度、影響範囲、優先度、件名、内容、状態、セキュリティ区分、AI対話ログ、提示済みナレッジ、解決しなかったナレッジ、追加情報、PC情報と診断結果、引継ぎ（理由・要約・推奨担当）、担当者、リモート対応（対話ログ・実行した修復・対応・接続状態）、解決記録の入力途中、解決記録（原因・手順・所要時間・備考・担当・日時）、下書きID、ナレッジID、履歴</td></tr>
+<tr><td class="nw">ナレッジ</td><td>ID、カテゴリ、タイトル、症状、原因、手順、キーワード、版、状態、作成者、承認者、承認日時、更新日時、利用回数、有効回数、無効回数、元チケット、版履歴</td></tr>
+<tr><td class="nw">下書き</td><td>ID、元チケットID、タイトル、カテゴリ、症状、原因、手順、キーワード、改訂対象、解決しなかったナレッジ、申請者、作成日時、申請日時、状態、マスキング結果、AI検査結果（日時・指摘・点数）、レビュー履歴（承認者・日時・結果・コメント・チェック）、ナレッジID</td></tr>
+<tr><td class="nw">Skill</td><td>カテゴリごとの名称、版の小数部、更新日時</td></tr>
+<tr><td class="nw">反映ログ</td><td>日時、ナレッジID、版、Skill名、Skill版、インデックス件数、承認者、種別（新規／改訂／アーカイブ／復元）</td></tr>
+<tr><td class="nw">監査ログ</td><td>日時、操作者、操作、対象、内容</td></tr>
+</tbody></table></div>
+<div class="note w">データは操作した端末・ブラウザの中だけに保存される。別の端末へ移すときはエクスポート／インポートを使う。ブラウザのデータ消去で失われる。</div>
+
+<h2 id="s8"><span class="n">8</span>表示・操作の共通仕様</h2>
+<div class="tw"><table>
+<thead><tr><th>項目</th><th>仕様</th></tr></thead>
+<tbody>
+<tr><td class="nw">1ページ表示</td><td>画面幅901px以上で、SC-01〜SC-06 と SC-08 はページ全体をスクロールさせず、右詳細パネルをタブで1ページに収める。内容が収まらない場合はパネル内だけスクロールする。SC-07 と SC-09 は一覧表のため縦にスクロールする</td></tr>
+<tr><td class="nw">画面の高さ</td><td>高さ820px以下で画面見出しの説明文を省略、760px以下でフローバーを省略</td></tr>
+<tr><td class="nw">画面の幅</td><td>901〜1240pxで左ナビをアイコンのみに縮小。900px以下は1列表示（ナビは横並び、左右のパネルは上下に配置）</td></tr>
+<tr><td class="nw">色の意味</td><td>青＝利用者・窓口、紫＝AI、橙＝人間、緑＝完了・反映、赤＝要対応・セキュリティ</td></tr>
+<tr><td class="nw">動きの表現</td><td>画面表示時の順次表示、件数のカウントアップ、対応待ちの脈動、タブ切替、AI処理中の表示、解決時・承認時の紙吹雪、セキュリティ検知時の赤い点滅。OSで「動きを減らす」を設定している場合は抑制する</td></tr>
+<tr><td class="nw">キーボード</td><td>Esc でチケット詳細とモーダルを閉じる。入力欄の Enter で送信（日本語変換の確定中は送信しない）</td></tr>
+<tr><td class="nw">確認ダイアログ</td><td>初期化、ログアウト、SC-03 のPC情報取得（同意確認）で表示</td></tr>
+</tbody></table></div>
+
+<h2 id="s9"><span class="n">9</span>実運用化で置き換える箇所</h2>
+<div class="tw"><table>
+<thead><tr><th>機能</th><th>サンプルの実装</th><th>置き換え先の想定</th></tr></thead>
+<tbody>
+<tr><td>AIの回答・検索</td><td>ブラウザ内の類似度計算</td><td>LLMのAPIと承認済みナレッジの検索（RAG）。しきい値と引継ぎ条件は 5.3 を引き継ぐ</td></tr>
+<tr><td>PC情報の取得</td><td>固定の疑似データ9台</td><td>SKYSEA Client View、Active Directory、Entra ID（Intune）の照会</td></tr>
+<tr><td>リモート対応</td><td>画面上の疑似実行</td><td>SKYSEA Client View のリモート操作。実行する修復は承認済みの手順に限定し、操作ログを保存</td></tr>
+<tr><td>認証・権限</td><td>操作者の選択</td><td>Entra ID（HENNGE One 経由）のシングルサインオン。承認権限はグループで管理</td></tr>
+<tr><td>データ保存</td><td>localStorage</td><td>業務DB。監査ログは改ざん防止を考慮して別管理</td></tr>
+<tr><td>Skillの配信</td><td>画面上の版更新とSKILL.mdの生成</td><td>生成したSKILL.mdをAIエージェントの配置先へ配信</td></tr>
+<tr><td>受付チャネル</td><td>手入力</td><td>ポータル、メール、Teams からの自動取り込み</td></tr>
+</tbody></table></div>
+<div class="note b">リモート対応と同意の扱いは、実運用では社内規程（情報セキュリティ、個人情報、就業関連）との整合確認が必要になる。本サンプルの同意チェックは画面上の確認のみで、同意の証跡は監査ログの記録にとどまる。</div>
+
+<h2 id="s10"><span class="n">10</span>改版履歴</h2>
+<div class="tw"><table>
+<thead><tr><th>版</th><th>日付</th><th>内容</th></tr></thead>
+<tbody>
+<tr><td>V1.0</td><td>2026-11-10</td><td>初版。対象：ai-helpdesk-flow.html（PC情報取得、1ページ表示、リモート対応、AI検査・指摘、ログアウトを含む）</td></tr>
+</tbody></table></div>
+
+</main>
+</div>
+<script>
+(function(){
+ var toc=document.getElementById('toc'),hs=document.querySelectorAll('main h2[id], main .sc[id]'),links=[];
+ hs.forEach(function(h){
+  var a=document.createElement('a');a.href='#'+h.id;
+  if(h.tagName==='H2'){a.textContent=h.textContent.replace(/^(\d+)/,'$1. ')}
+  else{a.className='s';a.textContent=h.querySelector('h3').textContent.replace(/^(SC-\d+)/,'$1 ')}
+  toc.appendChild(a);links.push([h,a]);
+ });
+ function upd(){var y=window.scrollY+90,cur=links[0];links.forEach(function(l){if(l[0].offsetTop<=y)cur=l});links.forEach(function(l){l[1].classList.toggle('on',l===cur)})}
+ window.addEventListener('scroll',upd,{passive:true});upd();
+})();
+</script>
+</body>
+</html>
