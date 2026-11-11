@@ -5,6 +5,7 @@ import { authenticateUi } from '../auth/ui.js';
 import { config, repoRoot } from '../config.js';
 import { badRequest } from '../errors.js';
 import { type EmployeeRow, findEmployeeByEmail } from '../lib/mirai-info.js';
+import { loadAuditForUi, loadKnowledgeForUi } from './ops-knowledge.js';
 import { loadTicketsForUi } from './ops-tickets.js';
 
 /**
@@ -91,10 +92,12 @@ export async function opsRoutes(app: FastifyInstance): Promise<void> {
     const roles = request.uiRoles ?? [];
     const actor = await resolveActor(request.uiEmail, roles);
     const tickets = await loadTicketsForUi(request.uiEmail);
+    // P3b: ⑦ ナレッジDB・監査ログも実 DB から渡す（⑤⑥ の操作接続は次の段）。
+    const knowledge = await loadKnowledgeForUi(request.uiEmail, actor.approver);
+    const audit = await loadAuditForUi(roles);
     const boot = {
       actor: { name: actor.name, role: actor.role, approver: actor.approver, email: actor.email },
-      // P2: 受付済みチケットは実 DB が正本。他の画面は P3 以降で順次接続する。
-      state: { tickets },
+      state: { tickets, kb: knowledge.approved, drafts: knowledge.drafts, audit },
       server: true,
       authMode: config.AUTH_MODE,
       banner: MIGRATION_BANNER,

@@ -2175,6 +2175,9 @@ try{const __b=window.__OPS_BOOT__;if(__b){
  if(__b.actor&&__b.actor.name){state.actor=__b.actor.name;if(Array.isArray(__b.actor.staff)&&__b.actor.staff.length){STAFF.length=0;__b.actor.staff.forEach(function(s){STAFF.push(s)})}}
  /* P2: 受付済みチケットはサーバが正本（画面のローカル値より優先する）。 */
  if(__b.state&&Array.isArray(__b.state.tickets)){state.tickets=__b.state.tickets}
+ if(__b.state&&Array.isArray(__b.state.kb)){state.kb=__b.state.kb}
+ if(__b.state&&Array.isArray(__b.state.drafts)){state.drafts=__b.state.drafts}
+ if(__b.state&&Array.isArray(__b.state.audit)){state.audit=__b.state.audit}
  if(__b.banner){var __bd=document.createElement('div');__bd.id='ops-migration-banner';__bd.setAttribute('role','status');__bd.textContent=__b.banner;__bd.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:90;padding:7px 12px;font:12px/1.45 system-ui,-apple-system,"Hiragino Sans",sans-serif;background:#fbf0dc;color:#5a3a00;border-top:1px solid #e6c98a;text-align:center';
   document.body.appendChild(__bd)}
  if(__b.server){
@@ -2211,6 +2214,31 @@ try{const __b=window.__OPS_BOOT__;if(__b){
     .then(function(r){if(!r.ok)throw new Error('claim');return r.json()})
     .then(function(){__origStartWork.call(App,id)})
     .catch(function(){toast('担当開始をサーバに保存できませんでした','bad')});
+  };
+  /* ⑤ 下書き: 解決記録から作った下書きをサーバへ保存する（P3b）。 */
+  const __origCreateDraft=createDraft;
+  createDraft=function(t){
+   const d=__origCreateDraft(t);
+   if(t&&t.serverId){
+    fetch('/api/ops/knowledge',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({title:d.title,symptom:d.symptom,cause:d.cause,steps:d.steps,keywords:d.keywords,category:d.cat,ticketRef:t.id})})
+     .then(function(r){return r.json()})
+     .then(function(res){if(res&&res.draft&&res.draft.serverId){d.serverId=res.draft.serverId;d.id=res.draft.id;save()}})
+     .catch(function(){toast('下書きをサーバに保存できませんでした','bad')});
+   }
+   return d;
+  };
+  /* ⑥ 承認: サーバの承認（職務分掌つき）を通してから画面を更新する（P3b）。 */
+  const __origApprove=App.approve;
+  App.approve=function(id){
+   const d=drById(id);
+   if(!d||!d.serverId)return __origApprove.call(App,id);
+   fetch('/api/ops/knowledge/'+encodeURIComponent(d.serverId)+'/approve',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:'{}'})
+    .then(function(r){return r.json().then(function(j){return {ok:r.ok,body:j}}) })
+    .then(function(res){
+     if(!res.ok){toast((res.body&&res.body.error&&res.body.error.message)||'承認できませんでした','bad','lock');return}
+     __origApprove.call(App,id);
+    })
+    .catch(function(){toast('承認をサーバに保存できませんでした','bad')});
   };
   /* ④ 解決記録: サーバへ保存してから画面を更新する（P3）。 */
   const __origResolve=App.resolve;

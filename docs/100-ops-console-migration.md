@@ -173,6 +173,23 @@ AI-HelpDesk の WebUI を、添付の**運用統合 UI（14 画面）**へ**段�
 - **検証（ローカル・実 DB）**: migration 039 適用後、`vitest` 7 件成功。
 - **未接続**: ⑤ 下書き・⑥ 承認・⑦ KB・監査ログ画面（P3b）。
 
+## 8-4. P3b の実装（⑤下書き・⑥承認・⑦KB・監査）
+
+| ファイル | 内容 |
+|---|---|
+| `db/migrations/040_ops_knowledge.sql` | `knowledge` に `author_email` / `approver_email` / `category` を追加し、`author_id` を NULL 可に（旧 UI は従来どおり author_id を使う） |
+| `apps/api/src/routes/ops-knowledge.ts` | `GET/POST /api/ops/knowledge`・`POST /api/ops/knowledge/:id/approve`・`GET /api/ops/audit` |
+| `apps/api/src/routes/ops.ts` | 起動時に ⑦承認済み KB・⑤⑥下書き・監査を実 DB から渡す |
+| `Mirai_AIHelpdesk_OpsConsole_V1.0.html` | 下書き作成（解決記録から）と承認をサーバ API へ。一覧は実 DB の値 |
+| `apps/api/src/routes/ops-knowledge.test.ts` | 下書き作成・一覧・権限（非承認者 403／自己承認 403）・別の人なら承認・監査の 6 件 |
+
+- **⑤ 下書き**: 解決記録から下書きを作ると `knowledge` に `pending` で保存（監査 `ops.knowledge.draft`）。`author_email` に Access の本人を記録。
+- **⑥ 承認**: **approver ロールかつ申請者本人以外**のみ。`approved` にし `approver_email` と承認時刻を保存（監査 `ops.knowledge.approve`）。画面の承認はサーバ成功後にだけ進む。
+- **⑦ KB**: `status='approved'` を実 DB から表示（AI の根拠検索と同じ表）。
+- **監査**: `audit_log` の直近 50 件を表示（担当者・承認者・監査担当のみ）。
+- **検証（ローカル・実 DB）**: migration 040 適用後、ops 系 **17 件成功**（ops 4・チケット 7・ナレッジ 6）。
+- **残**: 差戻し（rejected）のサーバ接続、ナレッジの版管理・有効率、Skills 反映への連動（P4）。
+
 ## 9. 参照
 
 - 旧 UI の配信とブリッジ: [docs/14](14-prototype-ui-integration.md)
