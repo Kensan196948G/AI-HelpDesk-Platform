@@ -15,6 +15,7 @@ import {
   knowledgeContentHash,
   symptomTagsMatchContent,
 } from '../domain/knowledge-content.js';
+import { inspectKnowledgeContent } from '../domain/knowledge-inspect.js';
 import { containsDeviceInfo, redactKnowledgeKeywords, redactKnowledgeText } from '../domain/pii.js';
 import { ApiError, badRequest, conflict, notFound } from '../errors.js';
 import { appendAudit } from '../lib/audit-log.js';
@@ -43,6 +44,18 @@ const UpdateSchema = z
   });
 
 const ContentHashSchema = z.string().regex(/^sha256:[0-9a-f]{64}$/);
+
+/**
+ * 下書きの検査（読み取り専用）。上限は UiSyncSchema より緩くして、
+ * 「長すぎる」ことも検査結果として返せるようにする。
+ */
+const InspectSchema = z.object({
+  title: z.string().max(64000).default(''),
+  symptom: z.string().max(64000).default(''),
+  cause: z.string().max(64000).default(''),
+  steps: z.string().max(64000).default(''),
+  keywords: z.array(z.string().max(400)).max(200).default([]),
+});
 
 const ReviewSchema = z.object({
   decision: z.enum(['approved', 'rejected']),
@@ -201,6 +214,19 @@ export async function knowledgeRoutes(app: FastifyInstance): Promise<void> {
       LIMIT ${query.limit}
     `;
     return { knowledge: rows.map(publicKnowledge).map(knowledgeDto) };
+  });
+
+  /**
+   * 下書きの検査（参考表示）。DB を読まず、保存・承認と同じ規則で指摘だけを返す。
+   * 点数のために承認の可否を変えることはしない（可否は保存・承認時の検査で決まる）。
+   *
+   * 注意: `/knowledge/:id` より先に登録する（inspect が id として解釈されないように）。
+   */
+  app.post('/knowledge/inspect', { preHandler: authenticateUi }, async (request) => {
+    if (!request.uiEmail) throw badRequest('UI の認証情報がありません。');
+    await requireHelpdeskActor(request.uiEmail);
+    const input = InspectSchema.parse(request.body ?? {});
+    return inspectKnowledgeContent(input);
   });
 
   /**
