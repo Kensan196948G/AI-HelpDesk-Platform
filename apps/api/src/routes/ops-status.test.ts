@@ -143,8 +143,9 @@ describe('リモート支援セッション（P11）', () => {
     for (const item of body.remote) {
       expect(typeof item.caseId).toBe('string');
       expect(item.status).toBe('escalated');
-      // メールはマスクして返す（生のメールを出さない）。
-      expect(item.userLabel).not.toContain('@example.com');
+      // メールはローカル部をマスクして返す（生のメールをそのまま出さない）。
+      expect(item.userLabel).toContain('***');
+      expect(item.userLabel).not.toMatch(/^[^@]+@/);
     }
   });
 });
