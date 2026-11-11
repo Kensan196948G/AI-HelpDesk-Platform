@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { authenticateUi } from '../auth/ui.js';
 import { config, repoRoot } from '../config.js';
 import { badRequest } from '../errors.js';
@@ -88,8 +88,11 @@ export function renderOps(boot: { actor: OpsActor } & Record<string, unknown>): 
   return readOpsSource().replace('<script>', () => `${bootScript}<script>`);
 }
 
-export async function opsRoutes(app: FastifyInstance): Promise<void> {
-  app.get('/ops', { preHandler: authenticateUi }, async (request, reply) => {
+export async function opsRoutes(
+  app: FastifyInstance,
+  opts: { primary?: boolean } = {},
+): Promise<void> {
+  const serve = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
     if (!request.uiEmail) throw badRequest('UI の認証情報がありません。');
     const roles = request.uiRoles ?? [];
     const actor = await resolveActor(request.uiEmail, roles);
@@ -126,5 +129,9 @@ export async function opsRoutes(app: FastifyInstance): Promise<void> {
       .header('Content-Security-Policy', CSP)
       .header('Cache-Control', 'no-store')
       .send(renderOps(boot));
-  });
+  };
+
+  // 既定は /ops（旧 UI が / のまま）。切替後は / を新 UI が受ける（docs/100 P7）。
+  app.get('/ops', { preHandler: authenticateUi }, serve);
+  if (opts.primary) app.get('/', { preHandler: authenticateUi }, serve);
 }

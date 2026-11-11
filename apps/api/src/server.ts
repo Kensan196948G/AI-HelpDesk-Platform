@@ -220,9 +220,10 @@ export async function buildServer(options?: {
     });
   });
 
-  await app.register(prototypeRoutes);
+  // 「/」の正は既定で旧 UI。OPS_UI_PRIMARY=true のとき新 UI（docs/100 P7）。
+  await app.register(prototypeRoutes, { legacyOnly: config.OPS_UI_PRIMARY });
   // 運用統合 UI（新画面）。機能パリティまで旧 UI（/）と並行配信する（docs/100）。
-  await app.register(opsRoutes);
+  await app.register(opsRoutes, { primary: config.OPS_UI_PRIMARY });
   // 運用統合 UI の受付チケット API（P2・docs/100）。
   await app.register(opsTicketRoutes, { prefix: '/api' });
   await app.register(opsKnowledgeRoutes, { prefix: '/api' });
