@@ -47,6 +47,8 @@ async function removeDevRoles(): Promise<void> {
 }
 
 beforeAll(async () => {
+  // 他の試験が同じ実行者にロールを付けている場合があるため、まず素の状態に戻す。
+  await removeDevRoles();
   app = await buildServer({ logger: false });
   await app.ready();
 });
