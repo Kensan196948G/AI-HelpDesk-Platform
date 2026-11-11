@@ -66,6 +66,18 @@ esac
 
 REPO=$(realpath -- "$REPO")
 ENV_FILE=$(realpath -- "$ENV_FILE")
+
+# --unit-template は __ENV_FILE__ を unit の EnvironmentFile に埋め込む。検証用の
+# 一時ファイル（プレースホルダ）を渡すと、再起動後に環境変数不足でサービスが起動
+# しない（2026-11-11 のインシデント）。build より前に、値は出さずキーだけ確認する。
+if [ -n "$UNIT_TEMPLATE" ]; then
+  [ -f "$UNIT_TEMPLATE" ] || fail "unit template not found: $UNIT_TEMPLATE"
+  grep -q '^DATABASE_URL=' "$ENV_FILE" \
+    || fail 'env file passed with --unit-template lacks DATABASE_URL; pass the real EnvironmentFile'
+  grep -q '^SESSION_SECRET=' "$ENV_FILE" \
+    || fail 'env file passed with --unit-template lacks SESSION_SECRET; pass the real EnvironmentFile'
+fi
+
 mkdir -p "$ROOT/releases" "$ROOT/state"
 ROOT=$(realpath -- "$ROOT")
 LOCK="$ROOT/.deploy.lock"
