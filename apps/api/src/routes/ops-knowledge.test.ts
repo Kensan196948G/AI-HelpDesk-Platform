@@ -157,6 +157,50 @@ describe('⑥ 承認の権限', () => {
   });
 });
 
+describe('⑦ AI・Skills 反映', () => {
+  it('承認するとカテゴリの Skill の版が進み、反映ログに残る', async () => {
+    await ensureDevUser(['approver', 'helpdesk']);
+    const before = await app.inject({ method: 'GET', url: '/api/ops/skills' });
+    expect(before.statusCode).toBe(200);
+    const beforeMinor = (before.json() as { skills: Record<string, { minor: number }> }).skills
+      .device?.minor;
+    expect(typeof beforeMinor).toBe('number');
+
+    const rows = await sql<{ id: string; kb_no: string }[]>`
+      INSERT INTO knowledge (
+        kb_no, title, symptom, cause, steps, keywords, status, version,
+        author_id, author_email, category
+      ) VALUES (
+        ${'KB-' + String(Date.now()).slice(-6)}, ${`${MARK} 反映テスト`},
+        '症状', '原因', '手順1', ARRAY['kw'], 'pending', 1,
+        NULL, 'other@example.com', 'device'
+      ) RETURNING id, kb_no
+    `;
+    const row = rows[0];
+    if (!row) throw new Error('draft insert failed');
+    const approved = await app.inject({
+      method: 'POST',
+      url: `/api/ops/knowledge/${row.id}/approve`,
+    });
+    expect(approved.statusCode).toBe(200);
+    const reflect = (
+      approved.json() as { reflect: { skillName: string; skillVersion: string; indexSize: number } }
+    ).reflect;
+    expect(reflect.skillName).toBe('helpdesk-device');
+    expect(reflect.skillVersion).toMatch(/^1\.\d+$/);
+    expect(reflect.indexSize).toBeGreaterThan(0);
+
+    const after = await app.inject({ method: 'GET', url: '/api/ops/skills' });
+    const body = after.json() as {
+      skills: Record<string, { minor: number }>;
+      reflect: { kbId: string; skill: string; skillVer: string }[];
+    };
+    expect(body.skills.device.minor).toBe(Number(beforeMinor) + 1);
+    expect(body.reflect[0]?.kbId).toBe(row.kb_no);
+    expect(body.reflect[0]?.skill).toBe('helpdesk-device');
+  });
+});
+
 describe('監査ログ', () => {
   it('下書き作成・承認が監査に出る', async () => {
     const response = await app.inject({ method: 'GET', url: '/api/ops/audit' });
