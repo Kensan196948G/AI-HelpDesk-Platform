@@ -31,6 +31,9 @@ describe('運用統合 UI（/ops）の配信', () => {
     // 移行中であることを画面に明示する（AGENTS.md §5）。
     expect(html).toContain(MIGRATION_BANNER);
     expect(html).toContain('移行中');
+    // ログインユーザーの挨拶（〇〇さん、こんにちは）をダッシュボードに出す。
+    expect(html).toContain('さん、こんにちは');
+    expect(html).toContain('PCヘルプデスクとして対応中');
     // 旧画面のブートは混ざらない。
     expect(html).not.toContain('window.__AIHD_BOOT__');
   });

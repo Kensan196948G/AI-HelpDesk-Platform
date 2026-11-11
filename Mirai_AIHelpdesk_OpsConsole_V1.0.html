@@ -1200,6 +1200,9 @@ V.dash=function(){
  const T=state.tickets,D=state.drafts;const c=s=>T.filter(t=>t.status===s).length;
  const ret=D.filter(d=>d.status==='returned').length,rev=D.filter(d=>d.status==='review').length;
  const active=state.kb.filter(k=>k.status==='active').length;
+ const login=window.__OPS_LOGIN_ACTOR__||{name:state.actor,role:staff(state.actor).role,helpdesk:false};
+ const helloSub=login.helpdesk?'PCヘルプデスクとして対応中':(login.role||'ログイン中');
+ const hello=`<div class="card rise" style="--i:0;margin:0 0 14px;padding:16px 18px;border-left:4px solid var(--accent);background:linear-gradient(135deg,var(--panel),var(--panel2))"><div style="font-size:20px;font-weight:700;letter-spacing:.01em">${esc(login.name)}さん、こんにちは</div><div class="hint" style="margin-top:4px">${esc(helloSub)}</div></div>`;
  const stages=[
   {ic:'inbox',l:'受付',n:T.length,s:'累計チケット',cls:'c-u',v:'intake'},
   {ic:'bot',l:'AI一次対応',n:c('ai_resolved'),s:`AI解決／対応中 ${c('ai')}`,cls:'c-a',v:'ai',alive:c('ai')>0},
@@ -1232,7 +1235,7 @@ V.dash=function(){
  <div class="sec-h">${I('trend','sm')}カテゴリ別の受付件数</div>${byCat.map(x=>`<div class="barrow" style="grid-template-columns:minmax(0,150px) 1fr 26px;margin:5px 0"><span class="catl">${cico(x.k)}<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(x.l)}</span></span><div class="bar"><i style="width:${x.n/mx*100}%;background:${CC[x.k]}"></i></div><b>${x.n}</b></div>`).join('')}`;
  const refP=state.reflect.slice(0,6).map((r,i)=>`<div class="li" style="--i:${i};cursor:default;margin-bottom:6px">${auIc('DB保存')}<div class="bd"><div class="t">${r.kbId} v${r.ver}（${esc(r.action)}）</div><div class="m">${I('cpu','sm')}${esc(r.skill)} v${r.skillVer}　${fmt(r.t)}　${esc(r.by)}</div></div></div>`).join('')||emptyBox('zap','まだ反映履歴がありません');
  const actP=`<div class="feed">${state.audit.slice(0,7).map((a,i)=>`<div class="feed-i" style="--i:${i}">${auIc(a.action)}<div><div class="t">${esc(a.action)} <span class="mono hint">${esc(a.target)}</span></div><div class="hint">${fmt(a.t)}・${esc(a.actor)}</div></div></div>`).join('')}</div><div class="btns" style="margin-top:10px"><button class="btn ghost sm" onclick="App.go('audit')">${I('audit')}監査ログを見る</button></div>`;
- return `${pageHead('dash','ダッシュボード','受付からナレッジ反映までの流れと滞留件数。カードを押すとその段階へ移動します。右のパネルで詳細を切り替えます。','u')}
+ return `${pageHead('dash','ダッシュボード','受付からナレッジ反映までの流れと滞留件数。カードを押すとその段階へ移動します。右のパネルで詳細を切り替えます。','u')}${hello}
  <div class="op rl"><div class="lcol">
   <div class="pipe">${stages.map((s,i)=>`<div class="stage ${s.cls} ${s.alive?'alive':''} rise" style="--i:${i}" onclick="App.go('${s.v}')" title="${s.l}へ移動"><div class="st-top"><span class="st-ic">${I(s.ic)}</span><span class="no">${i+1}</span></div><div class="l">${s.l}</div><div class="n" data-count="${s.n}">${s.n}</div><div class="s">${s.s}</div></div>`).join('')}</div>
   <div class="rail rise" style="--i:7"><i></i><i></i><i></i><i></i><i></i></div>
@@ -2177,7 +2180,7 @@ document.querySelectorAll('[data-ic]').forEach(el=>el.insertAdjacentHTML('afterb
 load();applySettings();buildIndex();
 /* --- サーバ配信時のブート（docs/100）。Access の身元・実データ・サーバ接続を差し込む。 --- */
 try{const __b=window.__OPS_BOOT__;if(__b){
- if(__b.actor&&__b.actor.name){state.actor=__b.actor.name;if(Array.isArray(__b.actor.staff)&&__b.actor.staff.length){STAFF.length=0;__b.actor.staff.forEach(function(s){STAFF.push(s)})}}
+ if(__b.actor&&__b.actor.name){state.actor=__b.actor.name;window.__OPS_LOGIN_ACTOR__={name:__b.actor.name,role:__b.actor.role||'',helpdesk:!!__b.actor.helpdesk};if(Array.isArray(__b.actor.staff)&&__b.actor.staff.length){STAFF.length=0;__b.actor.staff.forEach(function(s){STAFF.push(s)})}}
  /* P2: 受付済みチケットはサーバが正本（画面のローカル値より優先する）。 */
  if(__b.state&&Array.isArray(__b.state.tickets)){state.tickets=__b.state.tickets}
  if(__b.state&&Array.isArray(__b.state.kb)){state.kb=__b.state.kb}
