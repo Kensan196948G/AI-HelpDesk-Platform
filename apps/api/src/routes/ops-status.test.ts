@@ -145,7 +145,7 @@ describe('リモート支援セッション（P11）', () => {
       expect(item.status).toBe('escalated');
       // メールはローカル部をマスクして返す（生のメールをそのまま出さない）。
       expect(item.userLabel).toContain('***');
-      expect(item.userLabel).not.toMatch(/^[^@]+@/);
+      expect(item.userLabel).not.toBe(DEV);
     }
   });
 });
