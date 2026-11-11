@@ -94,6 +94,8 @@
     /* 右ペインのタブ（案件/実行/端末/ナレッジ/記録）。再描画しても選択とスクロールを保つ。 */
     evTab: 'case',
     evScroll: {},
+    /* 記録タブ: 監査ログを全件（最大 50 件）まで表示するか。 */
+    evAuditAll: false,
     scrollTop: 0,
     timer: null,
   };
@@ -500,16 +502,40 @@
     });
   }
 
-  function auditHTML(t) {
+  const EV_AUDIT_SHOWN = 6;
+  const EV_AUDIT_PAGE = 50;
+
+  function auditRows(t) {
     const draft = t.draftId;
-    const rows = auditList()
+    return auditList()
       .filter((a) => a && (a.target === t.id || (draft && a.target === draft)))
-      .sort((a, b) => Number(b.t || 0) - Number(a.t || 0))
-      .slice(0, 6);
+      .sort((a, b) => Number(b.t || 0) - Number(a.t || 0));
+  }
+
+  /** 記録タブに出す件数。全件表示でも 50 件まで（画面が重くならないように）。 */
+  function auditShown(total, all) {
+    return all ? Math.min(total, EV_AUDIT_PAGE) : Math.min(total, EV_AUDIT_SHOWN);
+  }
+
+  /** 記録タブのバッジ件数（パネルに実際に出す件数）。 */
+  function recordCount(t, all) {
+    return auditShown(auditRows(t).length, all);
+  }
+
+  function auditHTML(t, all) {
+    const rows = auditRows(t);
+    const shown = rows.slice(0, auditShown(rows.length, all));
     if (!rows.length) return '<p class="hw-empty sm">記録はありません。</p>';
+    const toggle =
+      rows.length > 6
+        ? '<div class="hw-audit-tools"><button type="button" class="hw-btn sm ghost" data-hw="ev-audit">' +
+          (all ? '最新 6 件に戻す' : 'すべて表示（' + rows.length + ' 件）') +
+          '</button></div>'
+        : '';
     return (
+      toggle +
       '<div class="hw-audit">' +
-      rows
+      shown
         .map(
           (a) =>
             '<div class="hw-audit-row"><span>' +
@@ -523,7 +549,9 @@
             '</small></div>',
         )
         .join('') +
-      '</div><p class="hw-note">ヘルプデスクの操作履歴です（監査ログ）。</p>'
+      '</div><p class="hw-note">ヘルプデスクの操作履歴です（監査ログ）。' +
+      (all && rows.length > shown.length ? '最新 ' + shown.length + ' 件を表示しています。' : '') +
+      '</p>'
     );
   }
 
@@ -1206,9 +1234,11 @@
     const t = current();
     const ev = $('#hw-ev');
     if (!ev || !t) return;
-    HW.evScroll[HW.evTab] = ev.scrollTop;
+    const scroll = $('#hw-ev-scroll');
+    if (scroll) HW.evScroll[HW.evTab] = scroll.scrollTop;
     ev.innerHTML = evHTML(t);
-    ev.scrollTop = HW.evScroll[HW.evTab] || 0;
+    const next = $('#hw-ev-scroll');
+    if (next) next.scrollTop = HW.evScroll[HW.evTab] || 0;
   }
 
   function tcCaptureHTML() {
@@ -1904,8 +1934,6 @@
     { id: 'knowledge', label: 'ナレッジ' },
     { id: 'record', label: '記録' },
   ];
-  const EV_AUDIT_SHOWN = 6;
-
   /** タブの件数。パネルに実際に出す件数だけを数える（件数と中身を食い違わせない）。 */
   function evTabCount(t, id) {
     if (!t) return 0;
@@ -1914,12 +1942,7 @@
       return Object.keys(shared).length;
     }
     if (id === 'knowledge') return relatedKbs(t).length + (t.draftId ? 1 : 0);
-    if (id === 'record') {
-      const rows = auditList().filter(
-        (a) => a && (a.target === t.id || (t.draftId && a.target === t.draftId)),
-      );
-      return Math.min(rows.length, EV_AUDIT_SHOWN);
-    }
+    if (id === 'record') return recordCount(t, HW.evAuditAll);
     return 0;
   }
 
@@ -1982,7 +2005,14 @@
       esc(t.assignee || '未割当') +
       '</dd><dt>分野</dt><dd>' +
       esc(CATEGORY[t.cat] || t.cat || '-') +
-      '</dd></dl></div><div class="hw-ev-card"><h3>開く</h3><div class="hw-actions"><button type="button" class="hw-btn sm" data-hw="legacy">既存の画面で開く</button>' +
+      '</dd></dl></div>'
+    );
+  }
+
+  /** 右ペインの固定フッター（どのタブでも使う操作）。 */
+  function evFootHTML(t) {
+    return (
+      '<div class="hw-ev-foot"><div class="hw-actions"><button type="button" class="hw-btn sm" data-hw="legacy">既存の画面で開く</button>' +
       (t.coworkTicket
         ? '<button type="button" class="hw-btn sm" data-hw="cowork">利用者の受付番号</button>'
         : '') +
@@ -2041,7 +2071,7 @@
   }
 
   function evRecordHTML(t) {
-    return '<div class="hw-ev-card"><h3>操作の記録</h3>' + auditHTML(t) + '</div>';
+    return '<div class="hw-ev-card"><h3>操作の記録</h3>' + auditHTML(t, HW.evAuditAll) + '</div>';
   }
 
   function evHTML(t) {
@@ -2050,11 +2080,14 @@
     const cw = cowork(t);
     return (
       evTabHTML(t) +
+      '<div class="hw-ev-scroll" id="hw-ev-scroll">' +
       evPanelHTML('case', evCaseHTML(t)) +
       evPanelHTML('exec', evExecHTML(t, cw)) +
       evPanelHTML('device', evDeviceHTML(t)) +
       evPanelHTML('knowledge', evKnowledgeHTML(t)) +
-      evPanelHTML('record', evRecordHTML(t))
+      evPanelHTML('record', evRecordHTML(t)) +
+      '</div>' +
+      evFootHTML(t)
     );
   }
 
@@ -2062,7 +2095,7 @@
   function setEvTab(tabId, opts) {
     if (!EV_TABS.some((tab) => tab.id === tabId)) return;
     if (HW.evTab === tabId) return;
-    const ev = $('#hw-ev');
+    const ev = $('#hw-ev-scroll');
     if (ev) HW.evScroll[HW.evTab] = ev.scrollTop;
     HW.evTab = tabId;
     $$('#hw-ev [role="tab"]').forEach((button) => {
@@ -2099,7 +2132,8 @@
     const ev = $('#hw-ev');
     if (ev) {
       ev.innerHTML = evHTML(t);
-      ev.scrollTop = HW.evScroll[HW.evTab] || 0;
+      const scroll = $('#hw-ev-scroll');
+      if (scroll) scroll.scrollTop = HW.evScroll[HW.evTab] || 0;
     }
     updateHead(t);
   }
@@ -2412,8 +2446,10 @@
 #ahd-hw.hw-embedded .hw-top-note{display:none}
 #ahd-hw:focus{outline:none}
 #ahd-hw.hw-embedded .hw-grid{padding:8px;gap:8px}
-#ahd-hw.hw-embedded .hw-ev{padding:7px}
-#ahd-hw.hw-embedded .hw-ev .hw-tabs{top:-7px;margin:-7px -7px 0;padding:6px 7px 0}
+#ahd-hw.hw-embedded .hw-ev{padding:0}
+#ahd-hw.hw-embedded .hw-ev .hw-tabs{padding:6px 7px 0}
+#ahd-hw.hw-embedded .hw-ev-scroll{padding:7px}
+#ahd-hw.hw-embedded .hw-ev-foot{padding:6px 7px}
 #ahd-hw[hidden]{display:none!important}
 #ahd-hw *{box-sizing:border-box}
 #ahd-hw .hw-top{flex:none;height:54px;display:flex;align-items:center;gap:9px;padding:0 14px;background:linear-gradient(180deg,#173352,#122a45);color:#fff;border-bottom:3px solid var(--u-safety,#f5b800)}
@@ -2543,8 +2579,11 @@
 #ahd-hw .hw-tl-t{font-family:"SFMono-Regular",Consolas,monospace;font-size:9.5px}
 #ahd-hw .hw-tl-x{color:var(--u-ink,#1b222b)}
 #ahd-hw .hw-endnote{font-size:9.5px;color:var(--u-muted,#5f6874);border-top:1px dashed var(--u-line,#e1ddd2);padding-top:8px;line-height:1.6}
-#ahd-hw .hw-ev{background:var(--u-surface2,#efede6);padding:8px;gap:7px;overflow:auto}
-#ahd-hw .hw-tabs{position:sticky;top:-8px;z-index:3;flex:none;display:flex;gap:4px;margin:-8px -8px 0;padding:7px 8px 0;background:var(--u-surface2,#efede6);border-bottom:1px solid var(--u-line,#e1ddd2)}
+#ahd-hw .hw-ev{background:var(--u-surface2,#efede6);padding:0;gap:0;overflow:hidden}
+#ahd-hw .hw-tabs{position:relative;z-index:3;flex:none;display:flex;gap:4px;padding:7px 8px 0;background:var(--u-surface2,#efede6);border-bottom:1px solid var(--u-line,#e1ddd2)}
+#ahd-hw .hw-ev-scroll{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:7px;padding:8px}
+#ahd-hw .hw-ev-foot{flex:none;padding:7px 8px;background:var(--u-surface,#fff);border-top:1px solid var(--u-line,#e1ddd2)}
+#ahd-hw .hw-audit-tools{display:flex;justify-content:flex-end;padding:6px 9px 0}
 #ahd-hw .hw-tab{flex:1 1 0;min-width:0;display:flex;align-items:center;justify-content:center;gap:3px;border:1px solid var(--u-line,#e1ddd2);border-bottom:0;border-radius:8px 8px 0 0;background:var(--u-surface,#fff);color:var(--u-muted,#5f6874);padding:5px 3px;font:inherit;font-size:10px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
 #ahd-hw .hw-tab:hover{color:var(--u-ink,#1b222b)}
 #ahd-hw .hw-tab[aria-selected="true"]{background:var(--u-surface2,#efede6);color:var(--u-navy,#16314f);box-shadow:inset 0 2px 0 var(--u-teal,#0f9d9a)}
@@ -2790,6 +2829,7 @@ body.ahd-hw-open{overflow:hidden}
       HW.selected = target.dataset.id;
       HW.scrollTop = 0;
       HW.evScroll = {};
+      HW.evAuditAll = false;
       renderAll();
       return;
     }
@@ -2800,6 +2840,11 @@ body.ahd-hw-open{overflow:hidden}
     }
     if (action === 'evtab') {
       setEvTab(target.dataset.tab, { focus: true });
+      return;
+    }
+    if (action === 'ev-audit') {
+      HW.evAuditAll = !HW.evAuditAll;
+      renderEv();
       return;
     }
     if (action === 'claim') {
@@ -2894,7 +2939,7 @@ body.ahd-hw-open{overflow:hidden}
       const target = event.target;
       if (!target || !target.classList) return;
       if (target.classList.contains('hw-cbody')) HW.scrollTop = target.scrollTop;
-      if (target.id === 'hw-ev') HW.evScroll[HW.evTab] = target.scrollTop;
+      if (target.id === 'hw-ev-scroll') HW.evScroll[HW.evTab] = target.scrollTop;
     },
     true,
   );
