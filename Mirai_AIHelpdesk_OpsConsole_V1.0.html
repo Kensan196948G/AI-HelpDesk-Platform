@@ -2191,7 +2191,7 @@ try{const __b=window.__OPS_BOOT__;if(__b){
    const subject=$('#i_sub').value.trim(),body=$('#i_body').value.trim(),req=$('#i_req').value.trim()||'（未記入）';
    if(!subject||!body){toast('件名と内容を入力してください','bad');return}
    const u=$('#i_u').value,im=$('#i_i').value,sec=secCheck(subject+' '+body);
-   const payload={subject:subject,body:body,category:$('#i_cat').value,urgency:u,impact:im,channel:$('#i_ch').value,requester:req,priority:calcPriority(u,im,sec)};
+   const payload={subject:subject,body:body,category:$('#i_cat').value,urgency:u,impact:im,channel:$('#i_ch').value,requester:req,priority:calcPriority(u,im,sec),pc:(ui.pcDraft&&ui.pcDraft.br)?{br:ui.pcDraft.br,at:ui.pcDraft.at||now()}:undefined};
    fetch('/api/ops/tickets',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify(payload)})
     .then(function(r){return r.json()})
     .then(function(d){
@@ -2219,6 +2219,24 @@ try{const __b=window.__OPS_BOOT__;if(__b){
     .then(function(r){if(!r.ok)throw new Error('claim');return r.json()})
     .then(function(){__origStartWork.call(App,id)})
     .catch(function(){toast('担当開始をサーバに保存できませんでした','bad')});
+  };
+  /* PC情報: ブラウザから取得した情報をサーバへも保存し、AIの切り分けに使えるようにする（P8b）。 */
+  const __origPcFetch=App.pcFetch;
+  App.pcFetch=function(src){
+   const result=__origPcFetch.call(App,src);
+   if(src!=='browser')return result;
+   setTimeout(function(){
+    const d=ui.pcDraft;
+    if(!d||!d.br)return;
+    const b=d.br;
+    const devId=(function(){try{const k='aihd.device.id';let v=localStorage.getItem(k);if(!v){v=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():'ops-'+Date.now();localStorage.setItem(k,v)}return v}catch(e){return 'ops-'+Date.now()}})();
+    const screenInfo=(function(){try{return {width:screen.width,height:screen.height,pixelRatio:window.devicePixelRatio||undefined}}catch(e){return undefined}})();
+    const payload={deviceId:devId,platform:navigator.platform||undefined,os:String(b.os||'').slice(0,190),hardware:{cpuCores:b.cores||undefined,deviceMemoryGB:b.mem||undefined,screen:screenInfo,network:{online:b.online!==false,effectiveType:b.conn||undefined}},browser:{name:String(b.browser||'').slice(0,90),userAgent:String(navigator.userAgent||'').slice(0,900),languages:(navigator.languages||[]).slice(0,10)},collectedAt:new Date().toISOString()};
+    fetch('/api/device/browser',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify(payload)})
+     .then(function(r){if(!r.ok)throw new Error('device');toast('PC情報をサーバにも保存しました（AIの切り分けに使います）','ok','monitor')})
+     .catch(function(){toast('PC情報をサーバに保存できませんでした（この画面では利用できます）','bad')});
+   },900);
+   return result;
   };
   /* システム設定: 既定値のままローカルに閉じず、サーバの 1 行へ保存する（P6）。 */
   const __origSaveSettings=App.saveSettings;
