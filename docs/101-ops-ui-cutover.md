@@ -176,6 +176,8 @@ systemctl --user restart ai-helpdesk-prod-api
 | 2026-11-11 20:08 | Staging | （失敗） | 失敗 | `--env-file` に `current/release.env` を指定し、migrate で `DATABASE_URL` 不在。current 切替前に停止し、旧 `4ce1c7d` のまま稼働継続 |
 | 2026-11-11 20:09 | 本番 | `20261111T200910-1e2607ca7d71` | 成功 | migrations 45（038〜045）、health `commit=1e2607c` / `db=ok`。`OPS_UI_PRIMARY=true` で `/` を新UIへ切替 |
 | 2026-11-11 20:13 | Staging | `20261111T201339-1e2607ca7d71` | 成功（再実行） | `stg-api.conf` + `--unit-template` で再配備。migrations 45、health `commit=1e2607c`、stg healthcheck ok |
+| 2026-11-11 22:47 | Staging | `20261111T224719-62ee854e1060` | 稼働中（2026-11-13 観測） | PR #191。新規 migration なし。unit 起動 22:47:35。配備時のログではなく事後観測からの記録（[docs/102](102-release-prep-20261113.md) §1） |
+| 2026-11-11 22:48 | 本番 | `20261111T224744-62ee854e1060` | 稼働中（2026-11-13 観測） | 同上。unit 起動 22:48:00、`NRestarts=0`。直前ダンプ `ai_helpdesk_preview-20261111-224710.dump`（283,777 bytes） |
 
 事後確認（2026-11-11 20:14 JST）:
 
