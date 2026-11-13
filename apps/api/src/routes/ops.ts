@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { isHelpdeskActor } from '../auth/helpdesk-scope.js';
 import { authenticateUi } from '../auth/ui.js';
 import { config, repoRoot } from '../config.js';
 import { badRequest } from '../errors.js';
@@ -57,6 +58,8 @@ export interface OpsActor {
   role: string;
   approver: boolean;
   email: string;
+  /** PC ヘルプデスクとして対応できるか（DX 名簿所属またはデモ許可）。 */
+  helpdesk: boolean;
 }
 
 /** ロール集合から、画面に出す 1 つの肩書きを決める（表示用。権限判定はサーバ側が正本）。 */
@@ -67,18 +70,50 @@ export function actorRoleLabel(roles: readonly string[]): string {
   return '一般社員';
 }
 
-/** 名簿の氏名を使う。名簿が引けない環境（テスト等）ではメールのローカル部で代替する。 */
-async function resolveActor(email: string, roles: readonly string[]): Promise<OpsActor> {
+/**
+ * ログインユーザーの表示名・肩書きを決める。
+ * - 氏名は Mirai-Info の名簿を正本にする（引けない場合はメールのローカル部）。
+ * - `kensan1969@gmail.com` は管理者として表示する。
+ * - PC ヘルプデスク対応可否は helpdesk-scope（DX 名簿所属またはデモ許可）で決める。
+ */
+export async function resolveActor(email: string, roles: readonly string[]): Promise<OpsActor> {
+  const normalized = email.trim().toLowerCase();
   let employee: EmployeeRow | null = null;
   try {
-    employee = await findEmployeeByEmail(email);
+    employee = await findEmployeeByEmail(normalized);
   } catch {
     employee = null;
   }
-  const fallback = email.split('@')[0] || email;
-  const name = (employee && employee.name) || fallback;
-  const role = actorRoleLabel(roles);
-  return { name, role, approver: roles.includes('approver'), email };
+  const fallback = normalized.split('@')[0] || normalized;
+  const name = normalized === 'kensan1969@gmail.com' ? '管理者' : employee?.name || fallback;
+  const helpdesk = await isHelpdeskActor(normalized);
+  const role = helpdesk ? 'PCヘルプデスク' : actorRoleLabel(roles);
+  return {
+    name,
+    role,
+    approver: roles.includes('approver'),
+    email: normalized,
+    helpdesk,
+  };
+}
+
+/**
+ * 操作者選択の候補を作る。ログインユーザー本人は名簿に居ない場合がある
+ * （管理者 Gmail 等）ため、必ず先頭に残す。
+ */
+export function buildStaff(
+  actor: OpsActor,
+  employees: readonly EmployeeRow[] = [],
+): { name: string; role: string; approver: boolean }[] {
+  const actorEntry = { name: actor.name, role: actor.role, approver: actor.approver };
+  const others = employees
+    .filter((employee) => employee.name !== actor.name)
+    .map((employee) => ({
+      name: employee.name,
+      role: employee.section ?? employee.division ?? '',
+      approver: false,
+    }));
+  return [actorEntry, ...others];
 }
 
 export function renderOps(boot: { actor: OpsActor } & Record<string, unknown>): string {
@@ -96,19 +131,11 @@ export async function opsRoutes(
     if (!request.uiEmail) throw badRequest('UI の認証情報がありません。');
     const roles = request.uiRoles ?? [];
     const actor = await resolveActor(request.uiEmail, roles);
-    // 担当者選択の候補は実名簿（DX 推進部）から作る。名簿が引けない環境では本人だけ。
-    let staff: { name: string; role: string; approver: boolean }[] = [
-      { name: actor.name, role: actor.role, approver: actor.approver },
-    ];
+    // 担当者選択の候補は実名簿（DX 推進部）から作る。名簿に居ないログイン本人も必ず残す。
+    let staff = buildStaff(actor);
     try {
       const roster = await listEmployees('staff');
-      if (roster.employees.length) {
-        staff = roster.employees.map((employee) => ({
-          name: employee.name,
-          role: employee.section ?? employee.division ?? '',
-          approver: employee.name === actor.name ? actor.approver : false,
-        }));
-      }
+      if (roster.employees.length) staff = buildStaff(actor, roster.employees);
     } catch {
       // 名簿が引けないときは本人だけを候補にする（架空の名前を出さない）。
     }
@@ -131,6 +158,7 @@ export async function opsRoutes(
         role: actor.role,
         approver: actor.approver,
         email: actor.email,
+        helpdesk: actor.helpdesk,
         staff,
       },
       state: {
