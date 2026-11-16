@@ -1,0 +1,46 @@
+# 本番配備と受入（2026-11-16 20:07 JST）
+
+所有者の承認（選択 1）に基づく。事前バックアップは ai-helpdesk-backup.service（20:07 OK、283,779 B）。
+
+## 配備
+```
+unit installed from template: /home/kensan/.config/systemd/user/ai-helpdesk-prod-api.service
+DEPLOY_RECORD /home/kensan/ai-helpdesk-prod/state/deploy-20261116T200711-ba8d092ce5e6.json
+deploy: OK 20261116T200711-ba8d092ce5e6 (commit=ba8d092ce5e65838e3b0568c6b2eaedbebf52ed4)
+prune: removed old release 20261111T200910-1e2607ca7d71
+```
+
+## release と health
+```
+/home/kensan/ai-helpdesk-prod/releases/20261116T200711-ba8d092ce5e6
+{"ok":true,"service":"ai-helpdesk-api","version":"0.1.0","commit":"ba8d092ce5e65838e3b0568c6b2eaedbebf52ed4","db":"ok","time":"2026-11-16T11:08:44.859Z","env":"production"}
+```
+
+## 配備物に修正が含まれること（grep 件数）
+```
+banner flex css=1
+ro guard in dist=1
+startup retry in dist=2
+isDefaultSettings=3
+```
+
+## ops-readiness
+```json
+{"schemaVersion":1,"ok":true,"code":"REQUESTED_CHECKS_PASSED","exitCode":0,"checks":{"localHealth":{"ok":true,"code":"HEALTH_OK"},"localUnauthenticated":{"ok":true,"code":"UNAUTHENTICATED_401"},"publicAccess":{"ok":null,"code":"NOT_REQUESTED","authenticatedAcceptance":"NOT_VERIFIED"},"backup":{"ok":null,"code":"NOT_REQUESTED","restoreProof":"NOT_VERIFIED","provenance":"NOT_VERIFIED"}},"limitations":["HEALTH_SELF_REPORT_ONLY","AUTHENTICATED_ACCESS_NOT_VERIFIED","BACKUP_RESTORE_NOT_VERIFIED","BACKUP_PROVENANCE_NOT_VERIFIED"]}
+
+```
+
+## DB（読み取り専用）と journal
+```
+migrations=45
+ops_tables=6
+ops_settings_rows=0
+audit_rows=83
+level=50 since 20:07: 0
+5xx since 20:07: 0
+```
+
+## 公開 URL（未認証）
+```
+http=302
+```
