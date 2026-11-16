@@ -9,11 +9,11 @@ health・readiness・読み取り点検を確認した。認証後の書き込�
 
 | 区分 | 状態（2026-11-16 時点） |
 |---|---|
-| 本番 | `ba8d092`（release `20261116T200711-ba8d092ce5e6`、health 一致、migrations 45） |
-| Staging | `ba8d092`（release `20261116T192926-ba8d092ce5e6`、health 一致、readiness exit 0） |
-| main | `ba8d092`（PR #194 squash merge） |
+| 本番 | `81ee7e6`（release `20261116T210454-81ee7e662140`、health 一致、migrations 45） |
+| Staging | `81ee7e6`（release `20261116T205417-81ee7e662140`、health 一致、readiness exit 0） |
+| main | `a0c9b4e`（PR #199 docs squash） |
 | 修正の独立レビュー | P0=0 / P1=0（別セッション・別 DB・実ブラウザ実測） |
-| 本番配備 | **実施済み**（2026-11-16 20:07、所有者の選択 1） |
+| 本番配備 | **実施済み**（2026-11-16 20:07 `ba8d092` → 21:05 `81ee7e6`、所有者の選択 1） |
 | QA Workbench の release 門禁 | 現行 commit では未申請（§8） |
 
 ## 1. 実測（2026-11-16 18:49〜19:00 JST・読み取りのみ・配備前）
@@ -154,13 +154,15 @@ Cloudflare Access のワンタイムコードで認証し、Playwright（headles
 テスト（ops 1 件）を追加し、PR #198 を squash merge（`81ee7e6`）した。
 マージ後、Staging へ `81ee7e6` を配備した（release `20261116T205417-81ee7e662140`、2026-11-16 20:54 JST）。
 health `commit=81ee7e6` / `db=ok`、配備物に新文言が含まれ旧文言が含まれないことを確認した。
-本番は `ba8d092` のままで、この文言修正は次回の本番配備に含める。
+本番へも 2026-11-16 21:05 に `81ee7e6` を配備した（release `20261116T210454-81ee7e662140`）。
+health `commit=81ee7e6` / `db=ok`、readiness exit 0、配備物に新文言あり・旧文言なし、level=50／5xx 0、`NRestarts=0`。
+ロールバック先 `20261116T200711-ba8d092ce5e6` は残存（`62ee854` の release は prune 済み）。
 
 ## 6. 監視・復旧
 
 | 項目 | 実測 |
 |---|---|
-| 本番バックアップ | 2026-11-16 20:07 `OK`（283,779 B、配備前）／02:32 `OK`（283,835 B、日次、14 日保持） |
+| 本番バックアップ | 2026-11-16 21:04 `OK`（285,979 B、`81ee7e6` 配備前）／20:07 `OK`（283,779 B、`ba8d092` 配備前）／02:32 `OK`（283,835 B、日次、14 日保持） |
 | Staging 復元訓練 | 2026-11-15 04:32 success（週次、次回 11-22） |
 | Staging healthcheck / tunnel-watch | 5 分毎に success（19:05 時点） |
 | 復旧手順 | [docs/09](09-operations.md) / [docs/08](08-deployment.md) §8 / [docs/101](101-ops-ui-cutover.md) §5 |
@@ -192,7 +194,7 @@ health `commit=81ee7e6` / `db=ok`、配備物に新文言が含まれ旧文言�
 
 - **本番配備は実施済み**（2026-11-16 20:07、所有者の選択 1）。認証後の受入（画面・書き込み）も §5-3 で実施済み。QA 門禁は別途。
 - QA Workbench（`~/.dsh/dsh-qa`）の「運用統合UI切替 2026-11-11（P0）」は、要件・テストケースの門禁が承認済み、報告書は draft、release 門禁は未申請。
-- 既知の minor 欠陥「P0 報告/テストケースの本番 commit 期待値 `1e2607c` が現行本番と不一致」は **closed**。`1e2607c` と `62ee854` が `ba8d092` の祖先であることを `git merge-base --is-ancestor` で確認し、QA プロジェクトの要約に現行本番 `ba8d092`・main `81ee7e6`・現行証跡 `docs/103` を追記した。
+- 既知の minor 欠陥「P0 報告/テストケースの本番 commit 期待値 `1e2607c` が現行本番と不一致」は **closed**。`1e2607c` と `62ee854` が `ba8d092` の祖先であることを `git merge-base --is-ancestor` で確認し、QA プロジェクトの要約に 2026-11-16 の状態（本番 `ba8d092`→21:05 に `81ee7e6`、main `81ee7e6`→`a0c9b4e`、証跡 `docs/103`）を追記した。
 - QA 報告書本文（v2）の commit 期待値は当時の検証記録のため**書き換えていない**。現行の受入証跡は §5-2／§5-3。報告書を現行 commit で再生成する場合は QA セッション（QA preset）で `report_draft_save` を使う必要がある。
 - §7 の残項目（ナレッジ承認、旧 UI 主要操作、見た目、Access JWT、ロールバック訓練）の扱いは所有者が判断する。
 
