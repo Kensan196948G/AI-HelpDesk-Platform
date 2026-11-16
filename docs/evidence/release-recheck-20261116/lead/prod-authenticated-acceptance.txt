@@ -1,0 +1,66 @@
+# 本番の認証後受入（2026-11-16 20:31〜20:33 JST）
+
+方式: Cloudflare Access のワンタイムコード（送信先は許可リストの Gmail。アドレス・コード・Cookie は記録しない）。Playwright (headless Chrome) で実行。
+実行主体: 所有者の承認（選択 1, 2）に基づく。認証は所有者が受信したコードを使用し、AI が認証を代行・偽装したものではない。
+
+## 1. 画面（12 画面）
+```
+title=AIヘルプデスク 運用統合 / newUiBoot=true / pageErrors=0 / consoleErrors=0
+banner=移行中：主要画面は実データに接続済みです。…（現行文言）
+nav: ダッシュボード / ①受付 / ②AI一次対応 / ③引継ぎ・④解決記録 / ⑤ナレッジ下書き / ⑥人間の承認 / ⑦ナレッジDB / ⑦AI・Skills反映 / DevOps / SecOps / 監査ログ / システム設定（12件）
+切替: 12画面すべて表示、ページエラー0
+システム設定: 「すべて既定値です」=true / 「既定値から変更されています」=false
+```
+
+## 2. 運用ステータス（/api/ops/status）
+```json
+{"env":"production","commit":"ba8d092ce5e65838e3b0568c6b2eaedbebf52ed4","estopActive":false,"auditOk":true,"auditChecked":83}
+```
+
+## 3. /legacy?ro=1（読み取り専用モード）
+```
+9秒間の non-GET: アプリ由来 0 件（PUT /api/state・POST /api/device/browser なし）
+例外: エッジ注入の Cloudflare RUM beacon への POST 1 件（/cdn-cgi/rum。アプリの状態・端末情報ではない）
+requestfailed=0 / pageErrors=0 / 注記「読み取り専用モード」=表示 / title=みらいAI窓口 × ヘルプデスク ステップ受付 V3.1
+```
+
+## 4. 書き込み受入（テスト案件 OPS-1001）
+```
+create=200 → ai=200（provider=deepseek、回答 64 文字「該当するナレッジもありません。担当者へ引き継いでください。」）
+escalated=200 → in_progress=200（assignee=受入テスト）→ resolved=200 → closed=200
+DB: status=closed / ai_provider=deepseek / ai_answer 64 文字 / cause=受入テストのため / steps=1 / minutes=1 / messages=6
+```
+
+## 5. システム設定（保存→リセット）
+```
+PUT thHigh=0.5 → GET 0.5（変更表示）→ PUT 既定値 → GET thHigh=0.42 / thLow=0.22 / candMin=0.1 / SLA P3=480 / std=7.2.10・5.4.2 / pc・remote・motion=true
+DB: ops_settings.value->thHigh = 0.42
+```
+
+## 6. 緊急停止（有効→解除）
+```
+POST active=true → /api/ops/status estop.active=true → POST active=false → estop.active=false
+DB: ops_estop.active = false
+```
+
+## 7. 監査（直近 10 分）
+```
+ops.ticket.create | OPS-1001
+ops.settings.update | ui
+ops.settings.update | ui
+ops.estop.on | 1
+ops.estop.off | 1
+ops.settings.update | ui
+ops.ticket.status | OPS-1001
+ops.ticket.claim | OPS-1001
+ops.ticket.resolve | OPS-1001
+ops.ticket.status | OPS-1001
+```
+
+## 8. 残置・後始末
+```
+テスト案件 OPS-1001 は closed で残置（削除 API なし。一覧にはクローズ済みとして表示）
+設定は既定値へ復元済み（ops_settings の行が 1 行存在。値は既定値）
+緊急停止は解除済み（active=false）
+認証用の一時ファイル（Cookie 状態・コード）は受入後に削除
+```
