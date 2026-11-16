@@ -280,12 +280,49 @@ async function loadState(email: string): Promise<{
   };
 }
 
-function renderPrototype(boot: {
-  email: string;
-  loginEmail?: string;
-  cowork: Record<string, unknown> | null;
-  helpdesk: Record<string, unknown> | null;
-}): string {
+/**
+ * 読み取り専用モード（`/legacy?ro=1`）のガード。
+ * 本番の旧 UI を「画面の確認だけ」したいときに、ブリッジが自動で送る
+ * PUT /api/state と POST /api/device/browser を止めるための検証補助。
+ * **権限制御ではない**。サーバ側の認可・CSRF・監査は従来どおりで、
+ * このフラグを知る利用者が API を直接呼ぶことまでは防がない。
+ */
+export function readOnlyGuardScript(): string {
+  const script = `(function(){
+  try {
+    var original = window.fetch;
+    if (typeof original !== 'function') return;
+    var blocked = ['POST', 'PUT', 'PATCH', 'DELETE'];
+    window.fetch = function(input, init){
+      var method = String((init && init.method) || (input && input.method) || 'GET').toUpperCase();
+      if (blocked.indexOf(method) !== -1) {
+        return Promise.reject(new Error('read-only mode: ' + method + ' is blocked'));
+      }
+      return original.apply(this, arguments);
+    };
+    document.addEventListener('DOMContentLoaded', function(){
+      try {
+        var note = document.createElement('div');
+        note.setAttribute('data-aihd-readonly-note', '1');
+        note.style.cssText = 'position:fixed;z-index:2147483647;left:0;right:0;bottom:0;padding:8px 12px;background:#7a1f1f;color:#fff;font:13px/1.4 sans-serif;text-align:center';
+        note.textContent = '読み取り専用モード（?ro=1・検証用）: 権限制御ではありません。この画面からの保存・送信は行いません。';
+        if (document.body) document.body.appendChild(note);
+      } catch (e) {}
+    });
+  } catch (e) {}
+})();`;
+  return `<script data-aihd-readonly-guard="1">${script}</script>`;
+}
+
+function renderPrototype(
+  boot: {
+    email: string;
+    loginEmail?: string;
+    cowork: Record<string, unknown> | null;
+    helpdesk: Record<string, unknown> | null;
+  },
+  options: { readOnly?: boolean } = {},
+): string {
   const bootJson = JSON.stringify({
     ...boot,
     // 本番では「操作する人」を本人以外へ切り替えさせない（デモ用アカウントだけ any）。
@@ -298,6 +335,10 @@ function renderPrototype(boot: {
   const bootScript = `<script>window.__AIHD_BOOT__=${bootJson};(function(){try{var b=window.__AIHD_BOOT__||{};if(b.email){var e=localStorage.getItem('aihd.access.email');if(e!==b.email){localStorage.removeItem('${COWORK_KEY}');localStorage.removeItem('${HELPDESK_KEY}');localStorage.setItem('aihd.access.email',b.email)}}var orig=Storage.prototype.setItem;Storage.prototype.setItem=function(k,v){var r=orig.call(this,k,v);try{if(String(k).indexOf('mirai-wizard-v31-')===0){window.dispatchEvent(new CustomEvent('aihd-state',{detail:String(k)}))}}catch(e){}return r};if(b.cowork)localStorage.setItem('${COWORK_KEY}',JSON.stringify(b.cowork));if(b.helpdesk)localStorage.setItem('${HELPDESK_KEY}',JSON.stringify(b.helpdesk))}catch(e){}})();</script>`;
 
   let html = readSource();
+  // 検証用の読み取り専用モード（?ro=1）。CSP 置換後、アプリのスクリプトより前に差し込む。
+  if (options.readOnly) {
+    html = html.replace('<head>', () => `<head>${readOnlyGuardScript()}`);
+  }
   // 元の CSP は外部通信を禁止しているため、同一オリジンの API だけ許可する。
   // 併せて Cloudflare がエッジで注入する Web Analytics の beacon（script/connect）だけを許可する。
   // オフライン原本の CSP は変更しない（配信時だけ緩める）。
@@ -342,18 +383,24 @@ export async function prototypeRoutes(
   app: FastifyInstance,
   opts: { legacyOnly?: boolean } = {},
 ): Promise<void> {
-  async function serve(reply: FastifyReply, email: string, loginEmail?: string): Promise<void> {
+  async function serve(
+    reply: FastifyReply,
+    email: string,
+    loginEmail?: string,
+    readOnly = false,
+  ): Promise<void> {
     const boot = { ...(await loadState(email)), loginEmail };
     reply
       .type('text/html; charset=utf-8')
       .header('Content-Security-Policy', CSP)
       .header('Cache-Control', 'no-store')
-      .send(renderPrototype(boot));
+      .send(renderPrototype(boot, { readOnly }));
   }
 
   const handler = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
     if (!request.uiEmail) throw badRequest('UI の認証情報がありません。');
-    await serve(reply, request.uiEmail, request.loginEmail);
+    const query = request.query as { ro?: string } | undefined;
+    await serve(reply, request.uiEmail, request.loginEmail, query?.ro === '1');
   };
 
   // 「/」の正が運用統合 UI のときは、旧 UI は /legacy だけに残す（docs/100 P7）。

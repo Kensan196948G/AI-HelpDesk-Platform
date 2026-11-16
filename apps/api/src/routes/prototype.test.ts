@@ -16,6 +16,7 @@ import {
   patchKbDraftBody,
   patchKbLabels,
   patchStateLoad,
+  readOnlyGuardScript,
   STATE_DEFAULTS_PATCH,
 } from './prototype.js';
 
@@ -456,5 +457,49 @@ describe('画面の KB 表示の差し替え（DB で未承認を承認済みと
       {},
     ) as (k: unknown) => string;
     expect(render({ approvedBy: '渡辺' })).toBe('（DB 未承認）');
+  });
+});
+
+describe('旧 UI の読み取り専用モード（?ro=1）', () => {
+  it('読み取り専用のときだけガードと注記を差し込む', async () => {
+    const on = await app.inject({ method: 'GET', url: '/legacy?ro=1' });
+    expect(on.statusCode).toBe(200);
+    expect(on.body).toContain('data-aihd-readonly-guard="1"');
+    expect(on.body).toContain('読み取り専用モード（?ro=1・検証用）');
+    expect(on.body).toContain('権限制御ではありません');
+
+    const off = await app.inject({ method: 'GET', url: '/legacy' });
+    expect(off.statusCode).toBe(200);
+    expect(off.body).not.toContain('data-aihd-readonly-guard');
+  });
+
+  it('ガードは書き込みメソッドだけを拒否し、GET は通す', async () => {
+    const calls: string[] = [];
+    const context = {
+      window: {
+        fetch: (_input: unknown, init?: { method?: string }) => {
+          calls.push(String(init?.method ?? 'GET'));
+          return Promise.resolve('ok');
+        },
+      },
+      document: { addEventListener: () => {} },
+      Promise,
+    };
+    const source = readOnlyGuardScript()
+      .replace(/^<script[^>]*>/, '')
+      .replace(/<\/script>$/, '');
+    runInNewContext(source, context);
+    const guarded = (
+      context.window as { fetch: (i: unknown, init?: { method?: string }) => Promise<string> }
+    ).fetch;
+
+    await expect(guarded('/api/state/helpdesk', { method: 'PUT' })).rejects.toThrow(
+      'read-only mode',
+    );
+    await expect(guarded('/api/device/browser', { method: 'POST' })).rejects.toThrow(
+      'read-only mode',
+    );
+    await expect(guarded('/api/state')).resolves.toBe('ok');
+    expect(calls).toEqual(['GET']);
   });
 });

@@ -8,6 +8,7 @@ import { config } from './config.js';
 import { ApiError, forbidden } from './errors.js';
 import { folderHelperRoutes } from './folder-access/helper-routes.js';
 import { folderAccessRoutes } from './folder-access/routes.js';
+import { retryWhileStarting } from './lib/startup-retry.js';
 import { remoteSupportRoutes } from './remote-support/routes.js';
 import { resolveRoutes } from './resolve/routes.js';
 import { ensureSkillCatalog } from './resolve/skills.js';
@@ -230,8 +231,13 @@ export async function buildServer(options?: {
   await app.register(opsStatusRoutes, { prefix: '/api' });
   await app.register(opsSettingsRoutes, { prefix: '/api' });
   // 解決ループの Skill カタログを同期する。スクリプト未作成でも起動は止めない（draft 登録）。
+  // ホスト再起動直後は PostgreSQL（Docker）がまだ接続を受け付けないことがあるため、
+  // 一過性の接続拒否だけを短く再試行する（2026-11-16 12:37 のホスト再起動で実測）。
   try {
-    await ensureSkillCatalog();
+    await retryWhileStarting(() => ensureSkillCatalog(), {
+      attempts: 5,
+      delaysMs: [250, 500, 1000, 2000],
+    });
   } catch (error) {
     app.log.error({ err: error }, 'Skill カタログの同期に失敗しました。');
   }
