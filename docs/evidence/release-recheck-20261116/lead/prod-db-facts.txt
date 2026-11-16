@@ -1,0 +1,13 @@
+# 本番 DB 読み取り専用点検（2026-11-16 18:50 JST）
+
+接続は 127.0.0.1:5435/ai_helpdesk_preview（DSN の値・資格情報は記載しない）。
+PGOPTIONS で default_transaction_read_only=on を強制し、SELECT のみ実行した。
+
+| 項目 | 実測 |
+|---|---|
+| schema_migrations | 45 |
+| ops_tables | 6 |
+| ops_settings_rows | 0 |
+| ops_estop_active | 0 |
+| knowledge_approved | 9 |
+| audit_log_rows | 83 |

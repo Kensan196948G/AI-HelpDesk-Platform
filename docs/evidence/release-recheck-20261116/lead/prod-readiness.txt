@@ -1,0 +1,17 @@
+# 2026-11-16 本番/Staging 読み取り専用点検（Lead 実測）
+
+取得時刻: 2026-11-16 18:49〜19:00 JST
+
+## /api/health
+```json
+{"ok":true,"service":"ai-helpdesk-api","version":"0.1.0","commit":"62ee854e106065ccb9f038dab76287ac18f71a9a","db":"ok","time":"2026-11-16T10:07:29.863Z","env":"production"}
+{"ok":true,"service":"ai-helpdesk-api","version":"0.1.0","commit":"62ee854e106065ccb9f038dab76287ac18f71a9a","db":"ok","time":"2026-11-16T10:07:29.875Z","env":"production"}
+```
+
+## ops-readiness.mjs（prod / stg）
+```json
+{"schemaVersion":1,"ok":true,"code":"REQUESTED_CHECKS_PASSED","exitCode":0,"checks":{"localHealth":{"ok":true,"code":"HEALTH_OK"},"localUnauthenticated":{"ok":true,"code":"UNAUTHENTICATED_401"},"publicAccess":{"ok":null,"code":"NOT_REQUESTED","authenticatedAcceptance":"NOT_VERIFIED"},"backup":{"ok":null,"code":"NOT_REQUESTED","restoreProof":"NOT_VERIFIED","provenance":"NOT_VERIFIED"}},"limitations":["HEALTH_SELF_REPORT_ONLY","AUTHENTICATED_ACCESS_NOT_VERIFIED","BACKUP_RESTORE_NOT_VERIFIED","BACKUP_PROVENANCE_NOT_VERIFIED"]}
+
+{"schemaVersion":1,"ok":true,"code":"REQUESTED_CHECKS_PASSED","exitCode":0,"checks":{"localHealth":{"ok":true,"code":"HEALTH_OK"},"localUnauthenticated":{"ok":true,"code":"UNAUTHENTICATED_401"},"publicAccess":{"ok":null,"code":"NOT_REQUESTED","authenticatedAcceptance":"NOT_VERIFIED"},"backup":{"ok":null,"code":"NOT_REQUESTED","restoreProof":"NOT_VERIFIED","provenance":"NOT_VERIFIED"}},"limitations":["HEALTH_SELF_REPORT_ONLY","AUTHENTICATED_ACCESS_NOT_VERIFIED","BACKUP_RESTORE_NOT_VERIFIED","BACKUP_PROVENANCE_NOT_VERIFIED"]}
+
+```

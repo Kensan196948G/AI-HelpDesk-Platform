@@ -1,0 +1,42 @@
+# 監視・復旧の実測（2026-11-16 18:55 JST）
+
+## タイマー（user）
+```
+NEXT                                   LEFT LAST                              PASSED UNIT                                        ACTIVATES
+Mon 2026-11-16 19:10:35 JST        2min 54s Mon 2026-11-16 19:05:35 JST  2min 5s ago ai-helpdesk-tunnel-watch.timer              ai-helpdesk-tunnel-watch.service
+Mon 2026-11-16 19:10:53 JST        3min 12s Mon 2026-11-16 19:05:53 JST 1min 47s ago ai-helpdesk-stg-healthcheck.timer           ai-helpdesk-stg-healthcheck.service
+Tue 2026-11-17 02:32:32 JST              7h Mon 2026-11-16 02:32:52 JST            - ai-helpdesk-backup.timer                    ai-helpdesk-backup.service
+Tue 2026-11-17 03:14:01 JST              8h Mon 2026-11-16 03:10:50 JST            - ai-helpdesk-stg-backup.timer                ai-helpdesk-stg-backup.service
+Sun 2026-11-22 04:38:51 JST          5 days Sun 2026-11-15 04:32:45 JST            - ai-helpdesk-stg-restore-drill.timer         ai-helpdesk-stg-restore-drill.service
+```
+
+## 常駐 unit
+```
+ai-helpdesk-prod-api active=active NRestarts=0
+ai-helpdesk-stg-api active=active NRestarts=0
+ai-helpdesk-proxy active=active NRestarts=0
+ai-helpdesk-stg-proxy active=active NRestarts=0
+ai-helpdesk-cloudflared active=active NRestarts=0
+ai-helpdesk-stg-cloudflared active=active NRestarts=0
+ai-helpdesk-stg-postgres active=active NRestarts=0
+```
+
+## 最終バックアップ（本番）
+```
+2026-11-15T02:30:29+09:00 OK db=ai_helpdesk_preview file=ai_helpdesk_preview-20261115-023028.dump bytes=283772 sha256=7dc535b21abfd47acff378885c7a68e853d657cd19291c8db016aad3f59d97a4 keep=14d
+2026-11-16T02:32:52+09:00 OK db=ai_helpdesk_preview file=ai_helpdesk_preview-20261116-023252.dump bytes=283835 sha256=60bb123056c090ed252bf2b2d2e28fca9516b1d80e10421795192ed93bf433b0 keep=14d
+283772 11月 15 02:30 /home/kensan/backups/ai-helpdesk/ai_helpdesk_preview-20261115-023028.dump
+283835 11月 16 02:32 /home/kensan/backups/ai-helpdesk/ai_helpdesk_preview-20261116-023252.dump
+```
+
+## 復旧訓練・監視の最終実行結果
+```
+ai-helpdesk-stg-healthcheck Result=success ExitStatus=0 LastExit=Mon 2026-11-16 19:05:53 JST
+ai-helpdesk-stg-restore-drill Result=success ExitStatus=0 LastExit=
+ai-helpdesk-tunnel-watch Result=success ExitStatus=0 LastExit=Mon 2026-11-16 19:05:36 JST
+```
+
+## ディスク
+```
+/dev/mapper/ubuntu--vg-ubuntu--lv  936G  755G  142G  85% /
+```
