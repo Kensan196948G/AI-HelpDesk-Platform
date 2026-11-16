@@ -2,29 +2,30 @@
 
 ## 0. 結論
 
-本番と Staging は `62ee854` で稼働していた。2026-11-13 の認証後受入で残った 3 件と、2026-11-16 のホスト再起動で実測した起動順序の不足を **PR #194** で修正し、
-Staging へ `ba8d092` として配備して受入を確認した。**本番への配備は未実施**で、[AGENTS.md](../AGENTS.md) §6 と Super-Agent 共通規約により承認待ちとする。
+2026-11-13 の認証後受入で残った 3 件と、2026-11-16 のホスト再起動で実測した起動順序の不足を **PR #194** で修正し、
+Staging へ `ba8d092` として配備して受入を確認した。**本番へも所有者の承認（選択 1）に基づき 2026-11-16 20:07 に `ba8d092` を配備**し、
+health・readiness・読み取り点検を確認した。認証後の書き込み受入は未実施で、§7 に残す。
 品質ゲートは偽装せず、未検証事項を §7 に残す。
 
 | 区分 | 状態（2026-11-16 時点） |
 |---|---|
-| 本番 | `62ee854`（health ok / db ok / migrations 45）・**未変更** |
+| 本番 | `ba8d092`（release `20261116T200711-ba8d092ce5e6`、health 一致、migrations 45） |
 | Staging | `ba8d092`（release `20261116T192926-ba8d092ce5e6`、health 一致、readiness exit 0） |
 | main | `ba8d092`（PR #194 squash merge） |
 | 修正の独立レビュー | P0=0 / P1=0（別セッション・別 DB・実ブラウザ実測） |
-| 本番配備 | **未実施（承認待ち）** |
+| 本番配備 | **実施済み**（2026-11-16 20:07、所有者の選択 1） |
 | QA Workbench の release 門禁 | 現行 commit では未申請（§8） |
 
-## 1. 実測（2026-11-16 18:49〜19:00 JST・読み取りのみ）
+## 1. 実測（2026-11-16 18:49〜19:00 JST・読み取りのみ・配備前）
 
-- 本番 `/api/health`（127.0.0.1:18950）: `ok=true` / `commit=62ee854` / `db=ok` / `env=production`
+- 本番 `/api/health`（127.0.0.1:18950・配備前）: `ok=true` / `commit=62ee854` / `db=ok` / `env=production`
 - Staging `/api/health`（127.0.0.1:18952・配備前）: 同上（Staging も `NODE_ENV=production` で起動する設計。[docs/77](77-staging-environment-design.md)）
 - `scripts/ops-readiness.mjs`: 本番・Staging とも exit 0（health 一致、未認証 401、公開 URL は Access へ 302）
 - 本番 DB（読み取り専用・`PGOPTIONS=-c default_transaction_read_only=on`）: migrations **45**、ops テーブル **6**、`ops_settings` 0 行、`ops_estop` active 0、承認済み knowledge 9、audit_log 83
 - 公開 URL（未認証）: 本番・Staging とも **302** → Cloudflare Access
 - 常駐 unit: prod/stg API・proxy・cloudflared・stg-postgres すべて `active` / `NRestarts=0`
 - ディスク: 936G 中 142G 空き（85% 使用）
-- 証跡: `docs/evidence/release-recheck-20261116/lead/`（readiness / DB / 監視 / 起動順序 / 公開 URL / Staging 配備）
+- 証跡: `docs/evidence/release-recheck-20261116/lead/`（readiness / DB / 監視 / 起動順序 / 公開 URL / Staging 配備 / 本番配備）
 
 ### 1-1. ホスト再起動時の起動順序（新たに判明した事実）
 
@@ -81,9 +82,11 @@ Staging へ `ba8d092` として配備して受入を確認した。**本番へ�
 
 run `43849251086`（head `ba8d092`、event=push）= **success**（2026-11-16 19:35 JST 完了）。
 
-## 5. Staging 配備と受入
+## 5. 配備と受入
 
-`scripts/deploy-release.sh` で `ba8d092` を配備した（2026-11-16 19:29 JST、`--migrate` は全 45 件 skip でスキーマ変更なし）。
+### 5-1. Staging（2026-11-16 19:29 JST）
+
+`scripts/deploy-release.sh` で `ba8d092` を配備した（`--migrate` は全 45 件 skip でスキーマ変更なし）。
 
 | 確認 | 結果 |
 |---|---|
@@ -94,14 +97,34 @@ run `43849251086`（head `ba8d092`、event=push）= **success**（2026-11-16 19:
 | Staging healthcheck | `Result=success` / exit 0 |
 | 起動後の API journal | level=50 **0 件**（19:29 以降） |
 
-- 認証後の画面操作（Access ログイン）は Staging でも未実施（所有者の OTP が必要）。§7-2 に残す。
-- 旧 release（`1e2607c`）は prune された（`20261111T200910` は本番側に残る）。
+- 認証後の画面操作（Access ログイン）は Staging でも未実施（所有者の OTP が必要）。§7 に残す。
+- 旧 release（`1e2607c`）は prune された。
+
+### 5-2. 本番（2026-11-16 20:07 JST）
+
+所有者の承認（選択 1）に基づき、`scripts/deploy-release.sh` で `ba8d092` を配備した。
+事前に `ai-helpdesk-backup.service` を実行し、`ai_helpdesk_preview-20261116-200702.dump`（283,779 B）を取得した。
+
+| 確認 | 結果 |
+|---|---|
+| release | `20261116T200711-ba8d092ce5e6`（`current` の実体） |
+| `/api/health` | `commit=ba8d092…` / `db=ok` / 200 |
+| 事前バックアップ | 2026-11-16 20:07 `OK`（283,779 B、`backup.log`） |
+| DB（読み取り専用） | migrations 45（全 skip）、ops テーブル 6、`ops_settings` 0 行、`ops_estop` active 0、knowledge 9、audit_log 83 |
+| `ops-readiness.mjs` | exit 0（commit 一致、未認証 401） |
+| 公開 URL（未認証） | 302 → Cloudflare Access |
+| 配備後の API journal | level=50 **0 件**、5xx **0 件**（20:07 以降） |
+| unit | `active` / `NRestarts=0` |
+| 配備物の内容 | 新バナー CSS・`data-aihd-readonly-guard`・`retryWhileStarting`・`isDefaultSettings` を確認 |
+| ロールバック先 | `releases/20261111T224744-62ee854e1060` が残存 |
+
+- 本番 DB への書き込みを伴う操作（受付・引継ぎ・承認・設定保存・緊急停止）は、この配備では行っていない（§7）。
 
 ## 6. 監視・復旧
 
 | 項目 | 実測 |
 |---|---|
-| 本番バックアップ | 2026-11-16 02:32 `OK`（283,835 B、sha256 `60bb1230…`、14 日保持） |
+| 本番バックアップ | 2026-11-16 20:07 `OK`（283,779 B、配備前）／02:32 `OK`（283,835 B、日次、14 日保持） |
 | Staging 復元訓練 | 2026-11-15 04:32 success（週次、次回 11-22） |
 | Staging healthcheck / tunnel-watch | 5 分毎に success（19:05 時点） |
 | 復旧手順 | [docs/09](09-operations.md) / [docs/08](08-deployment.md) §8 / [docs/101](101-ops-ui-cutover.md) §5 |
@@ -112,7 +135,7 @@ run `43849251086`（head `ba8d092`、event=push）= **success**（2026-11-16 19:
 
 | # | 項目 | 状態 | 扱い |
 |---|---|---|---|
-| 1 | 本番 DB への書き込みを伴う受入（受付・引継ぎ・承認・設定保存・緊急停止） | 未検証 | 本番配備後、承認済みの範囲で 1 件ずつ確認する |
+| 1 | 本番 DB への書き込みを伴う受入（受付・引継ぎ・承認・設定保存・緊急停止） | 未検証（配備は完了） | 承認済みの範囲で 1 件ずつ確認する |
 | 2 | 旧 UI（`/legacy`）の主要操作 | 未検証 | `?ro=1` で表示のみ確認可能。操作は Staging で確認する |
 | 3 | 新 UI の見た目（レイアウト・配色） | DOM のみ確認 | 所有者の実ブラウザ確認が必要 |
 | 4 | Access JWT の検証経路 | 未検証 | 既存の Access 設定に依存。変更なし |
@@ -128,10 +151,10 @@ run `43849251086`（head `ba8d092`、event=push）= **success**（2026-11-16 19:
 
 ## 8. リリース判定
 
-- **本番配備は未実施**。AGENTS.md §6 と Super-Agent 共通規約により、本番 deploy は人間の承認を要する。
+- **本番配備は実施済み**（2026-11-16 20:07、所有者の選択 1）。認証後の書き込み受入と QA 門禁は別途。
 - QA Workbench（`~/.dsh/dsh-qa`）の「運用統合UI切替 2026-11-11（P0）」は、要件・テストケースの門禁が承認済み、報告書は draft、release 門禁は未申請。
-- 既知の minor 欠陥「P0 報告/テストケースの本番 commit 期待値 `1e2607c` が現行本番 `62ee854` と不一致」は未クローズ。本修正の配備後に報告書を現行 commit へ更新する必要がある。
-- 本番配備の可否は、§7 の未検証事項（特に本番書き込みを伴う受入）をどう扱うかと合わせて所有者が判断する。
+- 既知の minor 欠陥「P0 報告/テストケースの本番 commit 期待値 `1e2607c` が現行本番（配備後 `ba8d092`）と不一致」は未クローズ。報告書を配備後の commit へ更新する必要がある。
+- §7 の未検証事項（特に本番書き込みを伴う受入）の扱いは所有者が判断する。
 
 ## 9. 参照
 
