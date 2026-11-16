@@ -118,7 +118,33 @@ run `43849251086`（head `ba8d092`、event=push）= **success**（2026-11-16 19:
 | 配備物の内容 | 新バナー CSS・`data-aihd-readonly-guard`・`retryWhileStarting`・`isDefaultSettings` を確認 |
 | ロールバック先 | `releases/20261111T224744-62ee854e1060` が残存 |
 
-- 本番 DB への書き込みを伴う操作（受付・引継ぎ・承認・設定保存・緊急停止）は、この配備では行っていない（§7）。
+- 本番 DB への書き込みを伴う操作は、配備直後には行っていない。認証後の受入で実施した結果は §5-3 に記録する。
+
+### 5-3. 認証後の受入（2026-11-16 20:31〜20:33 JST）
+
+Cloudflare Access のワンタイムコードで認証し、Playwright（headless Chrome）で実行した（アドレス・コード・Cookie は記録しない）。
+所有者の承認（選択 1, 2）に基づく。認証は所有者が受信したコードを使用しており、AI が認証を代行・偽装したものではない。
+
+| # | 確認 | 結果 |
+|---|---|---|
+| 1 | 12 画面の切替 | 12 件すべて表示、pageerror 0、console error 0（title「AIヘルプデスク 運用統合」） |
+| 2 | 移行バナー | 現行文言を表示（実データ／`/legacy`／未実装・疑似） |
+| 3 | システム設定の既定値表示 | 「すべて既定値です」= true、「変更されています」= false |
+| 4 | `/api/ops/status` | `env=production` / `commit=ba8d092` / `estop=false` / `audit.ok=true`（83 行） |
+| 5 | `/legacy?ro=1` | アプリ由来の non-GET **0**（PUT /api/state・POST /api/device/browser なし）。エッジの Cloudflare RUM beacon POST 1 件のみ。pageerror 0 |
+| 6 | 受付→AI→引継ぎ→解決→クローズ | `OPS-1001` を作成（200）。AI 200（provider=deepseek、回答 64 文字）。escalated→in_progress→resolved→closed すべて 200。DB: status=closed、ai_provider=deepseek、cause/steps/minutes、messages 6 |
+| 7 | 設定の保存→リセット | thHigh 0.5 を保存→GET 0.5→既定値へ戻す→GET 0.42（他項目も既定値）。DB `ops_settings.value->thHigh = 0.42` |
+| 8 | 緊急停止 | 有効→`estop.active=true`→解除→`false`。DB `ops_estop.active=false` |
+| 9 | 監査 | 直近 10 分に create / status / claim / resolve / settings.update ×3 / estop.on / estop.off を記録（audit.ok=true、83→93 行） |
+
+後始末:
+
+- テスト案件 `OPS-1001` は **closed** で残置（削除 API はない）。
+- 設定は既定値へ復元済み（`ops_settings` の行が 1 行存在。値は既定値）。
+- 緊急停止は解除済み。
+- 認証用の一時ファイル（Cookie 状態・コード）は削除済み。
+
+証跡: `docs/evidence/release-recheck-20261116/lead/prod-authenticated-acceptance.txt`
 
 ## 6. 監視・復旧
 
@@ -135,14 +161,17 @@ run `43849251086`（head `ba8d092`、event=push）= **success**（2026-11-16 19:
 
 | # | 項目 | 状態 | 扱い |
 |---|---|---|---|
-| 1 | 本番 DB への書き込みを伴う受入（受付・引継ぎ・承認・設定保存・緊急停止） | 未検証（配備は完了） | 承認済みの範囲で 1 件ずつ確認する |
-| 2 | 旧 UI（`/legacy`）の主要操作 | 未検証 | `?ro=1` で表示のみ確認可能。操作は Staging で確認する |
-| 3 | 新 UI の見た目（レイアウト・配色） | DOM のみ確認 | 所有者の実ブラウザ確認が必要 |
+| 1 | 本番 DB への書き込みを伴う受入（受付・AI・引継ぎ・解決・クローズ・設定保存・緊急停止） | **一部 PASS**（§5-3）。ナレッジ承認は未検証 | 承認業務は実データで未実施のため、必要なら別途確認する |
+| 2 | 旧 UI（`/legacy`）の主要操作 | 表示のみ確認（`?ro=1`）。操作は未検証 | 操作は Staging で確認する |
+| 3 | 新 UI の見た目（レイアウト・配色） | DOM のみ確認（12 画面・pageerror 0） | 所有者の実ブラウザで見た目を確認する |
 | 4 | Access JWT の検証経路 | 未検証 | 既存の Access 設定に依存。変更なし |
 | 5 | 本番のロールバック訓練（現行 release → 直前） | 未実施 | 次回メンテナンスで実施 |
 | 6 | 901px 未満のバナー位置 | 初期表示外（本文は覆わない） | 受容（§7-1） |
 | 7 | `?ro=1` は読み取り目的の POST も拒否 | 仕様（安全側） | 受容（§7-1） |
 | 8 | QA Workbench の release 門禁（現行 commit） | 未申請 | 所有者の判定が必要（§8） |
+| 9 | `/legacy?ro=1` の Cloudflare RUM beacon POST | 1 件（`/cdn-cgi/rum`。アプリ由来でない） | 受容（エッジ計測。アプリの状態・端末情報ではない） |
+| 10 | 新 UI ナビ下部の注記「データはこのブラウザ内（localStorage）に保存されます」 | 旧デモの文言が残存（実データは PostgreSQL） | 機能影響なし。次回の文言修正で直す |
+| 11 | テスト案件 `OPS-1001`（closed）と `ops_settings` の既定値行 1 件 | 残置 | 監査証跡として保持。不要なら所有者が削除を判断する |
 
 ### 7-1. 受容した事項
 
@@ -151,10 +180,10 @@ run `43849251086`（head `ba8d092`、event=push）= **success**（2026-11-16 19:
 
 ## 8. リリース判定
 
-- **本番配備は実施済み**（2026-11-16 20:07、所有者の選択 1）。認証後の書き込み受入と QA 門禁は別途。
+- **本番配備は実施済み**（2026-11-16 20:07、所有者の選択 1）。認証後の受入（画面・書き込み）も §5-3 で実施済み。QA 門禁は別途。
 - QA Workbench（`~/.dsh/dsh-qa`）の「運用統合UI切替 2026-11-11（P0）」は、要件・テストケースの門禁が承認済み、報告書は draft、release 門禁は未申請。
 - 既知の minor 欠陥「P0 報告/テストケースの本番 commit 期待値 `1e2607c` が現行本番（配備後 `ba8d092`）と不一致」は未クローズ。報告書を配備後の commit へ更新する必要がある。
-- §7 の未検証事項（特に本番書き込みを伴う受入）の扱いは所有者が判断する。
+- §7 の残項目（ナレッジ承認、旧 UI 主要操作、見た目、Access JWT、ロールバック訓練）の扱いは所有者が判断する。
 
 ## 9. 参照
 
