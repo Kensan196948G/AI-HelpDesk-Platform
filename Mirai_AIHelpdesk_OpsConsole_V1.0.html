@@ -1189,7 +1189,7 @@ function renderNav(){
   if(n[0]==='sep')return '<div class="sep"></div>';
   const c=cnt[n[0]];
   return `<a class="${ui.view===n[0]?'on':''}" onclick="App.go('${n[0]}')"><span class="ni">${I(n[2])}</span><span class="lb">${n[1]}</span>${c?`<span class="cnt ${c[1]&&c[0]?'hot':''}">${c[0]}</span>`:''}</a>`;
- }).join('')+`<div class="navnote">${I('lock','sm')}<span>AIは回答・下書き・反映処理を担い、ナレッジの正式化は必ず人間が承認します。データはこのブラウザ内（localStorage）に保存されます。</span></div>`;
+ }).join('')+`<div class="navnote">${I('lock','sm')}<span>AIは回答・下書き・反映処理を担い、ナレッジの正式化は必ず人間が承認します。データはサーバ（PostgreSQL）に保存されます。画面の表示状態の一部はこのブラウザにも保持されます。</span></div>`;
  const eb=$('#estopbar');if(eb){eb.classList.toggle('on',!!state.estop);eb.innerHTML=state.estop?I('stop')+'緊急停止中：相談者PCへのリモート接続と指示の実行を止めています（受付・AI一次対応・ナレッジ業務は利用できます）。解除はセキュリティ担当または承認者のみ。':''}
  const st=$('#aistat');if(st){const n=busy.size;st.className='live'+(n?' busy':'');st.innerHTML=`<i class="ld"></i>${n?`AI処理中 ${n}件`:'AI 待機中'}`}
 }

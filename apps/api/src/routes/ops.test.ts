@@ -53,6 +53,12 @@ describe('運用統合 UI（/ops）の配信', () => {
     expect(MIGRATION_BANNER).not.toContain('SecOpsの監査');
   });
 
+  it('ナビ下部の保存先の注記はサーバ保存を示す（旧 localStorage 表記を残さない）', async () => {
+    const response = await app.inject({ method: 'GET', url: '/ops' });
+    expect(response.body).toContain('データはサーバ（PostgreSQL）に保存されます。');
+    expect(response.body).not.toContain('データはこのブラウザ内（localStorage）に保存されます。');
+  });
+
   it('操作者は Access の本人（モックのログイン画面を使わない）', async () => {
     const response = await app.inject({ method: 'GET', url: '/ops' });
     const boot = /window\.__OPS_BOOT__=(\{.*?\});<\/script>/s.exec(response.body)?.[1];
