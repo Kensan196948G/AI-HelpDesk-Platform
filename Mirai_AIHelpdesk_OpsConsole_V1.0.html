@@ -1614,6 +1614,10 @@ function skillMd(c){
 /* ===================== システム設定・DevOps・SecOps ===================== */
 const DEF_SET={thHigh:.42,thLow:.22,candMin:.1,sla:{P1:60,P2:240,P3:480,P4:4320},std:{forti:'7.2.10',dc:'5.4.2'},pc:true,remote:true,motion:true};
 function getSettings(){const x=state.settings||{};return Object.assign({},DEF_SET,x,{sla:Object.assign({},DEF_SET.sla,x.sla),std:Object.assign({},DEF_SET.std,x.std)})}
+/* 既定値のままかを値で判定する（state.settings の有無では判定しない。サーバは保存行が無くても既定値を返す）。
+   既知のキーだけを比較し、余分なキーや jsonb のキー順で誤判定しない。 */
+function settingsKey(x){return JSON.stringify([x.thHigh,x.thLow,x.candMin,x.sla.P1,x.sla.P2,x.sla.P3,x.sla.P4,x.std.forti,x.std.dc,!!x.pc,!!x.remote,!!x.motion])}
+function isDefaultSettings(){return settingsKey(getSettings())===settingsKey(DEF_SET)}
 function applySettings(){const x=getSettings();TH_HIGH=x.thHigh;TH_LOW=x.thLow;CAND_MIN=x.candMin;Object.assign(SLA,x.sla);Object.assign(STD,x.std);RM=RM0||!x.motion;document.documentElement.classList.toggle('nomotion',!x.motion)}
 const isAdmin=n=>isApprover(n);
 const canRelease=n=>isApprover(n)||n==='伊藤';
@@ -1743,7 +1747,7 @@ V.settings=function(){
  const foot=`${gate}<div class="btns"><button class="btn" ${dis} onclick="App.saveSettings()">${I('save')}設定を保存</button><button class="btn ghost" ${dis} onclick="App.resetSettings()">${I('undo')}既定値に戻す</button><span class="hint">${I('audit','sm')} 変更は監査ログに記録されます</span></div>`;
  const cur=[['target','AI判定',`${pct(x.thHigh)}／${pct(x.thLow)}／${pct(x.candMin)}`],['clock','SLA（分）',`${x.sla.P1}／${x.sla.P2}／${x.sla.P3}／${x.sla.P4}`],['monitor','PC情報の取得',x.pc?'有効':'無効'],['wifi','リモート対応',x.remote?'有効':'無効'],['layers','社内指定版',`Forti ${x.std.forti}／DC ${x.std.dc}`],['sparkles','アニメーション',x.motion?'表示':'停止']];
  return `${pageHead('sliders','システム設定','AI判定のしきい値、SLA、PC情報とリモート対応、表示を設定します。変更できるのは承認者で、変更は監査ログに残ります。','n')}
- <div class="op lr"><div class="lcol cmp-l"><div class="sec-h" style="margin:2px 0 0">${I('eye','sm')}現在の設定</div><div class="list">${cur.map((c,i)=>`<div class="li" style="--i:${i}"><span class="aic" style="--cc:var(--accent)">${I(c[0])}</span><div class="bd"><div class="t">${c[1]}</div><div class="hint">${esc(c[2])}</div></div></div>`).join('')}</div>${state.settings?`<div class="hint">${I('info','sm')} 既定値から変更されています</div>`:`<div class="hint">${I('check','sm')} すべて既定値です</div>`}</div>
+ <div class="op lr"><div class="lcol cmp-l"><div class="sec-h" style="margin:2px 0 0">${I('eye','sm')}現在の設定</div><div class="list">${cur.map((c,i)=>`<div class="li" style="--i:${i}"><span class="aic" style="--cc:var(--accent)">${I(c[0])}</span><div class="bd"><div class="t">${c[1]}</div><div class="hint">${esc(c[2])}</div></div></div>`).join('')}</div>${isDefaultSettings()?`<div class="hint">${I('check','sm')} すべて既定値です</div>`:`<div class="hint">${I('info','sm')} 既定値から変更されています</div>`}</div>
  ${tabs('settings',[['ai','AI判定','target',aiP],['sla','SLA','clock',slaP],['pc','PC・リモート','monitor',pcP],['ui','表示','sun',uiP],['usr','操作者・権限','users',usP]],'ai',null,foot)}</div>`;
 };
 
@@ -1966,9 +1970,26 @@ const App={
  },
  resetSettings(){
   if(!isAdmin(state.actor)){toast('システム設定を変更できるのは承認者です','bad','lock');return}
-  if(!state.settings){toast('すでに既定値です');return}
+  if(isDefaultSettings()){toast('すでに既定値です');return}
   if(!confirm('システム設定を既定値に戻します。よろしいですか？'))return;
-  delete state.settings;applySettings();audit('設定変更','','既定値に戻す');save();render();toast('既定値に戻しました','ok','undo');
+  const defaults=JSON.parse(JSON.stringify(DEF_SET));
+  state.settings=defaults;applySettings();
+  /* 既定値もサーバの 1 行へ保存する（画面だけ戻して再読込で復活する状態を残さない）。 */
+  fetch('/api/ops/settings',{method:'PUT',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify(defaults)})
+   .then(function(r){return r.json().then(function(j){return {ok:r.ok,body:j}})})
+   .then(function(res){
+    if(!res.ok){
+     toast((res.body&&res.body.error&&res.body.error.message)||'設定をサーバに保存できませんでした','bad','lock');
+     fetch('/api/ops/settings',{credentials:'include'}).then(function(r){return r.json()}).then(function(j){if(j&&j.settings){state.settings=j.settings;applySettings();render()}}).catch(function(){});
+     return;
+    }
+    state.settings=res.body.settings;applySettings();audit('設定変更','','既定値に戻す');save();render();toast('既定値に戻しました','ok','undo');
+   })
+   .catch(function(){
+    toast('設定をサーバに保存できませんでした','bad');
+    /* 通信失敗でも、画面だけ既定値のままにしない（再読込との食い違いを残さない）。 */
+    fetch('/api/ops/settings',{credentials:'include'}).then(function(r){return r.json()}).then(function(j){if(j&&j.settings){state.settings=j.settings;applySettings();render()}}).catch(function(){});
+   });
  },
  showKb(id){ui.kbNew=id;ui.kbq='';ui.kbcat='';App.go('kb')},
  rd(id){const t=tk(id);if(!t||!$('#r_cause'))return;t.rd={cause:$('#r_cause').value,steps:$('#r_steps').value,min:$('#r_min').value,note:$('#r_note').value}},
@@ -2196,7 +2217,7 @@ try{const __b=window.__OPS_BOOT__;if(__b){
   });
  }
  if(__b.state&&__b.state.settings&&typeof __b.state.settings==='object'){state.settings=__b.state.settings;try{applySettings()}catch(e){}}
- if(__b.banner){var __bd=document.createElement('div');__bd.id='ops-migration-banner';__bd.setAttribute('role','status');__bd.textContent=__b.banner;__bd.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:90;padding:7px 12px;font:12px/1.45 system-ui,-apple-system,"Hiragino Sans",sans-serif;background:#fbf0dc;color:#5a3a00;border-top:1px solid #e6c98a;text-align:center';
+ if(__b.banner){var __bd=document.createElement('div');__bd.id='ops-migration-banner';__bd.setAttribute('role','status');__bd.textContent=__b.banner;__bd.style.cssText='flex:none;padding:7px 12px;font:12px/1.45 system-ui,-apple-system,"Hiragino Sans",sans-serif;background:#fbf0dc;color:#5a3a00;border-top:1px solid #e6c98a;text-align:center';
   document.body.appendChild(__bd)}
  if(__b.server){
   /* 受付: 実 DB に 1 件作成してから画面へ反映する（P2）。 */

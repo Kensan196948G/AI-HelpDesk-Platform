@@ -38,6 +38,21 @@ describe('運用統合 UI（/ops）の配信', () => {
     expect(html).not.toContain('window.__AIHD_BOOT__');
   });
 
+  it('移行バナーは実データ接続済み・/legacy 残置・未実装（疑似）を区別して示す', () => {
+    // 実データ接続済みであること（詳細な画面列挙は docs/101 §7・docs/102 §6-3 を正とする）。
+    expect(MIGRATION_BANNER).toContain('実データ');
+    // 旧 UI 専用の機能は /legacy に残っていることを明示する。
+    expect(MIGRATION_BANNER).toContain('/legacy');
+    expect(MIGRATION_BANNER).toContain('強制切断');
+    // 未実装・疑似の項目を実装済みと書かない（AGENTS.md §5）。
+    expect(MIGRATION_BANNER).toMatch(/未実装/);
+    expect(MIGRATION_BANNER).toMatch(/疑似/);
+    // 陳腐化した文言（「その他の画面は順次接続します」）を残さない。
+    expect(MIGRATION_BANNER).not.toContain('その他の画面は順次接続します');
+    // 画面に実装の無い監査鎖を「監査」とだけ書かない（受入指摘 P2-3）。
+    expect(MIGRATION_BANNER).not.toContain('SecOpsの監査');
+  });
+
   it('操作者は Access の本人（モックのログイン画面を使わない）', async () => {
     const response = await app.inject({ method: 'GET', url: '/ops' });
     const boot = /window\.__OPS_BOOT__=(\{.*?\});<\/script>/s.exec(response.body)?.[1];
