@@ -146,6 +146,13 @@ Cloudflare Access のワンタイムコードで認証し、Playwright（headles
 
 証跡: `docs/evidence/release-recheck-20261116/lead/prod-authenticated-acceptance.txt`
 
+### 5-4. 追加の文言修正（PR #198）
+
+新 UI のナビ下部に残っていた「データはこのブラウザ内（localStorage）に保存されます」を、実態に合わせて
+「データはサーバ（PostgreSQL）に保存されます。画面の表示状態の一部はこのブラウザにも保持されます。」へ修正する。
+画面の保存先を誤認させる文言であり、AGENTS.md §5（未実装・実態と異なる表示をしない）に合わせる。
+テスト（ops 1 件）を追加し、マージ後に Staging へ配備する。本番配備は別承認とする。
+
 ## 6. 監視・復旧
 
 | 項目 | 実測 |
@@ -170,7 +177,7 @@ Cloudflare Access のワンタイムコードで認証し、Playwright（headles
 | 7 | `?ro=1` は読み取り目的の POST も拒否 | 仕様（安全側） | 受容（§7-1） |
 | 8 | QA Workbench の release 門禁（現行 commit） | 未申請 | 所有者の判定が必要（§8） |
 | 9 | `/legacy?ro=1` の Cloudflare RUM beacon POST | 1 件（`/cdn-cgi/rum`。アプリ由来でない） | 受容（エッジ計測。アプリの状態・端末情報ではない） |
-| 10 | 新 UI ナビ下部の注記「データはこのブラウザ内（localStorage）に保存されます」 | 旧デモの文言が残存（実データは PostgreSQL） | 機能影響なし。次回の文言修正で直す |
+| 10 | 新 UI ナビ下部の保存先の注記 | **修正済み**（PR #198）。「データはサーバ（PostgreSQL）に保存されます。画面の表示状態の一部はこのブラウザにも保持されます。」 | — |
 | 11 | テスト案件 `OPS-1001`（closed）と `ops_settings` の既定値行 1 件 | 残置 | 監査証跡として保持。不要なら所有者が削除を判断する |
 
 ### 7-1. 受容した事項
