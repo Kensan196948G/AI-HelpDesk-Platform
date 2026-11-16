@@ -1,0 +1,42 @@
+# 本番配備 81ee7e6（2026-11-16 21:04〜21:05 JST）
+
+所有者の承認（選択 1）。事前バックアップ ai_helpdesk_preview-20261116-210446.dump（285,979 B）。
+
+## 配備
+```
+unit installed from template: /home/kensan/.config/systemd/user/ai-helpdesk-prod-api.service
+DEPLOY_RECORD /home/kensan/ai-helpdesk-prod/state/deploy-20261116T210454-81ee7e662140.json
+deploy: OK 20261116T210454-81ee7e662140 (commit=81ee7e6621408095c4f861b7e133dfa61c6778f0)
+prune: removed old release 20261111T224744-62ee854e1060
+```
+
+## release / health
+```
+/home/kensan/ai-helpdesk-prod/releases/20261116T210454-81ee7e662140
+20261116T200711-ba8d092ce5e6
+20261116T210454-81ee7e662140
+{"ok":true,"service":"ai-helpdesk-api","version":"0.1.0","commit":"81ee7e6621408095c4f861b7e133dfa61c6778f0","db":"ok","time":"2026-11-16T12:05:57.543Z","env":"production"}
+```
+
+## 配備物
+```
+new_phrase=2 old_phrase=0
+```
+
+## ops-readiness
+```json
+{"schemaVersion":1,"ok":true,"code":"REQUESTED_CHECKS_PASSED","exitCode":0,"checks":{"localHealth":{"ok":true,"code":"HEALTH_OK"},"localUnauthenticated":{"ok":true,"code":"UNAUTHENTICATED_401"},"publicAccess":{"ok":null,"code":"NOT_REQUESTED","authenticatedAcceptance":"NOT_VERIFIED"},"backup":{"ok":null,"code":"NOT_REQUESTED","restoreProof":"NOT_VERIFIED","provenance":"NOT_VERIFIED"}},"limitations":["HEALTH_SELF_REPORT_ONLY","AUTHENTICATED_ACCESS_NOT_VERIFIED","BACKUP_RESTORE_NOT_VERIFIED","BACKUP_PROVENANCE_NOT_VERIFIED"]}
+
+```
+
+## DB（読み取り専用）・journal・公開 URL
+```
+migrations=45
+ops_tables=6
+settings_thHigh=0.42
+estop_active=false
+audit_rows=93
+ticket=OPS-1001:closed
+level50_5xx_since_2104=0
+public_http=302
+```

@@ -180,7 +180,8 @@ systemctl --user restart ai-helpdesk-prod-api
 | 2026-11-11 22:48 | 本番 | `20261111T224744-62ee854e1060` | 稼働中（2026-11-13 観測） | 同上。unit 起動 22:48:00、`NRestarts=0`。直前ダンプ `ai_helpdesk_preview-20261111-224710.dump`（283,777 bytes） |
 | 2026-11-16 19:29 | Staging | `20261116T192926-ba8d092ce5e6` | 成功 | PR #194（受入指摘の修正）。`--migrate` は 45 件すべて skip（スキーマ変更なし）。health `commit=ba8d092` / `db=ok`、ops-readiness exit 0、healthcheck success。[docs/103](103-release-recheck-20261116.md) |
 | 2026-11-16 20:07 | 本番 | `20261116T200711-ba8d092ce5e6` | 成功 | 所有者の承認（選択 1）。`--migrate` は 45 件 skip。health `commit=ba8d092` / `db=ok`、readiness exit 0、level=50 0・5xx 0、`NRestarts=0`。事前ダンプ `ai_helpdesk_preview-20261116-200702.dump`（283,779 B）。ロールバック先 `20261111T224744-62ee854e1060` は残存 |
-| 2026-11-16 20:54 | Staging | `20261116T205417-81ee7e662140` | 成功 | PR #198（ナビ下部の保存先注記をサーバ保存の実態へ）。`--migrate` は 45 件 skip。health `commit=81ee7e6` / `db=ok`、配備物に新文言あり・旧文言なし。本番は `ba8d092` のまま（この修正は次回の本番配備に含める） |
+| 2026-11-16 20:54 | Staging | `20261116T205417-81ee7e662140` | 成功 | PR #198（ナビ下部の保存先注記をサーバ保存の実態へ）。`--migrate` は 45 件 skip。health `commit=81ee7e6` / `db=ok`、配備物に新文言あり・旧文言なし。本番は同日 21:05 に同 commit へ配備（次行） |
+| 2026-11-16 21:05 | 本番 | `20261116T210454-81ee7e662140` | 成功 | 所有者の承認（選択 1）。`--migrate` は 45 件 skip。health `commit=81ee7e6` / `db=ok`、readiness exit 0、level=50 0・5xx 0、`NRestarts=0`。配備物に新文言あり・旧文言なし。事前ダンプ `ai_helpdesk_preview-20261116-210446.dump`（285,979 B）。ロールバック先 `20261116T200711-ba8d092ce5e6` は残存 |
 
 事後確認（2026-11-11 20:14 JST）:
 
