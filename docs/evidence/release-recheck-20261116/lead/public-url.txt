@@ -1,0 +1,10 @@
+# 公開 URL の Access 保護（2026-11-16 19:00 JST・未認証）
+
+トークン・クエリは記録しない。
+
+| URL | 応答 | 遷移先ホスト |
+|---|---|---|
+| https://ai-helpdesk.mirai-dx-platform.com/ | 302 | https://winter-lake-f4c9.cloudflareaccess.com |
+| https://ai-helpdesk-stg.mirai-dx-platform.com/ | 302 | https://winter-lake-f4c9.cloudflareaccess.com |
+
+未認証では Cloudflare Access のログイン（onetimepin）へ 302 することを確認した。認証後の受入は本点検の対象外。

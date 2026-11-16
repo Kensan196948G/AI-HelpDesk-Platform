@@ -178,6 +178,7 @@ systemctl --user restart ai-helpdesk-prod-api
 | 2026-11-11 20:13 | Staging | `20261111T201339-1e2607ca7d71` | 成功（再実行） | `stg-api.conf` + `--unit-template` で再配備。migrations 45、health `commit=1e2607c`、stg healthcheck ok |
 | 2026-11-11 22:47 | Staging | `20261111T224719-62ee854e1060` | 稼働中（2026-11-13 観測） | PR #191。新規 migration なし。unit 起動 22:47:35。配備時のログではなく事後観測からの記録（[docs/102](102-release-prep-20261113.md) §1） |
 | 2026-11-11 22:48 | 本番 | `20261111T224744-62ee854e1060` | 稼働中（2026-11-13 観測） | 同上。unit 起動 22:48:00、`NRestarts=0`。直前ダンプ `ai_helpdesk_preview-20261111-224710.dump`（283,777 bytes） |
+| 2026-11-16 19:29 | Staging | `20261116T192926-ba8d092ce5e6` | 成功 | PR #194（受入指摘の修正）。`--migrate` は 45 件すべて skip（スキーマ変更なし）。health `commit=ba8d092` / `db=ok`、ops-readiness exit 0、healthcheck success。**本番は未配備（承認待ち）**。[docs/103](103-release-recheck-20261116.md) |
 
 事後確認（2026-11-11 20:14 JST）:
 

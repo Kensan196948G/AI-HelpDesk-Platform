@@ -1,0 +1,27 @@
+# 2026-11-16 12:36 ホスト再起動時の起動順序（journal 抜粋）
+
+ホスト: 2026-11-16 12:36:56 起動（`uptime -s`）。カーネル 7.0.0-43 へ更新。
+prod/stg API はいずれも 12:37:09〜10 に起動（NRestarts=0）。
+
+## 本番 API の起動ログ（抜粋・パスはそのまま）
+```
+11月 16 12:37:09 kensan1969 systemd[2539]: Started ai-helpdesk-prod-api.service - AI HelpDesk Production API (127.0.0.1:18950, immutable release).
+11月 16 12:37:14 kensan1969 node[3114]: [config] アクセス許可リスト: /home/kensan/.config/ai-helpdesk/access-allowlist.txt（Cloudflare Access の allow ポリシーと同じ内容にすること）
+11月 16 12:37:18 kensan1969 node[3114]: {"level":30,"file":"/home/kensan/.config/ai-helpdesk/access-allowlist.txt","emails":2,"domains":1,"msg":"アクセス許可リストを読み込みました。"}
+11月 16 12:37:18 kensan1969 node[3114]: {"level":50,"err":{"type":"Error","message":"connect ECONNREFUSED 127.0.0.1:5435","stack":"Error: connect ECONNREFUSED 127.0.0.1:5435\n    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)\n    at cachedError (file:///home/kensan/ai-helpdesk-prod/releases/20261111T224744-62ee854e1060/node_modules/postgres/src/query.js:170:23)\n    at new Que
+11月 16 12:37:19 kensan1969 node[3114]: {"level":30,"transport":"smtp:smtp.gmail.com:587","msg":"メール通知の送信手段"}
+11月 16 12:37:19 kensan1969 node[3114]: {"level":30,"msg":"Server listening at http://127.0.0.1:18950"}
+11月 16 12:37:19 kensan1969 node[3114]: {"level":30,"port":18950,"host":"127.0.0.1","nodeEnv":"production","commit":"62ee854e106065ccb9f038dab76287ac18f71a9a","db":"postgresql://.../ai_helpdesk_preview","msg":"AI HelpDesk API started"}
+11月 16 12:37:19 kensan1969 node[3114]: {"level":40,"err":{"type":"Error","message":"connect ECONNREFUSED 127.0.0.1:5435","stack":"Error: connect ECONNREFUSED 127.0.0.1:5435\n    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)","errno":-111,"code":"ECONNREFUSED","syscall":"connect","address":"127.0.0.1","port":5435},"msg":"引継ぎ通知メールの送信に失敗しました�
+```
+
+## Staging PostgreSQL の起動（同時刻）
+```
+11月 16 12:37:09 kensan1969 systemd[2539]: Starting ai-helpdesk-stg-postgres.service - AI HelpDesk Staging PostgreSQL 16 (loopback only)...
+11月 16 12:37:10 kensan1969 systemd[2539]: Started ai-helpdesk-stg-postgres.service - AI HelpDesk Staging PostgreSQL 16 (loopback only).
+```
+
+## 事実
+- 本番 API は起動直後の `ensureSkillCatalog()` で `ECONNREFUSED 127.0.0.1:5435` を 1 回記録（level=50）。
+- その後 `Server listening` と `db=ok` は正常。HTTP は起動済みだが、Skill カタログ同期は次回再起動まで行われない状態だった。
+- 対応: `retryWhileStarting()`（最大5回・250/500/1000/2000ms、既知の DB 起動待ちコードのみ）を追加。
