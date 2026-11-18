@@ -181,3 +181,12 @@
   - 画面のプロフィールには**ログインに使ったメール**（`loginEmail`）を表示し、内部の状態は primary を使う。
 - 許可リスト（`PERSONA_SWITCH_ALLOWLIST`）は正規化後のメールで照合する（別名側に書いても同じ扱い）。
 - 別名は秘密ではないが、設定ファイル（`~/.config/ai-helpdesk/api.conf`・0600）に置き、リポジトリには実値を書かない。
+
+## 依存監査の期限付き例外（2026-11-18）
+
+- 依存監査は High/Critical を不合格にする。上流に**修正版が存在しない**勧告だけを、`docs/security/audit-exceptions.json` に限定列挙して期限付きで許可する（`scripts/audit-gate.mjs`）。
+- 例外の条件: 勧告 ID（GHSA）一致・scope（dev / runtime）一致・期限が未来・理由と承認者が非空。期限切れ・理由なし・承認者なしの例外は**無効（fail-closed）**。
+- `runtime` 監査に `dev` 例外は適用しない（本番ランタイムの依存は別扱い）。
+- 現在の例外: `GHSA-fc5q-39xc-vjpf`（picomatch ≤ 4.0.7 の ReDoS、修正版未リリース、`devDependencies` 経由のみ、期限 2026-12-31）。
+- 修正版が公開されたら依存を更新して例外を削除する。
+- 適用状況: `scripts/audit-gate.mjs`・ユニットテスト・例外ファイルを追加済み。CI の監査ステップをこのゲートへ差し替える変更は配備系（`.github/workflows`）の変更として**所有者の承認**を要するため、**未適用**（差し替えまでは従来の `npm audit --audit-level=high` が動く）。
