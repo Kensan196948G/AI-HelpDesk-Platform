@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { advisoryIdFromUrl, evaluateAudit, normalizeExceptions, reachableAdvisories, collectDirectAdvisories } from './audit-gate.mjs';
+import {
+  advisoryIdFromUrl,
+  collectDirectAdvisories,
+  evaluateAudit,
+  normalizeExceptions,
+  reachableAdvisories,
+} from './audit-gate.mjs';
 
 const advisory = (id, overrides = {}) => ({
   source: 1,
@@ -29,14 +35,18 @@ function reportWith(vulnerabilities) {
 
 describe('advisoryIdFromUrl', () => {
   it('GHSA ID を大文字で抽出する', () => {
-    expect(advisoryIdFromUrl('https://github.com/advisories/GHSA-fc5q-39xc-vjpf')).toBe('GHSA-FC5Q-39XC-VJPF');
+    expect(advisoryIdFromUrl('https://github.com/advisories/GHSA-fc5q-39xc-vjpf')).toBe(
+      'GHSA-FC5Q-39XC-VJPF',
+    );
     expect(advisoryIdFromUrl('https://example.com/x')).toBeNull();
   });
 });
 
 describe('normalizeExceptions', () => {
   it('不正な ID を捨て、scope の既定を dev にする', () => {
-    const list = normalizeExceptions({ exceptions: [{ id: 'nope' }, { id: 'GHSA-aaaa-bbbb-cccc' }] });
+    const list = normalizeExceptions({
+      exceptions: [{ id: 'nope' }, { id: 'GHSA-aaaa-bbbb-cccc' }],
+    });
     expect(list).toHaveLength(1);
     expect(list[0].scope).toBe('dev');
   });
@@ -44,13 +54,19 @@ describe('normalizeExceptions', () => {
 
 describe('evaluateAudit', () => {
   it('例外の無い High はブロックする', () => {
-    const result = evaluateAudit(reportWith({ picomatch: { severity: 'high', via: [advisory('GHSA-fc5q-39xc-vjpf')] } }), []);
+    const result = evaluateAudit(
+      reportWith({ picomatch: { severity: 'high', via: [advisory('GHSA-fc5q-39xc-vjpf')] } }),
+      [],
+    );
     expect(result.ok).toBe(false);
     expect(result.blocking.map((item) => item.name)).toEqual(['picomatch']);
   });
 
   it('有効な期限付き例外がある High は許可する', () => {
-    const result = evaluateAudit(reportWith({ picomatch: { severity: 'high', via: [advisory('GHSA-fc5q-39xc-vjpf')] } }), [validException()]);
+    const result = evaluateAudit(
+      reportWith({ picomatch: { severity: 'high', via: [advisory('GHSA-fc5q-39xc-vjpf')] } }),
+      [validException()],
+    );
     expect(result.ok).toBe(true);
     expect(result.excepted.map((item) => item.name)).toEqual(['picomatch']);
   });
@@ -89,12 +105,19 @@ describe('evaluateAudit', () => {
     });
     const result = evaluateAudit(report, [validException()]);
     expect(result.ok).toBe(true);
-    expect(result.excepted.map((item) => item.name).sort()).toEqual(['fdir', 'picomatch', 'tinyglobby']);
+    expect(result.excepted.map((item) => item.name).sort()).toEqual([
+      'fdir',
+      'picomatch',
+      'tinyglobby',
+    ]);
   });
 
   it('multiple 勧告のうち 1 つでも未承認ならブロックする', () => {
     const report = reportWith({
-      vite: { severity: 'high', via: [advisory('GHSA-fc5q-39xc-vjpf'), advisory('GHSA-zzzz-zzzz-zzzz')] },
+      vite: {
+        severity: 'high',
+        via: [advisory('GHSA-fc5q-39xc-vjpf'), advisory('GHSA-zzzz-zzzz-zzzz')],
+      },
     });
     const result = evaluateAudit(report, [validException()]);
     expect(result.ok).toBe(false);
@@ -109,7 +132,10 @@ describe('evaluateAudit', () => {
   });
 
   it('moderate / low はブロックしない', () => {
-    const result = evaluateAudit(reportWith({ x: { severity: 'moderate', via: [advisory('GHSA-aaaa-bbbb-cccc')] } }), []);
+    const result = evaluateAudit(
+      reportWith({ x: { severity: 'moderate', via: [advisory('GHSA-aaaa-bbbb-cccc')] } }),
+      [],
+    );
     expect(result.ok).toBe(true);
     expect(result.ignored.map((item) => item.name)).toEqual(['x']);
   });
