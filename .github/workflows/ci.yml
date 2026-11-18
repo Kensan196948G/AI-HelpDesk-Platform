@@ -56,12 +56,18 @@ jobs:
       - name: Secret scan
         run: bash scripts/scan-secrets.sh
 
+      # 依存監査: High/Critical を落とす。上流に修正版が無い勧告だけは
+      # docs/security/audit-exceptions.json の期限付き例外で許可する（runtime 監査に dev 例外は適用しない）。
       - name: Dependency audit (runtime, high+)
-        run: npm audit --omit=dev --audit-level=high
+        run: |
+          npm audit --omit=dev --json > "$RUNNER_TEMP/audit-runtime.json" || true
+          node scripts/audit-gate.mjs "$RUNNER_TEMP/audit-runtime.json" --scope runtime
 
       # devDependencies の Critical/High も落とす（CI・開発端末で実行されるため）。
       - name: Dependency audit (all deps, high+)
-        run: npm audit --audit-level=high
+        run: |
+          npm audit --json > "$RUNNER_TEMP/audit-all.json" || true
+          node scripts/audit-gate.mjs "$RUNNER_TEMP/audit-all.json" --scope all
 
       - name: Typecheck
         run: npm run typecheck
