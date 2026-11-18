@@ -1,0 +1,17 @@
+{
+  "policy": "期限付き例外: 上流に修正版が無い勧告だけを、対象パッケージ・scope・期限・理由・承認者を明記して許可する。期限切れ・理由なし・承認者なしの例外は無効（fail-closed）。",
+  "reviewedAt": "2026-11-18",
+  "exceptions": [
+    {
+      "id": "GHSA-fc5q-39xc-vjpf",
+      "package": "picomatch",
+      "scope": "dev",
+      "reason": "picomatch <= 4.0.7 の ReDoS（CWE-1333）。上流に修正版が未リリース（first_patched_version=null）。devDependencies（vitest / vite / tinyglobby / fdir）経由のみで、本番ランタイムの依存には含まれない（runtime 監査は 0 件）。",
+      "upstream": "https://github.com/advisories/GHSA-fc5q-39xc-vjpf",
+      "approvedBy": "CTO エージェント（所有者の全権委譲 2026-11-18）",
+      "approvedAt": "2026-11-18",
+      "expiresAt": "2026-12-31",
+      "exitCriteria": "picomatch の修正版が公開されたら依存を更新し、本例外を削除する。期限までに修正版が出ない場合は期限を再評価する。"
+    }
+  ]
+}
